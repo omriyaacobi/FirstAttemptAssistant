@@ -45,4 +45,24 @@ function ask(provider, model, question) {
   return PROVIDERS[provider](question, model);
 }
 
-module.exports = { ask, PROVIDERS };
+// Tries each model in the chain, in order, and returns the first answer that works.
+// If one fails (out of quota, tool crashed, empty answer) it moves on to the next.
+// askOne and the callbacks are parameters so tests can plug in fakes.
+async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFail = () => {} } = {}) {
+  const errors = [];
+  for (const { provider, model } of chain) {
+    onTry({ provider, model });
+    try {
+      const answer = await askOne(provider, model, question);
+      if (!answer) throw new Error("empty answer");
+      return { answer, used: { provider, model } };
+    } catch (error) {
+      const message = String(error.message).trim().slice(0, 200);
+      errors.push(`${provider}/${model}: ${message}`);
+      onFail({ provider, model, message });
+    }
+  }
+  throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
+}
+
+module.exports = { ask, askChain, PROVIDERS };

@@ -16,9 +16,11 @@
 
 - Experiment done (2026-10-28), see `experiments/2026-10-28-model-comparison.md`: Claude Sonnet 5.5 via `agy` vs via `claude` CLI vs Gemini 4 Argon. Quality similar on easy tasks. Claude/GPT pool in `agy` is the scarcest (3 tiny calls = -2%); Gemini pool barely moved; `claude` CLI sends ~38k input tokens per call. `agy -p "/usage"` prints quotas non-interactively.
 
+- Routing v2 done: each task type now has a **chain** of models (first choice + fallbacks) in `router.js` (`CHAINS`). Gemini is the default, `claude` CLI first for code, Claude-in-`agy` last resort only. `askChain` in `providers.js` tries the chain in order and moves on when a model fails or returns nothing. `--force a:x,b:y` lets you test your own chain. 12 tests pass (`node --test`); live-tested fallback with a fake model.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
-6. Improve routing (based on the experiment: Gemini by default, `claude` CLI for coding, Claude-in-`agy` only as overflow): use the third quota pool, handle failures (fallback to another model when one is out of quota), maybe a small model as router.
+6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
 7. Simple interface (command line first, web page maybe).
 
 ## Remember
