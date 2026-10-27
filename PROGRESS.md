@@ -8,6 +8,7 @@
 - Step 2 done: Claude Code CLI installed in `C:\Users\User\npm-global` and logged in with the Pro subscription (`claude auth status` shows `subscriptionType: pro`). `node hello-claude.js "question"` gets an answer from Claude.
 
 ## Next
+3. Install Antigravity CLI (`agy`) in my own terminal, log in, check `/usage` for Gemini 4 Argon. Then `hello-gemini.js` using `agy -p`.
 3. Hello Gemini: same, for Gemini.
 4. Orchestrator: route tasks between the two.
 5. Simple interface (command line first).
@@ -18,3 +19,4 @@
 - Never put API keys in code; use `.env`.
 - The Claude desktop app is sandboxed: files it writes under `AppData` land in a private copy your terminal can't see. That's why the CLI lives in `C:\Users\User\npm-global` and is called by full path (`claude` alone isn't on your PATH).
 - PowerShell blocks `.ps1` scripts by default; you ran `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` to allow local ones.
+- Goal: orchestrator that routes each task to the best model (see CLAUDE.md "Orchestrator design"). Google-related tasks (Calendar etc.) should go to Gemini, if the CLI can reach them (unverified).

@@ -25,3 +25,13 @@
 - **Language:** JavaScript (Node.js).
 - **GitHub:** public repo. Commit and push after every step, so never commit secrets (`.env` stays in `.gitignore`).
 - **Keep it simple:** small and easy to understand beats clever.
+
+## Orchestrator design (agreed with me)
+
+- The orchestrator picks a model **per task, by need**; it is not built around one model. Both CLIs take `--model`.
+- Rough idea: simple tasks -> small cheap model (Claude Haiku / Gemini Flash); everyday work -> mid model (Claude Sonnet); hard reasoning -> strongest (Gemini 4 Argon or Claude Opus).
+- Tasks about Google things (Calendar, etc.) should go to Gemini. UNVERIFIED: whether the Gemini CLI route can actually reach my Calendar; check the docs before promising it.
+- Build the router as simple readable rules first; a small model as router only later.
+- Print which model was chosen and why, so I can see where my Pro quota goes.
+- Gemini route = Antigravity CLI (`agy`), since the old Gemini CLI stopped serving personal accounts on 2026-06-18. I have Google AI Pro (not Ultra); Argon access on Pro to be verified with `/usage`.
+- Model names and plan access change often: check current docs before hard-coding them.
