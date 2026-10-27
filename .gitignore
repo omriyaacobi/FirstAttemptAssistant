@@ -1,0 +1,12 @@
+# Secrets - never commit
+.env
+.env.*
+
+# Dependencies and build output
+node_modules/
+dist/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
