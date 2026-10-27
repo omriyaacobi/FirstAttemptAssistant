@@ -10,3 +10,7 @@ dist/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Experiment output
+experiments/compare-results.json
+experiments/empty/
