@@ -9,9 +9,15 @@
 - Step 3 done: Antigravity CLI 1.4.8 installed (`C:\Users\User\AppData\Local\agy\bin\agy.exe`), logged in as Google AI Pro. `node hello-gemini.js "question"` works; pick a model with the `AGY_MODEL` env var. Tested `gemini-3.8-flash-low` and `gemini-4-argon-low`.
 - Models seen via `agy models`: Gemini 4 Argon, Gemini 3.8 Flash, Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B, each with low/medium/high effort (IDs like `gemini-4-argon-medium`).
 
+- Step 4 done: orchestrator v1. Files: `providers.js` (runs claude/agy), `router.js` (rules: google -> hard -> code -> quick -> fallback), `orchestrator.js` (main), `router.test.js` (run `node --test`, 7 tests pass).
+  - Use: `node orchestrator.js "task"`, `--dry-run` to only see the choice, `--force claude:opus "task"` to override.
+  - Verified live: a short question went to Gemini Flash, a coding task went to Claude Sonnet. The `[router] ...` log lines go to stderr on purpose.
+  - Quota facts: Claude models inside `agy` are covered by the Google AI Pro plan (separate "Claude and GPT models" limit), not the Claude plan. So there are 3 pools: Claude plan (claude CLI), Gemini models (agy), Claude+GPT models (agy). Router v1 uses pools 1 and 2 only.
+
 ## Next
-4. Orchestrator: route each task to the best model (rules first).
-5. Simple interface (command line first).
+5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
+6. Improve routing: use the third quota pool, handle failures (fallback to another model when one is out of quota), maybe a small model as router.
+7. Simple interface (command line first, web page maybe).
 
 ## Remember
 - Claude Pro tokens work through Claude Code; a separate Anthropic API key is billed separately.
@@ -19,5 +25,5 @@
 - Never put API keys in code; use `.env`.
 - The Claude desktop app is sandboxed: files it writes under `AppData` land in a private copy your terminal can't see. That's why the CLI lives in `C:\Users\User\npm-global` and is called by full path (`claude` alone isn't on your PATH).
 - PowerShell blocks `.ps1` scripts by default; you ran `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` to allow local ones.
-- agy also lists Claude models. Open question: do those count against my Google quota or my Claude plan? Check before relying on them in the router.
+- Old GPT-OSS and Claude 4.6 models in agy are scheduled for removal on 2026-11-02; don't depend on them.
 - Goal: orchestrator that routes each task to the best model (see CLAUDE.md "Orchestrator design"). Google-related tasks (Calendar etc.) should go to Gemini, if the CLI can reach them (unverified).
