@@ -3,16 +3,24 @@
 // handleTask() takes a task, decides how to run it, runs it, and RETURNS the result
 // as a plain object. It never prints anything itself: progress messages go to the
 // "log" function you pass in, so each front end can show them its own way.
+//
+// How a message is handled:
+//   1. The front desk (a Gemini model following router-brief.md) reads it and decides:
+//        answer   -> it replies itself            clarify -> it asks you a question
+//        delegate -> one model from the menu      split   -> the planner splits it into steps
+//   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
+//   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
 
-const { route, chainForType } = require("./router");
+const { chainForDestination, chainForType, DEFAULT_CHAIN } = require("./router");
 const { askChain } = require("./providers");
-const { looksMultiPart, plan, runPlan } = require("./planner");
+const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
+const { plan, runPlan } = require("./planner");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
-const defaultDeps = { route, chainForType, askChain, looksMultiPart, plan, runPlan };
+const defaultDeps = { decide, plan, runPlan, askChain, chainForType, chainForDestination };
 
 // ---- Conversation memory ----
 // The models have no memory of their own (every call starts from nothing), and different
@@ -54,12 +62,12 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   const d = { ...defaultDeps, ...deps };
   const started = Date.now();
   const seconds = () => Number(((Date.now() - started) / 1000).toFixed(1));
-  // Routing and the planner decide from the newest message alone; the models get the context.
+  // The front desk decides from the newest message (plus the history for context).
   const prompt = withContext(task, history);
 
-  // One job: pick a chain, run it with fallbacks, return the answer.
+  // One job: run a chain with fallbacks and return the answer.
   async function runSingle(info) {
-    log(`[router] rule: ${info.rule} - ${info.reason}`);
+    log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
     const { answer, used } = await d.askChain(info.chain, prompt, {
       onTry: (m) => log(`[router] trying ${label(m)}`),
@@ -68,6 +76,13 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     log(`[router] answered by ${label(used)}`);
     return { mode: "single", rule: info.rule, reason: info.reason, chain: info.chain, used, answer, seconds: seconds() };
   }
+
+  // The front desk replied itself (an answer, or a question for you).
+  const frontDeskReply = (decision) => {
+    const rule = decision.action === "clarify" ? "asked you a question" : "answered directly";
+    log(`[frontdesk] ${rule}`);
+    return { mode: "single", rule, reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: decision.answer, seconds: seconds() };
+  };
 
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
@@ -80,7 +95,9 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return { mode: "split", plannedBy, steps, seconds: seconds() };
   }
 
-  // Forced: skip the planner and the router completely.
+  const fallback = (reason) => runSingle({ chain: DEFAULT_CHAIN, rule: "fallback", reason });
+
+  // Forced: skip the front desk completely.
   if (forced) {
     const chain = forced.split(",").map((item) => {
       const [provider, model] = item.split(":");
@@ -89,28 +106,52 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return runSingle({ chain, rule: "forced", reason: "you picked it" });
   }
 
-  if (!noPlan && d.looksMultiPart(task)) {
-    log("[planner] this looks like it may contain several jobs, asking the planner to split it");
-    try {
-      const { subtasks, plannedBy } = await d.plan(task, { context: historyBlock(history) });
-      log(`[planner] ${subtasks.length} step(s), planned by ${plannedBy}`);
-      for (const s of subtasks) {
-        const needs = s.needs.length ? `  (needs step ${s.needs.join(", ")})` : "";
-        log(`[planner]   ${s.id}. [${s.type}] ${s.task.slice(0, 90)}${needs}  ->  ${chainText(d.chainForType(s.type))}`);
-      }
-      if (planOnly) return { mode: "plan", subtasks, plannedBy };
-      if (subtasks.length > 1) return runSplit(subtasks, plannedBy);
-      log("[planner] only one job found, handling it as one");
-    } catch (error) {
-      log(`[planner] ${error.message}. Handling it as one job.`);
-      if (planOnly) return { mode: "plan", subtasks: null, note: error.message };
-    }
-  } else if (planOnly) {
-    log("[planner] the task does not look multi-part, nothing to plan");
-    return { mode: "plan", subtasks: null, note: "the task does not look multi-part" };
+  // 1. Ask the front desk.
+  log(`[frontdesk] asking ${label(FRONT_DESK_MODEL)}`);
+  let decision;
+  try {
+    decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan });
+  } catch (error) {
+    log(`[frontdesk] failed: ${error.message}. Claude Sonnet takes it.`);
+    return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the front desk failed, so Claude Sonnet took it");
+  }
+  const target = decision.action === "delegate" ? ` -> ${decision.destination}` : "";
+  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason})`);
+
+  // The user turned splitting off, so a "split" decision is handled as one job instead.
+  if (decision.action === "split" && noPlan) {
+    return runSingle({ chain: d.chainForDestination("gemini-argon-medium"), rule: "no split", reason: "splitting is turned off" });
   }
 
-  return runSingle(d.route(task));
+  if (planOnly && decision.action !== "split") {
+    return { mode: "plan", subtasks: null, note: `the front desk chose "${decision.action}", so there is nothing to split` };
+  }
+
+  // 2. Act on the decision.
+  if (decision.action === "answer" || decision.action === "clarify") return frontDeskReply(decision);
+
+  if (decision.action === "delegate") {
+    return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });
+  }
+
+  // split: ask the planner for the steps
+  let planned;
+  try {
+    planned = await d.plan(task, { context: historyBlock(history) });
+  } catch (error) {
+    log(`[planner] ${error.message}`);
+    return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the planner failed, so Claude Sonnet took it");
+  }
+  const { subtasks, plannedBy } = planned;
+  log(`[planner] ${subtasks.length} step(s), planned by ${plannedBy}`);
+  for (const s of subtasks) {
+    const needs = s.needs.length ? `  (needs step ${s.needs.join(", ")})` : "";
+    log(`[planner]   ${s.id}. [${s.type}] ${s.task.slice(0, 90)}${needs}  ->  ${chainText(d.chainForType(s.type))}`);
+  }
+  if (planOnly) return { mode: "plan", subtasks, plannedBy };
+  if (subtasks.length > 1) return runSplit(subtasks, plannedBy);
+  log("[planner] only one job found, handling it as one");
+  return runSingle({ chain: d.chainForType(subtasks[0].type), rule: subtasks[0].type, reason: "the planner found a single job" });
 }
 
 module.exports = { handleTask, chainText, label, historyBlock, withContext, resultText, MAX_HISTORY_CHARS };

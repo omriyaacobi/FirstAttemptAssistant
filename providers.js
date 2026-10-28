@@ -4,6 +4,14 @@
 // (A Promise is JavaScript's way of saying "the answer will arrive later".)
 
 const { exec, execFile } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+// The front desk and the planner only classify text, so they run in an empty folder.
+// agy is an agent that can see (and try to edit) the folder it starts in; this way it
+// has nothing of yours to see.
+const SANDBOX_DIR = path.join(os.tmpdir(), "orchestrator-empty");
 
 // Where the two command-line tools live. Set the env var to override.
 const CLAUDE_CMD = process.env.CLAUDE_CMD || '"C:\\Users\\User\\npm-global\\claude.cmd"';
@@ -44,8 +52,9 @@ function askAgy(question, model) {
 function askAgyStructured(question, model, schema) {
   checkModelName(model);
   const args = ["-p", question, "--model", model, "--output-format", "json", "--json-schema", JSON.stringify(schema)];
+  fs.mkdirSync(SANDBOX_DIR, { recursive: true });
   return new Promise((resolve, reject) => {
-    execFile(AGY_CMD, args, { maxBuffer: 1e7 }, (error, stdout, stderr) => {
+    execFile(AGY_CMD, args, { maxBuffer: 1e7, cwd: SANDBOX_DIR }, (error, stdout, stderr) => {
       if (error) return reject(new Error(stderr || error.message));
       try {
         const envelope = JSON.parse(stdout);

@@ -31,7 +31,8 @@
 - The orchestrator picks a model **per task, by need**; it is not built around one model. Both CLIs take `--model`.
 - Rough idea: simple tasks -> small cheap model (Claude Haiku / Gemini Flash); everyday work -> mid model (Claude Sonnet); hard reasoning -> strongest (Gemini 4 Argon or Claude Opus).
 - Tasks about Google things (Calendar, etc.) should go to Gemini. UNVERIFIED: whether the Gemini CLI route can actually reach my Calendar; check the docs before promising it.
-- Build the router as simple readable rules first; a small model as router only later.
+- ROUTER v3 (current): a "front desk" (Gemini 3.8 Flash high via `agy`, see `frontdesk.js`) reads each message with the plain-English briefing in `router-brief.md` and decides: answer itself, ask a clarifying question, delegate to ONE destination from the fixed menu in `router.js`, or have the planner split it. Its reply is forced into a JSON schema and validated in code (never trust model output). If the front desk or planner fails, Claude Sonnet takes the task. The old keyword rules were removed. Edit `router-brief.md` to change how it decides; a test checks the briefing mentions every destination.
+- Flash on low effort was dropped (not enough saving to justify the extra mistakes).
 - Print which model was chosen and why, so I can see where my Pro quota goes.
 - Gemini route = Antigravity CLI (`agy`), since the old Gemini CLI stopped serving personal accounts on 2026-06-18. I have Google AI Pro (not Ultra); Argon access on Pro to be verified with `/usage`.
 - Model names and plan access change often: check current docs before hard-coding them.

@@ -1,9 +1,9 @@
 // planner.js
 // Splits a request that contains several jobs into sub-tasks, so each one can go to
-// the model that suits it best. Three steps:
-//   1. looksMultiPart(task)  - a free keyword check: is it worth asking a model to split this?
-//   2. plan(task)            - a cheap Gemini call that returns the sub-tasks as JSON
-//   3. runPlan(subtasks)     - runs them (independent ones at the same time) and collects answers
+// the model that suits it best. The front desk (frontdesk.js) decides WHEN a message
+// needs splitting; this file does the splitting. Two steps:
+//   1. plan(task)        - a Gemini call that returns the sub-tasks as JSON
+//   2. runPlan(subtasks) - runs them (independent ones at the same time) and collects answers
 
 const { askChain, askAgyStructured } = require("./providers");
 const { chainForType, MODELS } = require("./router");
@@ -12,7 +12,7 @@ const MAX_SUBTASKS = 5;
 const TYPES = ["quick", "code", "hard", "google", "general"];
 
 // Only Gemini plans, because that quota pool has the most room.
-const PLANNER_MODELS = [MODELS.flashMedium, MODELS.argonLow];
+const PLANNER_MODELS = [MODELS.flashHigh, MODELS.argonLow];
 
 // The shape we force the planner's answer into.
 const SCHEMA = {
@@ -34,18 +34,6 @@ const SCHEMA = {
   },
   required: ["subtasks"],
 };
-
-// Step 1: a cheap check so short, single-purpose tasks never pay for a planner call.
-// It can be wrong in both directions: a false "yes" just costs one extra small call,
-// and a false "no" means the task is handled as one piece (the old behavior).
-function looksMultiPart(task) {
-  return (
-    task.length > 200 ||
-    /\b(then|and then|also|after that|afterwards|additionally|as well as)\b/i.test(task) ||
-    /^\s*(\d+[.)]|[-*])\s+/m.test(task) ||
-    (task.match(/[.?!]\s+\S/g) || []).length >= 2
-  );
-}
 
 function plannerPrompt(task, context = "") {
   return `You split a user's request into separate jobs for a team of AI models.
@@ -92,7 +80,7 @@ function validatePlan(raw) {
   return cleaned;
 }
 
-// Step 2: ask a Gemini model to split the task. Returns the cleaned list, or throws.
+// Step 1: ask a Gemini model to split the task. Returns the cleaned list, or throws.
 async function plan(task, { askStructured = askAgyStructured, context = "" } = {}) {
   const errors = [];
   for (const { model } of PLANNER_MODELS) {
@@ -119,7 +107,7 @@ function buildSubtaskPrompt(subtask, originalTask, results, planSize) {
   return prompt + `Do ONLY this part, and answer it directly:\n${subtask.task}`;
 }
 
-// Step 3: run the sub-tasks. Everything whose needs are finished runs at the same time.
+// Step 2: run the sub-tasks. Everything whose needs are finished runs at the same time.
 // If a step fails, steps that needed it are skipped instead of guessing.
 async function runPlan(subtasks, originalTask, { run = askChain, onStart = () => {}, onDone = () => {} } = {}) {
   const results = new Map();
@@ -159,4 +147,4 @@ async function runPlan(subtasks, originalTask, { run = askChain, onStart = () =>
   return subtasks.map((s) => ({ ...s, ...results.get(s.id) }));
 }
 
-module.exports = { looksMultiPart, plan, validatePlan, runPlan, buildSubtaskPrompt, MAX_SUBTASKS };
+module.exports = { plan, validatePlan, runPlan, buildSubtaskPrompt, MAX_SUBTASKS };

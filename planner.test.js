@@ -4,18 +4,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { looksMultiPart, validatePlan, plan, runPlan, MAX_SUBTASKS } = require("./planner");
-
-test("looksMultiPart: short single tasks skip the planner", () => {
-  assert.strictEqual(looksMultiPart("What is the capital of France?"), false);
-  assert.strictEqual(looksMultiPart("Fix this function"), false);
-});
-
-test("looksMultiPart: spots 'then', lists and long tasks", () => {
-  assert.strictEqual(looksMultiPart("Summarize this, then translate it"), true);
-  assert.strictEqual(looksMultiPart("1. do this\n2. do that"), true);
-  assert.strictEqual(looksMultiPart("x ".repeat(150)), true);
-});
+const { validatePlan, plan, runPlan, MAX_SUBTASKS } = require("./planner");
 
 test("validatePlan accepts a good plan and trims text", () => {
   const out = validatePlan({ subtasks: [{ id: 1, task: "  a  ", type: "quick", needs: [] }] });
@@ -47,11 +36,11 @@ test("plan falls back to the second planner model when the first fails", async (
   const tried = [];
   const fake = async (prompt, model) => {
     tried.push(model);
-    if (model === "gemini-3.8-flash-medium") throw new Error("boom");
+    if (model === "gemini-3.8-flash-high") throw new Error("boom");
     return { subtasks: [{ id: 1, task: "x", type: "quick", needs: [] }] };
   };
   const result = await plan("anything", { askStructured: fake });
-  assert.strictEqual(result.plannedBy, "gemini-4-argon-low");
+  assert.strictEqual(result.plannedBy, "gemini-4-argon-low"); // flash-high failed, so the next planner model answered
   assert.strictEqual(tried.length, 2);
 });
 

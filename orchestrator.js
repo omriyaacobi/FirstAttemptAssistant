@@ -4,15 +4,15 @@
 //
 // Usage:
 //   node orchestrator.js "your task"
-//   node orchestrator.js --dry-run "your task"        (show the choice, don't call any model)
-//   node orchestrator.js --plan-only "your task"      (run the planner, show the plan, stop)
+//   node orchestrator.js --dry-run "your task"        (show what would happen, call no model)
+//   node orchestrator.js --plan-only "your task"      (let the front desk decide, show the plan, stop)
 //   node orchestrator.js --no-plan "your task"        (never split, treat it as one job)
-//   node orchestrator.js --force claude:opus "task"   (skip routing, pick yourself; list with commas for fallbacks)
+//   node orchestrator.js --force claude:opus "task"   (skip the front desk, pick yourself; list with commas for fallbacks)
 //
 // The web page (node server.js) uses the same core.js, so both behave the same way.
 
-const { route } = require("./router");
-const { looksMultiPart } = require("./planner");
+const { DEFAULT_CHAIN } = require("./router");
+const { FRONT_DESK_MODEL } = require("./frontdesk");
 const { handleTask, chainText, label } = require("./core");
 
 async function main() {
@@ -37,10 +37,8 @@ async function main() {
 
   if (dryRun) {
     if (forced) return console.error(`[router] plan: ${forced.split(",").join("  ->  ")}`);
-    const wantsPlanner = !noPlan && looksMultiPart(task);
-    console.error(`[planner] would ${wantsPlanner ? "" : "NOT "}ask the planner to split this`);
-    const single = route(task);
-    return console.error(`[router] if kept as one job -> rule: ${single.rule}, plan: ${chainText(single.chain)}`);
+    console.error(`[frontdesk] would ask ${label(FRONT_DESK_MODEL)} to decide (no model is called in a dry run)`);
+    return console.error(`[router] if it fails, Claude Sonnet takes it: ${chainText(DEFAULT_CHAIN)}`);
   }
 
   // Progress goes to stderr, the final answer to stdout, so the answer stays clean.

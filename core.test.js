@@ -5,100 +5,144 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { handleTask, historyBlock, withContext, resultText, MAX_HISTORY_CHARS } = require("./core");
+const { DEFAULT_CHAIN } = require("./router");
 
 const used = { provider: "agy", model: "fake" };
+const chain = [used];
 
-// Fakes that stand in for the real planner, router and models.
+// Fakes that stand in for the real front desk, planner and models.
 const fakes = (overrides = {}) => ({
-  looksMultiPart: () => false,
-  route: () => ({ chain: [used], rule: "quick", reason: "test" }),
-  chainForType: () => [used],
-  askChain: async () => ({ answer: "single answer", used }),
+  decide: async () => ({ action: "delegate", destination: "claude-sonnet", answer: "", reason: "test" }),
+  chainForDestination: () => chain,
+  chainForType: () => chain,
+  askChain: async () => ({ answer: "model answer", used }),
   plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }], plannedBy: "fake-planner" }),
   runPlan: async (subtasks) => subtasks.map((s) => ({ ...s, answer: "step answer", used })),
   ...overrides,
 });
 
-test("a simple task runs as a single job and never calls the planner", async () => {
-  let plannerCalled = false;
-  const deps = fakes({ plan: async () => { plannerCalled = true; } });
-  const result = await handleTask("hi", { deps });
+const decision = (action, extra = {}) => async () => ({ action, destination: null, answer: "", reason: "test", ...extra });
+
+test("answer: the front desk replies itself and no other model is called", async () => {
+  let asked = false;
+  const deps = fakes({ decide: decision("answer", { answer: "56" }), askChain: async () => { asked = true; } });
+  const result = await handleTask("7 times 8?", { deps });
   assert.strictEqual(result.mode, "single");
-  assert.strictEqual(result.answer, "single answer");
-  assert.strictEqual(plannerCalled, false);
+  assert.strictEqual(result.answer, "56");
+  assert.strictEqual(result.rule, "answered directly");
+  assert.strictEqual(asked, false);
 });
 
-test("a multi-part task is split and returns every step", async () => {
+test("clarify: the question comes back as the answer", async () => {
+  const deps = fakes({ decide: decision("clarify", { answer: "What do you mean?" }) });
+  const result = await handleTask("make it appear", { deps });
+  assert.strictEqual(result.answer, "What do you mean?");
+  assert.strictEqual(result.rule, "asked you a question");
+});
+
+test("delegate: runs the chosen destination's chain", async () => {
+  let destinationAsked = null;
+  let chainUsed = null;
   const deps = fakes({
-    looksMultiPart: () => true,
+    decide: decision("delegate", { destination: "gemini-argon-medium" }),
+    chainForDestination: (name) => { destinationAsked = name; return chain; },
+    askChain: async (c) => { chainUsed = c; return { answer: "done", used }; },
+  });
+  const result = await handleTask("hard thing", { deps });
+  assert.strictEqual(destinationAsked, "gemini-argon-medium");
+  assert.strictEqual(chainUsed, chain);
+  assert.strictEqual(result.rule, "gemini-argon-medium");
+});
+
+test("split: the planner splits it and every step is returned", async () => {
+  const deps = fakes({
+    decide: decision("split"),
     plan: async () => ({
-      subtasks: [
-        { id: 1, task: "a", type: "quick", needs: [] },
-        { id: 2, task: "b", type: "code", needs: [] },
-      ],
+      subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }, { id: 2, task: "b", type: "code", needs: [] }],
       plannedBy: "fake-planner",
     }),
   });
   const result = await handleTask("a then b", { deps });
   assert.strictEqual(result.mode, "split");
   assert.strictEqual(result.steps.length, 2);
-  assert.strictEqual(result.plannedBy, "fake-planner");
 });
 
-test("noPlan keeps a multi-part task as one job", async () => {
-  const deps = fakes({ looksMultiPart: () => true });
+test("split but the planner finds one job: it is handled as one", async () => {
+  const result = await handleTask("also this", { deps: fakes({ decide: decision("split") }) });
+  assert.strictEqual(result.mode, "single");
+});
+
+test("noPlan: a split decision is handled as one job and the planner is never asked", async () => {
+  let plannerCalled = false;
+  let allowSplitSeen = null;
+  const deps = fakes({
+    decide: async (t, opts) => { allowSplitSeen = opts.allowSplit; return { action: "split", destination: null, answer: "", reason: "t" }; },
+    plan: async () => { plannerCalled = true; },
+  });
   const result = await handleTask("a then b", { noPlan: true, deps });
   assert.strictEqual(result.mode, "single");
+  assert.strictEqual(plannerCalled, false);
+  assert.strictEqual(allowSplitSeen, false);
 });
 
-test("if the planner fails, it falls back to one job", async () => {
+test("if the front desk fails, Claude Sonnet takes the task", async () => {
+  let chainUsed = null;
   const logs = [];
-  const deps = fakes({ looksMultiPart: () => true, plan: async () => { throw new Error("planner down"); } });
-  const result = await handleTask("a then b", { deps, log: (l) => logs.push(l) });
-  assert.strictEqual(result.mode, "single");
-  assert.ok(logs.some((l) => l.includes("planner down")));
+  const deps = fakes({
+    decide: async () => { throw new Error("agy down"); },
+    askChain: async (c) => { chainUsed = c; return { answer: "sonnet answer", used }; },
+  });
+  const result = await handleTask("anything", { deps, log: (l) => logs.push(l) });
+  assert.strictEqual(chainUsed, DEFAULT_CHAIN);
+  assert.strictEqual(DEFAULT_CHAIN[0].model, "sonnet");
+  assert.strictEqual(result.rule, "fallback");
+  assert.ok(logs.some((l) => l.includes("agy down")));
 });
 
-test("if the planner finds only one job, it is handled as one", async () => {
-  const deps = fakes({ looksMultiPart: () => true });
-  const result = await handleTask("also this", { deps });
-  assert.strictEqual(result.mode, "single");
+test("if the planner fails, Claude Sonnet takes the task", async () => {
+  let chainUsed = null;
+  const deps = fakes({
+    decide: decision("split"),
+    plan: async () => { throw new Error("planner down"); },
+    askChain: async (c) => { chainUsed = c; return { answer: "x", used }; },
+  });
+  const result = await handleTask("a then b", { deps });
+  assert.strictEqual(chainUsed, DEFAULT_CHAIN);
+  assert.strictEqual(result.rule, "fallback");
 });
 
 test("planOnly returns the plan without running anything", async () => {
   let ran = false;
-  const deps = fakes({ looksMultiPart: () => true, runPlan: async () => { ran = true; }, askChain: async () => { ran = true; } });
+  const deps = fakes({ decide: decision("split"), runPlan: async () => { ran = true; }, askChain: async () => { ran = true; } });
   const result = await handleTask("a then b", { planOnly: true, deps });
   assert.strictEqual(result.mode, "plan");
+  assert.ok(result.subtasks);
   assert.strictEqual(ran, false);
 });
 
-test("log receives progress messages", async () => {
-  const logs = [];
-  await handleTask("hi", { deps: fakes(), log: (l) => logs.push(l) });
-  assert.ok(logs.some((l) => l.startsWith("[router]")));
+test("planOnly on something that is not split says there is nothing to plan", async () => {
+  const result = await handleTask("hi", { planOnly: true, deps: fakes({ decide: decision("answer", { answer: "hello" }) }) });
+  assert.strictEqual(result.mode, "plan");
+  assert.strictEqual(result.subtasks, null);
 });
 
-test("history is pasted in front of the new message for the models", async () => {
-  let received = null;
-  const deps = fakes({ askChain: async (chain, prompt) => { received = prompt; return { answer: "x", used }; } });
+test("the front desk gets the history as context and the models get it pasted in front", async () => {
+  let deskHistory = null;
+  let modelPrompt = null;
+  const deps = fakes({
+    decide: async (t, opts) => { deskHistory = opts.history; return { action: "delegate", destination: "claude-sonnet", answer: "", reason: "t" }; },
+    askChain: async (c, prompt) => { modelPrompt = prompt; return { answer: "x", used }; },
+  });
   const history = [{ role: "user", text: "My name is Omri" }, { role: "assistant", text: "Nice to meet you" }];
   await handleTask("What is my name?", { history, deps });
-  assert.match(received, /User: My name is Omri/);
-  assert.match(received, /Assistant: Nice to meet you/);
-  assert.match(received, /What is my name\?$/); // the new message comes last
-});
-
-test("routing decides from the newest message only, not from the history", async () => {
-  let routedOn = null;
-  const deps = fakes({ route: (t) => { routedOn = t; return { chain: [used], rule: "quick", reason: "test" }; } });
-  await handleTask("short follow-up", { history: [{ role: "user", text: "a very long earlier message ".repeat(50) }], deps });
-  assert.strictEqual(routedOn, "short follow-up");
+  assert.match(deskHistory, /User: My name is Omri/);
+  assert.match(modelPrompt, /Assistant: Nice to meet you/);
+  assert.match(modelPrompt, /What is my name\?$/); // the new message comes last
 });
 
 test("with no history the model gets the task unchanged", async () => {
   let received = null;
-  const deps = fakes({ askChain: async (chain, prompt) => { received = prompt; return { answer: "x", used }; } });
+  const deps = fakes({ askChain: async (c, prompt) => { received = prompt; return { answer: "x", used }; } });
   await handleTask("plain task", { deps });
   assert.strictEqual(received, "plain task");
 });
@@ -107,13 +151,33 @@ test("a split plan also receives the history, and the planner gets it as context
   let planContext = null;
   let runPrompt = null;
   const deps = fakes({
-    looksMultiPart: () => true,
+    decide: decision("split"),
     plan: async (t, opts) => { planContext = opts.context; return { subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }, { id: 2, task: "b", type: "quick", needs: [] }], plannedBy: "p" }; },
     runPlan: async (subtasks, prompt) => { runPrompt = prompt; return subtasks.map((s) => ({ ...s, answer: "ok", used })); },
   });
   await handleTask("a then b", { history: [{ role: "user", text: "earlier" }], deps });
   assert.match(planContext, /User: earlier/);
   assert.match(runPrompt, /User: earlier/);
+});
+
+test("log receives progress messages from the front desk and the router", async () => {
+  const logs = [];
+  await handleTask("hi", { deps: fakes(), log: (l) => logs.push(l) });
+  assert.ok(logs.some((l) => l.startsWith("[frontdesk]")));
+  assert.ok(logs.some((l) => l.startsWith("[router]")));
+});
+
+test("forced chains skip the front desk completely", async () => {
+  let deskCalled = false;
+  let asked = null;
+  const deps = fakes({
+    decide: async () => { deskCalled = true; },
+    askChain: async (c) => { asked = c; return { answer: "x", used: c[0] }; },
+  });
+  const result = await handleTask("a then b", { forced: "claude:opus,agy:x", deps });
+  assert.strictEqual(result.rule, "forced");
+  assert.strictEqual(deskCalled, false);
+  assert.deepStrictEqual(asked, [{ provider: "claude", model: "opus" }, { provider: "agy", model: "x" }]);
 });
 
 test("historyBlock keeps the newest messages when the history is too long", () => {
@@ -127,8 +191,7 @@ test("historyBlock keeps the newest messages when the history is too long", () =
 test("historyBlock cuts one huge message and returns empty text for no history", () => {
   assert.strictEqual(historyBlock([]), "");
   assert.strictEqual(historyBlock(undefined), "");
-  const block = historyBlock([{ role: "assistant", text: "y".repeat(10000) }]);
-  assert.ok(block.length < 3200);
+  assert.ok(historyBlock([{ role: "assistant", text: "y".repeat(10000) }]).length < 3200);
 });
 
 test("withContext and resultText", () => {
@@ -137,12 +200,4 @@ test("withContext and resultText", () => {
   const split = resultText({ mode: "split", steps: [{ id: 1, task: "t1", answer: "a1" }, { id: 2, task: "t2", error: "boom" }] });
   assert.match(split, /Step 1: t1\na1/);
   assert.match(split, /Step 2: t2\n\(failed\)/);
-});
-
-test("forced chains skip routing and planning", async () => {
-  let asked = null;
-  const deps = fakes({ looksMultiPart: () => true, askChain: async (chain) => { asked = chain; return { answer: "x", used: chain[0] }; } });
-  const result = await handleTask("a then b", { forced: "claude:opus,agy:x", deps });
-  assert.strictEqual(result.rule, "forced");
-  assert.deepStrictEqual(asked, [{ provider: "claude", model: "opus" }, { provider: "agy", model: "x" }]);
 });

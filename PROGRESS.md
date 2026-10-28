@@ -31,6 +31,11 @@
   - Why the orchestrator can't see the Claude Code chat: it is a separate program that starts `claude -p` / `agy -p` fresh each time. Those calls do not share the Claude Code session where we build the project.
   - Limits: memory is the pasted text, so very long chats lose their oldest messages; no auto-summary; two messages sent at once in the same chat can overwrite each other.
 
+- Front desk router done (step 8): the keyword rules are gone. `frontdesk.js` + `router-brief.md`: Gemini 3.8 Flash high reads the message (plus conversation) and returns `answer` / `clarify` / `delegate` / `split` as validated JSON. Destinations (fixed menu in `router.js`): gemini-flash, gemini-argon-low, gemini-argon-medium, claude-sonnet, claude-opus, each with a fallback chain. If the front desk or planner fails, Claude Sonnet takes it. The front desk and planner run in an empty temp folder so they cannot see or touch the project. 75 tests pass.
+  - Tested live on 14 prompts (all decisions as intended, incl. Hebrew, vague Hebrew -> clarify question, calendar -> "not connected", prompt-injection attempt refused) and end to end: simple question 10s (one call), code -> Sonnet 20s, broken front desk -> Sonnet fallback 5s, 3-part split 51s, web page checked in the browser.
+  - Cost of the design: every message first waits ~9-15s for the front desk decision (11-30s when several run at once). Easy questions are answered in that same call.
+  - Calendar/Gmail/Drive are marked "NOT connected" in `router-brief.md`; flip that line when it is real.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
