@@ -12,14 +12,17 @@
 
 // Every model we can run. "provider" is the tool that runs it:
 //   "claude" = Claude Code CLI (Claude plan), "agy" = Antigravity CLI (Google AI Pro plan).
+// "pool" is the quota bucket the model draws from, spelled exactly as `agy -p "/usage"` names it
+// (quota.js compares these). null = no numbers available (the Claude CLI plan), so it is never
+// treated as low.
 const MODELS = {
-  flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium" },
-  flashHigh: { provider: "agy", model: "gemini-3.8-flash-high" }, // used by the front desk and the planner
-  argonLow: { provider: "agy", model: "gemini-4-argon-low" },
-  argonMedium: { provider: "agy", model: "gemini-4-argon-medium" },
-  claudeSonnet: { provider: "claude", model: "sonnet" },
-  claudeOpus: { provider: "claude", model: "opus" },
-  claudeInAgy: { provider: "agy", model: "claude-sonnet-5-5-medium" }, // smallest quota: last resort only
+  flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
+  flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the front desk and the planner
+  argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" },
+  argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: "Gemini 4 Argon" },
+  claudeSonnet: { provider: "claude", model: "sonnet", pool: null },
+  claudeOpus: { provider: "claude", model: "opus", pool: null },
+  claudeInAgy: { provider: "agy", model: "claude-sonnet-5-5-medium", pool: "Claude and GPT models" }, // smallest quota: last resort only
 };
 
 // The names the front desk may choose. Keep this list and router-brief.md in sync

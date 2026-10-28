@@ -39,3 +39,10 @@ test("chainForType maps planner types to chains and falls back to the default", 
   assert.strictEqual(chainForType("hard")[0].model, "gemini-4-argon-medium");
   assert.strictEqual(chainForType("nonsense"), DEFAULT_CHAIN);
 });
+
+test("every model says which quota pool it draws from (null for the Claude CLI)", () => {
+  for (const [name, m] of Object.entries(MODELS)) {
+    assert.ok(m.pool === null || typeof m.pool === "string", `${name} has no pool field`);
+    assert.strictEqual(m.pool === null, m.provider === "claude", `${name}: only the claude CLI has no pool`);
+  }
+});
