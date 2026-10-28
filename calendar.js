@@ -44,13 +44,23 @@ function parseEnv(text) {
   return out;
 }
 
-function loadCredentials(envFile = path.join(__dirname, ".env")) {
+// The client id/secret come from .env, or else from the JSON file Google lets you download
+// ("client_secret_....json") saved in the data/ folder. data/ is git-ignored, so the file can
+// never be committed by accident (in the project root it could be).
+function loadCredentials(envFile = path.join(__dirname, ".env"), dataDir = path.join(__dirname, "data")) {
   let text = "";
   try { text = fs.readFileSync(envFile, "utf8"); } catch (error) { /* missing file handled below */ }
   const env = parseEnv(text);
-  const clientId = env.GOOGLE_CLIENT_ID, clientSecret = env.GOOGLE_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing in .env (see .env.example)");
-  return { clientId, clientSecret };
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
+  let files = [];
+  try { files = fs.readdirSync(dataDir).filter((f) => /^client_secret.*\.json$/.test(f)); } catch (error) { /* no data folder */ }
+  for (const file of files) {
+    try {
+      const { installed } = JSON.parse(fs.readFileSync(path.join(dataDir, file), "utf8"));
+      if (installed && installed.client_id && installed.client_secret) return { clientId: installed.client_id, clientSecret: installed.client_secret };
+    } catch (error) { /* not a Google client file, try the next */ }
+  }
+  throw new Error("No Google client found: put the downloaded client_secret_....json in the data folder, or fill in .env (see .env.example)");
 }
 
 // The real network function: {host, path, method, headers}, body string -> {status, body (parsed JSON or text)}.

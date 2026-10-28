@@ -20,8 +20,22 @@ test("parseEnv reads KEY=value, skips comments, strips quotes", () => {
   assert.deepStrictEqual(cal.parseEnv('# c\nA=1\nB="two"\n  C = 3 \n'), { A: "1", B: "two", C: "3" });
 });
 
-test("loadCredentials complains when .env is missing", () => {
-  assert.throws(() => cal.loadCredentials(path.join(os.tmpdir(), "nope-.env")), /GOOGLE_CLIENT_ID/);
+test("loadCredentials complains when there is no .env and no downloaded file", () => {
+  assert.throws(() => cal.loadCredentials(path.join(os.tmpdir(), "nope-.env"), path.join(os.tmpdir(), "nope-data")), /No Google client found/);
+});
+
+test("loadCredentials reads Google's downloaded client_secret file from the data folder", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caltest-"));
+  fs.writeFileSync(path.join(dir, "notes.json"), "{}");
+  fs.writeFileSync(path.join(dir, "client_secret_123.apps.googleusercontent.com.json"), JSON.stringify({ installed: { client_id: "cid", client_secret: "csec" } }));
+  assert.deepStrictEqual(cal.loadCredentials(path.join(dir, "no.env"), dir), { clientId: "cid", clientSecret: "csec" });
+});
+
+test("loadCredentials prefers .env when it is filled in", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caltest-"));
+  fs.writeFileSync(path.join(dir, ".env"), "GOOGLE_CLIENT_ID=a\nGOOGLE_CLIENT_SECRET=b\n");
+  fs.writeFileSync(path.join(dir, "client_secret_x.json"), JSON.stringify({ installed: { client_id: "cid", client_secret: "csec" } }));
+  assert.deepStrictEqual(cal.loadCredentials(path.join(dir, ".env"), dir), { clientId: "a", clientSecret: "b" });
 });
 
 test("auth URL asks only for the calendar.events scope, PKCE, offline", () => {
