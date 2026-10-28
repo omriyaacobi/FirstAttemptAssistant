@@ -14,6 +14,9 @@
 //   GET    /api/selfedit/:id       -> one proposal (diff, test results)
 //   POST   /api/selfedit/:id/approve | /reject  -> merge it into the project, or throw it away
 //   (see selfedit.js: nothing changes in your project until you approve, and nothing is pushed)
+//   POST   /api/restart            -> restart Bot to load new code (only when started by start-web.cmd)
+//   GET    /api/git                -> which commits are on this computer but not on GitHub yet
+//   POST   /api/git/push           -> push them (the page asks you to confirm first; see gitops.js)
 //
 // Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
 // The models themselves remember nothing, so for each new message we send them the recent
@@ -30,6 +33,7 @@ const { execFile } = require("node:child_process");
 const { handleTask, resultText } = require("./core");
 const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
+const { createGitOps } = require("./gitops");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -38,6 +42,8 @@ const MAX_TASK_CHARS = 8000;
 const MAX_RUNNING = 2; // at most 2 tasks at once, so a bug or a loop can't burn your whole quota
 const PAGE = path.join(__dirname, "public", "index.html");
 const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bin\\agy.exe";
+// start-web.cmd restarts the server when it exits with this code (the Restart button uses it).
+const RESTART_EXIT_CODE = 75;
 
 // agy prints tab-separated lines like: Gemini Models<TAB>Five Hour Limit Remaining<TAB>99%<TAB>2026-10-28T01:41:40Z
 function parseUsage(text) {
@@ -104,6 +110,10 @@ function createServer({
   usage = getUsage,
   store = createStore(path.join(__dirname, "data", "conversations")),
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
+  gitOps = createGitOps({ repoDir: __dirname }),
+  // Restarting only works when start-web.cmd is watching, because it is what starts us again.
+  supervised = process.env.BOT_SUPERVISED === "1",
+  restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
 } = {}) {
   let running = 0;
 
@@ -191,6 +201,35 @@ function createServer({
       }
     }
 
+    // Restart, to load new code after an approved change.
+    if (req.method === "POST" && url.pathname === "/api/restart") {
+      if (!(await readJsonBody(req, res))) return;
+      if (!supervised) {
+        return sendJson(res, 409, { error: "Bot can only restart itself when it was started with start-web.cmd. Close this server and double-click start-web.cmd." });
+      }
+      if (running > 0 || selfEdit.isActive()) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
+      sendJson(res, 200, { restarting: true });
+      restart();
+      return;
+    }
+
+    // GitHub: what is not pushed yet, and pushing it.
+    if (req.method === "GET" && url.pathname === "/api/git") {
+      try {
+        return sendJson(res, 200, await gitOps.status());
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/git/push") {
+      if (!(await readJsonBody(req, res))) return;
+      try {
+        return sendJson(res, 200, await gitOps.push());
+      } catch (error) {
+        return sendJson(res, 409, { error: error.message });
+      }
+    }
+
     // Run a task
     if (req.method === "POST" && url.pathname === "/api/ask") {
       // CHECK 3 - only accept JSON. A web page on another site can't send JSON to us without
@@ -257,18 +296,24 @@ function createServer({
   return server;
 }
 
-module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNING };
+module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNING, RESTART_EXIT_CODE };
 
 // Start listening only when run directly ("node server.js"), not when a test imports this file.
 if (require.main === module) {
   const server = createServer();
+  let tries = 0;
   server.on("error", (error) => {
+    // Right after a restart the old server may still be letting go of the port, so wait a little.
+    if (error.code === "EADDRINUSE" && tries < 10) {
+      tries++;
+      return setTimeout(() => server.listen(PORT, HOST), 500);
+    }
     if (error.code === "EADDRINUSE") console.error(`Port ${PORT} is already in use. Is the server already running? Or try: PORT=3001 node server.js`);
     else console.error("Server error:", error.message);
     process.exit(1);
   });
   server.listen(PORT, HOST, () => {
     console.log(`Bot web page: http://localhost:${PORT}  (only reachable from this computer)`);
-    console.log("Press Ctrl+C to stop.");
+    console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });
 }

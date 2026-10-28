@@ -14,7 +14,7 @@ const { createStore } = require("./store");
 
 // Starts a server with fake models and returns a small helper for sending requests to it.
 // Conversations are saved in a temporary folder, never in your real data/ folder.
-async function start(handle = async () => ({ mode: "single", answer: "hello", used: { provider: "p", model: "m" } })) {
+async function start(handle = async () => ({ mode: "single", answer: "hello", used: { provider: "p", model: "m" } }), { supervised = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-server-"));
   const store = createStore(dir);
   // A fake self-edit manager: it records the calls so the tests can check the routes without any git or models.
@@ -27,7 +27,17 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
     reject: async (id) => { calls.push(["reject", id]); return { id, status: "rejected" }; },
     isActive: () => false,
   };
-  const server = createServer({ handle, store, selfEdit, usage: async () => [{ pool: "P", window: "W", remaining: 50, resets: "x" }] });
+  // Fake GitHub operations and a fake restart (a real restart would end the test run).
+  const gitOps = {
+    status: async () => ({ branch: "main", upstream: "origin/main", clean: true, ahead: 1, commits: [{ hash: "abc1234", subject: "a change" }] }),
+    push: async () => { calls.push(["push"]); return { pushed: [{ hash: "abc1234", subject: "a change" }], output: "ok" }; },
+  };
+  const restarts = [];
+  const server = createServer({
+    handle, store, selfEdit, gitOps, supervised,
+    restart: () => restarts.push(Date.now()),
+    usage: async () => [{ pool: "P", window: "W", remaining: 50, resets: "x" }],
+  });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
 
@@ -54,7 +64,7 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
   const post = (path, body, headers = {}) =>
     request("POST", path, { headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 
-  return { server, port, request, ask, post, calls, store, close };
+  return { server, port, request, ask, post, calls, restarts, store, close };
 }
 
 test("serves the page", async () => {
@@ -275,6 +285,59 @@ test("SECURITY: self-edit routes refuse other websites, non-JSON and a wrong Hos
   }
   assert.strictEqual((await s.request("GET", "/api/selfedit", { headers: { Host: "evil.example.com" } })).status, 403);
   assert.strictEqual(s.calls.length, 0); // nothing reached the manager
+  await s.close();
+});
+
+test("restart: refused unless start-web.cmd started the server", async () => {
+  const s = await start();
+  const res = await s.post("/api/restart", {});
+  assert.strictEqual(res.status, 409);
+  assert.match(JSON.parse(res.body).error, /start-web\.cmd/);
+  assert.strictEqual(s.restarts.length, 0);
+  await s.close();
+});
+
+test("restart: works when supervised", async () => {
+  const s = await start(undefined, { supervised: true });
+  const res = await s.post("/api/restart", {});
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(JSON.parse(res.body), { restarting: true });
+  assert.strictEqual(s.restarts.length, 1);
+  await s.close();
+});
+
+test("restart: refused while a task is running", async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const s = await start(async () => { await gate; return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } }; }, { supervised: true });
+  const slow = s.ask("slow");
+  await new Promise((r) => setTimeout(r, 100));
+  assert.strictEqual((await s.post("/api/restart", {})).status, 409);
+  assert.strictEqual(s.restarts.length, 0);
+  release();
+  await slow;
+  await s.close();
+});
+
+test("git: status and push go through to gitops", async () => {
+  const s = await start();
+  const status = JSON.parse((await s.request("GET", "/api/git")).body);
+  assert.strictEqual(status.ahead, 1);
+  const pushed = await s.post("/api/git/push", {});
+  assert.strictEqual(pushed.status, 200);
+  assert.deepStrictEqual(s.calls, [["push"]]);
+  await s.close();
+});
+
+test("SECURITY: restart and push refuse other websites and non-JSON", async () => {
+  const s = await start(undefined, { supervised: true });
+  for (const path of ["/api/restart", "/api/git/push"]) {
+    assert.strictEqual((await s.post(path, {}, { Origin: "https://evil.example.com" })).status, 403, path);
+    assert.strictEqual((await s.post(path, {}, { "Sec-Fetch-Site": "cross-site" })).status, 403, path);
+    assert.strictEqual((await s.request("POST", path, { headers: { "Content-Type": "text/plain" }, body: "{}" })).status, 415, path);
+  }
+  assert.strictEqual(s.restarts.length, 0);
+  assert.deepStrictEqual(s.calls, []);
   await s.close();
 });
 

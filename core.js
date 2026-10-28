@@ -77,11 +77,15 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return { mode: "single", rule: info.rule, reason: info.reason, chain: info.chain, used, answer, seconds: seconds() };
   }
 
-  // The front desk replied itself (an answer, or a question for you).
+  // The front desk replied itself (an answer, a question for you, or a pointer to "Improve Bot").
+  const RULE_NAMES = { clarify: "asked you a question", improve: "a change to Bot", answer: "answered directly" };
   const frontDeskReply = (decision) => {
-    const rule = decision.action === "clarify" ? "asked you a question" : "answered directly";
+    const rule = RULE_NAMES[decision.action];
     log(`[frontdesk] ${rule}`);
-    return { mode: "single", rule, reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: decision.answer, seconds: seconds() };
+    const result = { mode: "single", rule, reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: decision.answer, seconds: seconds() };
+    // The page shows a button that opens "Improve Bot" with this request filled in. It never starts anything.
+    if (decision.action === "improve") result.improve = { request: task };
+    return result;
   };
 
   // Several jobs: run the plan, return every step's result.
@@ -128,7 +132,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   }
 
   // 2. Act on the decision.
-  if (decision.action === "answer" || decision.action === "clarify") return frontDeskReply(decision);
+  if (["answer", "clarify", "improve"].includes(decision.action)) return frontDeskReply(decision);
 
   if (decision.action === "delegate") {
     return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });

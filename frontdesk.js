@@ -16,7 +16,9 @@ const { MODELS, DESTINATIONS } = require("./router");
 
 const FRONT_DESK_MODEL = MODELS.flashHigh;
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
-const ACTIONS = ["answer", "clarify", "delegate", "split"];
+// "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
+// offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve"];
 const MAX_ANSWER_CHARS = 8000;
 
 // The shape we force the model's reply into. "none" is for the actions that need no destination.
@@ -52,7 +54,7 @@ function validateDecision(raw) {
   const reason = typeof raw.reason === "string" ? raw.reason.trim().slice(0, 200) : "";
   const answer = typeof raw.answer === "string" ? raw.answer.trim() : "";
 
-  if (raw.action === "answer" || raw.action === "clarify") {
+  if (raw.action === "answer" || raw.action === "clarify" || raw.action === "improve") {
     if (!answer || answer.length > MAX_ANSWER_CHARS) return null;
     return { action: raw.action, destination: null, answer, reason };
   }

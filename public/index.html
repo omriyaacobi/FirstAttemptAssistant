@@ -142,9 +142,12 @@
     <div class="scroll"><div class="inner">
       <div class="row" style="margin-top:0">
         <h1>Improve Bot</h1>
-        <button class="ghost" id="backToChat">Back to chat</button>
+        <div class="actions" style="margin-top:0">
+          <button class="ghost" id="restartBtn" title="Restart Bot to load new code after an approved change">Restart Bot</button>
+          <button class="ghost" id="backToChat">Back to chat</button>
+        </div>
       </div>
-      <p class="sub">Describe a change to Bot's own code or page. An editor model (Claude) makes it in a <strong>private copy</strong> of the project, never in your live files. The tests run automatically, and you review the changes below. Nothing happens to your project until you press Approve, and nothing is ever pushed to GitHub.</p>
+      <p class="sub">Describe a change to Bot's own code or page. An editor model (Claude) makes it in a <strong>private copy</strong> of the project, never in your live files. The tests run automatically; if they fail, the editor gets the errors and tries again (up to 3 times). You review the changes below. Nothing happens to your project until you press Approve, and nothing goes to GitHub until you press Push.</p>
       <textarea id="improveText" dir="auto" aria-label="The change you want" placeholder="For example: make the page more colorful, with a different color for Gemini and Claude answers."></textarea>
       <div class="row">
         <label>Editor model <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select></label>
@@ -154,6 +157,14 @@
       <h2 style="font-size:1.05rem">Proposals</h2>
       <ul id="proposals"></ul>
       <div id="proposalDetail"></div>
+      <section class="card" aria-label="GitHub">
+        <div class="row" style="margin-top:0">
+          <strong>GitHub</strong>
+          <button class="ghost" id="gitRefresh">Refresh</button>
+        </div>
+        <div id="gitStatus" class="sub">Loading...</div>
+        <div class="actions"><button id="pushBtn" hidden>Push to GitHub</button></div>
+      </section>
     </div></div>
   </section>
 </div>
@@ -205,10 +216,20 @@
   function renderResult(result) {
     const wrap = el("div");
     if (result.mode === "single") {
-      wrap.appendChild(botCard(
+      const card = botCard(
         [["Answer"], [modelName(result.used), "badge"], [`${result.rule}: ${result.reason}`, "badge"], [`${result.seconds}s`, "badge"]],
         renderText(result.answer)
-      ));
+      );
+      // You asked Bot to change itself: offer to open "Improve Bot" with the request filled in.
+      // This only fills in the box; you still read it and press Start yourself.
+      if (result.improve && result.improve.request) {
+        const actions = el("div", "actions");
+        const open = el("button", "", "Open Improve Bot with this request");
+        open.addEventListener("click", () => openImproveWith(result.improve.request));
+        actions.appendChild(open);
+        card.appendChild(actions);
+      }
+      wrap.appendChild(card);
     } else if (result.mode === "split") {
       result.steps.forEach((s) => {
         const head = [[`Step ${s.id}: ${s.task}`], [s.type, "badge"]];
@@ -419,7 +440,84 @@
     $("chatView").hidden = name !== "chat";
     $("improveView").hidden = name !== "improve";
     $("side").classList.remove("open");
-    if (name === "improve") loadProposals();
+    if (name === "improve") {
+      loadProposals();
+      loadGit();
+    }
+  }
+
+  // Used by the button under Bot's answer when you asked it to change itself.
+  function openImproveWith(request) {
+    showView("improve");
+    $("improveText").value = request;
+    $("improveText").focus();
+  }
+
+  // ---- Restart (to load new code after an approved change) ----
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function restartBot() {
+    if (!confirm("Restart Bot now?\n\nThis loads any new code. It takes a few seconds.")) return;
+    try {
+      const res = await fetch("/api/restart", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+    $("improveStatus").textContent = "Restarting Bot...";
+    await sleep(1500); // let the old server stop
+    for (let i = 0; i < 40; i++) {
+      try {
+        if ((await fetch("/api/selfedit", { cache: "no-store" })).ok) return location.reload();
+      } catch (error) { /* not back yet */ }
+      await sleep(750);
+    }
+    alert("Bot did not come back. Look at the start-web.cmd window for an error.");
+  }
+
+  // ---- GitHub: what is not pushed yet, and pushing it ----
+  let gitInfo = null;
+
+  async function loadGit() {
+    const box = $("gitStatus");
+    try {
+      const res = await fetch("/api/git");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not read git status");
+      gitInfo = data;
+      box.replaceChildren();
+      if (!data.upstream) box.textContent = "This branch is not linked to GitHub.";
+      else if (!data.ahead) box.textContent = "Everything is on GitHub.";
+      else {
+        box.appendChild(el("p", "", `${data.ahead} change(s) are on this computer but not on GitHub yet:`));
+        const ul = el("ul");
+        data.commits.forEach((c) => ul.appendChild(el("li", "", `${c.hash}  ${c.subject}`)));
+        box.appendChild(ul);
+      }
+      $("pushBtn").hidden = !(data.upstream && data.ahead);
+    } catch (error) {
+      box.textContent = "Could not read git status: " + error.message;
+      $("pushBtn").hidden = true;
+    }
+  }
+
+  async function pushToGitHub() {
+    if (!gitInfo || !gitInfo.ahead) return;
+    const list = gitInfo.commits.map((c) => `- ${c.subject}`).join("\n");
+    if (!confirm(`Push ${gitInfo.ahead} change(s) to GitHub?\n\n${list}\n\nYour repository is PUBLIC: anyone will be able to see them.`)) return;
+    $("pushBtn").disabled = true;
+    $("gitStatus").textContent = "Pushing...";
+    try {
+      const res = await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+    } catch (error) {
+      alert("Push failed: " + error.message);
+    }
+    $("pushBtn").disabled = false;
+    loadGit();
   }
 
   const statusBadge = (status) => el("span", "badge st-" + (STATUS_CLASS[status] || "muted"), status);
@@ -481,6 +579,10 @@
       box.appendChild(el("strong", "", "What the editor says"));
       box.appendChild(renderText(p.summary));
     }
+    if (p.attempts && p.attempts.length > 1) {
+      const tries = p.attempts.map((a) => `try ${a.attempt}: ${a.problems.length ? a.problems.join("; ") : "passed"}`).join("  |  ");
+      box.appendChild(el("p", "sub", `The editor needed ${p.attempts.length} attempts (${tries})`));
+    }
     if (p.blocked && p.blocked.length) {
       box.appendChild(el("strong", "err", "Why it cannot be approved"));
       const ul = el("ul");
@@ -506,12 +608,16 @@
       box.appendChild(el("strong", "", "The changes"));
       box.appendChild(renderDiff(p.diff));
     }
-    if (p.status === "approved") {
-      box.appendChild(el("p", "", `Merged as commit ${String(p.mergedCommit).slice(0, 7)}. It is on your computer only; push it to GitHub yourself when you are happy.`));
-      box.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Restart the server (close its window and double-click start-web.cmd) to load the new code." : "Only the page changed: reload it (F5) to see the result."));
-    }
-
     const actions = el("div", "actions");
+    if (p.status === "approved") {
+      box.appendChild(el("p", "", `Merged as commit ${String(p.mergedCommit).slice(0, 7)}. It is on your computer only; use "Push to GitHub" below when you are happy with it.`));
+      box.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Code changed: restart Bot to load it." : "Only the page changed: reload it (F5) to see the result."));
+      if (p.needsRestart) {
+        const restart = el("button", "", "Restart Bot now");
+        restart.addEventListener("click", restartBot);
+        actions.appendChild(restart);
+      }
+    }
     if (p.status === "ready") {
       const approve = el("button", "", "Approve and merge");
       approve.addEventListener("click", () => decide(p.id, "approve"));
@@ -532,9 +638,11 @@
       if (!res.ok) return;
       const { proposal } = await res.json();
       // When polling, only redraw if something changed (so scrolling through a diff is not interrupted).
-      if (quiet && id === openProposalId && proposal.status === renderedStatus) return;
+      // The note changes too while it runs ("Attempt 2 of 3..."), so it counts as a change.
+      const shown = `${proposal.status}|${proposal.note}`;
+      if (quiet && id === openProposalId && shown === renderedStatus) return;
       openProposalId = id;
-      renderedStatus = proposal.status;
+      renderedStatus = shown;
       $("proposalDetail").replaceChildren(renderProposal(proposal));
     } catch (error) { /* try again on the next poll */ }
   }
@@ -551,10 +659,14 @@
     renderedStatus = null;
     await openProposal(id);
     loadProposals();
+    loadGit();
   }
 
   $("improveBtn").addEventListener("click", () => showView("improve"));
   $("backToChat").addEventListener("click", () => showView("chat"));
+  $("restartBtn").addEventListener("click", restartBot);
+  $("gitRefresh").addEventListener("click", loadGit);
+  $("pushBtn").addEventListener("click", pushToGitHub);
   $("menu2").addEventListener("click", () => $("side").classList.toggle("open"));
   $("improveStart").addEventListener("click", async () => {
     const request = $("improveText").value.trim();

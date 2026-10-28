@@ -24,7 +24,8 @@ const { ID_PATTERN } = require("./store");
 // Files and folders the editor may never change. server.js holds the web security checks,
 // store.js validates conversation ids, selfedit.js is this safety gate itself, and the rest
 // protect secrets, git, and your private chats.
-const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", ".gitignore", ".gitattributes", "start-web.cmd"];
+// gitops.js is protected because it pushes to GitHub.
+const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", "gitops.js", ".gitignore", ".gitattributes", "start-web.cmd"];
 const PROTECTED_PREFIXES = [".git/", ".github/", "data/", "node_modules/"];
 
 function isProtected(file) {
@@ -36,6 +37,9 @@ const MAX_REQUEST_CHARS = 4000;
 const MAX_FILES = 25;
 const MAX_DIFF_CHARS = 300000;
 const EDITOR_TIMEOUT_MS = 20 * 60 * 1000;
+// The editor cannot run the tests itself, so its first try often has a mistake. After each try
+// the code checks it and, if something is wrong, sends the problems back for another round.
+const MAX_ATTEMPTS = 3;
 
 const EDITOR_RULES = `You are improving the source code of a small Node.js project (Bot, a program that routes tasks between Claude and Gemini) in the current folder.
 
@@ -43,7 +47,7 @@ Make the change the user asks for. Keep it as small and clear as you can, in the
 
 You can only read and edit files in this folder. You cannot run commands, so add or update tests for what you change (the project uses Node's built-in test runner; test files end in .test.js) and reason carefully about whether they will pass.
 
-Do not touch these files: server.js, selfedit.js, store.js, .gitignore, start-web.cmd, anything inside data/ or .git/. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
+Do not touch these files: server.js, selfedit.js, store.js, gitops.js, .gitignore, start-web.cmd, anything inside data/ or .git/. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
 
 When you finish, reply with a short summary (3 to 6 lines): what you changed, why, and anything the user should check.`;
 
@@ -83,7 +87,7 @@ function nodeTests(cwd) {
 // The real editor: the claude CLI in --restricted mode, working inside the private copy.
 // --tools limits it to reading and editing files; --permission-prompts none means anything
 // not allowed is refused automatically instead of asking.
-function claudeEditor({ worktree, request, model }) {
+function claudeEditor({ worktree, request, model, feedback = "" }) {
   const { CLAUDE_CMD } = require("./providers");
   if (!/^[\w.-]+$/.test(model)) return Promise.reject(new Error("bad model name"));
   const cmd = `${CLAUDE_CMD} -p --model ${model} --restricted --tools "Read,Glob,Grep,Edit,Write" --permission-mode acceptEdits --permission-prompts none --no-session-persistence`;
@@ -92,8 +96,27 @@ function claudeEditor({ worktree, request, model }) {
       if (error) return reject(new Error(String(stderr || error.message).trim().slice(0, 300)));
       resolve(String(stdout).trim());
     });
-    child.stdin.end(`${EDITOR_RULES}\n\nThe change the user wants:\n${request}`);
+    child.stdin.end(`${EDITOR_RULES}\n\nThe change the user wants:\n${request}${feedback ? "\n\n" + feedback : ""}`);
   });
+}
+
+// What the editor is told when its previous try did not pass the checks.
+function buildFeedback(problems, tests) {
+  let text = "Your previous attempt was checked automatically and has these problems:\n" + problems.map((p) => "- " + p).join("\n");
+  if (tests && !tests.ok && tests.tail) text += "\n\nThe end of the test output:\n" + tests.tail;
+  return text + "\n\nYour changes so far are still in the files. Fix these problems (undo any change to protected files) while keeping the change the user asked for.";
+}
+
+// The rules enforced by code. Returns the list of problems (empty means it passes).
+function checkProposal({ files, diff, tests, baseline }) {
+  const problems = [];
+  const touched = files.filter((f) => isProtected(f.path)).map((f) => f.path);
+  if (touched.length) problems.push(`Protected files were changed: ${touched.join(", ")}`);
+  if (files.length > MAX_FILES) problems.push(`Too many files changed (${files.length}, the limit is ${MAX_FILES})`);
+  if (diff.length > MAX_DIFF_CHARS) problems.push("The change is too large to review in the page");
+  if (!tests.ok) problems.push("The tests do not pass");
+  else if (tests.total < baseline.total) problems.push(`The number of tests dropped from ${baseline.total} to ${tests.total}`);
+  return problems;
 }
 
 // ---- The self-edit manager ----
@@ -156,47 +179,54 @@ function createSelfEdit({
       }
 
       const started = Date.now();
-      const summary = await editor({ worktree: wt, request: record.request, model: record.model });
+      const attempts = [];
+      let feedback = "";
+      let summary, files, diff, treeHash, tests, blocked;
+
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (attempt > 1) save(Object.assign(record, { note: `Attempt ${attempt} of ${MAX_ATTEMPTS}: the editor is fixing problems found in its last try.`, attempts }));
+        summary = await editor({ worktree: wt, request: record.request, model: record.model, feedback, attempt });
+
+        // The editor was only supposed to touch its private copy. If it did not, stop at once:
+        // this is a safety failure, not a mistake to retry.
+        const leaked = await mainTreeStatus();
+        if (leaked) {
+          await cleanup(id);
+          const editorSeconds = Number(((Date.now() - started) / 1000).toFixed(1));
+          return finish({ status: "blocked", note: "Files in your real project changed while the editor ran. Nothing was merged. Check with git status.", blocked: [`Real project changed: ${leaked.split("\n").slice(0, 5).join("; ")}`], summary, editorSeconds, attempts });
+        }
+
+        await git(wt, ["add", "-A"]);
+        const nameStatus = (await git(wt, ["diff", "--cached", "--name-status", "--no-renames", "HEAD"])).trim();
+        if (!nameStatus) {
+          await cleanup(id);
+          const editorSeconds = Number(((Date.now() - started) / 1000).toFixed(1));
+          return finish({ status: "failed", note: "The editor made no changes.", summary, editorSeconds, attempts });
+        }
+        files = nameStatus.split("\n").map((line) => {
+          const [status, ...rest] = line.split("\t");
+          return { status, path: rest.join("\t") };
+        });
+        diff = await git(wt, ["diff", "--cached", "--no-renames", "HEAD"]);
+        treeHash = (await git(wt, ["write-tree"])).trim();
+        tests = await runTests(wt);
+        tests.baselineTotal = baseline.total;
+
+        // Rules enforced by code. Any of these makes the proposal impossible to approve.
+        blocked = checkProposal({ files, diff, tests, baseline });
+        attempts.push({ attempt, problems: blocked, testsOk: tests.ok, testsTotal: tests.total });
+        if (!blocked.length) break;
+        feedback = buildFeedback(blocked, tests);
+      }
       const editorSeconds = Number(((Date.now() - started) / 1000).toFixed(1));
 
-      // The editor was only supposed to touch its private copy. Check that it did.
-      const leaked = await mainTreeStatus();
-      if (leaked) {
-        await cleanup(id);
-        return finish({ status: "blocked", note: "Files in your real project changed while the editor ran. Nothing was merged. Check with git status.", blocked: [`Real project changed: ${leaked.split("\n").slice(0, 5).join("; ")}`], summary, editorSeconds });
-      }
-
-      await git(wt, ["add", "-A"]);
-      const nameStatus = (await git(wt, ["diff", "--cached", "--name-status", "--no-renames", "HEAD"])).trim();
-      if (!nameStatus) {
-        await cleanup(id);
-        return finish({ status: "failed", note: "The editor made no changes.", summary, editorSeconds });
-      }
-      const files = nameStatus.split("\n").map((line) => {
-        const [status, ...rest] = line.split("\t");
-        return { status, path: rest.join("\t") };
-      });
-      const diff = await git(wt, ["diff", "--cached", "--no-renames", "HEAD"]);
-      const treeHash = (await git(wt, ["write-tree"])).trim();
-
-      const tests = await runTests(wt);
-      tests.baselineTotal = baseline.total;
-
-      // Rules enforced by code. Any of these makes the proposal impossible to approve.
-      const blocked = [];
-      const touched = files.filter((f) => isProtected(f.path)).map((f) => f.path);
-      if (touched.length) blocked.push(`Protected files were changed: ${touched.join(", ")}`);
-      if (files.length > MAX_FILES) blocked.push(`Too many files changed (${files.length}, the limit is ${MAX_FILES})`);
-      if (diff.length > MAX_DIFF_CHARS) blocked.push("The change is too large to review in the page");
-      if (!tests.ok) blocked.push("The tests do not pass");
-      else if (tests.total < baseline.total) blocked.push(`The number of tests dropped from ${baseline.total} to ${tests.total}`);
-
-      const result = { files, diff: diff.slice(0, MAX_DIFF_CHARS), treeHash, tests, summary, editorSeconds, blocked };
+      const result = { files, diff: diff.slice(0, MAX_DIFF_CHARS), treeHash, tests, summary, editorSeconds, blocked, attempts };
       if (blocked.length) {
         await cleanup(id);
-        return finish({ ...result, status: "blocked", note: "The change cannot be approved (see the reasons)." });
+        return finish({ ...result, status: "blocked", note: `The change still has problems after ${attempts.length} attempt(s), so it cannot be approved (see the reasons).` });
       }
-      return finish({ ...result, status: "ready", note: "Ready for your review." });
+      const tries = attempts.length > 1 ? ` (it took the editor ${attempts.length} attempts)` : "";
+      return finish({ ...result, status: "ready", note: `Ready for your review${tries}.` });
     } catch (error) {
       await cleanup(id);
       return finish({ status: "failed", note: String(error.message).slice(0, 500) });
@@ -288,4 +318,4 @@ function createSelfEdit({
   return { start, get, list, approve, reject, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, isProtected, parseTestSummary, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, EDITOR_RULES };
+module.exports = { createSelfEdit, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };

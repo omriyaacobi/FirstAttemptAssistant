@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { createSelfEdit, isProtected, parseTestSummary, MAX_REQUEST_CHARS } = require("./selfedit");
+const { createSelfEdit, isProtected, parseTestSummary, buildFeedback, MAX_REQUEST_CHARS, MAX_ATTEMPTS } = require("./selfedit");
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
@@ -134,8 +134,10 @@ test("SECURITY: deleting a test to make things pass is blocked (the test count m
   s.cleanup();
 });
 
-test("SECURITY: if the editor changes files in the real project, nothing is merged", async () => {
+test("SECURITY: if the editor changes files in the real project, nothing is merged and it is not retried", async () => {
+  let calls = 0;
   const s = setup(({ worktree }, project) => {
+    calls++;
     goodEdit({ worktree });
     write(project.repoDir, "leaked.txt", "written outside the private copy");
   });
@@ -144,7 +146,66 @@ test("SECURITY: if the editor changes files in the real project, nothing is merg
   assert.strictEqual(done.status, "blocked");
   assert.match(done.blocked.join(" "), /Real project changed/);
   assert.strictEqual(read(s.repoDir, "greet.js"), 'module.exports = () => "hello";\n');
+  assert.strictEqual(calls, 1); // a safety failure stops at once, no second chance
   s.cleanup();
+});
+
+test("retry: a first try that breaks the tests is fixed on the second, using the test output as feedback", async () => {
+  const seen = [];
+  const s = setup(({ worktree, feedback, attempt }) => {
+    seen.push({ attempt, feedback });
+    if (attempt === 1) write(worktree, "greet.js", 'module.exports = () => "hello world";\n'); // forgot the test
+    else goodEdit({ worktree }); // fixes it
+  });
+  const { finished } = await s.manager.start("friendlier");
+  const done = await finished;
+  assert.strictEqual(done.status, "ready", done.note);
+  assert.strictEqual(done.attempts.length, 2);
+  assert.strictEqual(done.attempts[0].testsOk, false);
+  assert.match(done.note, /2 attempts/);
+  assert.strictEqual(seen[0].feedback, ""); // the first try gets no feedback
+  assert.match(seen[1].feedback, /The tests do not pass/);
+  assert.match(seen[1].feedback, /✖ greets/); // the real test output is passed along: which test failed...
+  assert.match(seen[1].feedback, /actual: 'hello world'/); // ...and with what value
+  s.cleanup();
+});
+
+test("retry: a protected file touched by mistake can be undone on the next try", async () => {
+  const s = setup(({ worktree, attempt }) => {
+    if (attempt === 1) {
+      goodEdit({ worktree });
+      write(worktree, "server.js", "// oops\n");
+    } else {
+      write(worktree, "server.js", "// protected\n"); // put it back exactly as it was
+    }
+  });
+  const { finished } = await s.manager.start("friendlier");
+  const done = await finished;
+  assert.strictEqual(done.status, "ready", done.note);
+  assert.deepStrictEqual(done.files.map((f) => f.path).sort(), ["greet.js", "greet.test.js"]);
+  s.cleanup();
+});
+
+test("retry: it gives up after the last attempt and the editor was asked that many times", async () => {
+  let calls = 0;
+  const s = setup(({ worktree }) => {
+    calls++;
+    write(worktree, "greet.js", 'module.exports = () => "never right";\n');
+  });
+  const { finished } = await s.manager.start("hopeless");
+  const done = await finished;
+  assert.strictEqual(done.status, "blocked");
+  assert.strictEqual(calls, MAX_ATTEMPTS);
+  assert.strictEqual(done.attempts.length, MAX_ATTEMPTS);
+  assert.match(done.note, new RegExp(`after ${MAX_ATTEMPTS} attempt`));
+  s.cleanup();
+});
+
+test("buildFeedback lists the problems and includes failing test output", () => {
+  const text = buildFeedback(["The tests do not pass"], { ok: false, tail: "ℹ fail 2" });
+  assert.match(text, /- The tests do not pass/);
+  assert.match(text, /ℹ fail 2/);
+  assert.doesNotMatch(buildFeedback(["Protected files were changed: server.js"], { ok: true, tail: "ℹ fail 0" }), /test output/);
 });
 
 test("an editor that makes no changes is reported as failed", async () => {
@@ -265,7 +326,7 @@ test("requests are validated", async () => {
 });
 
 test("isProtected: security files, secrets, git and data are protected; normal files are not", () => {
-  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
+  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", "gitops.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
     assert.strictEqual(isProtected(file), true, file);
   }
   for (const file of ["public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js"]) {

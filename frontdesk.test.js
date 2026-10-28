@@ -16,6 +16,12 @@ test("validateDecision accepts each kind of good decision", () => {
   assert.strictEqual(validateDecision({ action: "split", destination: "none", answer: "", reason: "three jobs" }).action, "split");
 });
 
+test("improve: accepted with a reply, rejected without one", () => {
+  const d = validateDecision({ action: "improve", destination: "none", answer: "Use the button below.", reason: "wants a redesign" });
+  assert.deepStrictEqual(d, { action: "improve", destination: null, answer: "Use the button below.", reason: "wants a redesign" });
+  assert.strictEqual(validateDecision({ action: "improve", destination: "none", answer: "", reason: "x" }), null);
+});
+
 test("SECURITY: a destination that is not on the menu is rejected", () => {
   for (const bad of ["rm -rf /", "gemini-9-ultra", "none", "", "toString", "__proto__", "claude-sonnet; whoami", 42, null]) {
     assert.strictEqual(validateDecision({ action: "delegate", destination: bad, answer: "", reason: "x" }), null, String(bad));

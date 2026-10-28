@@ -40,6 +40,28 @@ test("clarify: the question comes back as the answer", async () => {
   assert.strictEqual(result.rule, "asked you a question");
 });
 
+test("improve: the reply carries the request for the page's button, and nothing else runs", async () => {
+  let asked = false;
+  let planned = false;
+  const deps = fakes({
+    decide: decision("improve", { answer: "Use the button below." }),
+    askChain: async () => { asked = true; },
+    plan: async () => { planned = true; },
+  });
+  const result = await handleTask("make the page pink", { deps });
+  assert.strictEqual(result.mode, "single");
+  assert.strictEqual(result.rule, "a change to Bot");
+  assert.strictEqual(result.answer, "Use the button below.");
+  assert.deepStrictEqual(result.improve, { request: "make the page pink" });
+  assert.strictEqual(asked, false);
+  assert.strictEqual(planned, false);
+});
+
+test("only an improve decision offers the Improve button", async () => {
+  const result = await handleTask("7 times 8?", { deps: fakes({ decide: decision("answer", { answer: "56" }) }) });
+  assert.strictEqual(result.improve, undefined);
+});
+
 test("delegate: runs the chosen destination's chain", async () => {
   let destinationAsked = null;
   let chainUsed = null;
