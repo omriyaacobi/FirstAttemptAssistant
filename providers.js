@@ -1,5 +1,5 @@
 // providers.js
-// The "hands" of the orchestrator: one function per AI tool we can talk to.
+// The "hands" of Bot: one function per AI tool we can talk to.
 // Each takes a question and a model name and returns a Promise of the answer text.
 // (A Promise is JavaScript's way of saying "the answer will arrive later".)
 
@@ -11,7 +11,7 @@ const path = require("node:path");
 // The front desk and the planner only classify text, so they run in an empty folder.
 // agy is an agent that can see (and try to edit) the folder it starts in; this way it
 // has nothing of yours to see.
-const SANDBOX_DIR = path.join(os.tmpdir(), "orchestrator-empty");
+const SANDBOX_DIR = path.join(os.tmpdir(), "bot-empty");
 
 // Where the two command-line tools live. Set the env var to override.
 const CLAUDE_CMD = process.env.CLAUDE_CMD || '"C:\\Users\\User\\npm-global\\claude.cmd"';

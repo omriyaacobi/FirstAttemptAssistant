@@ -1,5 +1,5 @@
 // selfedit.js
-// Lets the orchestrator propose changes to its OWN code, safely. The idea: a model never
+// Lets Bot propose changes to its OWN code, safely. The idea: a model never
 // edits your live files. Instead:
 //
 //   1. start()    makes a private copy of the project (a "git worktree" on a new branch, in a
@@ -37,7 +37,7 @@ const MAX_FILES = 25;
 const MAX_DIFF_CHARS = 300000;
 const EDITOR_TIMEOUT_MS = 20 * 60 * 1000;
 
-const EDITOR_RULES = `You are improving the source code of a small Node.js project (an orchestrator that routes tasks between Claude and Gemini) in the current folder.
+const EDITOR_RULES = `You are improving the source code of a small Node.js project (Bot, a program that routes tasks between Claude and Gemini) in the current folder.
 
 Make the change the user asks for. Keep it as small and clear as you can, in the project's existing style (plain-English comments, no new dependencies, only Node's built-in modules).
 
@@ -101,7 +101,7 @@ function claudeEditor({ worktree, request, model }) {
 function createSelfEdit({
   repoDir,
   dataDir,
-  workRoot = path.join(os.tmpdir(), "orchestrator-selfedit"),
+  workRoot = path.join(os.tmpdir(), "bot-selfedit"),
   editor = claudeEditor,
   runTests = nodeTests,
 } = {}) {
@@ -268,7 +268,7 @@ function createSelfEdit({
     if ((await git(wt, ["write-tree"])).trim() !== record.treeHash) throw new Error("the private copy changed after it was tested; reject it and start again");
 
     const title = record.request.replace(/\s+/g, " ").slice(0, 60);
-    await git(wt, ["commit", "-q", "-m", `Self-edit: ${title}\n\nProposed by the orchestrator (Claude ${record.model}), reviewed and approved by the user in the web page.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`]);
+    await git(wt, ["commit", "-q", "-m", `Self-edit: ${title}\n\nProposed by Bot (Claude ${record.model}), reviewed and approved by the user in the web page.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`]);
     await git(repoDir, ["merge", "--ff-only", "-q", branchFor(id)]);
     const mergedCommit = (await git(repoDir, ["rev-parse", "HEAD"])).trim();
     await cleanup(id);

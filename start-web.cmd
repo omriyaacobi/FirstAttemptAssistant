@@ -1,5 +1,5 @@
 @echo off
-rem Double-click to start the orchestrator web page. Close this window (or press Ctrl+C) to stop it.
+rem Double-click to start the Bot web page. Close this window (or press Ctrl+C) to stop it.
 cd /d "%~dp0"
 
 rem Use "node" if Windows can find it; otherwise fall back to where the Node installer puts it.

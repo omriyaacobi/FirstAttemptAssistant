@@ -1,5 +1,5 @@
 // server.js
-// A tiny web server that lets you use the orchestrator from Chrome.
+// A tiny web server that lets you use Bot from Chrome.
 // Start it with:  node server.js   then open  http://localhost:3000
 //
 // A server is a program that waits for requests and sends back responses. Ours has these routes:
@@ -156,7 +156,7 @@ function createServer({
       return store.remove(conversationRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "conversation not found" });
     }
 
-    // Self-edit proposals. Only YOU start these (from the "Improve the orchestrator" panel);
+    // Self-edit proposals. Only YOU start these (from the "Improve Bot" panel);
     // the models can never start one on their own.
     if (url.pathname === "/api/selfedit" && req.method === "GET") {
       return sendJson(res, 200, { proposals: selfEdit.list(), busy: selfEdit.isActive() });
@@ -268,7 +268,7 @@ if (require.main === module) {
     process.exit(1);
   });
   server.listen(PORT, HOST, () => {
-    console.log(`Orchestrator web page: http://localhost:${PORT}  (only reachable from this computer)`);
+    console.log(`Bot web page: http://localhost:${PORT}  (only reachable from this computer)`);
     console.log("Press Ctrl+C to stop.");
   });
 }

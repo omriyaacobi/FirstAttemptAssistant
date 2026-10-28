@@ -1,13 +1,13 @@
-// orchestrator.js
+// bot.js
 // The command-line front end. All the real work happens in core.js; this file only
 // reads what you typed, calls handleTask(), and prints the result.
 //
 // Usage:
-//   node orchestrator.js "your task"
-//   node orchestrator.js --dry-run "your task"        (show what would happen, call no model)
-//   node orchestrator.js --plan-only "your task"      (let the front desk decide, show the plan, stop)
-//   node orchestrator.js --no-plan "your task"        (never split, treat it as one job)
-//   node orchestrator.js --force claude:opus "task"   (skip the front desk, pick yourself; list with commas for fallbacks)
+//   node bot.js "your task"
+//   node bot.js --dry-run "your task"        (show what would happen, call no model)
+//   node bot.js --plan-only "your task"      (let the front desk decide, show the plan, stop)
+//   node bot.js --no-plan "your task"        (never split, treat it as one job)
+//   node bot.js --force claude:opus "task"   (skip the front desk, pick yourself; list with commas for fallbacks)
 //
 // The web page (node server.js) uses the same core.js, so both behave the same way.
 
@@ -31,7 +31,7 @@ async function main() {
 
   const task = words.join(" ").trim();
   if (!task) {
-    console.error('Usage: node orchestrator.js [--dry-run] [--plan-only] [--no-plan] [--force provider:model[,provider:model]] "your task"');
+    console.error('Usage: node bot.js [--dry-run] [--plan-only] [--no-plan] [--force provider:model[,provider:model]] "your task"');
     process.exit(1);
   }
 

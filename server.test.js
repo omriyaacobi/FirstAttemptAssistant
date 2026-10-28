@@ -61,7 +61,7 @@ test("serves the page", async () => {
   const s = await start();
   const res = await s.request("GET", "/");
   assert.strictEqual(res.status, 200);
-  assert.match(res.body, /<title>Orchestrator<\/title>/);
+  assert.match(res.body, /<title>Bot<\/title>/);
   await s.close();
 });
 
