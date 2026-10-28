@@ -48,6 +48,14 @@
 - Real self-edit approved by me (commit a0bf7bc, the colorful page): the Approve path with the real editor works end to end (merged as a local commit, not pushed until I pushed it).
 - Renamed "the orchestrator" to **Bot** (everywhere: files, page, briefing, notes). CLI is now `node bot.js "task"` (was `orchestrator.js`). The page title, headings and the sidebar button ("Improve Bot") say Bot, and `router-brief.md` tells the front desk to call itself Bot (checked: "I am Bot, a program that sends each of your tasks to the model that suits it best."). Old chat history keeps the old wording. 99 tests pass.
 
+- Independence upgrades (step 10), so I can run and grow Bot from the web page alone. 118 tests pass.
+  1. **Retry loop** (`selfedit.js`): the editor gets up to 3 attempts. After each one the code runs the checks; failing test output (which test, which value) and other problems are sent back as feedback. A change to the real project folder still stops at once (no retry). The page shows how many attempts it took.
+  2. **Restart button** ("Restart Bot" in the Improve panel, and after approving a code change): `start-web.cmd` now loops; the server exits with code 75 and the loop starts it again. Any other exit (a crash) stops the loop and prints how to undo (`git revert HEAD`), so a broken change cannot crash forever. Restart only works when started with `start-web.cmd` (it sets `BOT_SUPERVISED=1`); `start-web.cmd nobrowser` skips opening a tab.
+  3. **Chat handoff**: new front desk action `improve`. When I ask Bot in the chat to change itself, the reply has a button "Open Improve Bot with this request" that fills in the Improve box. I still press Start.
+  4. **Push to GitHub** (GitHub card in the Improve panel): `gitops.js` lists commits not on GitHub and pushes them with a plain `git push` (never force; refuses if a tracked file looks like `.env`). The page asks me to confirm and reminds me the repo is public. `gitops.js` is protected from the editor.
+  - Live-tested: restart (new process, page kept working), chat handoff in the browser (button appeared, box filled in), push of commit 300dde0 through Bot's own route. NOT live-tested yet: the retry loop with the real editor (covered by tests with a fake editor).
+  - Still needs Claude Code (by design): changes to protected files (`server.js`, `selfedit.js`, `store.js`, `gitops.js`, `.gitignore`, `start-web.cmd`), installs/logins, and recovering if Bot will not start (`git revert HEAD` in a terminal, then start-web.cmd).
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
