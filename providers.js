@@ -38,6 +38,25 @@ function askAgy(question, model) {
   });
 }
 
+// Asks agy for an answer that must match a JSON schema (a description of the shape we want).
+// agy only allows --json-schema together with --output-format json, and puts the clean
+// result in a "structured_output" field. Returns that result as a JavaScript object.
+function askAgyStructured(question, model, schema) {
+  checkModelName(model);
+  const args = ["-p", question, "--model", model, "--output-format", "json", "--json-schema", JSON.stringify(schema)];
+  return new Promise((resolve, reject) => {
+    execFile(AGY_CMD, args, { maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      if (error) return reject(new Error(stderr || error.message));
+      try {
+        const envelope = JSON.parse(stdout);
+        resolve(envelope.structured_output ?? JSON.parse(envelope.response));
+      } catch (parseError) {
+        reject(new Error("agy did not return valid structured output"));
+      }
+    });
+  });
+}
+
 const PROVIDERS = { claude: askClaude, agy: askAgy };
 
 function ask(provider, model, question) {
@@ -65,4 +84,4 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, PROVIDERS };
+module.exports = { ask, askChain, askAgyStructured, PROVIDERS };

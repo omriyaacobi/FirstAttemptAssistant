@@ -18,10 +18,13 @@
 
 - Routing v2 done: each task type now has a **chain** of models (first choice + fallbacks) in `router.js` (`CHAINS`). Gemini is the default, `claude` CLI first for code, Claude-in-`agy` last resort only. `askChain` in `providers.js` tries the chain in order and moves on when a model fails or returns nothing. `--force a:x,b:y` lets you test your own chain. 12 tests pass (`node --test`); live-tested fallback with a fake model.
 
+- Planner done (step 5a): `planner.js` splits a multi-part task into labeled sub-tasks (types: quick, code, hard, google, general) and runs them, independent ones in parallel; a step that needs an earlier answer gets it in its prompt; if a step fails, steps depending on it are skipped. Flow: `looksMultiPart` (free keyword check) -> `plan` (Gemini Flash call with `--json-schema`; needs `--output-format json`, result in `structured_output`) -> `validatePlan` (never trust model output) -> `runPlan`. Falls back to the old single-job route if the planner fails. Flags: `--plan-only`, `--no-plan`, `--dry-run`. 23 tests pass. Live test: a 3-part task (explain, code, compare) finished in 21s with Gemini Flash, Claude Sonnet and Argon in parallel.
+- Planner caveats: the keyword check can trigger on single tasks (costs one small Flash call, then handled as one job); the `claude` CLI sometimes answers like an agent ("I didn't save this to a file"); `needs` was empty in my test because the planner judged the steps independent.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
-7. Simple interface (command line first, web page maybe).
+7. Local web page (text box in the browser; server listening on 127.0.0.1 only) so I can use the orchestrator without Claude.
 
 ## Remember
 - Claude Pro tokens work through Claude Code; a separate Anthropic API key is billed separately.

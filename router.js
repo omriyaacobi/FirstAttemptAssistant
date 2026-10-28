@@ -65,4 +65,10 @@ function route(task) {
   return { chain: CHAINS.default, rule: "default", reason: "no rule matched, using the default" };
 }
 
-module.exports = { route, MODELS, CHAINS, RULES };
+// The planner labels each sub-task with a type; this turns a type into its model chain.
+// "general" (writing, summaries, explanations) uses the default chain.
+function chainForType(type) {
+  return CHAINS[type] || CHAINS.default;
+}
+
+module.exports = { route, chainForType, MODELS, CHAINS, RULES };
