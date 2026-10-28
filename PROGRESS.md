@@ -55,10 +55,17 @@
   4. **Push to GitHub** (GitHub card in the Improve panel): `gitops.js` lists commits not on GitHub and pushes them with a plain `git push` (never force; refuses if a tracked file looks like `.env`). The page asks me to confirm and reminds me the repo is public. `gitops.js` is protected from the editor.
   - Live-tested: restart (new process, page kept working), chat handoff in the browser (button appeared, box filled in), push of commit 300dde0 through Bot's own route. NOT live-tested yet: the retry loop with the real editor (covered by tests with a fake editor).
   - Still needs Claude Code (by design): changes to protected files (`server.js`, `selfedit.js`, `store.js`, `gitops.js`, `.gitignore`, `start-web.cmd`), installs/logins, and recovering if Bot will not start (`git revert HEAD` in a terminal, then start-web.cmd).
+- Quota-aware routing (step 11, branch `claude/quota-routing-8f82cd`, NOT pushed or merged yet). 137 tests pass (118 old + 19 new).
+  - Idea: when a quota pool is nearly empty, models from that pool move to the END of their fallback chain, so a pool with room is tried first. Nothing is ever removed, and if every model is low the order stays.
+  - Real pools in `agy -p "/usage"` (checked 2026-10-28): "Gemini Models", "Claude and GPT models", and "Gemini 4 Argon" (its own pool, weekly only). The Claude CLI plan has NO numbers there, so Bot can't see it and never treats it as low.
+  - Files: `quota.js` (new): `lowPools` (pure: is a pool under 15%? one constant, `LOW_THRESHOLD`), `prioritize` (pure: reorder a chain), `createQuota` (runs `/usage`, caches 5 min, retries a failed lookup only after 1 min, tasks share one lookup; it never throws, a failure means "route normally"). `router.js`: every model has a `pool` field. `core.js`: reorders chains (single tasks, fallback, planner steps) and logs `[quota] low: ...`. `frontdesk.js`: the prompt gets a "Low quota right now" line naming affected destinations (advice; the code reorder is the guarantee). `planner.js`: `runPlan` takes a `chainFor` option. `router-brief.md`: one line explaining the hint. `bot.js --dry-run` now prints the real quota state (calls no model).
+  - `--force` chains are never reordered (you picked them).
+  - Small duplication: `quota.js` has its own `parseUsage` copy because `server.js` is protected and was left untouched. If you ever edit `server.js` with Claude Code, make it import `parseUsage` from `quota.js`.
+  - Not done: the web page does not show "quota changed the route" separately (it appears in the log lines only); the planner's own model choice (flash-high, argon-low) is not quota-aware; the Claude plan can't be tracked.
 
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
-6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
+6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
 7. Web page polish: render markdown safely (tables, math), summarize old messages instead of dropping them, quota warnings.
 
 ## Remember

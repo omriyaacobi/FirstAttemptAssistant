@@ -4,14 +4,15 @@
 //
 // Usage:
 //   node bot.js "your task"
-//   node bot.js --dry-run "your task"        (show what would happen, call no model)
+//   node bot.js --dry-run "your task"        (show what would happen and the quota state, call no model)
 //   node bot.js --plan-only "your task"      (let the front desk decide, show the plan, stop)
 //   node bot.js --no-plan "your task"        (never split, treat it as one job)
 //   node bot.js --force claude:opus "task"   (skip the front desk, pick yourself; list with commas for fallbacks)
 //
 // The web page (node server.js) uses the same core.js, so both behave the same way.
 
-const { DEFAULT_CHAIN } = require("./router");
+const { DEFAULT_CHAIN, DESTINATIONS } = require("./router");
+const { getLowPools, prioritize } = require("./quota");
 const { FRONT_DESK_MODEL } = require("./frontdesk");
 const { handleTask, chainText, label } = require("./core");
 
@@ -36,6 +37,13 @@ async function main() {
   }
 
   if (dryRun) {
+    // Reads the real quota (agy /usage; this calls no model) and shows what it would change.
+    const low = await getLowPools();
+    console.error(low.length ? `[quota] low pools: ${low.map((p) => `${p.pool} ${p.remaining}%`).join(", ")}` : "[quota] no pool is low (or the lookup failed), routing normally");
+    for (const [name, chain] of Object.entries(DESTINATIONS)) {
+      const { chain: reordered, moved } = prioritize(chain, low);
+      if (moved.length) console.error(`[quota] ${name}: ${chainText(reordered)}`);
+    }
     if (forced) return console.error(`[router] plan: ${forced.split(",").join("  ->  ")}`);
     console.error(`[frontdesk] would ask ${label(FRONT_DESK_MODEL)} to decide (no model is called in a dry run)`);
     return console.error(`[router] if it fails, Claude Sonnet takes it: ${chainText(DEFAULT_CHAIN)}`);
