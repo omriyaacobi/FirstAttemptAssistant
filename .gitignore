@@ -14,3 +14,6 @@ Thumbs.db
 # Experiment output
 experiments/compare-results.json
 experiments/empty/
+
+# Saved conversations (private, never commit)
+data/

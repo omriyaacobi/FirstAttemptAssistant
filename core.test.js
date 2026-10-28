@@ -4,7 +4,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { handleTask } = require("./core");
+const { handleTask, historyBlock, withContext, resultText, MAX_HISTORY_CHARS } = require("./core");
 
 const used = { provider: "agy", model: "fake" };
 
@@ -77,6 +77,66 @@ test("log receives progress messages", async () => {
   const logs = [];
   await handleTask("hi", { deps: fakes(), log: (l) => logs.push(l) });
   assert.ok(logs.some((l) => l.startsWith("[router]")));
+});
+
+test("history is pasted in front of the new message for the models", async () => {
+  let received = null;
+  const deps = fakes({ askChain: async (chain, prompt) => { received = prompt; return { answer: "x", used }; } });
+  const history = [{ role: "user", text: "My name is Omri" }, { role: "assistant", text: "Nice to meet you" }];
+  await handleTask("What is my name?", { history, deps });
+  assert.match(received, /User: My name is Omri/);
+  assert.match(received, /Assistant: Nice to meet you/);
+  assert.match(received, /What is my name\?$/); // the new message comes last
+});
+
+test("routing decides from the newest message only, not from the history", async () => {
+  let routedOn = null;
+  const deps = fakes({ route: (t) => { routedOn = t; return { chain: [used], rule: "quick", reason: "test" }; } });
+  await handleTask("short follow-up", { history: [{ role: "user", text: "a very long earlier message ".repeat(50) }], deps });
+  assert.strictEqual(routedOn, "short follow-up");
+});
+
+test("with no history the model gets the task unchanged", async () => {
+  let received = null;
+  const deps = fakes({ askChain: async (chain, prompt) => { received = prompt; return { answer: "x", used }; } });
+  await handleTask("plain task", { deps });
+  assert.strictEqual(received, "plain task");
+});
+
+test("a split plan also receives the history, and the planner gets it as context", async () => {
+  let planContext = null;
+  let runPrompt = null;
+  const deps = fakes({
+    looksMultiPart: () => true,
+    plan: async (t, opts) => { planContext = opts.context; return { subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }, { id: 2, task: "b", type: "quick", needs: [] }], plannedBy: "p" }; },
+    runPlan: async (subtasks, prompt) => { runPrompt = prompt; return subtasks.map((s) => ({ ...s, answer: "ok", used })); },
+  });
+  await handleTask("a then b", { history: [{ role: "user", text: "earlier" }], deps });
+  assert.match(planContext, /User: earlier/);
+  assert.match(runPrompt, /User: earlier/);
+});
+
+test("historyBlock keeps the newest messages when the history is too long", () => {
+  const history = Array.from({ length: 100 }, (_, i) => ({ role: "user", text: `message-${i} ` + "x".repeat(500) }));
+  const block = historyBlock(history);
+  assert.ok(block.length <= MAX_HISTORY_CHARS + 200); // small allowance for the heading
+  assert.match(block, /message-99/); // newest kept
+  assert.doesNotMatch(block, /message-0 /); // oldest dropped
+});
+
+test("historyBlock cuts one huge message and returns empty text for no history", () => {
+  assert.strictEqual(historyBlock([]), "");
+  assert.strictEqual(historyBlock(undefined), "");
+  const block = historyBlock([{ role: "assistant", text: "y".repeat(10000) }]);
+  assert.ok(block.length < 3200);
+});
+
+test("withContext and resultText", () => {
+  assert.strictEqual(withContext("hi", []), "hi");
+  assert.strictEqual(resultText({ mode: "single", answer: "A" }), "A");
+  const split = resultText({ mode: "split", steps: [{ id: 1, task: "t1", answer: "a1" }, { id: 2, task: "t2", error: "boom" }] });
+  assert.match(split, /Step 1: t1\na1/);
+  assert.match(split, /Step 2: t2\n\(failed\)/);
 });
 
 test("forced chains skip routing and planning", async () => {

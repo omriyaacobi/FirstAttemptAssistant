@@ -25,10 +25,16 @@
   - Security checks in `server.js` (each has a test): only 127.0.0.1; Host header must be localhost (blocks DNS rebinding); Origin / Sec-Fetch-Site must be same-origin (blocks other websites); JSON content-type only; body and task size limits; max 2 tasks at once. The page uses `textContent` only, never `innerHTML`, because model output is untrusted.
   - Known limits: answers show as plain text (markdown tables, LaTeX like `$\sqrt{n}$` appear raw); no history; the server must be running (close the window to stop it); if port 3000 is busy use `PORT=3001 node server.js`.
 
+- Chat + memory done (step 7b), after my first feedback on the web page (text box didn't clear, no memory between prompts): the page is now a real chat. Sidebar of saved conversations (open, new, delete), message thread, box clears on send, Enter sends / Shift+Enter new line, `dir="auto"` so Hebrew displays right-to-left. 69 tests pass.
+  - How memory works: the models remember nothing, and different models answer different messages. So `core.js` pastes the recent conversation (`historyBlock`, newest 12000 chars, each message cut at 3000) in front of each new message. Routing and the planner decide from the newest message only. Verified live: Claude Sonnet used a fact (dog's name) said earlier in a Gemini turn.
+  - Storage: `store.js` saves one JSON file per conversation in `data/conversations/` (git-ignored, private; the repo is PUBLIC so never remove that line from .gitignore). Ids are 16 hex chars and validated everywhere because the id becomes a file path (path-traversal test included). Writes go to a temp file then rename. Tests use temp folders, never the real data folder.
+  - Why the orchestrator can't see the Claude Code chat: it is a separate program that starts `claude -p` / `agy -p` fresh each time. Those calls do not share the Claude Code session where we build the project.
+  - Limits: memory is the pasted text, so very long chats lose their oldest messages; no auto-summary; two messages sent at once in the same chat can overwrite each other.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
-7. Web page polish: render markdown safely, keep a history of past tasks, show quota warnings.
+7. Web page polish: render markdown safely (tables, math), summarize old messages instead of dropping them, quota warnings.
 
 ## Remember
 - Claude Pro tokens work through Claude Code; a separate Anthropic API key is billed separately.

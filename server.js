@@ -2,10 +2,17 @@
 // A tiny web server that lets you use the orchestrator from Chrome.
 // Start it with:  node server.js   then open  http://localhost:3000
 //
-// A server is a program that waits for requests and sends back responses. Ours has 3 routes:
-//   GET  /           -> the page itself (public/index.html)
-//   GET  /api/usage  -> your agy quota, as JSON
-//   POST /api/ask    -> run a task through the orchestrator, streaming progress as it goes
+// A server is a program that waits for requests and sends back responses. Ours has these routes:
+//   GET    /                       -> the page itself (public/index.html)
+//   GET    /api/usage              -> your agy quota, as JSON
+//   POST   /api/ask                -> run a task (inside a conversation), streaming progress as it goes
+//   GET    /api/conversations      -> the list of saved conversations
+//   GET    /api/conversations/:id  -> one conversation with all its messages
+//   DELETE /api/conversations/:id  -> delete a conversation
+//
+// Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
+// The models themselves remember nothing, so for each new message we send them the recent
+// conversation as context (see core.js).
 //
 // SECURITY: this server can start tools that run under YOUR logins and spend YOUR quota,
 // so it is locked down in several ways (see the checks below). Only built-in Node modules
@@ -15,7 +22,8 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
-const { handleTask } = require("./core");
+const { handleTask, resultText } = require("./core");
+const { createStore } = require("./store");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -64,7 +72,7 @@ const sendJson = (res, status, data) => {
   res.end(JSON.stringify(data));
 };
 
-function createServer({ handle = handleTask, usage = getUsage } = {}) {
+function createServer({ handle = handleTask, usage = getUsage, store = createStore(path.join(__dirname, "data", "conversations")) } = {}) {
   let running = 0;
 
   const server = http.createServer(async (req, res) => {
@@ -103,6 +111,19 @@ function createServer({ handle = handleTask, usage = getUsage } = {}) {
       }
     }
 
+    // Saved conversations
+    if (req.method === "GET" && url.pathname === "/api/conversations") {
+      return sendJson(res, 200, { conversations: store.list() });
+    }
+    const conversationRoute = url.pathname.match(/^\/api\/conversations\/([^/]+)$/);
+    if (conversationRoute && req.method === "GET") {
+      const conversation = store.get(conversationRoute[1]);
+      return conversation ? sendJson(res, 200, conversation) : sendJson(res, 404, { error: "conversation not found" });
+    }
+    if (conversationRoute && req.method === "DELETE") {
+      return store.remove(conversationRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "conversation not found" });
+    }
+
     // Run a task
     if (req.method === "POST" && url.pathname === "/api/ask") {
       // CHECK 3 - only accept JSON. A web page on another site can't send JSON to us without
@@ -123,6 +144,14 @@ function createServer({ handle = handleTask, usage = getUsage } = {}) {
       if (!task) return sendJson(res, 400, { error: "task is empty" });
       if (task.length > MAX_TASK_CHARS) return sendJson(res, 413, { error: `task is longer than ${MAX_TASK_CHARS} characters` });
 
+      // Continuing a saved conversation? Its earlier messages become the memory for this task.
+      let conversation = null;
+      if (input.conversationId !== undefined && input.conversationId !== null) {
+        conversation = store.get(input.conversationId);
+        if (!conversation) return sendJson(res, 404, { error: "conversation not found" });
+      }
+      const history = conversation ? conversation.messages.map((m) => ({ role: m.role, text: m.text })) : [];
+
       // CHECK 4 - a cap on simultaneous tasks
       if (running >= MAX_RUNNING) return sendJson(res, 429, { error: "busy, wait for the current tasks to finish" });
       running++;
@@ -131,9 +160,21 @@ function createServer({ handle = handleTask, usage = getUsage } = {}) {
       // so the page can show what is happening while the models work.
       res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" });
       const send = (obj) => res.write(JSON.stringify(obj) + "\n");
+      const logLines = [];
       try {
-        const result = await handle(task, { noPlan: input.noPlan === true, log: (text) => send({ type: "log", text }) });
-        send({ type: "result", result });
+        const result = await handle(task, {
+          noPlan: input.noPlan === true,
+          history,
+          log: (text) => { logLines.push(text); send({ type: "log", text }); },
+        });
+        // Save both messages. The first message of a brand-new conversation becomes its title.
+        if (!conversation) conversation = store.create(task);
+        const at = Date.now();
+        store.append(conversation.id, [
+          { role: "user", text: task, at },
+          { role: "assistant", text: resultText(result), result, log: logLines.slice(-40), at },
+        ]);
+        send({ type: "result", result, conversationId: conversation.id });
       } catch (error) {
         send({ type: "error", message: String(error.message).slice(0, 500) });
       } finally {

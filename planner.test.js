@@ -55,6 +55,14 @@ test("plan falls back to the second planner model when the first fails", async (
   assert.strictEqual(tried.length, 2);
 });
 
+test("plan passes the conversation context to the planner model", async () => {
+  let seenPrompt = null;
+  const fake = async (prompt) => { seenPrompt = prompt; return { subtasks: [{ id: 1, task: "x", type: "quick", needs: [] }] }; };
+  await plan("do the same for Python", { askStructured: fake, context: "User: write a JS function" });
+  assert.match(seenPrompt, /User: write a JS function/);
+  assert.match(seenPrompt, /do the same for Python/);
+});
+
 test("plan throws when every planner model fails", async () => {
   await assert.rejects(plan("anything", { askStructured: async () => ({ nope: true }) }), /Planner failed/);
 });

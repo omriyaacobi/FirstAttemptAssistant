@@ -47,10 +47,11 @@ function looksMultiPart(task) {
   );
 }
 
-function plannerPrompt(task) {
+function plannerPrompt(task, context = "") {
   return `You split a user's request into separate jobs for a team of AI models.
-
+${context ? "\nEarlier conversation, for reference only (never split it, only use it to understand what the request refers to):\n" + context + "\n" : ""}
 Rules:
+- If the request refers to earlier messages ("it", "the same thing", "that code"), write each subtask so it makes sense without the conversation.
 - Split only when the request clearly contains separate jobs. If it is a single job, return exactly one subtask whose "task" is the request unchanged.
 - Each subtask must be self-contained: copy into it any text, code or details from the request that it needs.
 - "type" is one of: quick (short factual answer or small rewrite), code (write, fix or explain code), hard (deep reasoning, design, analysis, comparing options), google (about the user's Google Calendar, Gmail, Docs, Drive and similar), general (everything else: writing, summaries, explanations).
@@ -92,11 +93,11 @@ function validatePlan(raw) {
 }
 
 // Step 2: ask a Gemini model to split the task. Returns the cleaned list, or throws.
-async function plan(task, { askStructured = askAgyStructured } = {}) {
+async function plan(task, { askStructured = askAgyStructured, context = "" } = {}) {
   const errors = [];
   for (const { model } of PLANNER_MODELS) {
     try {
-      const subtasks = validatePlan(await askStructured(plannerPrompt(task), model, SCHEMA));
+      const subtasks = validatePlan(await askStructured(plannerPrompt(task, context), model, SCHEMA));
       if (subtasks) return { subtasks, plannedBy: model };
       errors.push(`${model}: unusable plan`);
     } catch (error) {
