@@ -42,6 +42,8 @@
   - Other rules: only one proposal at a time; project must be clean (no uncommitted changes) to start; approve refused if the project got new commits since or if the copy changed after testing; baseline tests must pass before the editor starts; max 25 files / 300 KB diff. Proposals are saved in `data/selfedit/` (git-ignored). Approved changes to code files need a server restart; page-only changes just need F5.
   - Gotcha found: when tests run inside `node --test`, children inherit `NODE_TEST_CONTEXT` and an inner `node --test` misbehaves; `selfedit.js` strips it.
   - The front desk briefing now tells users to use the "Improve the orchestrator" button when they ask it to change itself.
+  - Live test with the REAL editor (Claude Sonnet, `--restricted`): a one-line subtitle change in `public/index.html` took 18s, produced a one-line diff, 97/97 tests passed, status "ready"; reviewed in the page, then Rejected. Verified afterwards: project clean, branch + temp copy gone, nothing pushed. The Approve path is covered by the git-based tests but has not been exercised with the real editor yet.
+  - Not covered yet: the editor cannot run tests itself (it has no shell), so it can only reason about whether its tests pass; the gate runs them afterwards. A big change may take several rounds of proposal -> reject -> new request.
 
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
