@@ -93,4 +93,4 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, PROVIDERS };
+module.exports = { ask, askChain, askAgyStructured, PROVIDERS, CLAUDE_CMD };

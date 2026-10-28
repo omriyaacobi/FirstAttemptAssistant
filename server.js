@@ -9,6 +9,11 @@
 //   GET    /api/conversations      -> the list of saved conversations
 //   GET    /api/conversations/:id  -> one conversation with all its messages
 //   DELETE /api/conversations/:id  -> delete a conversation
+//   GET    /api/selfedit           -> the list of self-edit proposals
+//   POST   /api/selfedit           -> start one: an editor model changes a PRIVATE COPY of the project
+//   GET    /api/selfedit/:id       -> one proposal (diff, test results)
+//   POST   /api/selfedit/:id/approve | /reject  -> merge it into the project, or throw it away
+//   (see selfedit.js: nothing changes in your project until you approve, and nothing is pushed)
 //
 // Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
 // The models themselves remember nothing, so for each new message we send them the recent
@@ -24,6 +29,7 @@ const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { handleTask, resultText } = require("./core");
 const { createStore } = require("./store");
+const { createSelfEdit } = require("./selfedit");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -72,7 +78,33 @@ const sendJson = (res, status, data) => {
   res.end(JSON.stringify(data));
 };
 
-function createServer({ handle = handleTask, usage = getUsage, store = createStore(path.join(__dirname, "data", "conversations")) } = {}) {
+// Reads a JSON request body. Sends the error response itself and returns null if the request is bad.
+// Only "Content-Type: application/json" is accepted. A web page on another site cannot send JSON
+// to us without the browser first asking our permission, and we never give it.
+async function readJsonBody(req, res) {
+  if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+    sendJson(res, 415, { error: "send JSON" });
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(await readBody(req));
+    if (parsed && typeof parsed === "object") return parsed;
+    throw new Error("not an object");
+  } catch (error) {
+    sendJson(res, error.status || 400, { error: error.status ? error.message : "invalid JSON" });
+    return null;
+  }
+}
+
+// Turns an error from selfedit.js into an HTTP status.
+const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|uncommitted|new commits|only "ready"|blocked|changed after/.test(error.message) ? 409 : 400);
+
+function createServer({
+  handle = handleTask,
+  usage = getUsage,
+  store = createStore(path.join(__dirname, "data", "conversations")),
+  selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
+} = {}) {
   let running = 0;
 
   const server = http.createServer(async (req, res) => {
@@ -122,6 +154,41 @@ function createServer({ handle = handleTask, usage = getUsage, store = createSto
     }
     if (conversationRoute && req.method === "DELETE") {
       return store.remove(conversationRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "conversation not found" });
+    }
+
+    // Self-edit proposals. Only YOU start these (from the "Improve the orchestrator" panel);
+    // the models can never start one on their own.
+    if (url.pathname === "/api/selfedit" && req.method === "GET") {
+      return sendJson(res, 200, { proposals: selfEdit.list(), busy: selfEdit.isActive() });
+    }
+    if (url.pathname === "/api/selfedit" && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      const model = input.model === undefined ? "sonnet" : input.model;
+      if (!["sonnet", "opus"].includes(model)) return sendJson(res, 400, { error: "model must be sonnet or opus" });
+      try {
+        const { record } = await selfEdit.start(input.request, { model });
+        return sendJson(res, 202, { proposal: record });
+      } catch (error) {
+        return sendJson(res, selfEditStatus(error), { error: error.message });
+      }
+    }
+    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject))?$/);
+    if (selfEditRoute) {
+      const [, id, action] = selfEditRoute;
+      if (!action && req.method === "GET") {
+        const proposal = selfEdit.get(id);
+        return proposal ? sendJson(res, 200, { proposal }) : sendJson(res, 404, { error: "proposal not found" });
+      }
+      if (action && req.method === "POST") {
+        if (!(await readJsonBody(req, res))) return;
+        try {
+          const proposal = action === "approve" ? await selfEdit.approve(id) : await selfEdit.reject(id);
+          return sendJson(res, 200, { proposal });
+        } catch (error) {
+          return sendJson(res, selfEditStatus(error), { error: error.message });
+        }
+      }
     }
 
     // Run a task

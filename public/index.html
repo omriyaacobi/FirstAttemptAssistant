@@ -68,6 +68,21 @@
   .bar > span { display: block; height: 100%; background: var(--ok); }
   .status { color: var(--muted); font-size: .85rem; min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
 
+  /* Improve-the-orchestrator panel */
+  .chat[hidden] { display: none; }
+  .scroll { flex: 1; overflow-y: auto; padding: 24px 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+  .proposal .open { display: block; width: 100%; text-align: left; background: transparent; color: var(--text); padding: 8px; font-weight: 400; border-radius: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proposal.active .open { background: var(--mine); }
+  .st-ok { color: var(--ok); } .st-bad { color: var(--bad); } .st-run { color: var(--accent); } .st-muted { color: var(--muted); }
+  .diff { max-height: 480px; overflow: auto; font-size: .8rem; }
+  .diff span { display: block; white-space: pre; }
+  .d-add { background: rgba(47, 158, 68, .18); } .d-del { background: rgba(201, 42, 42, .18); }
+  .d-hunk { color: var(--muted); } .d-file { font-weight: 700; margin-top: 6px; }
+  .actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  button.danger { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
     .topbar { display: flex; justify-content: space-between; align-items: center; }
@@ -85,6 +100,7 @@
       <p class="sub">Picks the best model for each task.</p>
     </div>
     <button id="new">+ New chat</button>
+    <button class="ghost" id="improveBtn" title="Let the orchestrator propose changes to its own code, for you to review">Improve the orchestrator</button>
     <nav aria-label="Conversations"><ul id="chats"></ul></nav>
     <section aria-label="Quota">
       <div class="row" style="margin-top:0">
@@ -95,7 +111,7 @@
     </section>
   </aside>
 
-  <section class="chat">
+  <section class="chat" id="chatView">
     <div class="topbar">
       <button class="ghost" id="menu" aria-label="Show conversations">Chats</button>
       <strong>Orchestrator</strong>
@@ -111,6 +127,29 @@
         </div>
       </div>
     </form>
+  </section>
+
+  <section class="chat" id="improveView" hidden>
+    <div class="topbar">
+      <button class="ghost" id="menu2" aria-label="Show conversations">Chats</button>
+      <strong>Improve the orchestrator</strong>
+    </div>
+    <div class="scroll"><div class="inner">
+      <div class="row" style="margin-top:0">
+        <h1>Improve the orchestrator</h1>
+        <button class="ghost" id="backToChat">Back to chat</button>
+      </div>
+      <p class="sub">Describe a change to the orchestrator's own code or page. An editor model (Claude) makes it in a <strong>private copy</strong> of the project, never in your live files. The tests run automatically, and you review the changes below. Nothing happens to your project until you press Approve, and nothing is ever pushed to GitHub.</p>
+      <textarea id="improveText" dir="auto" aria-label="The change you want" placeholder="For example: make the page more colorful, with a different color for Gemini and Claude answers."></textarea>
+      <div class="row">
+        <label>Editor model <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select></label>
+        <span class="status" id="improveStatus" role="status"></span>
+        <button id="improveStart">Start</button>
+      </div>
+      <h2 style="font-size:1.05rem">Proposals</h2>
+      <ul id="proposals"></ul>
+      <div id="proposalDetail"></div>
+    </div></div>
   </section>
 </div>
 
@@ -228,6 +267,7 @@
     if (!res.ok) return;
     const conversation = await res.json();
     currentId = id;
+    showView("chat");
     $("messages").replaceChildren();
     conversation.messages.forEach((m) => {
       if (m.role === "user") addUser(m.text);
@@ -246,6 +286,7 @@
   function newChat() {
     if (busy) return;
     currentId = null;
+    showView("chat");
     showEmpty();
     $("side").classList.remove("open");
     $("task").focus();
@@ -362,6 +403,174 @@
   $("new").addEventListener("click", newChat);
   $("refresh").addEventListener("click", loadQuota);
   $("menu").addEventListener("click", () => $("side").classList.toggle("open"));
+
+  // ---- Improve the orchestrator (self-edit) ----
+  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted" };
+  let openProposalId = null;
+  let renderedStatus = null;
+  let pollTimer = null;
+
+  function showView(name) {
+    $("chatView").hidden = name !== "chat";
+    $("improveView").hidden = name !== "improve";
+    $("side").classList.remove("open");
+    if (name === "improve") loadProposals();
+  }
+
+  const statusBadge = (status) => el("span", "badge st-" + (STATUS_CLASS[status] || "muted"), status);
+
+  // While an editor is working, refresh every few seconds; stop when it is done.
+  function schedulePoll(busy) {
+    if (busy && !pollTimer) {
+      pollTimer = setInterval(() => {
+        loadProposals();
+        if (openProposalId) openProposal(openProposalId, true);
+      }, 3000);
+    } else if (!busy && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  async function loadProposals() {
+    try {
+      const { proposals, busy } = await (await fetch("/api/selfedit")).json();
+      const list = $("proposals");
+      list.replaceChildren();
+      if (!proposals.length) list.appendChild(el("li", "sub", "No proposals yet."));
+      proposals.forEach((p) => {
+        const li = el("li", "proposal" + (p.id === openProposalId ? " active" : ""));
+        const open = el("button", "open");
+        open.append(statusBadge(p.status), document.createTextNode(" " + p.request));
+        open.addEventListener("click", () => openProposal(p.id));
+        li.appendChild(open);
+        list.appendChild(li);
+      });
+      $("improveStart").disabled = busy;
+      $("improveStatus").textContent = busy ? "An editor is working..." : "";
+      schedulePoll(busy);
+    } catch (error) { /* the list refreshes again on the next poll */ }
+  }
+
+  // The diff, with added and removed lines colored. textContent only, as everywhere on this page.
+  function renderDiff(text) {
+    const pre = el("pre", "diff");
+    pre.dir = "ltr";
+    const lines = text.split("\n");
+    lines.slice(0, 4000).forEach((line) => {
+      const cls = line.startsWith("diff --git") ? "d-file" : line.startsWith("@@") ? "d-hunk" : line.startsWith("+") && !line.startsWith("+++") ? "d-add" : line.startsWith("-") && !line.startsWith("---") ? "d-del" : "";
+      pre.appendChild(el("span", cls, line || " "));
+    });
+    if (lines.length > 4000) pre.appendChild(el("span", "d-hunk", "... (diff cut at 4000 lines)"));
+    return pre;
+  }
+
+  function renderProposal(p) {
+    const box = el("section", "card");
+    const head = el("div", "step-head");
+    head.append(statusBadge(p.status), el("span", "", p.request));
+    box.appendChild(head);
+    box.appendChild(el("p", "sub", p.note || ""));
+
+    if (p.summary) {
+      box.appendChild(el("strong", "", "What the editor says"));
+      box.appendChild(renderText(p.summary));
+    }
+    if (p.blocked && p.blocked.length) {
+      box.appendChild(el("strong", "err", "Why it cannot be approved"));
+      const ul = el("ul");
+      p.blocked.forEach((reason) => ul.appendChild(el("li", "err", reason)));
+      box.appendChild(ul);
+    }
+    if (p.files && p.files.length) {
+      box.appendChild(el("strong", "", `Files changed (${p.files.length})`));
+      const ul = el("ul");
+      p.files.forEach((f) => ul.appendChild(el("li", "", `${{ M: "modified", A: "added", D: "deleted" }[f.status] || f.status}: ${f.path}`)));
+      box.appendChild(ul);
+    }
+    if (p.tests && p.tests.total !== undefined) {
+      const t = p.tests;
+      box.appendChild(el("p", t.ok ? "" : "err", t.ok ? `Tests pass: ${t.total} (before the change: ${t.baselineTotal})` : `Tests FAIL (${t.failed} failing of ${t.total})`));
+      if (t.tail) {
+        const details = el("details");
+        details.append(el("summary", "", "Test output"), el("pre", "", t.tail));
+        box.appendChild(details);
+      }
+    }
+    if (p.diff) {
+      box.appendChild(el("strong", "", "The changes"));
+      box.appendChild(renderDiff(p.diff));
+    }
+    if (p.status === "approved") {
+      box.appendChild(el("p", "", `Merged as commit ${String(p.mergedCommit).slice(0, 7)}. It is on your computer only; push it to GitHub yourself when you are happy.`));
+      box.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Restart the server (close its window and double-click start-web.cmd) to load the new code." : "Only the page changed: reload it (F5) to see the result."));
+    }
+
+    const actions = el("div", "actions");
+    if (p.status === "ready") {
+      const approve = el("button", "", "Approve and merge");
+      approve.addEventListener("click", () => decide(p.id, "approve"));
+      actions.appendChild(approve);
+    }
+    if (["ready", "blocked", "failed"].includes(p.status)) {
+      const reject = el("button", "danger", p.status === "ready" ? "Reject (throw it away)" : "Dismiss");
+      reject.addEventListener("click", () => decide(p.id, "reject"));
+      actions.appendChild(reject);
+    }
+    box.appendChild(actions);
+    return box;
+  }
+
+  async function openProposal(id, quiet) {
+    try {
+      const res = await fetch("/api/selfedit/" + id);
+      if (!res.ok) return;
+      const { proposal } = await res.json();
+      // When polling, only redraw if something changed (so scrolling through a diff is not interrupted).
+      if (quiet && id === openProposalId && proposal.status === renderedStatus) return;
+      openProposalId = id;
+      renderedStatus = proposal.status;
+      $("proposalDetail").replaceChildren(renderProposal(proposal));
+    } catch (error) { /* try again on the next poll */ }
+  }
+
+  async function decide(id, action) {
+    if (action === "approve" && !confirm("Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub.")) return;
+    try {
+      const res = await fetch(`/api/selfedit/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+    } catch (error) {
+      alert(error.message);
+    }
+    renderedStatus = null;
+    await openProposal(id);
+    loadProposals();
+  }
+
+  $("improveBtn").addEventListener("click", () => showView("improve"));
+  $("backToChat").addEventListener("click", () => showView("chat"));
+  $("menu2").addEventListener("click", () => $("side").classList.toggle("open"));
+  $("improveStart").addEventListener("click", async () => {
+    const request = $("improveText").value.trim();
+    if (!request) return;
+    $("improveStart").disabled = true;
+    try {
+      const res = await fetch("/api/selfedit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request, model: $("improveModel").value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+      $("improveText").value = "";
+      renderedStatus = null;
+      await openProposal(data.proposal.id);
+    } catch (error) {
+      $("improveStatus").textContent = error.message;
+    }
+    loadProposals();
+  });
 
   showEmpty();
   loadChats();

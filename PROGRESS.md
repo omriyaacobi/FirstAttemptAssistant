@@ -36,6 +36,13 @@
   - Cost of the design: every message first waits ~9-15s for the front desk decision (11-30s when several run at once). Easy questions are answered in that same call.
   - Calendar/Gmail/Drive are marked "NOT connected" in `router-brief.md`; flip that line when it is real.
 
+- Self-edit built (step 9): the orchestrator can propose changes to its OWN code, safely. Sidebar button "Improve the orchestrator" in the web page. Files: `selfedit.js` (the gate), routes in `server.js` (`/api/selfedit...`), panel in `public/index.html`. 97 tests pass (19 for the gate, run against REAL temporary git repos with a fake editor, so no quota).
+  - Flow: YOU start it (never a model) -> a git worktree on branch `selfedit/<id>` in a temp folder -> `claude -p --restricted --tools "Read,Glob,Grep,Edit,Write" --permission-mode acceptEdits --permission-prompts none` edits only there -> CODE checks: protected files untouched, project's tests pass, test count did not drop, real project folder untouched -> you review diff + test results in the page -> Approve = `git merge --ff-only`, NEVER pushes; Reject = delete the copy.
+  - Protected from the editor (changes are auto-rejected): `server.js`, `selfedit.js`, `store.js`, `.gitignore`, `.gitattributes`, `start-web.cmd`, `.git/`, `.github/`, `data/`, `node_modules/`, `.env*`. Everything else (page, router-brief.md, router, planner, tests...) is editable.
+  - Other rules: only one proposal at a time; project must be clean (no uncommitted changes) to start; approve refused if the project got new commits since or if the copy changed after testing; baseline tests must pass before the editor starts; max 25 files / 300 KB diff. Proposals are saved in `data/selfedit/` (git-ignored). Approved changes to code files need a server restart; page-only changes just need F5.
+  - Gotcha found: when tests run inside `node --test`, children inherit `NODE_TEST_CONTEXT` and an inner `node --test` misbehaves; `selfedit.js` strips it.
+  - The front desk briefing now tells users to use the "Improve the orchestrator" button when they ask it to change itself.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.

@@ -17,7 +17,17 @@ const { createStore } = require("./store");
 async function start(handle = async () => ({ mode: "single", answer: "hello", used: { provider: "p", model: "m" } })) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-server-"));
   const store = createStore(dir);
-  const server = createServer({ handle, store, usage: async () => [{ pool: "P", window: "W", remaining: 50, resets: "x" }] });
+  // A fake self-edit manager: it records the calls so the tests can check the routes without any git or models.
+  const calls = [];
+  const selfEdit = {
+    start: async (request, opts) => { calls.push(["start", request, opts.model]); if (request === "busy") throw new Error("another proposal is still running"); return { record: { id: "0123456789abcdef", status: "running" } }; },
+    get: (id) => (id === "0123456789abcdef" ? { id, status: "ready" } : null),
+    list: () => [{ id: "0123456789abcdef", status: "ready" }],
+    approve: async (id) => { calls.push(["approve", id]); if (id === "ffffffffffffffff") throw new Error("proposal not found"); return { id, status: "approved" }; },
+    reject: async (id) => { calls.push(["reject", id]); return { id, status: "rejected" }; },
+    isActive: () => false,
+  };
+  const server = createServer({ handle, store, selfEdit, usage: async () => [{ pool: "P", window: "W", remaining: 50, resets: "x" }] });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
 
@@ -41,7 +51,10 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
     fs.rmSync(dir, { recursive: true, force: true });
   };
 
-  return { server, port, request, ask, store, close };
+  const post = (path, body, headers = {}) =>
+    request("POST", path, { headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+
+  return { server, port, request, ask, post, calls, store, close };
 }
 
 test("serves the page", async () => {
@@ -227,6 +240,41 @@ test("SECURITY: deleting from another website is refused", async () => {
   const res = await s.request("DELETE", "/api/conversations/" + made.conversationId, { headers: { Origin: "https://evil.example.com", "Sec-Fetch-Site": "cross-site" } });
   assert.strictEqual(res.status, 403);
   assert.ok(s.store.get(made.conversationId)); // still there
+  await s.close();
+});
+
+test("self-edit: list, start, open, approve and reject go through to the manager", async () => {
+  const s = await start();
+  assert.strictEqual(JSON.parse((await s.request("GET", "/api/selfedit")).body).proposals[0].status, "ready");
+  const started = await s.post("/api/selfedit", { request: "make it blue" });
+  assert.strictEqual(started.status, 202);
+  assert.deepStrictEqual(s.calls[0], ["start", "make it blue", "sonnet"]); // sonnet is the default model
+  assert.strictEqual((await s.request("GET", "/api/selfedit/0123456789abcdef")).status, 200);
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/approve", {})).status, 200);
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/reject", {})).status, 200);
+  assert.deepStrictEqual(s.calls.slice(1), [["approve", "0123456789abcdef"], ["reject", "0123456789abcdef"]]);
+  await s.close();
+});
+
+test("self-edit: errors become the right HTTP status", async () => {
+  const s = await start();
+  assert.strictEqual((await s.post("/api/selfedit", { request: "busy" })).status, 409); // another one is running
+  assert.strictEqual((await s.request("GET", "/api/selfedit/ffffffffffffffff")).status, 404);
+  assert.strictEqual((await s.post("/api/selfedit/ffffffffffffffff/approve", {})).status, 404);
+  assert.strictEqual((await s.post("/api/selfedit", { request: "x", model: "gpt-9" })).status, 400);
+  assert.strictEqual((await s.post("/api/selfedit", { request: "x", model: "opus" })).status, 202); // opus is allowed
+  await s.close();
+});
+
+test("SECURITY: self-edit routes refuse other websites, non-JSON and a wrong Host", async () => {
+  const s = await start();
+  for (const path of ["/api/selfedit", "/api/selfedit/0123456789abcdef/approve", "/api/selfedit/0123456789abcdef/reject"]) {
+    assert.strictEqual((await s.post(path, { request: "x" }, { Origin: "https://evil.example.com" })).status, 403, path);
+    assert.strictEqual((await s.post(path, { request: "x" }, { "Sec-Fetch-Site": "cross-site" })).status, 403, path);
+    assert.strictEqual((await s.request("POST", path, { headers: { "Content-Type": "text/plain" }, body: "{}" })).status, 415, path);
+  }
+  assert.strictEqual((await s.request("GET", "/api/selfedit", { headers: { Host: "evil.example.com" } })).status, 403);
+  assert.strictEqual(s.calls.length, 0); // nothing reached the manager
   await s.close();
 });
 
