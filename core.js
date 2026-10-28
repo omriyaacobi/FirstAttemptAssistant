@@ -15,12 +15,14 @@ const { chainForDestination, chainForType, DEFAULT_CHAIN } = require("./router")
 const { askChain } = require("./providers");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
+const { getLowPools, prioritize } = require("./quota");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
-const defaultDeps = { decide, plan, runPlan, askChain, chainForType, chainForDestination };
+// lowPools says which quota pools are nearly empty (cached; never throws, see quota.js).
+const defaultDeps = { decide, plan, runPlan, askChain, chainForType, chainForDestination, lowPools: getLowPools };
 
 // ---- Conversation memory ----
 // The models have no memory of their own (every call starts from nothing), and different
@@ -65,8 +67,25 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   // The front desk decides from the newest message (plus the history for context).
   const prompt = withContext(task, history);
 
+  // Which quota pools are low right now. Asked at most once per task. If the lookup fails for any
+  // reason we treat it as "nothing is low", so quota can never break a task.
+  let lowPromise;
+  const getLow = () => (lowPromise ??= Promise.resolve().then(() => d.lowPools()).then((l) => (Array.isArray(l) ? l : []), () => []));
+
+  // Moves models from a low pool to the end of the chain and says so in the log.
+  // `low` must already be loaded (await getLow() first).
+  const quotaChain = (chain, low) => {
+    const { chain: reordered, moved } = prioritize(chain, low);
+    if (moved.length) {
+      const why = low.map((p) => `${p.pool} ${p.remaining}% left`).join(", ");
+      log(`[quota] low: ${why}. Moved to the end: ${moved.map(label).join(", ")}`);
+    }
+    return reordered;
+  };
+
   // One job: run a chain with fallbacks and return the answer.
   async function runSingle(info) {
+    if (info.rule !== "forced") info = { ...info, chain: quotaChain(info.chain, await getLow()) };
     log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
     const { answer, used } = await d.askChain(info.chain, prompt, {
@@ -90,7 +109,9 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
 
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
+    const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
+      chainFor: (type) => quotaChain(d.chainForType(type), low),
       onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
       onDone: ({ subtask, result }) =>
         log(`[planner] step ${subtask.id} ${result.error ? "FAILED: " + result.error : "done by " + label(result.used)}`),
@@ -114,7 +135,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   log(`[frontdesk] asking ${label(FRONT_DESK_MODEL)}`);
   let decision;
   try {
-    decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan });
+    decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low: await getLow() });
   } catch (error) {
     log(`[frontdesk] failed: ${error.message}. Claude Sonnet takes it.`);
     return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the front desk failed, so Claude Sonnet took it");
@@ -148,9 +169,10 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   }
   const { subtasks, plannedBy } = planned;
   log(`[planner] ${subtasks.length} step(s), planned by ${plannedBy}`);
+  const lowNow = await getLow();
   for (const s of subtasks) {
     const needs = s.needs.length ? `  (needs step ${s.needs.join(", ")})` : "";
-    log(`[planner]   ${s.id}. [${s.type}] ${s.task.slice(0, 90)}${needs}  ->  ${chainText(d.chainForType(s.type))}`);
+    log(`[planner]   ${s.id}. [${s.type}] ${s.task.slice(0, 90)}${needs}  ->  ${chainText(prioritize(d.chainForType(s.type), lowNow).chain)}`);
   }
   if (planOnly) return { mode: "plan", subtasks, plannedBy };
   if (subtasks.length > 1) return runSplit(subtasks, plannedBy);

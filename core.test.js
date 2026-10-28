@@ -15,6 +15,7 @@ const fakes = (overrides = {}) => ({
   decide: async () => ({ action: "delegate", destination: "claude-sonnet", answer: "", reason: "test" }),
   chainForDestination: () => chain,
   chainForType: () => chain,
+  lowPools: async () => [], // never the real agy /usage in tests
   askChain: async () => ({ answer: "model answer", used }),
   plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }], plannedBy: "fake-planner" }),
   runPlan: async (subtasks) => subtasks.map((s) => ({ ...s, answer: "step answer", used })),
@@ -222,4 +223,70 @@ test("withContext and resultText", () => {
   const split = resultText({ mode: "split", steps: [{ id: 1, task: "t1", answer: "a1" }, { id: 2, task: "t2", error: "boom" }] });
   assert.match(split, /Step 1: t1\na1/);
   assert.match(split, /Step 2: t2\n\(failed\)/);
+});
+
+// ---- Quota-aware routing (fake usage data; no real models) ----
+const argon = { provider: "agy", model: "argon", pool: "Gemini 4 Argon" };
+const sonnet = { provider: "claude", model: "sonnet", pool: null };
+const lowArgon = async () => [{ pool: "Gemini 4 Argon", remaining: 4 }];
+
+test("quota: a low pool's model moves to the end of the chain and the log says so", async () => {
+  let chainUsed;
+  const logs = [];
+  const deps = fakes({
+    lowPools: lowArgon,
+    chainForDestination: () => [argon, sonnet],
+    askChain: async (c) => { chainUsed = c; return { answer: "ok", used: c[0] }; },
+  });
+  await handleTask("hard thing", { deps, log: (l) => logs.push(l) });
+  assert.deepStrictEqual(chainUsed, [sonnet, argon]);
+  assert.ok(logs.some((l) => l.startsWith("[quota] low: Gemini 4 Argon 4% left")));
+});
+
+test("quota: when nothing is low the chain is untouched and nothing is logged", async () => {
+  let chainUsed;
+  const logs = [];
+  const deps = fakes({ chainForDestination: () => [argon, sonnet], askChain: async (c) => { chainUsed = c; return { answer: "ok", used: c[0] }; } });
+  await handleTask("x", { deps, log: (l) => logs.push(l) });
+  assert.deepStrictEqual(chainUsed, [argon, sonnet]);
+  assert.ok(!logs.some((l) => l.startsWith("[quota]")));
+});
+
+test("quota: a failing usage lookup never breaks the task", async () => {
+  let chainUsed;
+  const deps = fakes({
+    lowPools: async () => { throw new Error("agy exploded"); },
+    chainForDestination: () => [argon, sonnet],
+    askChain: async (c) => { chainUsed = c; return { answer: "ok", used: c[0] }; },
+  });
+  const result = await handleTask("x", { deps });
+  assert.strictEqual(result.answer, "ok");
+  assert.deepStrictEqual(chainUsed, [argon, sonnet]);
+});
+
+test("quota: the front desk is told which pools are low", async () => {
+  let seenLow;
+  const deps = fakes({ lowPools: lowArgon, decide: async (task, opts) => { seenLow = opts.low; return { action: "answer", destination: null, answer: "hi", reason: "t" }; } });
+  await handleTask("hi", { deps });
+  assert.deepStrictEqual(seenLow, [{ pool: "Gemini 4 Argon", remaining: 4 }]);
+});
+
+test("quota: a forced chain is never reordered", async () => {
+  let chainUsed;
+  const deps = fakes({ lowPools: lowArgon, askChain: async (c) => { chainUsed = c; return { answer: "ok", used: c[0] }; } });
+  await handleTask("x", { forced: "agy:argon,claude:sonnet", deps });
+  assert.deepStrictEqual(chainUsed.map((m) => m.model), ["argon", "sonnet"]);
+});
+
+test("quota: planner steps get a reordered chain too", async () => {
+  let stepChain;
+  const deps = fakes({
+    decide: decision("split"),
+    plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "hard", needs: [] }, { id: 2, task: "b", type: "hard", needs: [] }], plannedBy: "p" }),
+    lowPools: lowArgon,
+    chainForType: () => [argon, sonnet],
+    runPlan: async (subtasks, prompt, opts) => { stepChain = opts.chainFor("hard"); return subtasks.map((s) => ({ ...s, answer: "x", used })); },
+  });
+  await handleTask("a then b", { deps });
+  assert.deepStrictEqual(stepChain, [sonnet, argon]);
 });

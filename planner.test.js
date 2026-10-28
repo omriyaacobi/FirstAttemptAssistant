@@ -110,3 +110,13 @@ test("runPlan does not loop forever on an impossible dependency", async () => {
   const results = await runPlan([{ id: 1, task: "A", type: "quick", needs: [7] }], "A", { run });
   assert.match(results[0].error, /never ran/);
 });
+
+test("runPlan: chainFor lets the caller pick each step's chain", async () => {
+  const seen = [];
+  const mine = [{ provider: "x", model: "mine" }];
+  await runPlan([{ id: 1, task: "a", type: "hard", needs: [] }], "a", {
+    chainFor: (type) => { seen.push(type); return mine; },
+    run: async (c) => { seen.push(c); return { answer: "ok", used: c[0] }; },
+  });
+  assert.deepStrictEqual(seen, ["hard", mine]);
+});

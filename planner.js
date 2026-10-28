@@ -109,7 +109,7 @@ function buildSubtaskPrompt(subtask, originalTask, results, planSize) {
 
 // Step 2: run the sub-tasks. Everything whose needs are finished runs at the same time.
 // If a step fails, steps that needed it are skipped instead of guessing.
-async function runPlan(subtasks, originalTask, { run = askChain, onStart = () => {}, onDone = () => {} } = {}) {
+async function runPlan(subtasks, originalTask, { run = askChain, chainFor = chainForType, onStart = () => {}, onDone = () => {} } = {}) {
   const results = new Map();
   let pending = [...subtasks];
 
@@ -129,7 +129,7 @@ async function runPlan(subtasks, originalTask, { run = askChain, onStart = () =>
         if (failedNeed) {
           result = { id: subtask.id, error: `skipped because step ${failedNeed} failed` };
         } else {
-          const chain = chainForType(subtask.type);
+          const chain = chainFor(subtask.type); // core.js passes a quota-aware version
           onStart({ subtask, chain });
           try {
             const prompt = buildSubtaskPrompt(subtask, originalTask, results, subtasks.length);

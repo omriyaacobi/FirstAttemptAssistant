@@ -87,3 +87,15 @@ test("decide throws when the reply is unusable, so the caller can fall back", as
   await assert.rejects(decide("x", { askStructured: async () => ({ action: "delegate", destination: "evil" }), brief: "B" }), /unusable/);
   await assert.rejects(decide("x", { askStructured: async () => { throw new Error("agy down"); }, brief: "B" }), /agy down/);
 });
+
+test("quota: the prompt names low pools and the destinations they affect; silent when nothing is low", () => {
+  const { buildPrompt, quotaLine } = require("./frontdesk");
+  const low = [{ pool: "Gemini 4 Argon", remaining: 4 }];
+  const line = quotaLine(low);
+  assert.match(line, /Gemini 4 Argon \(4% left\)/);
+  assert.match(line, /gemini-argon-medium/);
+  assert.doesNotMatch(line, /claude-opus/);
+  assert.ok(buildPrompt("hi", { brief: "BRIEF", low }).includes(line));
+  assert.strictEqual(quotaLine([]), "");
+  assert.ok(!buildPrompt("hi", { brief: "BRIEF" }).includes("Low quota"));
+});
