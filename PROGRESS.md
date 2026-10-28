@@ -21,10 +21,14 @@
 - Planner done (step 5a): `planner.js` splits a multi-part task into labeled sub-tasks (types: quick, code, hard, google, general) and runs them, independent ones in parallel; a step that needs an earlier answer gets it in its prompt; if a step fails, steps depending on it are skipped. Flow: `looksMultiPart` (free keyword check) -> `plan` (Gemini Flash call with `--json-schema`; needs `--output-format json`, result in `structured_output`) -> `validatePlan` (never trust model output) -> `runPlan`. Falls back to the old single-job route if the planner fails. Flags: `--plan-only`, `--no-plan`, `--dry-run`. 23 tests pass. Live test: a 3-part task (explain, code, compare) finished in 21s with Gemini Flash, Claude Sonnet and Argon in parallel.
 - Planner caveats: the keyword check can trigger on single tasks (costs one small Flash call, then handled as one job); the `claude` CLI sometimes answers like an agent ("I didn't save this to a file"); `needs` was empty in my test because the planner judged the steps independent.
 
+- Web page done (step 7): `node server.js` (or double-click `start-web.cmd`) then open http://localhost:3000. Files: `core.js` (engine shared by CLI and web: `handleTask`), `server.js` (built-in `http` only, listens on 127.0.0.1), `public/index.html` (one file: HTML + CSS + JS), `orchestrator.js` is now a thin CLI over `core.js`. The page streams progress live (NDJSON), shows each step with its model, and has a quota panel from `agy -p "/usage"`. 45 tests pass (`node --test`), live-tested in the browser.
+  - Security checks in `server.js` (each has a test): only 127.0.0.1; Host header must be localhost (blocks DNS rebinding); Origin / Sec-Fetch-Site must be same-origin (blocks other websites); JSON content-type only; body and task size limits; max 2 tasks at once. The page uses `textContent` only, never `innerHTML`, because model output is untrusted.
+  - Known limits: answers show as plain text (markdown tables, LaTeX like `$\sqrt{n}$` appear raw); no history; the server must be running (close the window to stop it); if port 3000 is busy use `PORT=3001 node server.js`.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: check `agy -p "/usage"` before choosing and skip a pool that is nearly empty; tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
-7. Local web page (text box in the browser; server listening on 127.0.0.1 only) so I can use the orchestrator without Claude.
+7. Web page polish: render markdown safely, keep a history of past tasks, show quota warnings.
 
 ## Remember
 - Claude Pro tokens work through Claude Code; a separate Anthropic API key is billed separately.

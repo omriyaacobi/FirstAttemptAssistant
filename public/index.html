@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestrator</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #6a7385; --line: #dde1e8;
+    --accent: #3b5bdb; --accent-text: #ffffff; --ok: #2f9e44; --bad: #c92a2a; --code: #eef0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1e2128; --text: #e6e8ee; --muted: #9aa3b5; --line: #323744;
+      --accent: #748ffc; --accent-text: #11141b; --ok: #51cf66; --bad: #ff6b6b; --code: #2a2e38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px; border-radius: 8px; border: 1px solid var(--line);
+             background: var(--bg); color: var(--text); font: inherit; }
+  textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 12px; }
+  label { color: var(--muted); font-size: .9rem; }
+  button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: progress; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 4px 10px; font-weight: 400; font-size: .85rem; }
+  .step-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-weight: 600; }
+  .badge { font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--code); color: var(--muted); }
+  .answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+  pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; white-space: pre; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: .9rem; }
+  .err { color: var(--bad); }
+  details { color: var(--muted); font-size: .85rem; }
+  details pre { color: var(--muted); font-size: .8rem; white-space: pre-wrap; }
+  .quota-row { display: grid; grid-template-columns: 1fr 90px 50px; gap: 8px; align-items: center; font-size: .85rem; margin: 6px 0; }
+  .bar { height: 8px; border-radius: 4px; background: var(--code); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--ok); }
+  .status { color: var(--muted); min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Orchestrator</h1>
+  <p class="sub">Type a task. It picks the best model for it, and splits it into steps if it has several parts.</p>
+
+  <section class="card">
+    <label for="task" class="sr-only" style="display:none">Task</label>
+    <textarea id="task" placeholder="For example: Explain what a hash map is, then write a JavaScript function that counts word frequencies."></textarea>
+    <div class="row">
+      <label><input type="checkbox" id="noplan"> Don't split into steps</label>
+      <span class="status" id="status" role="status" aria-live="polite"></span>
+      <button id="send">Send (Ctrl+Enter)</button>
+    </div>
+  </section>
+
+  <div id="output"></div>
+
+  <section class="card">
+    <div class="row" style="margin-top:0">
+      <strong>Quota (agy)</strong>
+      <button class="ghost" id="refresh">Refresh</button>
+    </div>
+    <div id="quota" class="status">Loading...</div>
+  </section>
+</main>
+
+<script>
+  // Everything the model sends back is untrusted text, so this page only ever uses
+  // textContent (never innerHTML). That way an answer can't run code in your browser.
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  // Shows text with ``` code blocks as boxes. Plain text stays plain.
+  function renderText(text) {
+    const box = el("div", "answer");
+    text.split("```").forEach((part, i) => {
+      if (i % 2 === 0) {
+        if (part) box.appendChild(document.createTextNode(part));
+      } else {
+        const code = el("code", "", part.replace(/^[^\n]*\n/, "")); // drop the language word after ```
+        const pre = el("pre");
+        pre.appendChild(code);
+        box.appendChild(pre);
+      }
+    });
+    return box;
+  }
+
+  function card(headParts, body, className) {
+    const c = el("section", "card" + (className ? " " + className : ""));
+    const head = el("div", "step-head");
+    headParts.forEach(([text, cls]) => head.appendChild(el("span", cls || "", text)));
+    c.appendChild(head);
+    c.appendChild(body);
+    return c;
+  }
+
+  const modelName = (m) => `${m.provider}/${m.model}`;
+
+  function render(result) {
+    const out = $("output");
+    if (result.mode === "single") {
+      out.appendChild(card(
+        [["Answer"], [modelName(result.used), "badge"], [`${result.rule}: ${result.reason}`, "badge"], [`${result.seconds}s`, "badge"]],
+        renderText(result.answer)
+      ));
+    } else if (result.mode === "split") {
+      result.steps.forEach((s) => {
+        const head = [[`Step ${s.id}: ${s.task}`], [s.type, "badge"]];
+        if (s.used) head.push([modelName(s.used), "badge"]);
+        out.appendChild(card(head, s.error ? el("div", "err", "Failed: " + s.error) : renderText(s.answer)));
+      });
+      out.appendChild(el("p", "status", `Finished in ${result.seconds}s, planned by ${result.plannedBy}.`));
+    }
+  }
+
+  function showError(message) {
+    $("output").appendChild(card([["Something went wrong", "err"]], el("div", "answer", message)));
+  }
+
+  async function send() {
+    const task = $("task").value.trim();
+    if (!task) return;
+    $("send").disabled = true;
+    $("output").replaceChildren();
+    const logLines = [];
+    const logPre = el("pre");
+    const details = el("details");
+    details.appendChild(el("summary", "", "What the orchestrator did"));
+    details.appendChild(logPre);
+    $("output").appendChild(details);
+    $("status").textContent = "Working...";
+
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task, noPlan: $("noplan").checked }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `server answered ${res.status}`);
+      }
+      // The server sends one JSON object per line while it works. Read them as they arrive.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          if (!line.trim()) continue;
+          const message = JSON.parse(line);
+          if (message.type === "log") {
+            logLines.push(message.text);
+            logPre.textContent = logLines.join("\n");
+            $("status").textContent = message.text.slice(0, 80);
+          } else if (message.type === "result") {
+            render(message.result);
+          } else if (message.type === "error") {
+            showError(message.message);
+          }
+        }
+      }
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      $("send").disabled = false;
+      $("status").textContent = "";
+      loadQuota();
+    }
+  }
+
+  async function loadQuota() {
+    const box = $("quota");
+    try {
+      const res = await fetch("/api/usage");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not read usage");
+      box.replaceChildren();
+      data.rows.forEach((r) => {
+        const row = el("div", "quota-row");
+        row.title = "Resets " + new Date(r.resets).toLocaleString();
+        row.appendChild(el("span", "", `${r.pool}: ${r.window.replace(" Remaining", "")}`));
+        const bar = el("div", "bar");
+        const fill = el("span");
+        fill.style.width = (Number.isFinite(r.remaining) ? r.remaining : 0) + "%";
+        bar.appendChild(fill);
+        row.appendChild(bar);
+        row.appendChild(el("span", "", Number.isFinite(r.remaining) ? r.remaining + "%" : "?"));
+        box.appendChild(row);
+      });
+    } catch (error) {
+      box.textContent = "Could not load quota: " + error.message;
+    }
+  }
+
+  $("send").addEventListener("click", send);
+  $("refresh").addEventListener("click", loadQuota);
+  $("task").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
+  });
+  loadQuota();
+</script>
+</body>
+</html>
