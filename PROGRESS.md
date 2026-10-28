@@ -69,3 +69,5 @@
 - PowerShell blocks `.ps1` scripts by default; you ran `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` to allow local ones.
 - Old GPT-OSS and Claude 4.6 models in agy are scheduled for removal on 2026-11-02; don't depend on them.
 - Goal: Bot routes each task to the best model (see CLAUDE.md "Bot design"). Google-related tasks (Calendar etc.) should go to Gemini, if the CLI can reach them (unverified).
+
+- Calendar (branch `claude/calendar-research-23d051`, NOT merged): research in `experiments/2026-10-28-calendar-research.md` (agy has no calendar tool; official Workspace MCP is read-only + preview). Built option B: `calendar.js` (Node `https` only, OAuth Desktop + PKCE + 127.0.0.1 redirect, scope `calendar.events` only, no delete) with 15 tests using a fake network; CLI `node calendar.js login | list | add`. Setup steps for you: `calendar-setup.md`. Secrets in `.env` (git-ignored; `.env.example` is committed), tokens in `data/google-token.json`. Not wired into the router yet. Testing-mode refresh token lasts 7 days -> re-run `login`.
