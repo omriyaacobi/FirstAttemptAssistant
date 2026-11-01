@@ -99,3 +99,29 @@ test("quota: the prompt names low pools and the destinations they affect; silent
   assert.strictEqual(quotaLine([]), "");
   assert.ok(!buildPrompt("hi", { brief: "BRIEF" }).includes("Low quota"));
 });
+
+// ---- remind ----
+const NOW = Date.UTC(2026, 10, 1, 12, 0, 0);
+const remind = (over = {}) => ({ action: "remind", destination: "none", answer: "", reason: "wants a reminder",
+  reminderText: "call the bank", remindAt: "2026-11-02T09:00:00", timezone: "Asia/Jerusalem", ...over });
+
+test("remind: a real future time becomes a checked reminder (milliseconds)", () => {
+  const d = validateDecision(remind(), { now: NOW });
+  assert.deepStrictEqual(d, { action: "remind", destination: null, answer: "", reason: "wants a reminder",
+    reminder: { text: "call the bank", at: Date.UTC(2026, 10, 2, 7, 0, 0), timezone: "Asia/Jerusalem" } });
+});
+
+test("SECURITY: remind is rejected for a past time, a fake date, no time zone, an unknown zone or no text", () => {
+  const bad = [{ remindAt: "2026-10-31T09:00:00" }, { remindAt: "2026-02-30T09:00:00" }, { remindAt: "tomorrow 9am" }, { remindAt: "" },
+    { timezone: "" }, { timezone: "Not/AZone" }, { reminderText: "   " }, { reminderText: undefined }, { remindAt: undefined }];
+  for (const over of bad) assert.strictEqual(validateDecision(remind(over), { now: NOW }), null, JSON.stringify(over));
+});
+
+test("the prompt tells the model the current time and zone, for working out 'tomorrow at 9'", () => {
+  const prompt = buildPrompt("remind me tomorrow", { brief: "B", now: NOW });
+  assert.match(prompt, /The current time is 2026-11-01T14:00:00\+02:00 \(Sunday\), time zone /);
+});
+
+test("the schema asks for the reminder fields", () => {
+  for (const f of ["reminderText", "remindAt", "timezone"]) assert.ok(SCHEMA.required.includes(f) && SCHEMA.properties[f]);
+});

@@ -13,12 +13,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { askAgyStructured } = require("./providers");
 const { MODELS, DESTINATIONS } = require("./router");
+const { parseWhen, cleanText, localIso } = require("./reminders");
 
 const FRONT_DESK_MODEL = MODELS.flashHigh;
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve"];
+// "remind" means: the user wants to be reminded of something at a time. The model only EXTRACTS the
+// text and the time; validateDecision checks the time is a real future moment (see reminders.js).
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind"];
 const MAX_ANSWER_CHARS = 8000;
 
 // The shape we force the model's reply into. "none" is for the actions that need no destination.
@@ -29,8 +32,12 @@ const SCHEMA = {
     destination: { type: "string", enum: [...Object.keys(DESTINATIONS), "none"] },
     answer: { type: "string" },
     reason: { type: "string" },
+    // Only for the action "remind"; empty strings otherwise.
+    reminderText: { type: "string" },
+    remindAt: { type: "string" },
+    timezone: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone"],
 };
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
@@ -47,10 +54,18 @@ function quotaLine(low = []) {
   return `Low quota right now: ${pools}.` + (affected.length ? ` Avoid these destinations unless nothing else fits: ${affected.join(", ")}.` : "");
 }
 
-function buildPrompt(task, { history = "", allowSplit = true, brief = readBrief(), low = [] } = {}) {
+// The model needs today's date and the time zone to turn "tomorrow at 9" into a real time.
+const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+function nowLine(now = Date.now(), timezone = localZone()) {
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long" }).format(new Date(now));
+  return `The current time is ${localIso(now, timezone)} (${day}), time zone ${timezone}. Use this time zone for reminders unless the user names another.`;
+}
+
+function buildPrompt(task, { history = "", allowSplit = true, brief = readBrief(), low = [], now = Date.now(), timezone = localZone() } = {}) {
   return [
     brief,
     "## Right now",
+    nowLine(now, timezone),
     allowSplit ? "Splitting is allowed." : 'The user turned splitting off: do NOT choose the action "split".',
     quotaLine(low),
     history ? `## Conversation so far\n${history.replace(/^Conversation so far[^\n]*\n/, "")}` : "## Conversation so far\n(none, this is the first message)",
@@ -59,12 +74,24 @@ function buildPrompt(task, { history = "", allowSplit = true, brief = readBrief(
 }
 
 // Returns a clean decision, or null if the model's reply is unusable.
-function validateDecision(raw) {
+// `now` is only used to check that a reminder's time is in the future (tests pass a fixed one).
+function validateDecision(raw, { now = Date.now() } = {}) {
   if (!raw || typeof raw !== "object") return null;
   if (!ACTIONS.includes(raw.action)) return null;
 
   const reason = typeof raw.reason === "string" ? raw.reason.trim().slice(0, 200) : "";
   const answer = typeof raw.answer === "string" ? raw.answer.trim() : "";
+
+  if (raw.action === "remind") {
+    // The model only extracted a text and a time. The code decides whether they are usable.
+    try {
+      const text = cleanText(raw.reminderText);
+      const at = parseWhen(raw.remindAt, raw.timezone, now);
+      return { action: "remind", destination: null, answer: "", reason, reminder: { text, at, timezone: raw.timezone } };
+    } catch (error) {
+      return null;
+    }
+  }
 
   if (raw.action === "answer" || raw.action === "clarify" || raw.action === "improve") {
     if (!answer || answer.length > MAX_ANSWER_CHARS) return null;

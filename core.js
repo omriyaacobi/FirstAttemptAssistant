@@ -8,6 +8,7 @@
 //   1. The front desk (a Gemini model following router-brief.md) reads it and decides:
 //        answer   -> it replies itself            clarify -> it asks you a question
 //        delegate -> one model from the menu      split   -> the planner splits it into steps
+//        remind   -> the time is checked and saved (reminders.js)
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
 
@@ -16,13 +17,16 @@ const { askChain } = require("./providers");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
 const { getLowPools, prioritize } = require("./quota");
+const { getReminders, formatWhen } = require("./reminders");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty (cached; never throws, see quota.js).
-const defaultDeps = { decide, plan, runPlan, askChain, chainForType, chainForDestination, lowPools: getLowPools };
+const defaultDeps = { decide, plan, runPlan, askChain, chainForType, chainForDestination, lowPools: getLowPools,
+  // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
+  createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
 // ---- Conversation memory ----
 // The models have no memory of their own (every call starts from nothing), and different
@@ -107,6 +111,21 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return result;
   };
 
+  // The user asked to be reminded: save it and confirm. The front desk already checked the time;
+  // reminders.js checks it again when saving.
+  function setReminder(decision) {
+    try {
+      const saved = d.createReminder(decision.reminder);
+      const answer = `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`;
+      log(`[reminder] saved ${saved.id}`);
+      return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, reminder: saved, seconds: seconds() };
+    } catch (error) {
+      log(`[reminder] could not save: ${error.message}`);
+      const answer = `I could not set that reminder: ${error.message}`;
+      return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds() };
+    }
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
@@ -154,6 +173,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
 
   // 2. Act on the decision.
   if (["answer", "clarify", "improve"].includes(decision.action)) return frontDeskReply(decision);
+  if (decision.action === "remind") return setReminder(decision);
 
   if (decision.action === "delegate") {
     return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });

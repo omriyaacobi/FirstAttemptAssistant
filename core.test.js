@@ -290,3 +290,31 @@ test("quota: planner steps get a reordered chain too", async () => {
   await handleTask("a then b", { deps });
   assert.deepStrictEqual(stepChain, [sonnet, argon]);
 });
+
+test("remind: the reminder is saved through createReminder and the chat says when", async () => {
+  let saved = null;
+  let asked = false;
+  const at = Date.UTC(2026, 10, 2, 7, 0, 0);
+  const deps = fakes({
+    decide: decision("remind", { reminder: { text: "call the bank", at, timezone: "Asia/Jerusalem" } }),
+    createReminder: (r) => { saved = r; return { id: "0123456789abcdef", ...r }; },
+    askChain: async () => { asked = true; },
+  });
+  const result = await handleTask("remind me tomorrow at 9 to call the bank", { deps });
+  assert.strictEqual(saved.text, "call the bank");
+  assert.strictEqual(result.mode, "single");
+  assert.strictEqual(result.rule, "set a reminder");
+  assert.match(result.answer, /^Reminder set for .*09:00.*call the bank/);
+  assert.strictEqual(result.reminder.id, "0123456789abcdef");
+  assert.strictEqual(asked, false);
+});
+
+test("remind: if saving fails the chat says so instead of crashing", async () => {
+  const deps = fakes({
+    decide: decision("remind", { reminder: { text: "x", at: 1, timezone: "UTC" } }),
+    createReminder: () => { throw new Error("too many pending reminders (max 100)"); },
+  });
+  const result = await handleTask("remind me", { deps });
+  assert.match(result.answer, /could not set that reminder: too many/);
+  assert.strictEqual(result.reminder, undefined);
+});

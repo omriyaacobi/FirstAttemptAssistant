@@ -101,6 +101,16 @@ function formatWhen(at, timezone) {
   }).format(new Date(at));
 }
 
+// "2026-11-01T14:00:00+02:00": the moment `ms` as a wall-clock time in `timezone`, with its offset.
+// Used to tell the front desk what time it is now.
+function localIso(ms, timezone) {
+  const off = offsetMs(timezone, ms);
+  const iso = new Date(ms + off).toISOString().slice(0, 19);
+  const sign = off < 0 ? "-" : "+";
+  const abs = Math.abs(off) / 60000;
+  return `${iso}${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
 // ---- The store ----
 
 function createReminders({ file, notify = () => {}, now = () => Date.now() } = {}) {
@@ -217,4 +227,4 @@ function getReminders() {
   }));
 }
 
-module.exports = { createReminders, getReminders, parseWhen, formatWhen, cleanText, validTimezone, ID_PATTERN, MAX_TEXT, MAX_PENDING, TICK_MS };
+module.exports = { createReminders, getReminders, parseWhen, formatWhen, localIso, cleanText, validTimezone, ID_PATTERN, MAX_TEXT, MAX_PENDING, TICK_MS };
