@@ -17,6 +17,10 @@
 //   POST   /api/restart            -> restart Bot to load new code (only when started by start-web.cmd)
 //   GET    /api/git                -> which commits are on this computer but not on GitHub yet
 //   POST   /api/git/push           -> push them (the page asks you to confirm first; see gitops.js)
+//   GET    /api/reminders          -> pending reminders, plus the ones that fired and the page has not shown yet
+//   POST   /api/reminders/:id/ack  -> the page says it showed one (so it is not shown twice)
+//   DELETE /api/reminders/:id      -> cancel (or dismiss) a reminder
+//   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
 //
 // Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
 // The models themselves remember nothing, so for each new message we send them the recent
@@ -34,6 +38,7 @@ const { handleTask, resultText } = require("./core");
 const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
 const { createGitOps } = require("./gitops");
+const { getReminders } = require("./reminders");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -42,6 +47,14 @@ const MAX_TASK_CHARS = 8000;
 const MAX_RUNNING = 2; // at most 2 tasks at once, so a bug or a loop can't burn your whole quota
 const PAGE = path.join(__dirname, "public", "index.html");
 const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bin\\agy.exe";
+// The extra files that make the page installable as an app. The request only picks a KEY of this table;
+// the file name on disk comes from the table, never from the request, so no path can be smuggled in.
+const STATIC = {
+  "/manifest.webmanifest": { file: "manifest.webmanifest", type: "application/manifest+json; charset=utf-8" },
+  "/sw.js": { file: "sw.js", type: "text/javascript; charset=utf-8" },
+  "/icon-192.png": { file: "icon-192.png", type: "image/png" },
+  "/icon-512.png": { file: "icon-512.png", type: "image/png" },
+};
 // start-web.cmd restarts the server when it exits with this code (the Restart button uses it).
 const RESTART_EXIT_CODE = 75;
 
@@ -111,6 +124,7 @@ function createServer({
   store = createStore(path.join(__dirname, "data", "conversations")),
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
+  reminders = getReminders(),
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
@@ -142,6 +156,33 @@ function createServer({
         res.end(html);
       });
       return;
+    }
+
+    // The phone-app files (manifest, service worker, icons): only the fixed names in STATIC.
+    if (req.method === "GET" && Object.hasOwn(STATIC, url.pathname)) {
+      const item = STATIC[url.pathname];
+      fs.readFile(path.join(__dirname, "public", item.file), (error, data) => {
+        if (error) return sendJson(res, 404, { error: "not found" });
+        res.writeHead(200, { "Content-Type": item.type, "Cache-Control": "no-store" });
+        res.end(data);
+      });
+      return;
+    }
+
+    // Reminders. They are created from the chat ("remind me ..."); here the page lists, dismisses and cancels them.
+    if (req.method === "GET" && url.pathname === "/api/reminders") {
+      return sendJson(res, 200, { reminders: reminders.list(), due: reminders.undelivered() });
+    }
+    const reminderRoute = url.pathname.match(/^\/api\/reminders\/([^/]+?)(?:\/(ack))?$/);
+    if (reminderRoute) {
+      const [, id, action] = reminderRoute;
+      if (action && req.method === "POST") {
+        if (!(await readJsonBody(req, res))) return;
+        return reminders.acknowledge(id) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "reminder not found" });
+      }
+      if (!action && req.method === "DELETE") {
+        return reminders.cancel(id) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "reminder not found" });
+      }
     }
 
     // Quota panel
@@ -314,6 +355,7 @@ if (require.main === module) {
   });
   server.listen(PORT, HOST, () => {
     console.log(`Bot web page: http://localhost:${PORT}  (only reachable from this computer)`);
+    getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });
 }

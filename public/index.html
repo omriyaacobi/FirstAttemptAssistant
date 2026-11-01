@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#9333ea">
 <style>
   :root {
     --bg: #faf5ff; --card: #ffffff; --text: #2a1b3d; --muted: #7a6a8f; --line: #e6d9f5;
@@ -88,6 +92,19 @@
   .actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
   button.danger { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
 
+  /* Reminders (sidebar), microphone button, pop-up banners */
+  .reminder { display: flex; align-items: flex-start; gap: 6px; font-size: .85rem; margin: 6px 0; }
+  .reminder .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .reminder .when { color: var(--muted); font-size: .75rem; }
+  .reminder button { background: transparent; color: var(--muted); padding: 0 6px; font-weight: 400; }
+  .reminder button:hover { color: var(--bad); }
+  button.mic { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px 12px; }
+  button.mic.listening { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .tools { display: flex; gap: 8px; align-items: center; }
+  #toasts { position: fixed; top: 12px; right: 12px; z-index: 20; display: flex; flex-direction: column; gap: 8px; max-width: min(360px, calc(100vw - 24px)); }
+  .toast { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.25); display: flex; gap: 10px; align-items: flex-start; }
+  .toast .what { flex: 1; overflow-wrap: anywhere; }
+
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
     .topbar { display: flex; justify-content: space-between; align-items: center; }
@@ -98,6 +115,7 @@
 </style>
 </head>
 <body>
+<div id="toasts" role="status" aria-live="polite"></div>
 <div class="app">
   <aside class="side" id="side">
     <div>
@@ -112,6 +130,13 @@
         <button class="ghost" id="refresh">Refresh</button>
       </div>
       <div id="quota" class="sub">Loading...</div>
+    </section>
+    <section aria-label="Reminders">
+      <div class="row" style="margin-top:0">
+        <strong>Reminders</strong>
+        <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
+      </div>
+      <div id="reminders" class="sub">None yet. Try: "remind me tomorrow at 9 to call the bank".</div>
     </section>
     <button class="improve" id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
   </aside>
@@ -128,7 +153,11 @@
         <div class="row">
           <label><input type="checkbox" id="noplan"> Don't split into steps</label>
           <span class="status" id="status" role="status"></span>
-          <button type="submit" id="send">Send</button>
+          <span class="tools">
+            <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
+            <button type="button" class="mic" id="mic" hidden title="Talk to Bot: speak, and it is sent when you stop">Mic</button>
+            <button type="submit" id="send">Send</button>
+          </span>
         </div>
       </div>
     </form>
@@ -376,6 +405,7 @@
             currentId = message.conversationId;
             live.details.open = false;
             holder.appendChild(renderResult(message.result));
+            if (message.result.reminder) loadReminders(); // a reminder was just set: show it in the sidebar
           } else if (message.type === "error") {
             holder.appendChild(errorCard(message.message));
           }
@@ -688,6 +718,142 @@
     }
     loadProposals();
   });
+
+  // ---- Reminders ----
+  // Bot saves reminders on the PC and checks the clock there. This page asks every 30 s for ones that
+  // came due and shows them (a banner, plus a system notification if you allowed it). It shows each one once.
+  const shownReminders = new Set();
+
+  function whenText(r) {
+    try {
+      return new Intl.DateTimeFormat(undefined, { timeZone: r.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(r.at));
+    } catch (error) {
+      return new Date(r.at).toLocaleString();
+    }
+  }
+
+  async function systemNotify(title, body, tag) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      // On Android Chrome the notification must go through the service worker.
+      const reg = navigator.serviceWorker ? await navigator.serviceWorker.ready : null;
+      if (reg) return await reg.showNotification(title, { body, tag, icon: "/icon-192.png" });
+    } catch (error) { /* fall through */ }
+    try { new Notification(title, { body, tag, icon: "/icon-192.png" }); } catch (error) { /* not allowed here */ }
+  }
+
+  function showDue(r) {
+    if (shownReminders.has(r.id)) return;
+    shownReminders.add(r.id);
+    const toast = el("div", "toast");
+    const what = el("div", "what", (r.late ? "Reminder (late): " : "Reminder: ") + r.text);
+    what.dir = "auto";
+    const close = el("button", "ghost", "OK");
+    close.addEventListener("click", () => toast.remove());
+    toast.append(what, close);
+    $("toasts").appendChild(toast);
+    systemNotify("Bot reminder", r.text, r.id);
+    fetch("/api/reminders/" + r.id + "/ack", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+  }
+
+  async function loadReminders() {
+    try {
+      const res = await fetch("/api/reminders");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not read reminders");
+      data.due.forEach(showDue);
+      const box = $("reminders");
+      const pending = data.reminders.filter((r) => r.status === "pending");
+      if (!pending.length) {
+        box.className = "sub";
+        box.textContent = 'None yet. Try: "remind me tomorrow at 9 to call the bank".';
+        return;
+      }
+      box.className = "";
+      box.replaceChildren(...pending.map((r) => {
+        const row = el("div", "reminder");
+        const what = el("div", "what");
+        const text = el("div", "", r.text);
+        text.dir = "auto";
+        what.append(text, el("div", "when", whenText(r)));
+        const cancel = el("button", "", "\u2715");
+        cancel.title = "Cancel this reminder";
+        cancel.setAttribute("aria-label", "Cancel reminder: " + r.text);
+        cancel.addEventListener("click", async () => {
+          await fetch("/api/reminders/" + r.id, { method: "DELETE" }).catch(() => {});
+          loadReminders();
+        });
+        row.append(what, cancel);
+        return row;
+      }));
+    } catch (error) {
+      $("reminders").textContent = error.message;
+    }
+  }
+
+  function setupNotifyButton() {
+    const button = $("notifyBtn");
+    if (!("Notification" in window) || Notification.permission !== "default") return; // unsupported, allowed or blocked: nothing to ask
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      await Notification.requestPermission(); // must be triggered by a click, so it is a button
+      button.hidden = Notification.permission !== "default";
+    });
+  }
+
+  // The service worker (public/sw.js) is what lets the page be installed as an app and show notifications on Android.
+  // Browsers only allow it on https:// or localhost.
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+  // ---- Push-to-talk (the Web Speech API) ----
+  // Chrome sends the audio to Google's speech recognition and gives back text. There is no wake word:
+  // you press the button, speak, and the text is sent when you stop. (It does not listen in the background.)
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognizer = null;
+
+  function toggleMic() {
+    if (recognizer) { recognizer.stop(); return; }
+    const r = new SpeechRecognition();
+    r.lang = $("micLang").value;
+    r.interimResults = true;
+    r.continuous = false;
+    let heard = "";
+    let failed = false;
+    r.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) heard += event.results[i][0].transcript;
+        else interim += event.results[i][0].transcript;
+      }
+      $("task").value = (heard + interim).trim();
+    };
+    r.onerror = (event) => {
+      failed = true;
+      $("status").textContent = event.error === "not-allowed" ? "Microphone blocked: allow it in the browser" : event.error === "no-speech" ? "Heard nothing" : "Voice error: " + event.error;
+    };
+    r.onend = () => {
+      recognizer = null;
+      $("mic").classList.remove("listening");
+      $("mic").textContent = "Mic";
+      if (!failed && heard.trim()) { $("task").value = heard.trim(); send(); } // fills the box and sends it
+    };
+    recognizer = r;
+    $("mic").classList.add("listening");
+    $("mic").textContent = "Listening... (tap to stop)";
+    $("status").textContent = "";
+    try { r.start(); } catch (error) { recognizer = null; $("mic").classList.remove("listening"); $("mic").textContent = "Mic"; }
+  }
+
+  if (SpeechRecognition) {
+    $("mic").hidden = false;
+    $("micLang").hidden = false;
+    $("mic").addEventListener("click", toggleMic);
+  }
+
+  setupNotifyButton();
+  loadReminders();
+  setInterval(loadReminders, 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
 
   showEmpty();
   loadChats();
