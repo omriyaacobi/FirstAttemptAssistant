@@ -21,6 +21,13 @@
 //   POST   /api/reminders/:id/ack  -> the page says it showed one (so it is not shown twice)
 //   DELETE /api/reminders/:id      -> cancel (or dismiss) a reminder
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
+//   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
+//   POST   /api/login | /api/logout -> the phone login (see auth.js)
+//   POST   /api/push/subscribe | /api/push/unsubscribe | /api/push/test -> push notifications (see webpush.js)
+//
+// THE PHONE: it reaches Bot through Tailscale (`tailscale serve`), which runs on this PC and forwards
+// to 127.0.0.1. Such requests must log in first, and they can only chat, see reminders and get
+// notifications. Improve Bot, Restart and GitHub stay usable from this computer only.
 //
 // Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
 // The models themselves remember nothing, so for each new message we send them the recent
@@ -39,6 +46,8 @@ const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
 const { createGitOps } = require("./gitops");
 const { getReminders } = require("./reminders");
+const { createAuth, loadPhoneConfig } = require("./auth");
+const { createPush } = require("./webpush");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -57,6 +66,11 @@ const STATIC = {
 };
 // start-web.cmd restarts the server when it exits with this code (the Restart button uses it).
 const RESTART_EXIT_CODE = 75;
+// A proxy (like tailscale serve) adds these headers. A browser on this PC never sends them, so their
+// presence means "this request came from another device", even if the Host header looks local.
+const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "forwarded", "tailscale-user-login"];
+// What the phone may never do, even when logged in.
+const PC_ONLY = /^\/api\/(selfedit|restart|git)(\/|$)/;
 
 // agy prints tab-separated lines like: Gemini Models<TAB>Five Hour Limit Remaining<TAB>99%<TAB>2026-10-28T01:41:40Z
 function parseUsage(text) {
@@ -125,6 +139,8 @@ function createServer({
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
   reminders = getReminders(),
+  auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
+  push = createPush({ dir: path.join(__dirname, "data") }),
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
@@ -134,19 +150,83 @@ function createServer({
   const server = http.createServer(async (req, res) => {
     const port = server.address().port;
     const me = [`localhost:${port}`, `127.0.0.1:${port}`];
+    const host = String(req.headers.host || "").toLowerCase();
+    const phoneHost = auth.enabled && host === auth.host;
 
     // CHECK 1 - the Host header must be our own address. This blocks "DNS rebinding", a trick
     // where a malicious website points its own name at 127.0.0.1 to talk to local servers.
-    if (!me.includes(req.headers.host)) return sendJson(res, 403, { error: "bad host" });
+    // The only other name allowed is this PC's own Tailscale name, and only when phone access is on.
+    if (!me.includes(host) && !phoneHost) return sendJson(res, 403, { error: "bad host" });
+
+    // Is this the phone (or any other device) coming in through Tailscale?
+    const remote = phoneHost || PROXY_HEADERS.some((h) => req.headers[h] !== undefined);
+    if (remote && !auth.enabled) return sendJson(res, 403, { error: "phone access is off (see auth.js)" });
 
     // CHECK 2 - browsers say which site a request came from. Refuse anything not from this page.
     // This blocks other websites you have open from sending tasks to this server.
     const origin = req.headers.origin;
-    if (origin && !me.map((h) => `http://${h}`).includes(origin)) return sendJson(res, 403, { error: "bad origin" });
+    const allowedOrigins = remote ? [`https://${auth.host}`] : me.map((h) => `http://${h}`);
+    if (origin && !allowedOrigins.includes(origin)) return sendJson(res, 403, { error: "bad origin" });
     const site = req.headers["sec-fetch-site"];
     if (site && !["same-origin", "none"].includes(site)) return sendJson(res, 403, { error: "cross-site request" });
 
     const url = new URL(req.url, `http://${req.headers.host}`);
+
+    // CHECK 3 (phone only) - log in first, and never the PC-only routes.
+    if (remote) {
+      const open = (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || Object.hasOwn(STATIC, url.pathname)))
+        || url.pathname === "/api/session" || url.pathname === "/api/login";
+      if (!open && PC_ONLY.test(url.pathname)) return sendJson(res, 403, { error: "this only works on the PC" });
+      if (!open && !auth.isLoggedIn(req)) return sendJson(res, 401, { error: "log in first" });
+    }
+
+    // Phone login and session info
+    if (req.method === "GET" && url.pathname === "/api/session") {
+      return sendJson(res, 200, {
+        remote,
+        phoneAccess: auth.enabled,
+        loggedIn: remote ? auth.isLoggedIn(req) : true,
+        pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/login") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      if (!remote) return sendJson(res, 400, { error: "no login is needed on this computer" });
+      const result = auth.login(input.token);
+      if (!result.ok) return sendJson(res, result.status, { error: result.error });
+      res.setHeader("Set-Cookie", result.cookie);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && url.pathname === "/api/logout") {
+      if (!(await readJsonBody(req, res))) return;
+      res.setHeader("Set-Cookie", auth.logoutCookie());
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // Push notifications
+    if (req.method === "POST" && url.pathname === "/api/push/subscribe") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      try {
+        return sendJson(res, 200, { ok: true, devices: push.subscribe(input.subscription) });
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/push/unsubscribe") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      return sendJson(res, 200, { ok: push.unsubscribe(String(input.endpoint || "")) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/push/test") {
+      if (!(await readJsonBody(req, res))) return;
+      try {
+        return sendJson(res, 200, await push.notifyAll({ title: "Bot", body: "Test notification: push works.", tag: "bot-test" }));
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message });
+      }
+    }
 
     // The page itself
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
@@ -341,7 +421,11 @@ module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNI
 
 // Start listening only when run directly ("node server.js"), not when a test imports this file.
 if (require.main === module) {
-  const server = createServer();
+  const push = createPush({ dir: path.join(__dirname, "data"), log: console.log });
+  const auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) });
+  const server = createServer({ push, auth });
+  // When a reminder is due, send it to every phone that turned notifications on.
+  getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
   server.on("error", (error) => {
     // Right after a restart the old server may still be letting go of the port, so wait a little.
@@ -355,6 +439,7 @@ if (require.main === module) {
   });
   server.listen(PORT, HOST, () => {
     console.log(`Bot web page: http://localhost:${PORT}  (only reachable from this computer)`);
+    console.log(auth.enabled ? `Phone access ON for https://${auth.host} (login required)` : `Phone access off: ${auth.reason}`);
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });

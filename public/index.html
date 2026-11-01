@@ -105,6 +105,11 @@
   .toast { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.25); display: flex; gap: 10px; align-items: flex-start; }
   .toast .what { flex: 1; overflow-wrap: anywhere; }
 
+  .login { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: grid; place-items: center; padding: 16px; }
+  .login[hidden] { display: none; }
+  .login form { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; }
+  .login input { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--accent); }
+
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
     .topbar { display: flex; justify-content: space-between; align-items: center; }
@@ -116,6 +121,14 @@
 </head>
 <body>
 <div id="toasts" role="status" aria-live="polite"></div>
+<div id="loginView" class="login" hidden>
+  <form id="loginForm" class="card">
+    <h1>Bot</h1>
+    <p class="sub">Enter your phone token (BOT_PHONE_TOKEN from the .env file on your PC). You only need to do this once.</p>
+    <input id="loginToken" type="password" autocomplete="current-password" aria-label="Phone token" placeholder="Phone token">
+    <div class="row"><span class="status" id="loginStatus" role="status"></span><button type="submit">Log in</button></div>
+  </form>
+</div>
 <div class="app">
   <aside class="side" id="side">
     <div>
@@ -752,7 +765,7 @@
     close.addEventListener("click", () => toast.remove());
     toast.append(what, close);
     $("toasts").appendChild(toast);
-    systemNotify("Bot reminder", r.text, r.id);
+    systemNotify("Bot reminder", r.text, "reminder-" + r.id); // same tag as the push, so the phone shows it once
     fetch("/api/reminders/" + r.id + "/ack", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
   }
 
@@ -791,15 +804,67 @@
     }
   }
 
-  function setupNotifyButton() {
+  // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
+  // gives us a "subscription" (an address at Google's push service), and we hand it to Bot.
+  let session = { remote: false, loggedIn: true, pushKey: null };
+
+  async function pushSubscription() {
+    if (!session.pushKey || !("PushManager" in window) || !navigator.serviceWorker) return null;
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) return existing;
+    const key = Uint8Array.from(atob(session.pushKey.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }
+
+  async function setupNotifyButton() {
     const button = $("notifyBtn");
-    if (!("Notification" in window) || Notification.permission !== "default") return; // unsupported, allowed or blocked: nothing to ask
+    if (!("Notification" in window) || Notification.permission === "denied") return; // unsupported or blocked
+    const showTest = () => { button.hidden = false; button.textContent = "Test notification"; button.title = "Send a test push to every device that turned notifications on"; };
     button.hidden = false;
+    if (Notification.permission === "granted") {
+      // Already allowed: make sure Bot has this device's subscription (it may be new, or Bot's data was reset).
+      try {
+        const sub = await pushSubscription();
+        if (sub) {
+          await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
+          showTest();
+        } else button.hidden = true;
+      } catch (error) { button.hidden = true; }
+    }
     button.addEventListener("click", async () => {
-      await Notification.requestPermission(); // must be triggered by a click, so it is a button
-      button.hidden = Notification.permission !== "default";
+      try {
+        if (button.textContent === "Test notification") {
+          const res = await fetch("/api/push/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          const data = await res.json();
+          $("status").textContent = res.ok ? `Test sent to ${data.sent} device(s)` : data.error;
+          return;
+        }
+        await Notification.requestPermission(); // must be triggered by a click, so it is a button
+        if (Notification.permission !== "granted") { button.hidden = Notification.permission === "denied"; return; }
+        const sub = await pushSubscription();
+        if (!sub) { button.hidden = true; return; } // this browser has no push: in-page notifications only
+        const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
+        if (!res.ok) throw new Error((await res.json()).error);
+        showTest();
+        $("status").textContent = "Notifications are on for this device";
+      } catch (error) {
+        $("status").textContent = "Notifications: " + error.message;
+      }
     });
   }
+
+  $("loginForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    $("loginStatus").textContent = "Checking...";
+    try {
+      const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: $("loginToken").value }) });
+      if (!res.ok) throw new Error((await res.json()).error);
+      location.reload();
+    } catch (error) {
+      $("loginStatus").textContent = error.message;
+    }
+  });
 
   // The service worker (public/sw.js) is what lets the page be installed as an app and show notifications on Android.
   // Browsers only allow it on https:// or localhost.
@@ -850,15 +915,24 @@
     $("mic").addEventListener("click", toggleMic);
   }
 
-  setupNotifyButton();
-  loadReminders();
-  setInterval(loadReminders, 30000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
-
-  showEmpty();
-  loadChats();
-  loadQuota();
-  $("task").focus();
+  // Start: first ask the server who we are. On the phone, log in first; Improve Bot is PC-only.
+  (async () => {
+    try { session = await (await fetch("/api/session")).json(); } catch (error) { /* keep the PC defaults */ }
+    if (session.remote && !session.loggedIn) {
+      $("loginView").hidden = false;
+      $("loginToken").focus();
+      return;
+    }
+    if (session.remote) $("improveBtn").hidden = true;
+    setupNotifyButton();
+    loadReminders();
+    setInterval(loadReminders, 30000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
+    showEmpty();
+    loadChats();
+    loadQuota();
+    if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
+  })();
 </script>
 </body>
 </html>

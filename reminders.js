@@ -195,9 +195,11 @@ function createReminders({ file, notify = () => {}, now = () => Date.now() } = {
     // Save BEFORE notifying: if notify crashes, a reminder is never fired twice.
     if (changed) write(items);
     for (const r of fired) {
-      try {
-        Promise.resolve(notify(r)).catch(() => {});
-      } catch (error) { /* a failing notify must never stop the scheduler */ }
+      for (const fn of [notify, ...listeners]) {
+        try {
+          Promise.resolve(fn(r)).catch(() => {});
+        } catch (error) { /* a failing notify must never stop the scheduler */ }
+      }
     }
     return fired;
   }
@@ -215,7 +217,11 @@ function createReminders({ file, notify = () => {}, now = () => Date.now() } = {
     timer = null;
   }
 
-  return { create, list, undelivered, cancel, acknowledge, tick, start, stop };
+  // More functions to call when a reminder fires (server.js adds the phone push here).
+  const listeners = [];
+  const onFire = (fn) => { listeners.push(fn); };
+
+  return { create, list, undelivered, cancel, acknowledge, tick, start, stop, onFire };
 }
 
 // The one shared store Bot uses. It is created on first use, so loading this file touches no disk.
