@@ -63,6 +63,11 @@
   - Small duplication: `quota.js` has its own `parseUsage` copy because `server.js` is protected and was left untouched. If you ever edit `server.js` with Claude Code, make it import `parseUsage` from `quota.js`.
   - Not done: the web page does not show "quota changed the route" separately (it appears in the log lines only); the planner's own model choice (flash-high, argon-low) is not quota-aware; the Claude plan can't be tracked.
 
+- Phone-app groundwork (step 12, branch `claude/phone-app-8c510b`, NOT pushed or merged yet). 168 tests pass. Research: `experiments/2026-11-01-phone-app-research.md` (read its last two sections: build order, and what you must decide).
+  - Built: `reminders.js` (create/list/cancel in `data/reminders.json`, scheduler every 30 s with catch-up, times validated as real future moments); front desk action `remind` (model extracts text + local time + time zone, code validates; chat says "Reminder set for ..."); page: reminders list, banner + browser notification while the page is open, mic button (Web Speech API, English/Hebrew, sends when you stop), manifest + icons (`tools/make-icons.js`) + a service worker that caches nothing.
+  - `server.js` (protected) edited minimally: 4 phone-app files served from a FIXED table (`STATIC`), 3 reminder routes, `getReminders().start()` at startup. Host/Origin/body checks and the 127.0.0.1 binding untouched.
+  - Not built (needs your decisions, see the research file): login + Host allowlist for Tailscale, Web Push, spoken replies, Gemini voice, real "Hey Bot". Reminders only fire while the PC is on and Bot runs. Not checked in a real browser yet (page script is parse-tested only): try it once, e.g. "remind me in 2 minutes to stretch".
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
