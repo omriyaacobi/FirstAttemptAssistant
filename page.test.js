@@ -21,3 +21,10 @@ test("the Improve button is the last thing in the sidebar and has its own big st
 test("the page uses a purple accent", () => {
   assert.match(html, /--accent:\s*#9333ea/);
 });
+
+test("sending a message starts a background job and the page follows it by polling, not by one long request", () => {
+  assert.match(html, /fetch\("\/api\/jobs/);
+  assert.doesNotMatch(html, /getReader\(\)/);
+  // no chat switching or composer lock-out depends on a request being open any more
+  assert.doesNotMatch(html, /if \(busy\) return;/);
+});
