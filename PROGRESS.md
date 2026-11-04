@@ -75,6 +75,8 @@
   - Page: login screen on the phone, "Turn on notifications" subscribes to push, then becomes "Test notification"; Improve Bot hidden on the phone. `sw.js` shows pushes even when the page is closed.
   - 2026-11-04: Tailscale set up (PC `desktop-md3gtot`, phone `s-s23`). `tailscale serve --bg http://127.0.0.1:3000` runs tailnet-only (NOT funnel); undo with `tailscale serve --https=443 off`. Verified through Tailscale: it keeps the `.ts.net` name as Host; no login = 401; wrong token refused; right token works; Improve Bot and git push = "this only works on the PC"; foreign Origin refused. Push to the real phone: tested by Omri on the S23.
 
+- Phone navigation: Back button now closes the sidebar / returns to the previous chat or view (History API, `navGo`/`openSide` in `public/index.html`); sidebar has backdrop, ✕ and swipe-left; hamburger icon button and app-style top bar with current chat name; safe-area support (`viewport-fit=cover`).
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
