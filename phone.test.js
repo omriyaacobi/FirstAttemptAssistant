@@ -118,6 +118,8 @@ test("SECURITY: the phone gets only the page until it logs in", async () => {
     assert.strictEqual((await s.phone(method, p)).status, 401, p);
   }
   assert.strictEqual((await s.phone("POST", "/api/ask", { body: { task: "hi" } })).status, 401);
+  assert.strictEqual((await s.phone("GET", "/api/jobs")).status, 401);
+  assert.strictEqual((await s.phone("GET", "/api/jobs/" + "a".repeat(32))).status, 401);
   assert.strictEqual((await s.phone("POST", "/api/push/subscribe", { body: { subscription: { endpoint: "x" } } })).status, 401);
   await s.close();
 });
@@ -159,8 +161,10 @@ test("after logging in, the phone can chat, see reminders and turn on push", asy
   assert.strictEqual((await s.phone("GET", "/api/session", { cookie })).json().pushKey, "PUBLIC-KEY");
   assert.strictEqual((await s.phone("GET", "/api/reminders", { cookie })).status, 200);
   const ask = await s.phone("POST", "/api/ask", { cookie, body: { task: "hi" } });
-  assert.strictEqual(ask.status, 200);
-  assert.match(ask.body, /hello/);
+  assert.strictEqual(ask.status, 202);
+  const jobId = ask.json().job.id;
+  assert.strictEqual((await s.phone("GET", "/api/jobs/" + jobId, { cookie })).status, 200);
+  assert.strictEqual((await s.phone("GET", "/api/jobs", { cookie })).status, 200);
   assert.strictEqual((await s.phone("POST", "/api/push/subscribe", { cookie, body: { subscription: { endpoint: "https://fcm.googleapis.com/x" } } })).status, 200);
   assert.deepStrictEqual((await s.phone("POST", "/api/push/test", { cookie, body: {} })).json(), { sent: 1, removed: 0, total: 1 });
   await s.close();
