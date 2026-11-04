@@ -84,3 +84,43 @@ test("createQuota: tasks started at the same time share one lookup", async () =>
   await Promise.all([q.get(), q.get(), q.get()]);
   assert.strictEqual(calls, 1);
 });
+
+test("createQuota: an expired value is returned at once and refreshed in the background", async () => {
+  let time = 0, calls = 0, release;
+  const q = createQuota({
+    fetchRows: () => { calls++; return calls === 1 ? Promise.resolve([row("Pool A", 5)]) : new Promise((r) => { release = () => r([row("Pool A", 90)]); }); },
+    now: () => time, cacheMs: 1000,
+  });
+  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
+  time = 1000;
+  // The refresh (call 2) never finishes until we say so, yet get() answers immediately with the old value.
+  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
+  assert.strictEqual(calls, 2);
+  release();
+  await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(await q.get(), []); // the refreshed value (90% left) is used from now on
+});
+
+test("createQuota: a failed refresh keeps the last known value", async () => {
+  let time = 0, calls = 0;
+  const q = createQuota({
+    fetchRows: async () => { if (++calls > 1) throw new Error("agy is down"); return [row("Pool A", 5)]; },
+    now: () => time, cacheMs: 1000, retryMs: 500,
+  });
+  await q.get();
+  time = 1000;
+  await q.get(); // starts the failing refresh
+  await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
+});
+
+test("createQuota: the very first lookup is waited for only a short time", async () => {
+  let release;
+  const q = createQuota({ fetchRows: () => new Promise((r) => { release = () => r([row("Pool A", 5)]); }), firstWaitMs: 20 });
+  const started = Date.now();
+  assert.deepStrictEqual(await q.get(), []); // too slow: route normally this time
+  assert.ok(Date.now() - started < 1000);
+  release();
+  await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]); // the late answer is kept for next time
+});
