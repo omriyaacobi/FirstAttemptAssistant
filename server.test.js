@@ -56,6 +56,18 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
   const ask = (task, headers = {}, extra = {}) =>
     request("POST", "/api/ask", { headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ task, ...extra }) });
 
+  // Starts a task and waits until its background job has finished. Returns { status, job, conversationId }.
+  const askDone = async (task, headers = {}, extra = {}) => {
+    const res = await ask(task, headers, extra);
+    if (res.status !== 202) return { status: res.status, body: res.body };
+    let job = JSON.parse(res.body).job;
+    while (job.status === "running") {
+      await new Promise((r) => setTimeout(r, 10));
+      job = JSON.parse((await request("GET", "/api/jobs/" + job.id)).body).job;
+    }
+    return { status: 202, job, conversationId: job.conversationId };
+  };
+
   const close = async () => {
     await new Promise((r) => server.close(r));
     fs.rmSync(dir, { recursive: true, force: true });
@@ -64,7 +76,7 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
   const post = (path, body, headers = {}) =>
     request("POST", path, { headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 
-  return { server, port, request, ask, post, calls, restarts, store, close };
+  return { server, port, request, ask, askDone, post, calls, restarts, store, close };
 }
 
 test("serves the page", async () => {
@@ -75,24 +87,39 @@ test("serves the page", async () => {
   await s.close();
 });
 
-test("a valid task streams log lines then a result", async () => {
+test("a valid task starts a background job and answers at once", async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
   const s = await start(async (task, { log }) => {
-    log("[router] working");
+    log("[frontdesk] asking gemini/flash");
+    await gate;
     return { mode: "single", answer: "hello " + task, used: { provider: "p", model: "m" } };
   });
   const res = await s.ask("hi");
-  const lines = res.body.trim().split("\n").map((l) => JSON.parse(l));
-  assert.strictEqual(res.status, 200);
-  assert.deepStrictEqual(lines[0], { type: "log", text: "[router] working" });
-  assert.strictEqual(lines[1].type, "result");
-  assert.strictEqual(lines[1].result.answer, "hello hi");
+  assert.strictEqual(res.status, 202); // not waiting for the models
+  const job = JSON.parse(res.body).job;
+  assert.match(job.id, /^[a-f0-9]{32}$/);
+  assert.strictEqual(job.status, "running");
+  const mid = JSON.parse((await s.request("GET", "/api/jobs/" + job.id)).body).job;
+  assert.deepStrictEqual(mid.log, ["[frontdesk] asking gemini/flash"]);
+  assert.match(mid.step, /front desk/i);
+  // the question is already saved while the models work
+  assert.strictEqual(s.store.get(job.conversationId).messages.length, 1);
+  release();
+  const done = await s.askDone("again");
+  assert.strictEqual(done.job.status, "done");
+  assert.strictEqual(s.store.get(done.conversationId).messages[1].result.answer, "hello again");
   await s.close();
 });
 
-test("an error inside the engine becomes an error line, not a crash", async () => {
+test("an error inside the engine becomes a failed job and a saved error message, not a crash", async () => {
   const s = await start(async () => { throw new Error("all models failed"); });
-  const res = await s.ask("hi");
-  assert.deepStrictEqual(JSON.parse(res.body.trim()), { type: "error", message: "all models failed" });
+  const { job, conversationId } = await s.askDone("hi");
+  assert.strictEqual(job.status, "error");
+  assert.strictEqual(job.error, "all models failed");
+  const messages = s.store.get(conversationId).messages;
+  assert.deepStrictEqual(messages.map((m) => m.role), ["user", "assistant"]);
+  assert.strictEqual(messages[1].error, true);
   await s.close();
 });
 
@@ -120,7 +147,7 @@ test("SECURITY: a cross-site fetch is refused", async () => {
 test("SECURITY: a request from this page's own origin is allowed", async () => {
   const s = await start();
   const res = await s.ask("hi", { Origin: `http://localhost:${s.port}`, "Sec-Fetch-Site": "same-origin" });
-  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.status, 202);
   await s.close();
 });
 
@@ -164,12 +191,10 @@ test("limits how many tasks run at once", async () => {
   let release;
   const gate = new Promise((r) => (release = r));
   const s = await start(async () => { await gate; return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } }; });
-  const running = Array.from({ length: MAX_RUNNING }, () => s.ask("slow"));
-  await new Promise((r) => setTimeout(r, 100)); // let them start
+  for (let i = 0; i < MAX_RUNNING; i++) assert.strictEqual((await s.ask("slow")).status, 202);
   const extra = await s.ask("one too many");
   assert.strictEqual(extra.status, 429);
   release();
-  await Promise.all(running);
   await s.close();
 });
 
@@ -183,9 +208,8 @@ test("usage endpoint returns rows; unknown routes are 404", async () => {
 
 test("a new conversation is created and saved, and its id is returned", async () => {
   const s = await start();
-  const res = await s.ask("first question");
-  const result = JSON.parse(res.body.trim().split("\n").pop());
-  assert.strictEqual(result.type, "result");
+  const result = await s.askDone("first question");
+  assert.strictEqual(result.job.status, "done");
   const saved = s.store.get(result.conversationId);
   assert.strictEqual(saved.title, "first question");
   assert.deepStrictEqual(saved.messages.map((m) => m.role), ["user", "assistant"]);
@@ -199,9 +223,9 @@ test("a follow-up in the same conversation gets the earlier messages as history"
     seenHistory = history;
     return { mode: "single", answer: "reply to " + task, used: { provider: "p", model: "m" } };
   });
-  const first = JSON.parse((await s.ask("my name is Omri")).body.trim().split("\n").pop());
+  const first = await s.askDone("my name is Omri");
   assert.deepStrictEqual(seenHistory, []); // first message: no history yet
-  await s.ask("what is my name?", {}, { conversationId: first.conversationId });
+  await s.askDone("what is my name?", {},{ conversationId: first.conversationId });
   assert.deepStrictEqual(seenHistory, [
     { role: "user", text: "my name is Omri" },
     { role: "assistant", text: "reply to my name is Omri" },
@@ -218,16 +242,25 @@ test("an unknown or malformed conversation id is refused", async () => {
   await s.close();
 });
 
-test("a failed task is not saved", async () => {
-  const s = await start(async () => { throw new Error("all models failed"); });
-  await s.ask("this will fail");
-  assert.deepStrictEqual(s.store.list(), []);
+test("a failed task keeps your question and an error note, and is not used as memory", async () => {
+  let seenHistory = null;
+  let fail = true;
+  const s = await start(async (task, { history }) => {
+    seenHistory = history;
+    if (fail) throw new Error("all models failed");
+    return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } };
+  });
+  const first = await s.askDone("this will fail");
+  assert.strictEqual(s.store.get(first.conversationId).messages.length, 2);
+  fail = false;
+  await s.askDone("try again", {}, { conversationId: first.conversationId });
+  assert.deepStrictEqual(seenHistory, [{ role: "user", text: "this will fail" }]);
   await s.close();
 });
 
 test("list, open and delete conversations over HTTP", async () => {
   const s = await start();
-  const made = JSON.parse((await s.ask("hello there")).body.trim().split("\n").pop());
+  const made = await s.askDone("hello there");
   const list = JSON.parse((await s.request("GET", "/api/conversations")).body);
   assert.strictEqual(list.conversations[0].title, "hello there");
   const one = await s.request("GET", "/api/conversations/" + made.conversationId);
@@ -246,7 +279,7 @@ test("SECURITY: a path-traversal id cannot read or delete other files", async ()
 
 test("SECURITY: deleting from another website is refused", async () => {
   const s = await start();
-  const made = JSON.parse((await s.ask("keep me")).body.trim().split("\n").pop());
+  const made = await s.askDone("keep me");
   const res = await s.request("DELETE", "/api/conversations/" + made.conversationId, { headers: { Origin: "https://evil.example.com", "Sec-Fetch-Site": "cross-site" } });
   assert.strictEqual(res.status, 403);
   assert.ok(s.store.get(made.conversationId)); // still there
@@ -310,12 +343,10 @@ test("restart: refused while a task is running", async () => {
   let release;
   const gate = new Promise((r) => (release = r));
   const s = await start(async () => { await gate; return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } }; }, { supervised: true });
-  const slow = s.ask("slow");
-  await new Promise((r) => setTimeout(r, 100));
+  assert.strictEqual((await s.ask("slow")).status, 202);
   assert.strictEqual((await s.post("/api/restart", {})).status, 409);
   assert.strictEqual(s.restarts.length, 0);
   release();
-  await slow;
   await s.close();
 });
 

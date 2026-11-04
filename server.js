@@ -5,7 +5,9 @@
 // A server is a program that waits for requests and sends back responses. Ours has these routes:
 //   GET    /                       -> the page itself (public/index.html)
 //   GET    /api/usage              -> your agy quota, as JSON
-//   POST   /api/ask                -> run a task (inside a conversation), streaming progress as it goes
+//   POST   /api/ask                -> start a task (inside a conversation) as a BACKGROUND JOB; answers at once with its id
+//   GET    /api/jobs               -> running jobs and recently finished ones (progress, plain-words step)
+//   GET    /api/jobs/:id           -> one job (see jobs.js: the answer is saved into the conversation by the server)
 //   GET    /api/conversations      -> the list of saved conversations
 //   GET    /api/conversations/:id  -> one conversation with all its messages
 //   DELETE /api/conversations/:id  -> delete a conversation
@@ -48,6 +50,7 @@ const { createGitOps } = require("./gitops");
 const { getReminders } = require("./reminders");
 const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
+const { createJobs, JOB_ID_PATTERN } = require("./jobs");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -145,7 +148,18 @@ function createServer({
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
 } = {}) {
-  let running = 0;
+  // Tasks run as background jobs (see jobs.js), so they survive the page being closed or reloaded.
+  // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
+  const jobs = createJobs({
+    handle,
+    store,
+    maxRunning: MAX_RUNNING,
+    onFinish: ({ job, title, watched }) => {
+      if (watched) return;
+      const ok = job.status === "done";
+      push.notifyAll({ title: ok ? "Bot finished" : "Bot could not finish", body: title, tag: `job-${job.id}` }).catch(() => {});
+    },
+  });
 
   const server = http.createServer(async (req, res) => {
     const port = server.address().port;
@@ -330,7 +344,7 @@ function createServer({
       if (!supervised) {
         return sendJson(res, 409, { error: "Bot can only restart itself when it was started with start-web.cmd. Close this server and double-click start-web.cmd." });
       }
-      if (running > 0 || selfEdit.isActive()) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
+      if (jobs.running() > 0 || selfEdit.isActive()) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
       sendJson(res, 200, { restarting: true });
       restart();
       return;
@@ -353,64 +367,39 @@ function createServer({
       }
     }
 
-    // Run a task
+    // Start a task. It runs as a background job (jobs.js) and we answer at once with the job's id,
+    // so the page can close, reload or switch chats while Bot works, and pick the job up again later.
     if (req.method === "POST" && url.pathname === "/api/ask") {
-      // CHECK 3 - only accept JSON. A web page on another site can't send JSON to us without
-      // the browser first asking our permission, and we never give it.
-      if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
-        return sendJson(res, 415, { error: "send JSON" });
-      }
-
-      let input;
-      try {
-        input = JSON.parse(await readBody(req));
-      } catch (error) {
-        return sendJson(res, error.status || 400, { error: error.status ? error.message : "invalid JSON" });
-      }
+      // Only JSON is accepted (readJsonBody): a web page on another site can't send JSON to us
+      // without the browser first asking our permission, and we never give it.
+      const input = await readJsonBody(req, res);
+      if (!input) return;
 
       // Never trust what arrives: check the type and the size.
       const task = typeof input.task === "string" ? input.task.trim() : "";
       if (!task) return sendJson(res, 400, { error: "task is empty" });
       if (task.length > MAX_TASK_CHARS) return sendJson(res, 413, { error: `task is longer than ${MAX_TASK_CHARS} characters` });
 
-      // Continuing a saved conversation? Its earlier messages become the memory for this task.
-      let conversation = null;
-      if (input.conversationId !== undefined && input.conversationId !== null) {
-        conversation = store.get(input.conversationId);
-        if (!conversation) return sendJson(res, 404, { error: "conversation not found" });
-      }
-      const history = conversation ? conversation.messages.map((m) => ({ role: m.role, text: m.text })) : [];
-
-      // CHECK 4 - a cap on simultaneous tasks
-      if (running >= MAX_RUNNING) return sendJson(res, 429, { error: "busy, wait for the current tasks to finish" });
-      running++;
-
-      // We answer as a stream of lines (NDJSON): progress lines first, the final result last,
-      // so the page can show what is happening while the models work.
-      res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" });
-      const send = (obj) => res.write(JSON.stringify(obj) + "\n");
-      const logLines = [];
       try {
-        const result = await handle(task, {
-          noPlan: input.noPlan === true,
-          history,
-          log: (text) => { logLines.push(text); send({ type: "log", text }); },
-        });
-        // Save both messages. The first message of a brand-new conversation becomes its title.
-        if (!conversation) conversation = store.create(task);
-        const at = Date.now();
-        store.append(conversation.id, [
-          { role: "user", text: task, at },
-          { role: "assistant", text: resultText(result), result, log: logLines.slice(-40), at },
-        ]);
-        send({ type: "result", result, conversationId: conversation.id });
+        // Also checks the conversation id, that this chat has no job running already (409),
+        // and the cap on simultaneous tasks (429).
+        const job = jobs.start({ task, noPlan: input.noPlan === true, conversationId: input.conversationId });
+        return sendJson(res, 202, { job });
       } catch (error) {
-        send({ type: "error", message: String(error.message).slice(0, 500) });
-      } finally {
-        running--;
-        res.end();
+        return sendJson(res, error.status || 500, { error: error.message });
       }
-      return;
+    }
+
+    // Following jobs. `?watching=<conversation id>` tells Bot which chat the page is showing,
+    // so it only sends a push notification when nobody is looking at the chat that finished.
+    if (req.method === "GET" && url.pathname === "/api/jobs") {
+      const watching = url.searchParams.get("watching");
+      return sendJson(res, 200, { jobs: jobs.list({ watching }) });
+    }
+    const jobRoute = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
+    if (jobRoute && req.method === "GET") {
+      const job = JOB_ID_PATTERN.test(jobRoute[1]) ? jobs.get(jobRoute[1], { watching: url.searchParams.get("watching") === "1" }) : null;
+      return job ? sendJson(res, 200, { job }) : sendJson(res, 404, { error: "job not found" });
     }
 
     sendJson(res, 404, { error: "not found" });

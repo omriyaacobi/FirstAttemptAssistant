@@ -47,3 +47,10 @@ test("the Chats button is an accessible 44px icon button", () => {
   assert.match(html, /viewport-fit=cover/);
   assert.match(html, /env\(safe-area-inset-top\)/);
 });
+
+test("sending a message starts a background job and the page follows it by polling, not by one long request", () => {
+  assert.match(html, /fetch\("\/api\/jobs/);
+  assert.doesNotMatch(html, /getReader\(\)/);
+  // no chat switching or composer lock-out depends on a request being open any more
+  assert.doesNotMatch(html, /if \(busy\) return;/);
+});
