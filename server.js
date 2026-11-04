@@ -167,15 +167,17 @@ function createServer({
     const origin = req.headers.origin;
     const allowedOrigins = remote ? [`https://${auth.host}`] : me.map((h) => `http://${h}`);
     if (origin && !allowedOrigins.includes(origin)) return sendJson(res, 403, { error: "bad origin" });
-    const site = req.headers["sec-fetch-site"];
-    if (site && !["same-origin", "none"].includes(site)) return sendJson(res, 403, { error: "cross-site request" });
-
     const url = new URL(req.url, `http://${req.headers.host}`);
+    // Opening the page itself (or the app files) is allowed from anywhere: they are fixed files with
+    // no private data, and GET changes nothing. This is needed because Android marks a launch from the
+    // home-screen app icon as "cross-site". Every /api request still must come from this page.
+    const pageFile = req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || Object.hasOwn(STATIC, url.pathname));
+    const site = req.headers["sec-fetch-site"];
+    if (site && !pageFile && !["same-origin", "none"].includes(site)) return sendJson(res, 403, { error: "cross-site request" });
 
     // CHECK 3 (phone only) - log in first, and never the PC-only routes.
     if (remote) {
-      const open = (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || Object.hasOwn(STATIC, url.pathname)))
-        || url.pathname === "/api/session" || url.pathname === "/api/login";
+      const open = pageFile || url.pathname === "/api/session" || url.pathname === "/api/login";
       if (!open && PC_ONLY.test(url.pathname)) return sendJson(res, 403, { error: "this only works on the PC" });
       if (!open && !auth.isLoggedIn(req)) return sendJson(res, 401, { error: "log in first" });
     }

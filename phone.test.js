@@ -133,6 +133,18 @@ test("SECURITY: a forwarded request counts as the phone even if its Host looks l
   await s.close();
 });
 
+test("opening the app from the Android home screen (marked cross-site) still loads the page", async () => {
+  const s = await start();
+  const launch = { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate" };
+  assert.strictEqual((await s.phone("GET", "/", { headers: launch })).status, 200);
+  assert.strictEqual((await s.phone("GET", "/manifest.webmanifest", { headers: launch })).status, 200);
+  // ...but an API request marked cross-site is still refused, even with a valid login.
+  const cookie = await s.login();
+  assert.strictEqual((await s.phone("GET", "/api/reminders", { cookie, headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
+  assert.strictEqual((await s.phone("POST", "/api/ask", { cookie, body: { task: "hi" }, headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
+  await s.close();
+});
+
 test("SECURITY: wrong token is refused and gives no cookie", async () => {
   const s = await start();
   const res = await s.phone("POST", "/api/login", { body: { token: "nope" } });
