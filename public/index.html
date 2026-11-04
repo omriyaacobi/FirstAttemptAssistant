@@ -115,6 +115,17 @@
   button.mic { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px 12px; }
   button.mic.listening { background: var(--bad); color: #fff; border-color: var(--bad); }
   .tools { display: flex; gap: 8px; align-items: center; }
+  /* Photo attach: a round icon button next to Send, and a small preview chip above the text box */
+  button.attach { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button.attach[hidden] { display: none; }
+  button.attach:active { background: var(--mine); }
+  button.attach svg { width: 22px; height: 22px; }
+  .photo-chip { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .photo-chip[hidden] { display: none; }
+  .photo-chip img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+  .photo-chip span { flex: 1; color: var(--muted); font-size: .85rem; }
+  .photo-chip button { width: 32px; height: 32px; padding: 0; border-radius: 50%; background: var(--mine); color: var(--muted); font-size: 1rem; line-height: 1; }
+  .me img { display: block; max-width: min(240px, 100%); border-radius: 8px; margin-bottom: 6px; }
   #toasts { position: fixed; top: 12px; right: 12px; z-index: 20; display: flex; flex-direction: column; gap: 8px; max-width: min(360px, calc(100vw - 24px)); }
   .toast { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.25); display: flex; gap: 10px; align-items: flex-start; }
   .toast .what { flex: 1; overflow-wrap: anywhere; }
@@ -201,12 +212,21 @@
     <div id="thread" aria-live="polite"><div class="inner" id="messages"></div></div>
     <form class="composer" id="form">
       <div class="inner">
+        <div class="photo-chip" id="photoChip" hidden>
+          <img id="photoThumb" alt="Attached photo">
+          <span id="photoInfo">Photo attached</span>
+          <button type="button" id="photoRemove" aria-label="Remove photo">✕</button>
+        </div>
         <textarea id="task" dir="auto" aria-label="Your message" placeholder="Type a task. Enter sends, Shift+Enter adds a new line."></textarea>
         <div class="row">
           <label><input type="checkbox" id="noplan"> Don't split into steps</label>
           <span class="status" id="status" role="status"></span>
           <span class="tools">
             <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
+            <input type="file" id="photoInput" accept="image/*" hidden>
+            <button type="button" class="attach" id="attach" aria-label="Attach a photo" title="Attach a photo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1.2-1.6A1 1 0 0 1 9.5 4h5a1 1 0 0 1 .8.4L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+            </button>
             <button type="button" class="mic" id="mic" hidden title="Talk to Bot: speak, and it is sent when you stop">Mic</button>
             <button type="submit" id="send">Send</button>
           </span>
@@ -431,6 +451,58 @@
     else loadChats();
   }
 
+  // ---- Photos ----
+  // The phone's photo is shrunk in the page first (a canvas is a drawing surface we can read back as a JPEG),
+  // because a 4000px camera picture is several MB, but 1600px is plenty to read a schedule.
+  const MAX_PHOTO_SIDE = 1600;
+  let photo = null; // { dataUrl } while one is attached
+
+  function clearPhoto() {
+    photo = null;
+    $("photoChip").hidden = true;
+    $("photoInput").value = "";
+    $("photoThumb").removeAttribute("src");
+  }
+
+  function showPhotoIn(msg, p) {
+    const img = document.createElement("img");
+    img.src = p.dataUrl;
+    img.alt = "Photo you sent";
+    msg.firstChild.prepend(img);
+  }
+
+  async function shrinkPhoto(file) {
+    const bitmap = await createImageBitmap(file); // also applies the camera's rotation
+    const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff"; // transparent PNGs become white instead of black
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    return canvas.toDataURL("image/jpeg", 0.85);
+  }
+
+  $("attach").addEventListener("click", () => $("photoInput").click());
+  $("photoInput").addEventListener("change", async () => {
+    const file = $("photoInput").files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { $("status").textContent = "That is not a picture."; return; }
+    try {
+      const dataUrl = await shrinkPhoto(file);
+      photo = { dataUrl };
+      $("photoThumb").src = dataUrl;
+      $("photoInfo").textContent = "Photo attached (" + Math.round(dataUrl.length * 0.75 / 1024) + " KB)";
+      $("photoChip").hidden = false;
+      $("status").textContent = "";
+    } catch (error) {
+      $("status").textContent = "Could not read that picture.";
+    }
+  });
+  $("photoRemove").addEventListener("click", clearPhoto);
+
   // ---- Sending a message, and following the task ----
   // Bot runs each task as a background JOB on the PC (see jobs.js). Sending only starts the job;
   // the page then asks Bot every couple of seconds how it is going. So you can switch chats, start
@@ -592,7 +664,8 @@
   window.addEventListener("focus", pollJobs);
 
   async function send() {
-    const task = $("task").value.trim();
+    const attached = photo;
+    const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
     if (!task || busy) return;
     if (currentId && jobState.active.has(currentId)) return updateComposer(); // one task at a time per chat
     busy = true;
@@ -601,16 +674,18 @@
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, noPlan: $("noplan").checked, conversationId: currentId }),
+        body: JSON.stringify({ task, noPlan: $("noplan").checked, conversationId: currentId, ...(attached ? { image: attached.dataUrl } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `server answered ${res.status}`);
       const job = body.job;
       // Only now is the message safely with Bot, so only now the box is cleared.
       $("task").value = "";
+      clearPhoto();
       currentId = job.conversationId;
       if ($("messages").querySelector(".empty")) $("messages").replaceChildren();
-      addUser(task);
+      const sent = addUser(task);
+      if (attached) showPhotoIn(sent, attached);
       jobState.offset = job.now - Date.now();
       jobState.active.set(job.conversationId, job);
       if (!jobState.ticker) jobState.ticker = setInterval(tick, 1000);

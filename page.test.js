@@ -48,6 +48,18 @@ test("the Chats button is an accessible 44px icon button", () => {
   assert.match(html, /env\(safe-area-inset-top\)/);
 });
 
+test("the photo button is a round icon button with a preview chip, and photos are shrunk in the page", () => {
+  const tag = html.match(/<button[^>]*id="attach"[^>]*>/)[0];
+  assert.doesNotMatch(tag, /\bhidden\b/);
+  assert.match(tag, /aria-label="Attach a photo"/);
+  assert.match(html, /<input type="file" id="photoInput" accept="image\/\*" hidden>/);
+  assert.match(html, /button\.attach \{[^}]*width: 44px; height: 44px/);
+  assert.match(html, /id="photoChip"/);
+  assert.match(html, /createImageBitmap/);
+  assert.match(html, /toDataURL\("image\/jpeg"/);
+  assert.match(html, /image: attached\.dataUrl/); // the photo travels with the message
+});
+
 test("sending a message starts a background job and the page follows it by polling, not by one long request", () => {
   assert.match(html, /fetch\("\/api\/jobs/);
   assert.doesNotMatch(html, /getReader\(\)/);

@@ -81,6 +81,25 @@ function askAgyStructured(question, model, schema) {
   });
 }
 
+// Gemini looking at a photo. agy is an agent that reads files in its working folder, so the photo is
+// copied into a brand-new EMPTY folder that holds only that one file, agy runs there, and the folder
+// is deleted afterwards. The agent therefore has nothing else of yours to see.
+async function askAgyWithImage(model, question, imagePath) {
+  checkModelName(model);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
+  try {
+    fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
+    return await new Promise((resolve, reject) => {
+      execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 1e7 }, (error, stdout, stderr) => {
+        if (error) return reject(new Error(stderr || error.message));
+        resolve(stdout.trim());
+      });
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const PROVIDERS = { claude: askClaude, agy: askAgy };
 
 function ask(provider, model, question) {
@@ -108,4 +127,4 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, PROVIDERS, CLAUDE_CMD, claudeEnv };
+module.exports = { ask, askChain, askAgyStructured, askAgyWithImage, PROVIDERS, CLAUDE_CMD, claudeEnv };

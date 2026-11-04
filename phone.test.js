@@ -103,7 +103,7 @@ test("the session cookie is HttpOnly, Secure and SameSite=Strict, and does not c
 test("the PC needs no login and keeps every feature", async () => {
   const s = await start();
   const session = (await s.pc("GET", "/api/session")).json();
-  assert.deepStrictEqual(session, { remote: false, phoneAccess: true, loggedIn: true, pushKey: "PUBLIC-KEY" });
+  assert.deepStrictEqual(session, { remote: false, phoneAccess: true, loggedIn: true, images: true, pushKey: "PUBLIC-KEY" });
   assert.strictEqual((await s.pc("GET", "/api/selfedit")).status, 200);
   assert.strictEqual((await s.pc("POST", "/api/login", { token: TOKEN })).status, 400); // nothing to log in to
   await s.close();
@@ -113,7 +113,7 @@ test("SECURITY: the phone gets only the page until it logs in", async () => {
   const s = await start();
   assert.strictEqual((await s.phone("GET", "/")).status, 200);
   assert.strictEqual((await s.phone("GET", "/manifest.webmanifest")).status, 200);
-  assert.deepStrictEqual((await s.phone("GET", "/api/session")).json(), { remote: true, phoneAccess: true, loggedIn: false, pushKey: null });
+  assert.deepStrictEqual((await s.phone("GET", "/api/session")).json(), { remote: true, phoneAccess: true, loggedIn: false, images: true, pushKey: null });
   for (const [method, p] of [["GET", "/api/conversations"], ["GET", "/api/reminders"], ["GET", "/api/usage"]]) {
     assert.strictEqual((await s.phone(method, p)).status, 401, p);
   }

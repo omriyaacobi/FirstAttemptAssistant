@@ -87,6 +87,8 @@
   - NOT done: a real Cancel button. The models run as child processes that `core.js`/`providers.js` can't stop yet, so a "cancel" would only hide the result while quota is still spent. Worth doing later by passing an AbortSignal down to `providers.js`.
   - Live-tested in the browser pane on a scratch server (port 3012, fake slow model, temp data): reload mid-task kept the task; a second chat ran at once; the first finished in the background (toast + green dot + push logged), the second showed the Done line. NOT tested on the real phone yet.
 
+- Photos: the page has a camera button; a message with a photo goes to Gemini (agy, Flash then Argon) in a private empty folder, never the front desk. Server checks size (3 MB) and magic bytes (`photo.js`); the saved copy in `data/uploads/` is deleted when the job ends; the chat keeps "(photo attached)". Calendar is NOT wired, so Bot lists the events as text. Live-tested with a real PNG.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.

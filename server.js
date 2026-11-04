@@ -51,6 +51,7 @@ const { getReminders } = require("./reminders");
 const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
+const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -94,12 +95,12 @@ function getUsage() {
 }
 
 // Reads the request body, but gives up if it gets too big.
-function readBody(req) {
+function readBody(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > MAX_BODY) {
+      if (body.length > limit) {
         reject(Object.assign(new Error("request too large"), { status: 413 }));
         req.destroy();
       }
@@ -117,13 +118,19 @@ const sendJson = (res, status, data) => {
 // Reads a JSON request body. Sends the error response itself and returns null if the request is bad.
 // Only "Content-Type: application/json" is accepted. A web page on another site cannot send JSON
 // to us without the browser first asking our permission, and we never give it.
-async function readJsonBody(req, res) {
+// { photo: true } is only used by /api/ask: a request carrying a photo may be bigger (MAX_PHOTO_BODY).
+// A request WITHOUT a photo still has to fit in MAX_BODY, like everywhere else.
+async function readJsonBody(req, res, { photo = false } = {}) {
   if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
     sendJson(res, 415, { error: "send JSON" });
     return null;
   }
   try {
-    const parsed = JSON.parse(await readBody(req));
+    const raw = await readBody(req, photo ? MAX_PHOTO_BODY : MAX_BODY);
+    const parsed = JSON.parse(raw);
+    if (photo && raw.length > MAX_BODY && (!parsed || typeof parsed !== "object" || parsed.image === undefined)) {
+      throw Object.assign(new Error("request too large"), { status: 413 });
+    }
     if (parsed && typeof parsed === "object") return parsed;
     throw new Error("not an object");
   } catch (error) {
@@ -142,6 +149,7 @@ function createServer({
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
   reminders = getReminders(),
+  uploadDir = path.join(__dirname, "data", "uploads"), // a photo waits here only while its task runs (data/ is git-ignored)
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
@@ -202,6 +210,7 @@ function createServer({
         remote,
         phoneAccess: auth.enabled,
         loggedIn: remote ? auth.isLoggedIn(req) : true,
+        images: true, // this Bot can receive a photo with a message
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
       });
     }
@@ -372,7 +381,7 @@ function createServer({
     if (req.method === "POST" && url.pathname === "/api/ask") {
       // Only JSON is accepted (readJsonBody): a web page on another site can't send JSON to us
       // without the browser first asking our permission, and we never give it.
-      const input = await readJsonBody(req, res);
+      const input = await readJsonBody(req, res, { photo: true });
       if (!input) return;
 
       // Never trust what arrives: check the type and the size.
@@ -380,12 +389,23 @@ function createServer({
       if (!task) return sendJson(res, 400, { error: "task is empty" });
       if (task.length > MAX_TASK_CHARS) return sendJson(res, 413, { error: `task is longer than ${MAX_TASK_CHARS} characters` });
 
+      // An optional photo: really check it (size, then the first bytes) and save it under a random name.
+      let image = null;
+      if (input.image !== undefined) {
+        try {
+          image = savePhoto(uploadDir, parsePhoto(input.image));
+        } catch (error) {
+          return sendJson(res, error.status || 400, { error: error.message });
+        }
+      }
+
       try {
         // Also checks the conversation id, that this chat has no job running already (409),
         // and the cap on simultaneous tasks (429).
-        const job = jobs.start({ task, noPlan: input.noPlan === true, conversationId: input.conversationId });
+        const job = jobs.start({ task, noPlan: input.noPlan === true, conversationId: input.conversationId, image });
         return sendJson(res, 202, { job });
       } catch (error) {
+        if (image) fs.rmSync(image.path, { force: true }); // the job never started, so nothing else will delete the photo
         return sendJson(res, error.status || 500, { error: error.message });
       }
     }

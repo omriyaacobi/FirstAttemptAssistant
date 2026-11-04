@@ -16,6 +16,7 @@
 // any job runs). The conversation file is the permanent record.
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
 const { resultText } = require("./core");
 
 // Job ids are random and checked everywhere. 32 hex characters = 128 random bits, so they
@@ -96,7 +97,8 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
   }
 
   // Starts a job. `task` must already be checked by the caller. Throws errors with a `status` for the server to send.
-  function start({ task, noPlan = false, conversationId = null }) {
+  // `image` ({ path, ext }) is a photo the server already checked and saved; the job deletes it when it ends.
+  function start({ task, noPlan = false, conversationId = null, image = null }) {
     let conversation = null;
     if (conversationId !== null && conversationId !== undefined) {
       conversation = store.get(conversationId);
@@ -112,7 +114,7 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
     // Save the question right away: if you reload or come back later, the chat already shows it.
     if (!conversation) conversation = store.create(task);
     const startedAt = now();
-    store.append(conversation.id, [{ role: "user", text: task, at: startedAt }]);
+    store.append(conversation.id, [{ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt }]);
 
     const job = {
       id: crypto.randomBytes(16).toString("hex"),
@@ -134,6 +136,7 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
         const result = await handle(task, {
           noPlan: noPlan === true,
           history,
+          image,
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
         });
         message = { role: "assistant", text: resultText(result), result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
@@ -151,6 +154,7 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
         job.status = "error";
         job.error = "the conversation was deleted before the answer arrived";
       }
+      if (image) fs.rmSync(image.path, { force: true }); // the photo is private: it is not kept after the answer
       job.finishedAt = now();
       runningCount--;
       prune();
