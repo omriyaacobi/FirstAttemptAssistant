@@ -7,8 +7,9 @@
 // Three small parts:
 //   lowPools()    - PURE function (no I/O): from the usage rows, which pools are low?
 //   prioritize()  - PURE function: reorder a chain so models in low pools come last.
-//   createQuota() - fetches the usage, remembers it for a few minutes, and NEVER throws:
-//                   if the lookup fails, it says "nothing is low" and Bot routes normally.
+//   createQuota() - fetches the usage and NEVER throws. A task never waits for a refresh: it gets
+//                   the last known value and the refresh runs in the background. If nothing is
+//                   known yet (first lookup failed or slow) it says "nothing is low".
 //
 // Note: the Claude CLI plan has no numbers in /usage, so Bot cannot see it and never treats it as low.
 
@@ -20,6 +21,7 @@ const LOW_THRESHOLD = 15; // a pool is "low" when any of its windows has less th
 const CACHE_MS = 5 * 60 * 1000; // reuse a successful lookup this long
 const RETRY_MS = 60 * 1000; // after a failed lookup, wait this long before asking again
 const LOOKUP_TIMEOUT_MS = 15000; // a lookup that takes longer than this counts as failed
+const FIRST_WAIT_MS = 5000; // the very first lookup is waited for at most this long (a normal one takes ~3.6 s)
 
 // agy prints tab-separated lines like: Gemini Models<TAB>Five Hour Limit Remaining<TAB>99%<TAB>2026-10-28T01:41:40Z
 // (server.js has the same parser for the web page; kept separate because server.js is a protected file.)
@@ -66,20 +68,34 @@ function fetchUsage() {
 }
 
 // fetchRows and now are parameters so tests can fake them.
-function createQuota({ fetchRows = fetchUsage, now = Date.now, cacheMs = CACHE_MS, retryMs = RETRY_MS, threshold = LOW_THRESHOLD } = {}) {
+// Stale-while-revalidate: once a value is known, get() returns it AT ONCE, even if it is old, and
+// refreshes it in the background. Only the very first lookup ever has to wait, and only up to
+// firstWaitMs. A failed refresh keeps the last known value instead of forgetting it.
+function createQuota({ fetchRows = fetchUsage, now = Date.now, cacheMs = CACHE_MS, retryMs = RETRY_MS, threshold = LOW_THRESHOLD, firstWaitMs = FIRST_WAIT_MS } = {}) {
   let cached = null; // { low, until }
   let pending = null; // a lookup already running, so parallel tasks share one
 
-  async function get() {
-    if (cached && now() < cached.until) return cached.low;
+  function refresh() {
     if (!pending) {
       pending = fetchRows()
         .then((rows) => { cached = { low: lowPools(rows, threshold), until: now() + cacheMs }; })
-        .catch(() => { cached = { low: [], until: now() + retryMs }; }) // lookup failed: route normally
+        .catch(() => { cached = { low: cached ? cached.low : [], until: now() + retryMs }; }) // failed: keep what we knew
         .finally(() => { pending = null; });
     }
-    await pending;
-    return cached.low;
+    return pending;
+  }
+
+  async function get() {
+    if (cached) {
+      if (now() >= cached.until) refresh(); // not awaited: the caller gets the old value now
+      return cached.low;
+    }
+    // Nothing known yet: wait for the first lookup, but not forever. It keeps running in the background.
+    let timer;
+    const tooSlow = new Promise((resolve) => { timer = setTimeout(resolve, firstWaitMs); });
+    await Promise.race([refresh(), tooSlow]);
+    clearTimeout(timer);
+    return cached ? cached.low : [];
   }
   return { get };
 }

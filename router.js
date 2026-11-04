@@ -17,7 +17,7 @@
 // treated as low.
 const MODELS = {
   flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
-  flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the front desk and the planner
+  flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the planner
   argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" },
   argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: "Gemini 4 Argon" },
   claudeSonnet: { provider: "claude", model: "sonnet", pool: null },

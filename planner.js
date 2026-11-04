@@ -133,8 +133,8 @@ async function runPlan(subtasks, originalTask, { run = askChain, chainFor = chai
           onStart({ subtask, chain });
           try {
             const prompt = buildSubtaskPrompt(subtask, originalTask, results, subtasks.length);
-            const { answer, used } = await run(chain, prompt);
-            result = { id: subtask.id, answer, used };
+            const { answer, used, attempts } = await run(chain, prompt);
+            result = { id: subtask.id, answer, used, attempts };
           } catch (error) {
             result = { id: subtask.id, error: String(error.message).trim() };
           }
