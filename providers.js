@@ -26,7 +26,8 @@ function claudeEnv() {
   let token = "";
   try {
     const line = fs.readFileSync(ENV_FILE, "utf8").split(/\r?\n/).find((l) => /^\s*CLAUDE_CODE_OAUTH_TOKEN\s*=/.test(l));
-    if (line) token = line.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
+    // A token never contains spaces; copying it from a narrow terminal can add some, so drop them.
+    if (line) token = line.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2").replace(/\s+/g, "");
   } catch (error) { /* no .env: use the normal login */ }
   return token ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token } : process.env;
 }
