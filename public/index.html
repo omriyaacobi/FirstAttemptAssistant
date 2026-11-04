@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bot</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png">
@@ -110,11 +110,28 @@
   .login form { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; }
   .login input { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--accent); }
 
+  /* Phone-only pieces (hamburger, close button, backdrop) are hidden on the PC page */
+  .iconbtn, .backdrop, .side-close { display: none; }
+
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
-    .topbar { display: flex; justify-content: space-between; align-items: center; }
-    .side { position: fixed; inset: 0 25% 0 0; z-index: 5; transform: translateX(-100%); transition: transform .2s; box-shadow: 4px 0 16px rgba(0,0,0,.25); }
+    /* App-style header: hamburger, then the title with the current chat's name under it */
+    .topbar { display: flex; align-items: center; gap: 10px; padding: calc(6px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 6px calc(10px + env(safe-area-inset-left)); }
+    .topbar .titles { flex: 1; min-width: 0; line-height: 1.2; }
+    .topbar .titles strong { display: block; color: var(--accent); }
+    .topbar .titles span { display: block; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 12px; background: var(--mine); color: var(--accent); border: 1px solid var(--line); }
+    .iconbtn:active { background: var(--line); }
+    .iconbtn svg { width: 24px; height: 24px; }
+    .side { position: fixed; inset: 0 25% 0 0; z-index: 6; transform: translateX(-100%); transition: transform .2s; box-shadow: 4px 0 16px rgba(0,0,0,.25);
+            padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); overscroll-behavior: contain; }
     .side.open { transform: none; }
+    .side-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .side-close { display: inline-flex; }
+    .backdrop { display: block; position: fixed; inset: 0; z-index: 5; background: rgba(20, 8, 32, .5); opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; }
+    .backdrop.show { opacity: 1; visibility: visible; }
+    .composer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+    #toasts { top: calc(12px + env(safe-area-inset-top)); }
     .me { margin-left: 5%; }
   }
 </style>
@@ -130,10 +147,16 @@
   </form>
 </div>
 <div class="app">
-  <aside class="side" id="side">
-    <div>
-      <h1>Bot</h1>
-      <p class="sub">Picks the best model for each task.</p>
+  <div class="backdrop" id="backdrop"></div>
+  <aside class="side" id="side" aria-label="Conversations and tools">
+    <div class="side-head">
+      <div>
+        <h1>Bot</h1>
+        <p class="sub">Picks the best model for each task.</p>
+      </div>
+      <button class="iconbtn side-close" id="sideClose" aria-label="Close conversations">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
     <button id="new">+ New chat</button>
     <nav aria-label="Conversations"><ul id="chats"></ul></nav>
@@ -156,8 +179,10 @@
 
   <section class="chat" id="chatView">
     <div class="topbar">
-      <button class="ghost" id="menu" aria-label="Show conversations">Chats</button>
-      <strong>Bot</strong>
+      <button class="iconbtn" id="menu" aria-label="Show conversations" aria-expanded="false" aria-controls="side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="titles"><strong>Bot</strong><span id="chatName" dir="auto">New chat</span></div>
     </div>
     <div id="thread" aria-live="polite"><div class="inner" id="messages"></div></div>
     <form class="composer" id="form">
@@ -178,8 +203,10 @@
 
   <section class="chat" id="improveView" hidden>
     <div class="topbar">
-      <button class="ghost" id="menu2" aria-label="Show conversations">Chats</button>
-      <strong>Improve Bot</strong>
+      <button class="iconbtn" id="menu2" aria-label="Show conversations" aria-expanded="false" aria-controls="side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="titles"><strong>Bot</strong><span>Improve Bot</span></div>
     </div>
     <div class="scroll"><div class="inner">
       <div class="row" style="margin-top:0">
@@ -315,7 +342,9 @@
       const { conversations } = await (await fetch("/api/conversations")).json();
       const list = $("chats");
       list.replaceChildren();
+      chatTitles = {};
       conversations.forEach((c) => {
+        chatTitles[c.id] = c.title;
         const li = el("li", "chat-item" + (c.id === currentId ? " active" : ""));
         const open = el("button", "open", c.title);
         open.title = c.title;
@@ -326,14 +355,16 @@
         li.append(open, del);
         list.appendChild(li);
       });
+      updateChatName();
     } catch (error) { /* the list is a convenience; the chat still works without it */ }
   }
 
-  async function openChat(id) {
+  async function openChat(id, fromHistory) {
     if (busy) return;
     const res = await fetch("/api/conversations/" + id);
     if (!res.ok) return;
     const conversation = await res.json();
+    if (!fromHistory) navGo({ view: "chat", id });
     currentId = id;
     showView("chat");
     $("messages").replaceChildren();
@@ -347,17 +378,18 @@
       }
     });
     scrollDown();
-    $("side").classList.remove("open");
+    updateChatName();
     loadChats();
   }
 
-  function newChat() {
+  function newChat(fromHistory) {
     if (busy) return;
+    if (fromHistory !== true) navGo({ view: "chat", id: null });
     currentId = null;
     showView("chat");
     showEmpty();
-    $("side").classList.remove("open");
-    $("task").focus();
+    updateChatName();
+    if (!session.remote) $("task").focus();
     loadChats();
   }
 
@@ -471,7 +503,85 @@
   });
   $("new").addEventListener("click", newChat);
   $("refresh").addEventListener("click", loadQuota);
-  $("menu").addEventListener("click", () => $("side").classList.toggle("open"));
+
+  // ---- Navigation: the phone's Back button ----
+  // The History API: history.pushState adds an entry to the browser's back-stack WITHOUT loading a
+  // page. When Back is pressed the browser fires "popstate" and hands us the state we saved, so we
+  // can redraw that screen instead of leaving the app. Every entry stores {view, id, side, d}:
+  // which view, which chat, whether the sidebar is open, and how deep we are (d = 0 is the base screen).
+  let navState = { view: "chat", id: null, side: false, d: 0 };
+  let chatTitles = {};
+
+  function updateChatName() {
+    $("chatName").textContent = currentId && chatTitles[currentId] ? chatTitles[currentId] : "New chat";
+  }
+
+  function setSide(open) {
+    $("side").classList.toggle("open", open);
+    $("backdrop").classList.toggle("show", open);
+    ["menu", "menu2"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
+  }
+
+  // Go somewhere new (another chat, the Improve view). Never adds a duplicate of where we already are.
+  function navGo(target) {
+    const here = { ...navState, id: currentId }; // a first message may have created a chat since
+    history.replaceState(here, "");
+    navState = here;
+    if (here.side) {
+      // The sidebar entry is on top: replace it by the destination, or just step back if that is the screen under it.
+      if (target.view === here.under.view && target.id === here.under.id) { history.back(); return; }
+      navState = { view: target.view, id: target.id, side: false, d: here.d };
+      history.replaceState(navState, "");
+      setSide(false);
+      return;
+    }
+    if (target.view === here.view && target.id === here.id) return;
+    navState = { view: target.view, id: target.id, side: false, d: here.d + 1 };
+    history.pushState(navState, "");
+  }
+
+  function openSide() {
+    if (navState.side) return;
+    const here = { ...navState, id: currentId };
+    history.replaceState(here, "");
+    navState = { view: here.view, id: here.id, side: true, d: here.d + 1, under: { view: here.view, id: here.id } };
+    history.pushState(navState, "");
+    setSide(true);
+  }
+
+  // Close the sidebar. If it has its own history entry, Back it: the popstate handler then closes it.
+  function closeSide() {
+    if (navState.side) history.back();
+    else setSide(false);
+  }
+
+  // Back / forward: draw whatever screen the saved state describes.
+  window.addEventListener("popstate", (event) => {
+    const s = event.state;
+    if (!s || !s.view) return; // not one of ours
+    navState = s;
+    if (s.view === "improve") showView("improve");
+    else if (s.id && s.id !== currentId) openChat(s.id, true);
+    else if (!s.id && currentId) newChat(true);
+    else showView("chat");
+    setSide(!!s.side);
+  });
+
+  $("menu").addEventListener("click", openSide);
+  $("sideClose").addEventListener("click", closeSide);
+  $("backdrop").addEventListener("click", closeSide);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && navState.side) closeSide(); });
+  // Swipe left on the sidebar to close it (mostly horizontal, at least 60px).
+  let swipe = null;
+  $("side").addEventListener("touchstart", (e) => { swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+  $("side").addEventListener("touchend", (e) => {
+    if (!swipe) return;
+    const dx = e.changedTouches[0].clientX - swipe.x;
+    const dy = e.changedTouches[0].clientY - swipe.y;
+    swipe = null;
+    if (dx < -60 && Math.abs(dx) > 2 * Math.abs(dy)) closeSide();
+  }, { passive: true });
+  history.replaceState(navState, ""); // the base screen: Back from here leaves the app
 
   // ---- Improve Bot (self-edit) ----
   const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted" };
@@ -482,7 +592,6 @@
   function showView(name) {
     $("chatView").hidden = name !== "chat";
     $("improveView").hidden = name !== "improve";
-    $("side").classList.remove("open");
     if (name === "improve") {
       loadProposals();
       loadGit();
@@ -491,6 +600,7 @@
 
   // Used by the button under Bot's answer when you asked it to change itself.
   function openImproveWith(request) {
+    navGo({ view: "improve", id: currentId });
     showView("improve");
     $("improveText").value = request;
     $("improveText").focus();
@@ -705,12 +815,16 @@
     loadGit();
   }
 
-  $("improveBtn").addEventListener("click", () => showView("improve"));
-  $("backToChat").addEventListener("click", () => showView("chat"));
+  $("improveBtn").addEventListener("click", () => { navGo({ view: "improve", id: currentId }); showView("improve"); });
+  // Back to chat: step back in history if we came from the chat, else go there.
+  $("backToChat").addEventListener("click", () => {
+    if (navState.view === "improve" && navState.d > 0) history.back();
+    else { navGo({ view: "chat", id: currentId }); showView("chat"); }
+  });
   $("restartBtn").addEventListener("click", restartBot);
   $("gitRefresh").addEventListener("click", loadGit);
   $("pushBtn").addEventListener("click", pushToGitHub);
-  $("menu2").addEventListener("click", () => $("side").classList.toggle("open"));
+  $("menu2").addEventListener("click", openSide);
   $("improveStart").addEventListener("click", async () => {
     const request = $("improveText").value.trim();
     if (!request) return;

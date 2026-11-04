@@ -21,3 +21,29 @@ test("the Improve button is the last thing in the sidebar and has its own big st
 test("the page uses a purple accent", () => {
   assert.match(html, /--accent:\s*#9333ea/);
 });
+
+test("the phone's Back button is handled with the History API", () => {
+  assert.match(html, /history\.pushState/);
+  assert.match(html, /addEventListener\("popstate"/);
+  // the base screen is stored first, so Back from it leaves the app instead of looping
+  assert.match(html, /history\.replaceState\(navState, ""\);\s*\/\/ the base screen/);
+});
+
+test("the sidebar can be closed without choosing a chat: backdrop, close button, swipe", () => {
+  assert.match(html, /id="backdrop"/);
+  assert.match(html, /id="sideClose"[^>]*aria-label="[^"]+"/);
+  assert.match(html, /\$\("backdrop"\)\.addEventListener\("click", closeSide\)/);
+  assert.match(html, /\$\("sideClose"\)\.addEventListener\("click", closeSide\)/);
+  assert.match(html, /touchend/);
+});
+
+test("the Chats button is an accessible 44px icon button", () => {
+  for (const id of ["menu", "menu2"]) {
+    const tag = html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0];
+    assert.match(tag, /class="iconbtn"/);
+    assert.match(tag, /aria-label="Show conversations"/);
+  }
+  assert.match(html, /\.iconbtn \{[^}]*width: 44px; height: 44px/);
+  assert.match(html, /viewport-fit=cover/);
+  assert.match(html, /env\(safe-area-inset-top\)/);
+});
