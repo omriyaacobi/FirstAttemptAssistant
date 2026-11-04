@@ -47,3 +47,15 @@ test("the Chats button is an accessible 44px icon button", () => {
   assert.match(html, /viewport-fit=cover/);
   assert.match(html, /env\(safe-area-inset-top\)/);
 });
+
+test("the photo button is a hidden-until-supported round icon button with a preview chip, and photos are shrunk in the page", () => {
+  const tag = html.match(/<button[^>]*id="attach"[^>]*>/)[0];
+  assert.match(tag, /\bhidden\b/); // only shown when the server says session.images
+  assert.match(tag, /aria-label="Attach a photo"/);
+  assert.match(html, /<input type="file" id="photoInput" accept="image\/\*" hidden>/);
+  assert.match(html, /button\.attach \{[^}]*width: 44px; height: 44px/);
+  assert.match(html, /id="photoChip"/);
+  assert.match(html, /createImageBitmap/);
+  assert.match(html, /toDataURL\("image\/jpeg"/);
+  assert.match(html, /if \(session\.images\) \$\("attach"\)\.hidden = false/);
+});
