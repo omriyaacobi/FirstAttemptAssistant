@@ -15,6 +15,21 @@ const SANDBOX_DIR = path.join(os.tmpdir(), "bot-empty");
 
 // Where the two command-line tools live. Set the env var to override.
 const CLAUDE_CMD = process.env.CLAUDE_CMD || '"C:\\Users\\User\\npm-global\\claude.cmd"';
+
+// Staying logged in. A normal `claude auth login` session must be "refreshed" every so often, and
+// when several claude processes refresh at the same moment (Bot runs up to 2 tasks at once, plus
+// Improve Bot), one can invalidate the other's refresh token and you get logged out.
+// `claude setup-token` makes a long-lived token (about a year) that is never refreshed. If you put it
+// in .env as CLAUDE_CODE_OAUTH_TOKEN, every claude that Bot starts uses it. .env is git-ignored.
+const ENV_FILE = path.join(__dirname, ".env");
+function claudeEnv() {
+  let token = "";
+  try {
+    const line = fs.readFileSync(ENV_FILE, "utf8").split(/\r?\n/).find((l) => /^\s*CLAUDE_CODE_OAUTH_TOKEN\s*=/.test(l));
+    if (line) token = line.slice(line.indexOf("=") + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
+  } catch (error) { /* no .env: use the normal login */ }
+  return token ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token } : process.env;
+}
 const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bin\\agy.exe";
 
 // Model names end up inside a shell command (for Claude), so only allow plain
@@ -27,7 +42,7 @@ function checkModelName(model) {
 function askClaude(question, model) {
   checkModelName(model);
   return new Promise((resolve, reject) => {
-    const child = exec(`${CLAUDE_CMD} -p --model ${model}`, (error, stdout, stderr) => {
+    const child = exec(`${CLAUDE_CMD} -p --model ${model}`, { env: claudeEnv() }, (error, stdout, stderr) => {
       if (error) return reject(new Error(stderr || error.message));
       resolve(stdout.trim());
     });
@@ -93,4 +108,4 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, PROVIDERS, CLAUDE_CMD };
+module.exports = { ask, askChain, askAgyStructured, PROVIDERS, CLAUDE_CMD, claudeEnv };

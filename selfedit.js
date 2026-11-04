@@ -88,11 +88,11 @@ function nodeTests(cwd) {
 // --tools limits it to reading and editing files; --permission-prompts none means anything
 // not allowed is refused automatically instead of asking.
 function claudeEditor({ worktree, request, model, feedback = "" }) {
-  const { CLAUDE_CMD } = require("./providers");
+  const { CLAUDE_CMD, claudeEnv } = require("./providers");
   if (!/^[\w.-]+$/.test(model)) return Promise.reject(new Error("bad model name"));
   const cmd = `${CLAUDE_CMD} -p --model ${model} --restricted --tools "Read,Glob,Grep,Edit,Write" --permission-mode acceptEdits --permission-prompts none --no-session-persistence`;
   return new Promise((resolve, reject) => {
-    const child = exec(cmd, { cwd: worktree, timeout: EDITOR_TIMEOUT_MS, maxBuffer: 1e7 }, (error, stdout, stderr) => {
+    const child = exec(cmd, { cwd: worktree, env: claudeEnv(), timeout: EDITOR_TIMEOUT_MS, maxBuffer: 1e7 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(String(stderr || error.message).trim().slice(0, 300)));
       resolve(String(stdout).trim());
     });
