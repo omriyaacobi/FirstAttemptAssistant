@@ -12,8 +12,9 @@
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
 
-const { chainForDestination, chainForType, DEFAULT_CHAIN } = require("./router");
-const { askChain } = require("./providers");
+const { chainForDestination, chainForType, DEFAULT_CHAIN, MODELS } = require("./router");
+const path = require("node:path");
+const { askChain, askAgyWithImage } = require("./providers");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
 const { getLowPools, prioritize } = require("./quota");
@@ -24,7 +25,7 @@ const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty (cached; never throws, see quota.js).
-const defaultDeps = { decide, plan, runPlan, askChain, chainForType, chainForDestination, lowPools: getLowPools,
+const defaultDeps = { decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools,
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -64,7 +65,13 @@ function resultText(result) {
   return "";
 }
 
-async function handleTask(task, { noPlan = false, planOnly = false, forced = null, history = [], log = () => {}, deps = {} } = {}) {
+// Only Gemini (through agy) can look at a photo here, so a message with a photo skips the front desk.
+const PHOTO_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
+const photoNote = (name) =>
+  `The user attached a photo. It is the file "${name}" in your current folder. Open and look at that one file to answer; do not read or change anything else. ` +
+  "You cannot add anything to a calendar yet: if the photo shows a schedule or events, list each one clearly (date, start and end time, title) so the user can add them.";
+
+async function handleTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, deps = {} } = {}) {
   const d = { ...defaultDeps, ...deps };
   const started = Date.now();
   const seconds = () => Number(((Date.now() - started) / 1000).toFixed(1));
@@ -140,6 +147,21 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   }
 
   const fallback = (reason) => runSingle({ chain: DEFAULT_CHAIN, rule: "fallback", reason });
+
+  // A photo: ask Gemini directly, with the photo in a private empty folder (see providers.js).
+  if (image) {
+    const chain = quotaChain(PHOTO_CHAIN, await getLow());
+    log("[router] photo: a photo is attached, so only Gemini (through agy) can look at it");
+    log(`[router] plan: ${chainText(chain)}`);
+    const question = `${prompt}\n\n${photoNote("photo" + path.extname(image.path))}`;
+    const { answer, used } = await d.askChain(chain, question, {
+      askOne: (provider, model, q) => d.askImage(model, q, image.path),
+      onTry: (m) => log(`[router] trying ${label(m)}`),
+      onFail: (m) => log(`[router] ${label(m)} failed: ${m.message}`),
+    });
+    log(`[router] answered by ${label(used)}`);
+    return { mode: "single", rule: "photo", reason: "a photo is attached", chain, used, answer, seconds: seconds() };
+  }
 
   // Forced: skip the front desk completely.
   if (forced) {

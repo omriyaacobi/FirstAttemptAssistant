@@ -92,6 +92,20 @@
   .actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
   button.danger { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
 
+  /* "Bot is thinking" card, the dots in the chat list, the "done" line */
+  .bot.think { border-color: var(--accent); }
+  .think-step { font-weight: 600; margin-bottom: 6px; }
+  .think-hint { color: var(--muted); font-size: .85rem; margin-bottom: 8px; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .9s linear infinite; }
+  .think-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .think-dot.done-dot { background: var(--ok); animation: none; }
+  .done-line { color: var(--ok); font-weight: 600; margin-bottom: 6px; animation: flash 2.5s ease-out; }
+  .done-line.failed { color: var(--bad); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @keyframes flash { from { background: var(--mine); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .spinner, .think-dot, .done-line { animation: none; } }
+
   /* Reminders (sidebar), microphone button, pop-up banners */
   .reminder { display: flex; align-items: flex-start; gap: 6px; font-size: .85rem; margin: 6px 0; }
   .reminder .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -210,7 +224,7 @@
           <span class="tools">
             <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
             <input type="file" id="photoInput" accept="image/*" hidden>
-            <button type="button" class="attach" id="attach" hidden aria-label="Attach a photo" title="Attach a photo">
+            <button type="button" class="attach" id="attach" aria-label="Attach a photo" title="Attach a photo">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1.2-1.6A1 1 0 0 1 9.5 4h5a1 1 0 0 1 .8.4L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
             </button>
             <button type="button" class="mic" id="mic" hidden title="Talk to Bot: speak, and it is sent when you stop">Mic</button>
@@ -362,12 +376,14 @@
       const { conversations } = await (await fetch("/api/conversations")).json();
       const list = $("chats");
       list.replaceChildren();
-      chatTitles = {};
+      chatTitles.clear();
       conversations.forEach((c) => {
-        chatTitles[c.id] = c.title;
         const li = el("li", "chat-item" + (c.id === currentId ? " active" : ""));
+        chatTitles.set(c.id, c.title);
         const open = el("button", "open", c.title);
         open.title = c.title;
+        const mark = chatMarker(c.id); // a pulsing dot while Bot thinks there, a green one for a new answer
+        if (mark) { open.prepend(mark); open.title = mark.title + ": " + c.title; }
         open.addEventListener("click", () => openChat(c.id));
         const del = el("button", "del", "x");
         del.setAttribute("aria-label", "Delete conversation: " + c.title);
@@ -380,30 +396,43 @@
   }
 
   async function openChat(id, fromHistory) {
-    if (busy) return;
     const res = await fetch("/api/conversations/" + id);
     if (!res.ok) return;
     const conversation = await res.json();
     if (!fromHistory) navGo({ view: "chat", id });
     currentId = id;
     showView("chat");
+    unreadChats.delete(id);
+    await pollJobs(); // fresh news about running tasks, so the thinking card is right
+    renderConversation(conversation);
+    $("side").classList.remove("open");
+    loadChats();
+  }
+
+  // Draws every saved message of a conversation, plus the "Bot is thinking" card if a task is still running there.
+  function renderConversation(conversation) {
     $("messages").replaceChildren();
     conversation.messages.forEach((m) => {
       if (m.role === "user") addUser(m.text);
       else {
         const holder = el("div", "msg");
         if (m.log && m.log.length) holder.appendChild(logDetails(m.log).details);
-        holder.appendChild(m.result ? renderResult(m.result) : botCard([["Answer"]], renderText(m.text)));
+        if (m.error) holder.appendChild(errorCard(m.text.replace(/^Something went wrong: /, "")));
+        else holder.appendChild(m.result ? renderResult(m.result) : botCard([["Answer"]], renderText(m.text)));
         $("messages").appendChild(holder);
       }
     });
+    const last = conversation.messages[conversation.messages.length - 1];
+    if (last && last.role === "user" && !jobState.active.has(conversation.id) && Date.now() - last.at > 15000) {
+      // Bot was restarted (or crashed) while it worked on this message, so no answer will come.
+      $("messages").appendChild(botCard([["No answer", "err"]], el("div", "answer", "Bot was restarted before it could answer this message. Send it again.")));
+    }
+    ensureLiveCard();
     scrollDown();
     updateChatName();
-    loadChats();
   }
 
   function newChat(fromHistory) {
-    if (busy) return;
     if (fromHistory !== true) navGo({ view: "chat", id: null });
     currentId = null;
     showView("chat");
@@ -411,10 +440,12 @@
     updateChatName();
     if (!session.remote) $("task").focus();
     loadChats();
+    updateComposer();
   }
 
   async function deleteChat(id, title) {
-    if (busy || !confirm(`Delete "${title}"?`)) return;
+    if (jobState.active.has(id)) return toast("Bot is still working in that chat. Wait for it to finish before deleting it.");
+    if (!confirm(`Delete "${title}"?`)) return;
     await fetch("/api/conversations/" + id, { method: "DELETE" });
     if (id === currentId) newChat();
     else loadChats();
@@ -472,79 +503,206 @@
   });
   $("photoRemove").addEventListener("click", clearPhoto);
 
-  // ---- Sending a message ----
+  // ---- Sending a message, and following the task ----
+  // Bot runs each task as a background JOB on the PC (see jobs.js). Sending only starts the job;
+  // the page then asks Bot every couple of seconds how it is going. So you can switch chats, start
+  // a new one, reload, lock the phone or close the app: the task keeps running and the answer is
+  // saved into the chat by the server.
+  const jobState = {
+    active: new Map(), // conversation id -> running job
+    card: null, // the "Bot is thinking" card in the open chat
+    offset: 0, // server clock minus this device's clock, so the timer is right even if the clocks differ
+    polling: false,
+    timer: null,
+    ticker: null,
+  };
+  const chatTitles = new Map(); // conversation id -> title (filled by loadChats)
+  const unreadChats = new Set(); // chats where an answer arrived while you were elsewhere
+  let seenJobs = new Set();
+  try { seenJobs = new Set(JSON.parse(localStorage.getItem("botSeenJobs") || "[]")); } catch (error) { /* private mode: fine */ }
+  function markSeen(id) {
+    seenJobs.add(id);
+    try { localStorage.setItem("botSeenJobs", JSON.stringify([...seenJobs].slice(-60))); } catch (error) { /* ignore */ }
+  }
+
+  const clock = (ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  const elapsedOf = (job) => Date.now() + jobState.offset - job.startedAt;
+
+  // A small pop-up message (the same boxes the reminders use).
+  function toast(text, { open } = {}) {
+    const box = el("div", "toast");
+    const what = el("div", "what", text);
+    what.dir = "auto";
+    box.appendChild(what);
+    if (open) {
+      const go = el("button", "", "Open");
+      go.addEventListener("click", () => { box.remove(); openChat(open); });
+      box.appendChild(go);
+    }
+    const close = el("button", "ghost", "OK");
+    close.addEventListener("click", () => box.remove());
+    box.appendChild(close);
+    $("toasts").appendChild(box);
+    return box;
+  }
+
+  // The dot shown next to a chat in the list.
+  function chatMarker(id) {
+    if (jobState.active.has(id)) { const d = el("span", "think-dot"); d.title = "Bot is thinking here"; return d; }
+    if (unreadChats.has(id)) { const d = el("span", "think-dot done-dot"); d.title = "New answer"; return d; }
+    return null;
+  }
+
+  // The Send button and the status line under the box.
+  function updateComposer() {
+    const job = currentId ? jobState.active.get(currentId) : null;
+    $("send").disabled = busy || !!job;
+    if (job) {
+      $("status").textContent = `Bot is thinking... ${clock(elapsedOf(job))}`;
+      $("task").placeholder = "Bot is still working on your last message here. You can write in another chat meanwhile.";
+    } else {
+      if ($("status").textContent.startsWith("Bot is thinking")) $("status").textContent = "";
+      $("task").placeholder = "Type a task. Enter sends, Shift+Enter adds a new line.";
+    }
+  }
+
+  const notifyHint = () =>
+    "Notification" in window && Notification.permission === "granted"
+      ? "You'll get a notification when it's done."
+      : "Turn on notifications in the sidebar to get a ping when it's done.";
+
+  // Makes sure the open chat shows a "Bot is thinking" card if (and only if) a task is running in it.
+  function ensureLiveCard() {
+    let card = jobState.card;
+    if (card && !document.body.contains(card.root)) card = jobState.card = null;
+    const job = currentId ? jobState.active.get(currentId) : null;
+    if (!job) { if (card) { card.root.remove(); jobState.card = null; } return; }
+    if (card && card.jobId !== job.id) { card.root.remove(); card = jobState.card = null; }
+    if (!card) {
+      const root = el("div", "msg");
+      const box = el("div", "bot think");
+      const head = el("div", "step-head");
+      head.append(el("span", "spinner"), el("span", "", "Bot is thinking"), el("span", "badge elapsed", "0:00"));
+      const step = el("div", "think-step", job.step);
+      const hint = el("div", "think-hint", `You can leave this chat, start a new one, or close the app. Bot keeps working on your PC and saves the answer here. ${notifyHint()}`);
+      const details = logDetails([]);
+      box.append(head, step, hint, details.details);
+      root.appendChild(box);
+      $("messages").appendChild(root);
+      card = jobState.card = { jobId: job.id, root, step, pre: details.pre, elapsed: head.querySelector(".elapsed") };
+      scrollDown();
+    }
+    card.step.textContent = job.step + "...";
+    if (job.log) card.pre.textContent = job.log.join("\n");
+    card.elapsed.textContent = clock(elapsedOf(job));
+  }
+
+  // Ticks every second while something is running, so the timers move between polls.
+  function tick() {
+    if (!jobState.active.size) { clearInterval(jobState.ticker); jobState.ticker = null; return; }
+    ensureLiveCard();
+    updateComposer();
+  }
+
+  // A job finished. Show it where it belongs.
+  async function jobFinished(job) {
+    markSeen(job.id);
+    await loadChats();
+    const title = chatTitles.get(job.conversationId) || "chat";
+    if (job.conversationId === currentId) {
+      const res = await fetch("/api/conversations/" + job.conversationId).catch(() => null);
+      if (res && res.ok && job.conversationId === currentId) {
+        renderConversation(await res.json());
+        const line = el("div", job.status === "done" ? "done-line" : "done-line failed", job.status === "done" ? `✓ Done in ${clock(job.finishedAt - job.startedAt)}` : "Bot could not finish this one");
+        const last = $("messages").lastElementChild;
+        if (last) last.prepend(line);
+        $("status").textContent = job.status === "done" ? "Done ✓" : "Failed";
+        setTimeout(() => { if ($("status").textContent === "Done ✓" || $("status").textContent === "Failed") $("status").textContent = ""; }, 5000);
+        scrollDown();
+      }
+      if (document.hidden) systemNotify(job.status === "done" ? "Bot finished" : "Bot could not finish", title, "job-" + job.id);
+    } else {
+      unreadChats.add(job.conversationId);
+      toast(`${job.status === "done" ? "Bot finished" : "Bot could not finish"}: ${title}`, { open: job.conversationId });
+      loadChats();
+    }
+    loadReminders();
+    loadQuota();
+  }
+
+  async function pollJobs() {
+    if (jobState.polling) return;
+    jobState.polling = true;
+    try {
+      // `watching` tells Bot which chat is on screen, so it skips the phone notification for that one.
+      const watching = !document.hidden && currentId ? "?watching=" + encodeURIComponent(currentId) : "";
+      const res = await fetch("/api/jobs" + watching);
+      if (!res.ok) return;
+      const { jobs } = await res.json();
+      const before = [...jobState.active.keys()].sort().join();
+      jobState.active.clear();
+      jobs.filter((j) => j.status === "running").forEach((j) => { jobState.active.set(j.conversationId, j); jobState.offset = j.now - Date.now(); });
+      if ([...jobState.active.keys()].sort().join() !== before) loadChats();
+      if (jobState.active.size && !jobState.ticker) jobState.ticker = setInterval(tick, 1000);
+      ensureLiveCard();
+      updateComposer();
+      for (const job of jobs.filter((j) => j.status !== "running" && !seenJobs.has(j.id)).slice(0, 3)) await jobFinished(job);
+      jobs.filter((j) => j.status !== "running").forEach((j) => markSeen(j.id));
+      updateComposer();
+    } catch (error) { /* offline for a moment: the next poll will catch up */ } finally {
+      jobState.polling = false;
+      clearTimeout(jobState.timer);
+      // Often while something runs, rarely when idle, not at all while the page is hidden (it catches up when shown again).
+      jobState.timer = document.hidden ? null : setTimeout(pollJobs, jobState.active.size ? 2000 : 10000);
+    }
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });
+  window.addEventListener("online", pollJobs);
+  window.addEventListener("focus", pollJobs);
+
   async function send() {
     const attached = photo;
     const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
     if (!task || busy) return;
+    if (currentId && jobState.active.has(currentId)) return updateComposer(); // one task at a time per chat
     busy = true;
-    clearPhoto();
-    $("send").disabled = true;
-    $("task").value = ""; // clear the box right away, like any chat
-    if ($("messages").querySelector(".empty")) $("messages").replaceChildren();
-
-    const sent = addUser(task);
-    if (attached) showPhotoIn(sent, attached);
-    const holder = el("div", "msg");
-    const live = logDetails([]);
-    live.details.open = true;
-    holder.appendChild(live.details);
-    $("messages").appendChild(holder);
-    const logLines = [];
-    $("status").textContent = "Working...";
-
+    updateComposer();
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task, noPlan: $("noplan").checked, conversationId: currentId, ...(attached ? { image: attached.dataUrl } : {}) }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `server answered ${res.status}`);
-      }
-      // The server sends one JSON object per line while it works. Read them as they arrive.
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newline;
-        while ((newline = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, newline);
-          buffer = buffer.slice(newline + 1);
-          if (!line.trim()) continue;
-          const message = JSON.parse(line);
-          if (message.type === "log") {
-            logLines.push(message.text);
-            live.pre.textContent = logLines.join("\n");
-            $("status").textContent = message.text.slice(0, 80);
-          } else if (message.type === "result") {
-            currentId = message.conversationId;
-            live.details.open = false;
-            holder.appendChild(renderResult(message.result));
-            if (message.result.reminder) loadReminders(); // a reminder was just set: show it in the sidebar
-          } else if (message.type === "error") {
-            holder.appendChild(errorCard(message.message));
-          }
-          scrollDown();
-        }
-      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `server answered ${res.status}`);
+      const job = body.job;
+      // Only now is the message safely with Bot, so only now the box is cleared.
+      $("task").value = "";
+      clearPhoto();
+      currentId = job.conversationId;
+      if ($("messages").querySelector(".empty")) $("messages").replaceChildren();
+      const sent = addUser(task);
+      if (attached) showPhotoIn(sent, attached);
+      jobState.offset = job.now - Date.now();
+      jobState.active.set(job.conversationId, job);
+      if (!jobState.ticker) jobState.ticker = setInterval(tick, 1000);
+      ensureLiveCard();
+      loadChats();
+      clearTimeout(jobState.timer);
+      jobState.timer = setTimeout(pollJobs, 1000);
     } catch (error) {
-      holder.appendChild(errorCard(error.message));
-      if (!$("task").value) $("task").value = task; // the message never went through: give it back
+      // Not started: your text stays in the box, nothing is lost.
+      toast("Not sent: " + error.message);
     } finally {
       busy = false;
-      $("send").disabled = false;
-      $("status").textContent = "";
+      updateComposer();
       $("task").focus();
-      loadChats();
-      loadQuota();
-      scrollDown();
     }
   }
+  pollJobs();
 
   // ---- Quota panel ----
   async function loadQuota() {
@@ -585,10 +743,9 @@
   // can redraw that screen instead of leaving the app. Every entry stores {view, id, side, d}:
   // which view, which chat, whether the sidebar is open, and how deep we are (d = 0 is the base screen).
   let navState = { view: "chat", id: null, side: false, d: 0 };
-  let chatTitles = {};
 
   function updateChatName() {
-    $("chatName").textContent = currentId && chatTitles[currentId] ? chatTitles[currentId] : "New chat";
+    $("chatName").textContent = (currentId && chatTitles.get(currentId)) || "New chat";
   }
 
   function setSide(open) {
@@ -1113,7 +1270,6 @@
       return;
     }
     if (session.remote) $("improveBtn").hidden = true;
-    if (session.images) $("attach").hidden = false; // the server says it can take photos
     setupNotifyButton();
     loadReminders();
     setInterval(loadReminders, 30000);
