@@ -67,7 +67,11 @@ function resultText(result) {
 async function handleTask(task, { noPlan = false, planOnly = false, forced = null, history = [], log = () => {}, deps = {} } = {}) {
   const d = { ...defaultDeps, ...deps };
   const started = Date.now();
-  const seconds = () => Number(((Date.now() - started) / 1000).toFixed(1));
+  const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
+  const seconds = () => secondsSince(started);
+  // Where the time went, shown in the log and on the page ("What Bot did"). Filled in as we go.
+  // attempts lists every model that was tried, including failed ones (see askChain).
+  const timing = { quotaSeconds: 0, frontDeskSeconds: null, plannerSeconds: null, attempts: [] };
   // The front desk decides from the newest message (plus the history for context).
   const prompt = withContext(task, history);
 
@@ -87,17 +91,32 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return reordered;
   };
 
+  // One line with the real cost of this message, e.g.
+  // "[timing] quota 0 s, front desk 8.4 s, gemini-4-argon-low 41.2 s (failed), sonnet 6 s, total 56.1 s"
+  const timingLine = () => {
+    const parts = [];
+    if (timing.quotaSeconds >= 0.1) parts.push(`quota ${timing.quotaSeconds} s`);
+    if (timing.frontDeskSeconds !== null) parts.push(`front desk ${timing.frontDeskSeconds} s`);
+    if (timing.plannerSeconds !== null) parts.push(`planner ${timing.plannerSeconds} s`);
+    for (const a of timing.attempts) parts.push(`${a.step ? `step ${a.step}: ` : ""}${a.model} ${a.seconds} s${a.ok ? "" : " (failed)"}`);
+    parts.push(`total ${seconds()} s`);
+    return "[timing] " + parts.join(", ");
+  };
+
   // One job: run a chain with fallbacks and return the answer.
   async function runSingle(info) {
     if (info.rule !== "forced") info = { ...info, chain: quotaChain(info.chain, await getLow()) };
     log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
-    const { answer, used } = await d.askChain(info.chain, prompt, {
+    const { answer, used, attempts } = await d.askChain(info.chain, prompt, {
       onTry: (m) => log(`[router] trying ${label(m)}`),
-      onFail: (m) => log(`[router] ${label(m)} failed: ${m.message}`),
+      onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
     });
-    log(`[router] answered by ${label(used)}`);
-    return { mode: "single", rule: info.rule, reason: info.reason, chain: info.chain, used, answer, seconds: seconds() };
+    timing.attempts = attempts || [];
+    const last = timing.attempts[timing.attempts.length - 1];
+    log(`[router] answered by ${label(used)}${last ? ` in ${last.seconds} s` : ""}`);
+    log(timingLine());
+    return { mode: "single", rule: info.rule, reason: info.reason, chain: info.chain, used, answer, seconds: seconds(), timing };
   }
 
   // The front desk replied itself (an answer, a question for you, or a pointer to "Improve Bot").
@@ -105,7 +124,8 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   const frontDeskReply = (decision) => {
     const rule = RULE_NAMES[decision.action];
     log(`[frontdesk] ${rule}`);
-    const result = { mode: "single", rule, reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: decision.answer, seconds: seconds() };
+    log(timingLine());
+    const result = { mode: "single", rule, reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: decision.answer, seconds: seconds(), timing };
     // The page shows a button that opens "Improve Bot" with this request filled in. It never starts anything.
     if (decision.action === "improve") result.improve = { request: task };
     return result;
@@ -118,7 +138,8 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
       const saved = d.createReminder(decision.reminder);
       const answer = `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`;
       log(`[reminder] saved ${saved.id}`);
-      return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, reminder: saved, seconds: seconds() };
+      log(timingLine());
+      return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, reminder: saved, seconds: seconds(), timing };
     } catch (error) {
       log(`[reminder] could not save: ${error.message}`);
       const answer = `I could not set that reminder: ${error.message}`;
@@ -136,7 +157,9 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
         log(`[planner] step ${subtask.id} ${result.error ? "FAILED: " + result.error : "done by " + label(result.used)}`),
     });
     log("[planner] all steps finished");
-    return { mode: "split", plannedBy, steps, seconds: seconds() };
+    timing.attempts = steps.flatMap((s) => (s.attempts || []).map((a) => ({ ...a, step: s.id }))); // steps run in parallel, so these do not add up to the total
+    log(timingLine());
+    return { mode: "split", plannedBy, steps, seconds: seconds(), timing };
   }
 
   const fallback = (reason) => runSingle({ chain: DEFAULT_CHAIN, rule: "fallback", reason });
@@ -154,13 +177,21 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   log(`[frontdesk] asking ${label(FRONT_DESK_MODEL)}`);
   let decision;
   try {
-    decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low: await getLow() });
+    const quotaStart = Date.now();
+    const low = await getLow(); // usually instant now: quota.js answers with the last known value
+    timing.quotaSeconds = secondsSince(quotaStart);
+    const deskStart = Date.now();
+    try {
+      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low });
+    } finally {
+      timing.frontDeskSeconds = secondsSince(deskStart);
+    }
   } catch (error) {
-    log(`[frontdesk] failed: ${error.message}. Claude Sonnet takes it.`);
+    log(`[frontdesk] failed after ${timing.frontDeskSeconds} s: ${error.message}. Claude Sonnet takes it.`);
     return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the front desk failed, so Claude Sonnet took it");
   }
   const target = decision.action === "delegate" ? ` -> ${decision.destination}` : "";
-  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason})`);
+  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason}) in ${timing.frontDeskSeconds} s`);
 
   // The user turned splitting off, so a "split" decision is handled as one job instead.
   if (decision.action === "split" && noPlan) {
@@ -181,14 +212,17 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
 
   // split: ask the planner for the steps
   let planned;
+  const plannerStart = Date.now();
   try {
     planned = await d.plan(task, { context: historyBlock(history) });
+    timing.plannerSeconds = secondsSince(plannerStart);
   } catch (error) {
-    log(`[planner] ${error.message}`);
+    timing.plannerSeconds = secondsSince(plannerStart);
+    log(`[planner] failed after ${timing.plannerSeconds} s: ${error.message}`);
     return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the planner failed, so Claude Sonnet took it");
   }
   const { subtasks, plannedBy } = planned;
-  log(`[planner] ${subtasks.length} step(s), planned by ${plannedBy}`);
+  log(`[planner] ${subtasks.length} step(s), planned by ${plannedBy} in ${timing.plannerSeconds} s`);
   const lowNow = await getLow();
   for (const s of subtasks) {
     const needs = s.needs.length ? `  (needs step ${s.needs.join(", ")})` : "";

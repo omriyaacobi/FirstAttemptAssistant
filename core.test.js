@@ -318,3 +318,49 @@ test("remind: if saving fails the chat says so instead of crashing", async () =>
   assert.match(result.answer, /could not set that reminder: too many/);
   assert.strictEqual(result.reminder, undefined);
 });
+
+// ---- timing ----
+test("timing: the log has a [timing] line, and the result carries the numbers", async () => {
+  const lines = [];
+  const attempts = [{ provider: "agy", model: "a", seconds: 4, ok: false }, { provider: "claude", model: "b", seconds: 1.5, ok: true }];
+  const deps = fakes({
+    decide: decision("delegate", { destination: "gemini-flash" }),
+    askChain: async () => ({ answer: "ok", used: { provider: "claude", model: "b" }, attempts }),
+  });
+  const result = await handleTask("hi", { deps, log: (l) => lines.push(l) });
+  assert.deepStrictEqual(result.timing.attempts, attempts);
+  assert.strictEqual(typeof result.timing.frontDeskSeconds, "number");
+  const line = lines.find((l) => l.startsWith("[timing]"));
+  assert.match(line, /front desk \d/);
+  assert.match(line, /a 4 s \(failed\), b 1\.5 s, total/);
+  assert.ok(lines.some((l) => /answered by claude\/b in 1\.5 s/.test(l)));
+});
+
+test("timing: a failed attempt's seconds appear in the failure log line", async () => {
+  const lines = [];
+  const deps = fakes({
+    decide: decision("delegate", { destination: "gemini-flash" }),
+    askChain: async (c, p, { onFail }) => { onFail({ provider: "agy", model: "a", message: "boom", seconds: 7.2 }); return { answer: "x", used, attempts: [] }; },
+  });
+  await handleTask("hi", { deps, log: (l) => lines.push(l) });
+  assert.ok(lines.some((l) => l.includes("failed after 7.2 s: boom")));
+});
+
+test("timing: a front desk answer also gets a [timing] line", async () => {
+  const lines = [];
+  const result = await handleTask("7*8", { deps: fakes({ decide: decision("answer", { answer: "56" }) }), log: (l) => lines.push(l) });
+  assert.ok(lines.some((l) => l.startsWith("[timing] front desk")));
+  assert.deepStrictEqual(result.timing.attempts, []);
+});
+
+test("timing: split steps are listed with their step number", async () => {
+  const lines = [];
+  const steps = [
+    { id: 1, task: "a", type: "quick", needs: [], answer: "x", used, attempts: [{ provider: "agy", model: "m", seconds: 3, ok: true }] },
+    { id: 2, task: "b", type: "quick", needs: [], answer: "y", used },
+  ];
+  const deps = fakes({ decide: decision("split"), plan: async () => ({ subtasks: steps, plannedBy: "p" }), runPlan: async () => steps });
+  const result = await handleTask("two things", { deps, log: (l) => lines.push(l) });
+  assert.ok(lines.some((l) => /\[timing\].*planner \d.*step 1: m 3 s/.test(l)), lines.join("\n"));
+  assert.strictEqual(result.timing.attempts.length, 1);
+});
