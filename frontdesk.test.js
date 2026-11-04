@@ -79,7 +79,7 @@ test("decide returns a validated decision from the model's reply", async () => {
   };
   const decision = await decide("summarize this", { askStructured: fake, brief: "B" });
   assert.strictEqual(decision.destination, "gemini-flash");
-  assert.strictEqual(seen.model, "gemini-3.8-flash-high");
+  assert.strictEqual(seen.model, "gemini-3.8-flash-medium");
   assert.strictEqual(seen.schema, SCHEMA);
 });
 

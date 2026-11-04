@@ -15,7 +15,7 @@ const { askAgyStructured } = require("./providers");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 
-const FRONT_DESK_MODEL = MODELS.flashHigh;
+const FRONT_DESK_MODEL = MODELS.flashMedium; // medium was ~5 s faster than high with identical decisions on 19 prompts (experiments/2026-11-04-speed-part2.md)
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
