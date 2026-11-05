@@ -15,6 +15,7 @@ const { askAgyStructured } = require("./providers");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
+const { checkRequest } = require("./calendar-chat");
 
 const FRONT_DESK_MODEL = MODELS.flashMedium; // medium was ~5 s faster than high with identical decisions on 19 prompts (experiments/2026-11-04-speed-part2.md)
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
@@ -24,7 +25,10 @@ const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // text and the time; validateDecision checks the time is a real future moment (see reminders.js).
 // "remember" means: the user stated a lasting fact or asked Bot to remember something. The model only
 // PROPOSES the fact; validateDecision checks it (profile.js) and nothing is saved until the user presses Save.
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget"];
+// "calendar" means: the user asks what is on their calendar. The model only extracts a start day and a
+// number of days; validateDecision checks them, then code reads the calendar and writes the reply
+// (calendar-chat.js). No model ever sees an event.
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar"];
 const MAX_ANSWER_CHARS = 8000;
 
 // The shape we force the model's reply into. "none" is for the actions that need no destination.
@@ -43,8 +47,11 @@ const SCHEMA = {
     fact: { type: "string" },
     // For "remember" (when it CHANGES a saved fact) and "forget": the number of that saved fact, else "".
     replaces: { type: "string" },
+    // Only for the action "calendar": the first day (YYYY-MM-DD) and how many days (1-14); empty otherwise.
+    calendarFrom: { type: "string" },
+    calendarDays: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays"],
 };
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
@@ -110,6 +117,13 @@ function validateDecision(raw, { now = Date.now() } = {}) {
       return { action: "remember", destination: null, answer: "", reason, fact: checkFact(raw.fact), replaces };
     } catch (error) {
       return { action: "remember", destination: null, answer: error.message, reason, fact: "" };
+    }
+  }
+  if (raw.action === "calendar") {
+    try {
+      return { action: "calendar", destination: null, answer: "", reason, calendar: checkRequest({ from: raw.calendarFrom, days: raw.calendarDays }) };
+    } catch (error) {
+      return null;
     }
   }
 

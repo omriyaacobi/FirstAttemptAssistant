@@ -21,13 +21,14 @@ const { plan, runPlan } = require("./planner");
 const { getLowPools, prioritize } = require("./quota");
 const { getReminders, formatWhen } = require("./reminders");
 const { aboutBlock, personalize, recentFacts, createMemory } = require("./profile");
+const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty (cached; never throws, see quota.js).
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools,
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, readCalendar: readCalendarEvents,
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -195,6 +196,22 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return reply(`Should Bot remember this? "${decision.fact}"`, { remember: { fact: decision.fact } });
   }
 
+  // The user asked what is on the calendar. READ-ONLY: code fetches the events and writes the reply,
+  // so no model ever sees a title (see calendar-chat.js). The log never contains titles either.
+  async function readCalendar(decision) {
+    let answer;
+    try {
+      const got = await d.readCalendar(decision.calendar);
+      log(`[calendar] read ${got.events.length} event(s), ${got.days} day(s) from ${got.from}`);
+      answer = got.text;
+    } catch (error) {
+      log(`[calendar] could not read: ${friendlyError(error)}`);
+      answer = friendlyError(error);
+    }
+    log(timingLine());
+    return { mode: "single", rule: "calendar (read-only)", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
@@ -270,6 +287,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   if (["answer", "clarify", "improve"].includes(decision.action)) return frontDeskReply(decision);
   if (decision.action === "remind") return setReminder(decision);
   if (decision.action === "remember" || decision.action === "forget") return proposeFact(decision);
+  if (decision.action === "calendar") return readCalendar(decision);
 
   if (decision.action === "delegate") {
     return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });
