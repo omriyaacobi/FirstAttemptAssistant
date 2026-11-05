@@ -270,7 +270,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const low = await getLow(); // never waits: just the in-memory flag from the last lookup
     const deskStart = Date.now();
     try {
-      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout });
+      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout, log });
     } finally {
       timing.frontDeskSeconds = secondsSince(deskStart);
     }

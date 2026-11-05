@@ -5,7 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
-const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, BRIEF_FILE } = require("./frontdesk");
+const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE } = require("./frontdesk");
 const { DESTINATIONS } = require("./router");
 
 test("validateDecision accepts each kind of good decision", () => {
@@ -55,6 +55,22 @@ test("the briefing describes every destination and every action", () => {
   const brief = fs.readFileSync(BRIEF_FILE, "utf8");
   for (const name of Object.keys(DESTINATIONS)) assert.ok(brief.includes(name), `router-brief.md does not mention ${name}`);
   for (const action of ACTIONS) assert.ok(brief.includes(action), `router-brief.md does not mention ${action}`);
+});
+
+test("DRIFT: router-brief.md and router-brief-haiku.md name the same destinations and the same actions", () => {
+  const names = (file) => {
+    const text = fs.readFileSync(file, "utf8");
+    return {
+      destinations: [...new Set(text.match(/\b(?:gemini|claude|web)-[a-z-]*[a-z]\b/g) || [])].sort(),
+      actions: [...new Set([...text.matchAll(/\*\*(\w+)\*\*/g)].map((m) => m[1]).filter((w) => ACTIONS.includes(w)))].sort(),
+    };
+  };
+  const gemini = names(BRIEF_FILE);
+  const haiku = names(BACKUP_BRIEF_FILE);
+  assert.deepStrictEqual(haiku.destinations, gemini.destinations);
+  assert.deepStrictEqual(haiku.actions, gemini.actions);
+  assert.deepStrictEqual(haiku.destinations, Object.keys(DESTINATIONS).sort()); // and both match the real menu
+  assert.deepStrictEqual(haiku.actions, [...ACTIONS].sort());
 });
 
 test("the prompt contains the briefing, the history and the message between markers", () => {
@@ -110,13 +126,14 @@ test("decide: an unusable first reply starts the second call at once, and a good
 test("decide: gives up at the deadline so the caller can use its default", async () => {
   const stuck = (p, m, s, { signal }) => new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
   const started = Date.now();
-  await assert.rejects(decide("x", { askStructured: stuck, brief: "B", hedgeAfterMs: 20, deadlineMs: 150 }), /did not answer within/);
+  await assert.rejects(decide("x", { askStructured: stuck, askBackup: async () => { throw new Error("claude down"); }, brief: "B", hedgeAfterMs: 20, deadlineMs: 150 }), /did not answer within/);
   assert.ok(Date.now() - started < 1500);
 });
 
 test("decide throws when the reply is unusable, so the caller can fall back", async () => {
-  await assert.rejects(decide("x", { askStructured: async () => ({ action: "delegate", destination: "evil" }), brief: "B" }), /unusable/);
-  await assert.rejects(decide("x", { askStructured: async () => { throw new Error("agy down"); }, brief: "B" }), /agy down/);
+  const backupDown = async () => { throw new Error("claude down"); };
+  await assert.rejects(decide("x", { askStructured: async () => ({ action: "delegate", destination: "evil" }), askBackup: backupDown, brief: "B" }), /unusable/);
+  await assert.rejects(decide("x", { askStructured: async () => { throw new Error("agy down"); }, askBackup: backupDown, brief: "B" }), /agy down.*claude down/);
 });
 
 test("quota: the prompt names low pools and the destinations they affect; silent when nothing is low", () => {
@@ -155,4 +172,60 @@ test("the prompt tells the model the current time and zone, for working out 'tom
 
 test("the schema asks for the reminder fields", () => {
   for (const f of ["reminderText", "remindAt", "timezone"]) assert.ok(SCHEMA.required.includes(f) && SCHEMA.properties[f]);
+});
+
+// ---- the backup desk: Claude Haiku when the Gemini desk fails ----
+const geminiDown = async () => { throw new Error("agy is down"); };
+const NOW_FIXED = Date.UTC(2026, 10, 5, 12, 0, 0); // Thursday 2026-11-05, 14:00 in Jerusalem
+
+test("backup: a Gemini failure gives the decision to Claude Haiku, with the briefing as a system file and the compact shape", async () => {
+  let seen = null;
+  const haiku = async (prompt, model, schema, options) => { seen = { prompt, model, schema, options }; return { action: "calendar", calendarFrom: "2026-11-06", calendarDays: "1", reason: "asks about tomorrow" }; };
+  const logs = [];
+  const d = await decide("what do I have tomorrow?", { askStructured: geminiDown, askBackup: haiku, now: NOW_FIXED, timezone: "Asia/Jerusalem", log: (l) => logs.push(l) });
+  assert.strictEqual(d.via, "haiku");
+  assert.deepStrictEqual(d.calendar, { from: "2026-11-06", days: 1 });
+  assert.strictEqual(seen.model, "haiku");
+  assert.strictEqual(seen.schema, COMPACT_SCHEMA);
+  assert.strictEqual(seen.options.systemFile, BACKUP_BRIEF_FILE);
+  assert.ok(seen.options.timeoutMs > 0);
+  assert.match(seen.prompt, /The current time is 2026-11-05T14:00:00\+02:00/);
+  assert.match(seen.prompt, /<message>\nwhat do I have tomorrow\?\n<\/message>/);
+  assert.doesNotMatch(seen.prompt, /Front desk briefing/); // the briefing travels in the system file
+  assert.doesNotMatch(seen.prompt, /Reply with ONLY one JSON object/); // the shape is forced by the schema instead
+  assert.match(logs[0], /Gemini desk failed \(.*agy is down.*\); Claude Haiku decides/);
+});
+
+test("backup: a reminder from Haiku is checked by the same code (real future time, real zone)", async () => {
+  const good = async () => ({ action: "remind", reminderText: "call the bank", remindAt: "2026-11-06T09:00:00", timezone: "Asia/Jerusalem", reason: "r" });
+  const d = await decide("remind me tomorrow at 9 to call the bank", { askStructured: geminiDown, askBackup: good, now: NOW_FIXED });
+  assert.strictEqual(d.via, "haiku");
+  assert.deepStrictEqual(d.reminder, { text: "call the bank", at: Date.UTC(2026, 10, 6, 7, 0, 0), timezone: "Asia/Jerusalem" });
+  const past = async () => ({ action: "remind", reminderText: "x", remindAt: "2026-11-04T09:00:00", timezone: "Asia/Jerusalem", reason: "r" });
+  await assert.rejects(decide("remind me", { askStructured: geminiDown, askBackup: past, now: NOW_FIXED }), /unusable decision/);
+});
+
+test("backup: a Gemini deadline also hands over to Haiku", async () => {
+  const stuck = (p, m, s, { signal }) => new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  const d = await decide("hi", { askStructured: stuck, askBackup: async () => ({ action: "answer", answer: "hello", reason: "greeting" }), hedgeAfterMs: 20, deadlineMs: 150 });
+  assert.strictEqual(d.via, "haiku");
+  assert.strictEqual(d.answer, "hello");
+});
+
+test("backup: not used when Gemini answers", async () => {
+  let backupCalls = 0;
+  const d = await decide("hi", { askStructured: async () => ({ action: "answer", answer: "hello", reason: "r" }), askBackup: async () => { backupCalls++; return {}; }, brief: "B" });
+  assert.strictEqual(d.via, "gemini");
+  assert.strictEqual(backupCalls, 0);
+});
+
+test("backup: an unusable Haiku reply, or Haiku failing too, makes decide throw so core.js can use Claude Sonnet", async () => {
+  await assert.rejects(decide("x", { askStructured: geminiDown, askBackup: async () => ({ action: "delegate", destination: "evil" }) }), /agy is down; backup \(Claude Haiku\): the backup front desk returned an unusable decision/);
+  await assert.rejects(decide("x", { askStructured: geminiDown, askBackup: async () => { throw new Error("OAuth session expired"); } }), /agy is down; backup \(Claude Haiku\): OAuth session expired/);
+});
+
+test("the compact schema only requires action and reason, and a reply without the empty fields still validates", () => {
+  assert.deepStrictEqual(COMPACT_SCHEMA.required, ["action", "reason"]);
+  assert.strictEqual(validateDecision({ action: "delegate", destination: "web-search", reason: "weather" }).destination, "web-search");
+  assert.strictEqual(validateDecision({ action: "forget", replaces: "3", reason: "r" }).replaces, "3");
 });

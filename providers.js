@@ -145,8 +145,11 @@ function askAgyStructured(question, model, schema, { signal, timeoutMs } = {}) {
 // ("--output-format json"); the checked reply is in "structured_output". claude reports problems such as a used-up
 // plan or an expired login INSIDE that object (is_error), so those become errors here too and the caller can fall back.
 // The schema is a constant of ours (never user text), so putting it in the command line is safe once its quotes are escaped.
-function askClaudeStructured(question, model, schema, { signal, timeoutMs } = {}) {
-  const command = `${claudeCommand(model)} --output-format json --json-schema "${JSON.stringify(schema).replace(/"/g, '\\"')}"`;
+// systemFile (optional): a file that REPLACES Claude Code's own long system prompt (the front desk's briefing goes
+// there, so the message only holds what changes). It is a path of ours, never user text.
+function askClaudeStructured(question, model, schema, { signal, timeoutMs, systemFile } = {}) {
+  const system = systemFile ? ` --system-prompt-file "${systemFile}"` : "";
+  const command = `${claudeCommand(model)} --output-format json --json-schema "${JSON.stringify(schema).replace(/"/g, '\\"')}"${system}`;
   return new Promise((resolve, reject) => {
     const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
       let envelope = null;

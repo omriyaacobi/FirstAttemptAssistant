@@ -12,6 +12,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { createWarmAgy } = require("./warmagy");
+const { askClaudeStructured } = require("./providers");
 const { race } = require("./deskrace");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
@@ -31,6 +32,15 @@ const HEDGE_AFTER_MS = 4500; // a warm call normally answers in about 3 s, a col
 const DEADLINE_MS = 30000;
 const DESK_CALLS = 3; // so the 2nd call starts at 4.5 s and the 3rd at 9 s
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
+
+// The BACKUP front desk: when the Gemini desk above fails or hits its deadline, Claude Haiku makes the decision (about
+// 4 s, same checks), so a Gemini outage no longer loses calendar, reminder and memory actions. Only if Haiku fails too does
+// core.js hand the message to Claude Sonnet. Haiku gets its own briefing as its system prompt (router-brief-haiku.md: the
+// same rules, with examples; a test checks the two list the same actions and destinations) and a reply shape that only
+// requires "action" and "reason", which makes it write about half as many words. experiments/2026-11-05-frontdesk-haiku.md
+const BACKUP_MODEL = "haiku";
+const BACKUP_BRIEF_FILE = path.join(__dirname, "router-brief-haiku.md");
+const BACKUP_TIMEOUT_MS = 25000;
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
 // "remind" means: the user wants to be reminded of something at a time. The model only EXTRACTS the
@@ -65,6 +75,10 @@ const SCHEMA = {
   },
   required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays"],
 };
+
+// The shape for the backup desk (forced through claude's --json-schema): only "action" and "reason" are required, and
+// validateDecision treats a missing field as empty.
+const COMPACT_SCHEMA = { ...SCHEMA, required: ["action", "reason"] };
 
 // The reply shape is described in the prompt and CHECKED by validateDecision, instead of agy's --json-schema mode: in about
 // 300 test calls the schema mode gave every invalid reply and the one 90 s hang, the plain mode none.
@@ -161,11 +175,26 @@ function validateDecision(raw, { now = Date.now() } = {}) {
 // can fall back to Claude Sonnet.
 // A reply that fails validateDecision counts as a failed call: the next call is started at once.
 // The result says "hedged: true" when the second call had to be started.
-async function decide(task, { history = "", allowSplit = true, askStructured = warm.askStructured, brief, low = [], about = "", now, timezone, hedgeAfterMs = HEDGE_AFTER_MS, deadlineMs = DEADLINE_MS, calls = DESK_CALLS } = {}) {
+// If the Gemini desk fails (error, invalid replies, deadline), the BACKUP desk (Claude Haiku) decides; the result then says
+// "via: 'haiku'". decide throws only when the backup fails too. askBackup is a parameter so tests can plug in a fake.
+async function decide(task, { history = "", allowSplit = true, askStructured = warm.askStructured, askBackup = askClaudeStructured, brief, low = [], about = "", now, timezone, hedgeAfterMs = HEDGE_AFTER_MS, deadlineMs = DEADLINE_MS, calls = DESK_CALLS, log = () => {} } = {}) {
   const prompt = buildPrompt(task, { history, allowSplit, brief, low, about, now, timezone }) + REPLY_FORMAT;
   const starts = Array.from({ length: calls }, () => (signal) => askStructured(prompt, FRONT_DESK_MODEL.model, null, { signal, timeoutMs: deadlineMs }));
-  const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw, { now }), hedgeAfterMs, deadlineMs });
-  return { ...result, hedged: started > 1 };
+  try {
+    const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw, { now }), hedgeAfterMs, deadlineMs });
+    return { ...result, hedged: started > 1, via: "gemini" };
+  } catch (geminiError) {
+    log(`[frontdesk] the Gemini desk failed (${String(geminiError.message).slice(0, 120)}); Claude Haiku decides instead`);
+    const message = buildPrompt(task, { history, allowSplit, brief: "", low, about, now, timezone }); // the briefing is the system file
+    try {
+      const raw = await askBackup(message, BACKUP_MODEL, COMPACT_SCHEMA, { systemFile: BACKUP_BRIEF_FILE, timeoutMs: BACKUP_TIMEOUT_MS });
+      const decision = validateDecision(raw, { now });
+      if (!decision) throw new Error("the backup front desk returned an unusable decision");
+      return { ...decision, hedged: false, via: "haiku" };
+    } catch (backupError) {
+      throw new Error(`${geminiError.message}; backup (Claude Haiku): ${backupError.message}`);
+    }
+  }
 }
 
-module.exports = { decide, warm, REPLY_FORMAT, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, BRIEF_FILE };
+module.exports = { decide, warm, REPLY_FORMAT, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE };
