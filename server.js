@@ -22,6 +22,9 @@
 //   GET    /api/reminders          -> pending reminders, plus the ones that fired and the page has not shown yet
 //   POST   /api/reminders/:id/ack  -> the page says it showed one (so it is not shown twice)
 //   DELETE /api/reminders/:id      -> cancel (or dismiss) a reminder
+//   GET    /api/memory             -> the facts Bot remembers about you (and whether data/profile.md is loaded)
+//   POST   /api/memory             -> save ONE fact you approved with the Save button, or change one ({ text, replaces: id }); checked again in code, see profile.js
+//   DELETE /api/memory/:id         -> forget one fact
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
 //   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
 //   POST   /api/login | /api/logout -> the phone login (see auth.js)
@@ -52,6 +55,7 @@ const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
+const { createMemory, loadProfile, PROFILE_FILE } = require("./profile");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -149,6 +153,8 @@ function createServer({
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
   reminders = getReminders(),
+  memory = createMemory(),
+  profileFile = PROFILE_FILE,
   uploadDir = path.join(__dirname, "data", "uploads"), // a photo waits here only while its task runs (data/ is git-ignored)
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
@@ -288,6 +294,26 @@ function createServer({
       if (!action && req.method === "DELETE") {
         return reminders.cancel(id) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "reminder not found" });
       }
+    }
+
+    // What Bot remembers about you. Facts are only ever added by a click on Save (the front desk just proposes),
+    // and only from this page: these routes sit behind the same Host, Origin and phone-login checks as the others.
+    if (req.method === "GET" && url.pathname === "/api/memory") {
+      return sendJson(res, 200, { facts: memory.list(), profile: { loaded: loadProfile(profileFile).length > 0 } });
+    }
+    if (req.method === "POST" && url.pathname === "/api/memory") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      try {
+        const { fact, already } = memory.add(input.text, input.replaces === undefined ? {} : { replaces: input.replaces });
+        return sendJson(res, already ? 200 : 201, { fact, already });
+      } catch (error) {
+        return sendJson(res, /not found/.test(error.message) ? 404 : 400, { error: error.message });
+      }
+    }
+    const memoryRoute = url.pathname.match(/^\/api\/memory\/([^/]+)$/);
+    if (memoryRoute && req.method === "DELETE") {
+      return memory.remove(memoryRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "fact not found" });
     }
 
     // Quota panel

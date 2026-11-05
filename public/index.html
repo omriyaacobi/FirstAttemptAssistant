@@ -199,6 +199,11 @@
       </div>
       <div id="reminders" class="sub">None yet. Try: "remind me tomorrow at 9 to call the bank".</div>
     </section>
+    <section aria-label="What Bot knows about me">
+      <div class="row" style="margin-top:0"><strong>What Bot knows about me</strong></div>
+      <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
+      <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
+    </section>
     <button class="improve" id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
   </aside>
 
@@ -332,6 +337,9 @@
         actions.appendChild(open);
         card.appendChild(actions);
       }
+      // Bot only PROPOSED a fact. Nothing is stored until you press Save.
+      if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact, result.remember.replaces && result.remember.replaces.id));
+      if (result.forget && result.forget.id) card.appendChild(rememberButtons(null, result.forget.id));
       wrap.appendChild(card);
     } else if (result.mode === "split") {
       result.steps.forEach((s) => {
@@ -342,6 +350,32 @@
       wrap.appendChild(el("p", "sub", `Finished in ${result.seconds}s, planned by ${result.plannedBy}.`));
     }
     return wrap;
+  }
+
+  // fact + no id = add; fact + id = change that saved fact; no fact + id = forget it. Nothing happens until a tap.
+  function rememberButtons(fact, id) {
+    const actions = el("div", "actions");
+    const save = el("button", "", fact ? "Save" : "Forget it");
+    const skip = el("button", "ghost", "Don't save");
+    const note = el("span", "sub");
+    skip.addEventListener("click", () => actions.replaceChildren(el("span", "sub", "Not saved.")));
+    save.addEventListener("click", async () => {
+      save.disabled = skip.disabled = true;
+      try {
+        const res = fact
+          ? await fetch("/api/memory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(id ? { text: fact, replaces: id } : { text: fact }) })
+          : await fetch("/api/memory/" + id, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "could not save");
+        actions.replaceChildren(el("span", "sub", !fact ? "Forgotten." : data.already ? "Bot already knew this." : "Saved."));
+        loadMemory();
+      } catch (error) {
+        save.disabled = skip.disabled = false;
+        note.textContent = error.message;
+      }
+    });
+    actions.append(save, skip, note);
+    return actions;
   }
 
   function logDetails(lines) {
@@ -1150,6 +1184,41 @@
     }
   }
 
+  // The facts Bot remembers (data/memory.json). Each can be forgotten with the x.
+  async function loadMemory() {
+    try {
+      const res = await fetch("/api/memory");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not read memory");
+      $("profileNote").hidden = !data.profile.loaded;
+      const box = $("memory");
+      if (!data.facts.length) {
+        box.className = "sub";
+        box.textContent = 'Nothing saved yet. Try: "remember that I prefer short answers".';
+        return;
+      }
+      box.className = "";
+      box.replaceChildren(...data.facts.map((f) => {
+        const row = el("div", "reminder");
+        const what = el("div", "what");
+        const text = el("div", "", f.text);
+        text.dir = "auto";
+        what.appendChild(text);
+        const forget = el("button", "", "✕");
+        forget.title = "Forget this";
+        forget.setAttribute("aria-label", "Forget: " + f.text);
+        forget.addEventListener("click", async () => {
+          await fetch("/api/memory/" + f.id, { method: "DELETE" }).catch(() => {});
+          loadMemory();
+        });
+        row.append(what, forget);
+        return row;
+      }));
+    } catch (error) {
+      $("memory").textContent = error.message;
+    }
+  }
+
   // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
   // gives us a "subscription" (an address at Google's push service), and we hand it to Bot.
   let session = { remote: false, loggedIn: true, pushKey: null };
@@ -1272,8 +1341,9 @@
     if (session.remote) $("improveBtn").hidden = true;
     setupNotifyButton();
     loadReminders();
+    loadMemory();
     setInterval(loadReminders, 30000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
     showEmpty();
     loadChats();
     loadQuota();

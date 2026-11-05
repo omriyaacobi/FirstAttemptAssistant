@@ -14,6 +14,7 @@ const path = require("node:path");
 const { askAgyStructured } = require("./providers");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
+const { checkFact } = require("./profile");
 
 const FRONT_DESK_MODEL = MODELS.flashMedium; // medium was ~5 s faster than high with identical decisions on 19 prompts (experiments/2026-11-04-speed-part2.md)
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
@@ -21,7 +22,9 @@ const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
 // "remind" means: the user wants to be reminded of something at a time. The model only EXTRACTS the
 // text and the time; validateDecision checks the time is a real future moment (see reminders.js).
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind"];
+// "remember" means: the user stated a lasting fact or asked Bot to remember something. The model only
+// PROPOSES the fact; validateDecision checks it (profile.js) and nothing is saved until the user presses Save.
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget"];
 const MAX_ANSWER_CHARS = 8000;
 
 // The shape we force the model's reply into. "none" is for the actions that need no destination.
@@ -36,8 +39,12 @@ const SCHEMA = {
     reminderText: { type: "string" },
     remindAt: { type: "string" },
     timezone: { type: "string" },
+    // Only for the action "remember"; empty otherwise.
+    fact: { type: "string" },
+    // For "remember" (when it CHANGES a saved fact) and "forget": the number of that saved fact, else "".
+    replaces: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces"],
 };
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
@@ -61,13 +68,14 @@ function nowLine(now = Date.now(), timezone = localZone()) {
   return `The current time is ${localIso(now, timezone)} (${day}), time zone ${timezone}. Use this time zone for reminders unless the user names another.`;
 }
 
-function buildPrompt(task, { history = "", allowSplit = true, brief = readBrief(), low = [], now = Date.now(), timezone = localZone() } = {}) {
+function buildPrompt(task, { history = "", allowSplit = true, brief = readBrief(), low = [], now = Date.now(), timezone = localZone(), about = "" } = {}) {
   return [
     brief,
     "## Right now",
     nowLine(now, timezone),
     allowSplit ? "Splitting is allowed." : 'The user turned splitting off: do NOT choose the action "split".',
     quotaLine(low),
+    about, // the profile and saved facts (profile.js), already inside their markers; "" when there are none
     history ? `## Conversation so far\n${history.replace(/^Conversation so far[^\n]*\n/, "")}` : "## Conversation so far\n(none, this is the first message)",
     `## The user's new message\n<message>\n${task}\n</message>`,
   ].filter(Boolean).join("\n\n");
@@ -93,6 +101,18 @@ function validateDecision(raw, { now = Date.now() } = {}) {
     }
   }
 
+  // The number of a saved fact (see profile.js recentFacts). Only digits get through; core.js maps it to the real fact.
+  const replaces = /^\d{1,3}$/.test(String(raw.replaces || "").trim()) ? String(raw.replaces).trim() : "";
+  if (raw.action === "forget") return { action: "forget", destination: null, answer: "", reason, replaces };
+  if (raw.action === "remember") {
+    // Code decides whether the proposed fact may be offered. A refused one (a secret, too long) becomes a plain reply.
+    try {
+      return { action: "remember", destination: null, answer: "", reason, fact: checkFact(raw.fact), replaces };
+    } catch (error) {
+      return { action: "remember", destination: null, answer: error.message, reason, fact: "" };
+    }
+  }
+
   if (raw.action === "answer" || raw.action === "clarify" || raw.action === "improve") {
     if (!answer || answer.length > MAX_ANSWER_CHARS) return null;
     return { action: raw.action, destination: null, answer, reason };
@@ -106,8 +126,8 @@ function validateDecision(raw, { now = Date.now() } = {}) {
 
 // Asks the front desk model. Throws if it fails or its reply is unusable, so the caller
 // can fall back to Claude Sonnet.
-async function decide(task, { history = "", allowSplit = true, askStructured = askAgyStructured, brief, low = [] } = {}) {
-  const prompt = buildPrompt(task, { history, allowSplit, brief, low });
+async function decide(task, { history = "", allowSplit = true, askStructured = askAgyStructured, brief, low = [], about = "" } = {}) {
+  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about });
   const raw = await askStructured(prompt, FRONT_DESK_MODEL.model, SCHEMA);
   const decision = validateDecision(raw);
   if (!decision) throw new Error("the front desk returned an unusable decision");
