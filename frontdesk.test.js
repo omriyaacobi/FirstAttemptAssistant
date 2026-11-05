@@ -5,7 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
-const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, BRIEF_FILE } = require("./frontdesk");
+const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE } = require("./frontdesk");
 const { DESTINATIONS } = require("./router");
 
 test("validateDecision accepts each kind of good decision", () => {
@@ -57,10 +57,20 @@ test("the briefing describes every destination and every action", () => {
   for (const action of ACTIONS) assert.ok(brief.includes(action), `router-brief.md does not mention ${action}`);
 });
 
-test("the Haiku briefing describes every destination and every action too", () => {
-  const brief = fs.readFileSync(require("./frontdesk").HAIKU_BRIEF_FILE, "utf8");
-  for (const name of Object.keys(DESTINATIONS)) assert.ok(brief.includes(name), `router-brief-haiku.md does not mention ${name}`);
-  for (const action of ACTIONS) assert.ok(brief.includes(action), `router-brief-haiku.md does not mention ${action}`);
+test("DRIFT: router-brief.md and router-brief-haiku.md name the same destinations and the same actions", () => {
+  const names = (file) => {
+    const text = fs.readFileSync(file, "utf8");
+    return {
+      destinations: [...new Set(text.match(/\b(?:gemini|claude|web)-[a-z-]*[a-z]\b/g) || [])].sort(),
+      actions: [...new Set([...text.matchAll(/\*\*(\w+)\*\*/g)].map((m) => m[1]).filter((w) => ACTIONS.includes(w)))].sort(),
+    };
+  };
+  const gemini = names(BRIEF_FILE);
+  const haiku = names(BACKUP_BRIEF_FILE);
+  assert.deepStrictEqual(haiku.destinations, gemini.destinations);
+  assert.deepStrictEqual(haiku.actions, gemini.actions);
+  assert.deepStrictEqual(haiku.destinations, Object.keys(DESTINATIONS).sort()); // and both match the real menu
+  assert.deepStrictEqual(haiku.actions, [...ACTIONS].sort());
 });
 
 test("the prompt contains the briefing, the history and the message between markers", () => {
@@ -79,19 +89,51 @@ test("the prompt says so when splitting is turned off, and when there is no hist
 
 test("decide returns a validated decision from the model's reply", async () => {
   let seen = null;
-  const fake = async (prompt, model, schema) => {
-    seen = { prompt, model, schema };
+  const fake = async (prompt, model, schema, options) => {
+    seen = { prompt, model, schema, options };
     return { action: "delegate", destination: "gemini-flash", answer: "", reason: "easy" };
   };
   const decision = await decide("summarize this", { askStructured: fake, brief: "B" });
   assert.strictEqual(decision.destination, "gemini-flash");
-  assert.strictEqual(seen.model, "gemini-3.8-flash-medium");
-  assert.strictEqual(seen.schema, SCHEMA);
+  assert.strictEqual(seen.model, "gemini-3.8-flash-low");
+  assert.strictEqual(seen.schema, null); // the shape is described in the prompt and checked in code, not forced by agy
+  assert.match(seen.prompt, /Reply with ONLY one JSON object/);
+  for (const key of SCHEMA.required) assert.ok(seen.prompt.includes(key), key + " is named in the reply format");
+  assert.ok(seen.options.signal && seen.options.timeoutMs > 0); // so a losing call can be killed
+  assert.strictEqual(decision.hedged, false);
+});
+
+test("decide: a slow first call is hedged and the quick second call wins", async () => {
+  let calls = 0;
+  const fake = async (prompt, model, schema, { signal }) => {
+    const mine = ++calls;
+    if (mine === 1) return new Promise((resolve, reject) => { signal.addEventListener("abort", () => reject(new Error("aborted"))); }); // never answers
+    return { action: "answer", destination: "none", answer: "hi", reason: "r" };
+  };
+  const decision = await decide("hello", { askStructured: fake, brief: "B", hedgeAfterMs: 30, deadlineMs: 2000 });
+  assert.strictEqual(decision.action, "answer");
+  assert.strictEqual(decision.hedged, true);
+  assert.strictEqual(calls, 2);
+});
+
+test("decide: an unusable first reply starts the second call at once, and a good one is used", async () => {
+  let calls = 0;
+  const fake = async () => (++calls === 1 ? { action: "delegate", destination: "evil" } : { action: "delegate", destination: "gemini-flash", reason: "ok" });
+  const decision = await decide("x", { askStructured: fake, brief: "B", hedgeAfterMs: 60000, deadlineMs: 120000 });
+  assert.strictEqual(decision.destination, "gemini-flash");
+});
+
+test("decide: gives up at the deadline so the caller can use its default", async () => {
+  const stuck = (p, m, s, { signal }) => new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  const started = Date.now();
+  await assert.rejects(decide("x", { askStructured: stuck, askBackup: async () => { throw new Error("claude down"); }, brief: "B", hedgeAfterMs: 20, deadlineMs: 150 }), /did not answer within/);
+  assert.ok(Date.now() - started < 1500);
 });
 
 test("decide throws when the reply is unusable, so the caller can fall back", async () => {
-  await assert.rejects(decide("x", { askStructured: async () => ({ action: "delegate", destination: "evil" }), brief: "B" }), /unusable/);
-  await assert.rejects(decide("x", { askStructured: async () => { throw new Error("agy down"); }, brief: "B" }), /agy down/);
+  const backupDown = async () => { throw new Error("claude down"); };
+  await assert.rejects(decide("x", { askStructured: async () => ({ action: "delegate", destination: "evil" }), askBackup: backupDown, brief: "B" }), /unusable/);
+  await assert.rejects(decide("x", { askStructured: async () => { throw new Error("agy down"); }, askBackup: backupDown, brief: "B" }), /agy down.*claude down/);
 });
 
 test("quota: the prompt names low pools and the destinations they affect; silent when nothing is low", () => {
@@ -132,85 +174,58 @@ test("the schema asks for the reminder fields", () => {
   for (const f of ["reminderText", "remindAt", "timezone"]) assert.ok(SCHEMA.required.includes(f) && SCHEMA.properties[f]);
 });
 
-// ---- the Haiku desk and its Flash fallback ----
-const { resetCoolDowns, DESK_COOLDOWN_MS, FRONT_DESK } = require("./frontdesk");
-const GOOD = { action: "delegate", destination: "claude-sonnet", answer: "", reason: "code" };
+// ---- the backup desk: Claude Haiku when the Gemini desk fails ----
+const geminiDown = async () => { throw new Error("agy is down"); };
+const NOW_FIXED = Date.UTC(2026, 10, 5, 12, 0, 0); // Thursday 2026-11-05, 14:00 in Jerusalem
 
-test("the default front desk is still Flash (Haiku is opt-in by changing one word)", () => {
-  assert.strictEqual(FRONT_DESK, "flash");
-});
-
-test("haiku desk: Claude answers when it works, and Flash is never called", async () => {
-  resetCoolDowns();
-  const calls = [];
-  const claude = async (p, model) => { calls.push("claude:" + model); return GOOD; };
-  const flash = async () => { calls.push("flash"); return GOOD; };
-  const d = await decide("fix my code", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B" });
-  assert.strictEqual(d.via, "haiku");
-  assert.deepStrictEqual(calls, ["claude:haiku"]);
-});
-
-test("haiku desk: a failing Claude (login, limit, timeout) hands the message to Flash at once", async () => {
-  resetCoolDowns();
-  const logs = [];
-  const claude = async () => { throw new Error("OAuth session expired"); };
-  const flash = async (p, model) => { assert.strictEqual(model, "gemini-3.8-flash-medium"); return GOOD; };
-  const d = await decide("fix my code", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", log: (l) => logs.push(l) });
-  assert.strictEqual(d.via, "flash");
-  assert.strictEqual(d.destination, "claude-sonnet");
-  assert.match(logs[0], /claude\/haiku failed \(OAuth session expired\)/);
-});
-
-test("haiku desk: after a failure the next messages skip Claude for a while, then try it again", async () => {
-  resetCoolDowns();
-  let claudeCalls = 0;
-  const claude = async () => { claudeCalls++; throw new Error("rate limit"); };
-  const flash = async () => GOOD;
-  const t0 = 1_000_000;
-  await decide("a", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", now: t0 });
-  await decide("b", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", now: t0 + 1000 });
-  assert.strictEqual(claudeCalls, 1, "the second message did not pay for a failed Claude call");
-  await decide("c", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", now: t0 + DESK_COOLDOWN_MS + 1 });
-  assert.strictEqual(claudeCalls, 2, "after the cool-down Claude is tried again");
-});
-
-test("haiku desk: a reply that fails the checks falls back for that message only (no cool-down)", async () => {
-  resetCoolDowns();
-  let claudeCalls = 0;
-  const claude = async () => { claudeCalls++; return { action: "delegate", destination: "evil" }; };
-  const d1 = await decide("a", { desk: "haiku", askStructured: claude, askFallback: async () => GOOD, brief: "B" });
-  assert.strictEqual(d1.via, "flash");
-  await decide("b", { desk: "haiku", askStructured: claude, askFallback: async () => GOOD, brief: "B" });
-  assert.strictEqual(claudeCalls, 2);
-});
-
-test("haiku desk: when Flash fails too, decide throws so core.js can use Claude Sonnet", async () => {
-  resetCoolDowns();
-  await assert.rejects(decide("x", { desk: "haiku", askStructured: async () => { throw new Error("down"); }, askFallback: async () => { throw new Error("agy down"); }, brief: "B" }), /agy down/);
-});
-
-test("an unknown desk name is refused", async () => {
-  await assert.rejects(decide("x", { desk: "gpt", brief: "B" }), /unknown front desk/);
-});
-
-test("haiku desk: Claude gets the briefing as a system file, a message without it, and the compact schema", async () => {
-  resetCoolDowns();
-  const { HAIKU_BRIEF_FILE, COMPACT_SCHEMA } = require("./frontdesk");
+test("backup: a Gemini failure gives the decision to Claude Haiku, with the briefing as a system file and the compact shape", async () => {
   let seen = null;
-  const claude = async (prompt, model, schema, opts) => { seen = { prompt, model, schema, opts }; return { action: "answer", answer: "391", reason: "math" }; }; // no empty fields: the compact shape
-  const d = await decide("17 times 23", { desk: "haiku", askStructured: claude, askFallback: async () => GOOD });
+  const haiku = async (prompt, model, schema, options) => { seen = { prompt, model, schema, options }; return { action: "calendar", calendarFrom: "2026-11-06", calendarDays: "1", reason: "asks about tomorrow" }; };
+  const logs = [];
+  const d = await decide("what do I have tomorrow?", { askStructured: geminiDown, askBackup: haiku, now: NOW_FIXED, timezone: "Asia/Jerusalem", log: (l) => logs.push(l) });
   assert.strictEqual(d.via, "haiku");
-  assert.strictEqual(d.answer, "391");
-  assert.strictEqual(seen.opts.systemFile, HAIKU_BRIEF_FILE);
+  assert.deepStrictEqual(d.calendar, { from: "2026-11-06", days: 1 });
+  assert.strictEqual(seen.model, "haiku");
   assert.strictEqual(seen.schema, COMPACT_SCHEMA);
-  assert.match(seen.prompt, /<message>\n17 times 23\n<\/message>/);
-  assert.doesNotMatch(seen.prompt, /Front desk briefing/); // the briefing travels in the system file instead
+  assert.strictEqual(seen.options.systemFile, BACKUP_BRIEF_FILE);
+  assert.ok(seen.options.timeoutMs > 0);
+  assert.match(seen.prompt, /The current time is 2026-11-05T14:00:00\+02:00/);
+  assert.match(seen.prompt, /<message>\nwhat do I have tomorrow\?\n<\/message>/);
+  assert.doesNotMatch(seen.prompt, /Front desk briefing/); // the briefing travels in the system file
+  assert.doesNotMatch(seen.prompt, /Reply with ONLY one JSON object/); // the shape is forced by the schema instead
+  assert.match(logs[0], /Gemini desk failed \(.*agy is down.*\); Claude Haiku decides/);
+});
+
+test("backup: a reminder from Haiku is checked by the same code (real future time, real zone)", async () => {
+  const good = async () => ({ action: "remind", reminderText: "call the bank", remindAt: "2026-11-06T09:00:00", timezone: "Asia/Jerusalem", reason: "r" });
+  const d = await decide("remind me tomorrow at 9 to call the bank", { askStructured: geminiDown, askBackup: good, now: NOW_FIXED });
+  assert.strictEqual(d.via, "haiku");
+  assert.deepStrictEqual(d.reminder, { text: "call the bank", at: Date.UTC(2026, 10, 6, 7, 0, 0), timezone: "Asia/Jerusalem" });
+  const past = async () => ({ action: "remind", reminderText: "x", remindAt: "2026-11-04T09:00:00", timezone: "Asia/Jerusalem", reason: "r" });
+  await assert.rejects(decide("remind me", { askStructured: geminiDown, askBackup: past, now: NOW_FIXED }), /unusable decision/);
+});
+
+test("backup: a Gemini deadline also hands over to Haiku", async () => {
+  const stuck = (p, m, s, { signal }) => new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  const d = await decide("hi", { askStructured: stuck, askBackup: async () => ({ action: "answer", answer: "hello", reason: "greeting" }), hedgeAfterMs: 20, deadlineMs: 150 });
+  assert.strictEqual(d.via, "haiku");
+  assert.strictEqual(d.answer, "hello");
+});
+
+test("backup: not used when Gemini answers", async () => {
+  let backupCalls = 0;
+  const d = await decide("hi", { askStructured: async () => ({ action: "answer", answer: "hello", reason: "r" }), askBackup: async () => { backupCalls++; return {}; }, brief: "B" });
+  assert.strictEqual(d.via, "gemini");
+  assert.strictEqual(backupCalls, 0);
+});
+
+test("backup: an unusable Haiku reply, or Haiku failing too, makes decide throw so core.js can use Claude Sonnet", async () => {
+  await assert.rejects(decide("x", { askStructured: geminiDown, askBackup: async () => ({ action: "delegate", destination: "evil" }) }), /agy is down; backup \(Claude Haiku\): the backup front desk returned an unusable decision/);
+  await assert.rejects(decide("x", { askStructured: geminiDown, askBackup: async () => { throw new Error("OAuth session expired"); } }), /agy is down; backup \(Claude Haiku\): OAuth session expired/);
 });
 
 test("the compact schema only requires action and reason, and a reply without the empty fields still validates", () => {
-  const { COMPACT_SCHEMA } = require("./frontdesk");
   assert.deepStrictEqual(COMPACT_SCHEMA.required, ["action", "reason"]);
   assert.strictEqual(validateDecision({ action: "delegate", destination: "web-search", reason: "weather" }).destination, "web-search");
-  assert.strictEqual(validateDecision({ action: "calendar", calendarFrom: "2026-11-06", calendarDays: "1", reason: "r" }).calendar.days, 1);
   assert.strictEqual(validateDecision({ action: "forget", replaces: "3", reason: "r" }).replaces, "3");
 });

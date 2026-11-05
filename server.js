@@ -56,7 +56,12 @@ const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
-const { createMemory, loadProfile, PROFILE_FILE } = require("./profile");
+const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
+const { createCourses } = require("./courses");
+const { createCourseRoutes } = require("./course-routes");
+const { askCourse } = require("./study");
+const { ingestFile } = require("./ingest");
+const { askChain, askAgyWithFile } = require("./providers");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -70,6 +75,7 @@ const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bi
 const STATIC = {
   "/manifest.webmanifest": { file: "manifest.webmanifest", type: "application/manifest+json; charset=utf-8" },
   "/sw.js": { file: "sw.js", type: "text/javascript; charset=utf-8" },
+  "/study.js": { file: "study.js", type: "text/javascript; charset=utf-8" }, // the course tabs (public/study.js)
   "/icon-192.png": { file: "icon-192.png", type: "image/png" },
   "/icon-512.png": { file: "icon-512.png", type: "image/png" },
 };
@@ -161,6 +167,7 @@ function createServer({
   uploadDir = path.join(__dirname, "data", "uploads"), // a photo waits here only while its task runs (data/ is git-ignored)
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
+  courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
@@ -341,6 +348,9 @@ function createServer({
       }
     }
 
+    // Study notebooks: courses, their files and chats. All checks above (host, origin, phone login) have already run.
+    if (courseRoutes && (await courseRoutes.handle(req, res, url, { sendJson, readJsonBody }))) return;
+
     // Saved conversations
     if (req.method === "GET" && url.pathname === "/api/conversations") {
       return sendJson(res, 200, { conversations: store.list() });
@@ -395,7 +405,7 @@ function createServer({
       if (!supervised) {
         return sendJson(res, 409, { error: "Bot can only restart itself when it was started with start-web.cmd. Close this server and double-click start-web.cmd." });
       }
-      if (jobs.running() > 0 || selfEdit.isActive()) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
+      if (jobs.running() > 0 || selfEdit.isActive() || (courseRoutes && !courseRoutes.idle())) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
       sendJson(res, 200, { restarting: true });
       restart();
       return;
@@ -476,7 +486,13 @@ module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNI
 if (require.main === module) {
   const push = createPush({ dir: path.join(__dirname, "data"), log: console.log });
   const auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) });
-  const server = createServer({ push, auth });
+  const courseRoutes = createCourseRoutes({
+    courses: createCourses(path.join(__dirname, "data", "courses")),
+    askCourse, ingestFile, askChain, askFile: askAgyWithFile,
+    about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
+    log: console.log,
+  });
+  const server = createServer({ push, auth, courseRoutes });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;

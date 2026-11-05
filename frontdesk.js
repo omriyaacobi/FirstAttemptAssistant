@@ -11,32 +11,36 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { askAgyStructured, askClaudeStructured } = require("./providers");
+const { createWarmAgy } = require("./warmagy");
+const { askClaudeStructured } = require("./providers");
+const { race } = require("./deskrace");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
 const { checkRequest } = require("./calendar-chat");
 
-// THE ONE SETTING: who runs the front desk. Change this one word to switch.
-//   "flash" = Gemini Flash medium through agy (the default; medium was ~5 s faster than high with identical
-//             decisions on 19 prompts, experiments/2026-11-04-speed-part2.md)
-//   "haiku" = Claude Haiku through `claude -p` (experiments/2026-11-05-frontdesk-haiku.md). If Claude is
-//             logged out, out of quota, slow or returns nonsense, Flash answers instead, so Bot never stops.
-const FRONT_DESK = "flash";
-const FLASH_DESK = { model: MODELS.flashMedium, ask: askAgyStructured };
-const FRONT_DESKS = {
-  flash: FLASH_DESK,
-  // systemFile: the briefing is Haiku's system prompt, so the message only holds what changes.
-  // (getters, because the schema and the file name are defined further down)
-  haiku: { model: { provider: "claude", model: "haiku", pool: null }, ask: askClaudeStructured, get schema() { return COMPACT_SCHEMA; }, get systemFile() { return HAIKU_BRIEF_FILE; }, fallback: FLASH_DESK },
-};
-const FRONT_DESK_MODEL = FRONT_DESKS[FRONT_DESK].model; // core.js prints it
-// After Claude fails (login, limit, timeout), the next messages go straight to Flash for this long
-// instead of each paying for a failed call first. Kept in memory only.
-const DESK_COOLDOWN_MS = 5 * 60 * 1000;
-const coolDownUntil = {}; // desk name -> time (ms) until which it is skipped
+// Flash LOW: with the short briefing it made the same decisions as medium on 49 messages (0 wrong, 0 invalid) in about half
+// the time, and in about 3.5 s when its process is pre-warmed (experiments/2026-11-05-frontdesk-speed.md).
+const FRONT_DESK_MODEL = MODELS.flashLow;
+
+// The slow tail: if the first call has not answered after HEDGE_AFTER_MS, a second identical call is started (a third after
+// another HEDGE_AFTER_MS) and the first valid reply wins (the others are killed). A call that fails or returns an invalid reply
+// starts the next one at once. After DEADLINE_MS the front desk gives up and core.js uses its default (Claude Sonnet).
+// Measured: some messages (for example "what do I have on Thursday?") make Flash low think for 10-15 s in one call out of four,
+// and the thinking time is random per call, so several independent calls shorten the tail.
+const HEDGE_AFTER_MS = 4500; // a warm call normally answers in about 3 s, a cold one in about 5 s
+const DEADLINE_MS = 30000;
+const DESK_CALLS = 3; // so the 2nd call starts at 4.5 s and the 3rd at 9 s
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
-const HAIKU_BRIEF_FILE = path.join(__dirname, "router-brief-haiku.md"); // the briefing Claude Haiku gets as its system prompt
+
+// The BACKUP front desk: when the Gemini desk above fails or hits its deadline, Claude Haiku makes the decision (about
+// 4 s, same checks), so a Gemini outage no longer loses calendar, reminder and memory actions. Only if Haiku fails too does
+// core.js hand the message to Claude Sonnet. Haiku gets its own briefing as its system prompt (router-brief-haiku.md: the
+// same rules, with examples; a test checks the two list the same actions and destinations) and a reply shape that only
+// requires "action" and "reason", which makes it write about half as many words. experiments/2026-11-05-frontdesk-haiku.md
+const BACKUP_MODEL = "haiku";
+const BACKUP_BRIEF_FILE = path.join(__dirname, "router-brief-haiku.md");
+const BACKUP_TIMEOUT_MS = 25000;
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
 // "remind" means: the user wants to be reminded of something at a time. The model only EXTRACTS the
@@ -72,9 +76,16 @@ const SCHEMA = {
   required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays"],
 };
 
-// The same shape with only "action" and "reason" required: Claude then leaves out the empty fields,
-// which means about half as many words to write (and wait for). validateDecision treats a missing field as empty.
+// The shape for the backup desk (forced through claude's --json-schema): only "action" and "reason" are required, and
+// validateDecision treats a missing field as empty.
 const COMPACT_SCHEMA = { ...SCHEMA, required: ["action", "reason"] };
+
+// The reply shape is described in the prompt and CHECKED by validateDecision, instead of agy's --json-schema mode: in about
+// 300 test calls the schema mode gave every invalid reply and the one 90 s hang, the plain mode none.
+const REPLY_FORMAT = "\n\nReply with ONLY one JSON object, nothing before or after it, no markdown. It must have exactly these keys, all with string values (use \"\" for the ones the action does not need): " + SCHEMA.required.join(", ") + ".";
+
+// One pre-warmed agy waits for the next message (warmagy.js).
+const warm = createWarmAgy();
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
 const readBrief = () => fs.readFileSync(BRIEF_FILE, "utf8");
@@ -160,41 +171,30 @@ function validateDecision(raw, { now = Date.now() } = {}) {
   return { action: "split", destination: null, answer: "", reason };
 }
 
-// One attempt with one desk: ask, then CHECK. Throws if the call fails or the reply is unusable.
-async function tryDesk(desk, ask, prompt, userPrompt) {
-  const raw = desk.systemFile && userPrompt !== undefined
-    ? await ask(userPrompt, desk.model.model, desk.schema, { systemFile: desk.systemFile })
-    : await ask(prompt, desk.model.model, SCHEMA);
-  const decision = validateDecision(raw);
-  if (!decision) throw new Error("the front desk returned an unusable decision");
-  return decision;
-}
-
-// Asks the front desk. A desk with a fallback (Haiku -> Flash) is tried first; if it fails or is
-// cooling down, its fallback answers. Throws only when everything failed, so the caller can fall back
-// to Claude Sonnet. askStructured / askFallback / now are parameters so tests can plug in fakes.
-async function decide(task, { history = "", allowSplit = true, askStructured, askFallback, brief, low = [], about = "", desk = FRONT_DESK, log = () => {}, now = Date.now() } = {}) {
-  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about });
-  const main = FRONT_DESKS[desk];
-  // A desk with its own system prompt gets a message without the briefing (unless a test passes its own brief).
-  const userPrompt = main && main.systemFile && brief === undefined ? buildPrompt(task, { history, allowSplit, brief: "", low, about }) : undefined;
-  if (!main) throw new Error("unknown front desk: " + desk);
-  const ask = askStructured || main.ask;
-  if (!main.fallback) return { ...(await tryDesk(main, ask, prompt, userPrompt)), via: desk };
-
-  const backup = main.fallback;
-  if (now >= (coolDownUntil[desk] || 0)) {
+// Asks the front desk model. Throws if it fails or its reply is unusable, so the caller
+// can fall back to Claude Sonnet.
+// A reply that fails validateDecision counts as a failed call: the next call is started at once.
+// The result says "hedged: true" when the second call had to be started.
+// If the Gemini desk fails (error, invalid replies, deadline), the BACKUP desk (Claude Haiku) decides; the result then says
+// "via: 'haiku'". decide throws only when the backup fails too. askBackup is a parameter so tests can plug in a fake.
+async function decide(task, { history = "", allowSplit = true, askStructured = warm.askStructured, askBackup = askClaudeStructured, brief, low = [], about = "", now, timezone, hedgeAfterMs = HEDGE_AFTER_MS, deadlineMs = DEADLINE_MS, calls = DESK_CALLS, log = () => {} } = {}) {
+  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about, now, timezone }) + REPLY_FORMAT;
+  const starts = Array.from({ length: calls }, () => (signal) => askStructured(prompt, FRONT_DESK_MODEL.model, null, { signal, timeoutMs: deadlineMs }));
+  try {
+    const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw, { now }), hedgeAfterMs, deadlineMs });
+    return { ...result, hedged: started > 1, via: "gemini" };
+  } catch (geminiError) {
+    log(`[frontdesk] the Gemini desk failed (${String(geminiError.message).slice(0, 120)}); Claude Haiku decides instead`);
+    const message = buildPrompt(task, { history, allowSplit, brief: "", low, about, now, timezone }); // the briefing is the system file
     try {
-      return { ...(await tryDesk(main, ask, prompt, userPrompt)), via: desk };
-    } catch (error) {
-      // A reply that failed our checks is a one-off; a call that failed (login, limit, timeout) is likely to fail again.
-      if (!/unusable decision/.test(error.message)) coolDownUntil[desk] = now + DESK_COOLDOWN_MS;
-      log(`[frontdesk] ${main.model.provider}/${main.model.model} failed (${String(error.message).slice(0, 120)}); ${backup.model.model} answers instead`);
+      const raw = await askBackup(message, BACKUP_MODEL, COMPACT_SCHEMA, { systemFile: BACKUP_BRIEF_FILE, timeoutMs: BACKUP_TIMEOUT_MS });
+      const decision = validateDecision(raw, { now });
+      if (!decision) throw new Error("the backup front desk returned an unusable decision");
+      return { ...decision, hedged: false, via: "haiku" };
+    } catch (backupError) {
+      throw new Error(`${geminiError.message}; backup (Claude Haiku): ${backupError.message}`);
     }
   }
-  return { ...(await tryDesk(backup, askFallback || backup.ask, prompt)), via: "flash" };
 }
 
-const resetCoolDowns = () => { for (const k of Object.keys(coolDownUntil)) delete coolDownUntil[k]; };
-
-module.exports = { decide, validateDecision, buildPrompt, quotaLine, resetCoolDowns, FRONT_DESK, FRONT_DESKS, FRONT_DESK_MODEL, DESK_COOLDOWN_MS, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, HAIKU_BRIEF_FILE };
+module.exports = { decide, warm, REPLY_FORMAT, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE };

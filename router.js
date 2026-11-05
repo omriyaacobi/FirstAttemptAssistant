@@ -19,6 +19,7 @@
 const GEMINI = "Gemini Models", ARGON = "Gemini 4 Argon", CLAUDE_AGY = "Claude and GPT models"; // the pool names
 const MODELS = {
   flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
+  flashLow: { provider: "agy", model: "gemini-3.8-flash-low", pool: "Gemini Models" }, // the front desk (experiments/2026-11-05-frontdesk-speed.md)
   flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the planner
   argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" },
   argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: "Gemini 4 Argon" },

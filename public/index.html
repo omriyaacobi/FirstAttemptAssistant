@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="midnight">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -7,8 +7,9 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<meta name="theme-color" content="#9333ea">
+<meta name="theme-color" content="#0c0b10">
 <style>
+  /* ===== Classic design (the earlier look, kept as it was). It is the base: every other design only overrides it. ===== */
   :root {
     --bg: #faf5ff; --card: #ffffff; --text: #2a1b3d; --muted: #7a6a8f; --line: #e6d9f5;
     --accent: #9333ea; --accent-text: #ffffff; --ok: #2f9e44; --bad: #c92a2a; --code: #f3eafc; --mine: #f3e8ff;
@@ -56,6 +57,14 @@
   .chat-item .del { background: transparent; color: var(--muted); padding: 4px 8px; font-weight: 400; }
   .chat-item .del:hover { color: var(--bad); }
 
+  /* Courses (public/study.js) */
+  .course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
+  .course-card { text-align: left; cursor: pointer; color: var(--text); font-weight: 400; }
+  .files { list-style: none; padding: 0; margin: 12px 0; }
+  .files li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+  .pages-panel { margin-top: 10px; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 8px; }
+  .sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  button.chip { padding: 2px 10px; font-size: .8rem; }
   /* Messages */
   .msg { margin-bottom: 16px; }
   .me { background: var(--mine); border-radius: 12px; padding: 10px 14px; margin-left: 15%; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -164,6 +173,51 @@
     #toasts { top: calc(12px + env(safe-area-inset-top)); }
     .me { margin-left: 5%; }
   }
+
+  /* ===== Midnight design (the default): near-black and quiet, with small touches of purple and pink.
+     To add another design: copy this block with a new name, change it, and add an <option> to "themePick". ===== */
+  :root[data-theme="midnight"] {
+    --bg: #0c0b10; --card: #15131c; --text: #e8e4ef; --muted: #8d869a; --line: #26222f;
+    --accent: #b57bff; --accent-text: #0c0b10; --ok: #5ad19a; --bad: #ff6b81; --code: #1c1925; --mine: #1d1928;
+    --pink: #ff6fb5; --side-bg: #09080c;
+    color-scheme: dark; /* dark scrollbars, inputs and checkboxes */
+    scrollbar-color: var(--line) transparent;
+  }
+  [data-theme="midnight"] body { letter-spacing: .01em; }
+  [data-theme="midnight"] h1 { background: linear-gradient(90deg, var(--accent), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  [data-theme="midnight"] .side h1 { text-transform: uppercase; letter-spacing: .18em; font-size: 1rem; }
+  [data-theme="midnight"] .topbar, [data-theme="midnight"] .composer { background: var(--bg); }
+  [data-theme="midnight"] .composer { border-top: 0; }
+  [data-theme="midnight"] textarea { background: var(--card); border-radius: 18px; padding: 12px 16px; }
+  [data-theme="midnight"] textarea:focus { border-color: var(--accent); }
+
+  /* Plain buttons (no class) become quiet dark pills; Send keeps the color */
+  [data-theme="midnight"] button:not([class]) { background: var(--code); color: var(--text); border: 1px solid var(--line); border-radius: 999px; font-weight: 500; }
+  [data-theme="midnight"] button:not([class]):hover { border-color: var(--accent); }
+  [data-theme="midnight"] #send { background: linear-gradient(135deg, var(--accent), var(--pink)); color: var(--accent-text); border: 0; font-weight: 700; }
+  [data-theme="midnight"] button.ghost { border-radius: 999px; }
+  /* Improve Bot: dark inside, with a purple-to-pink outline */
+  [data-theme="midnight"] button.improve { color: var(--text); border: 1px solid transparent; box-shadow: 0 0 18px rgba(181, 123, 255, .15);
+    background: linear-gradient(var(--side-bg), var(--side-bg)) padding-box, linear-gradient(135deg, var(--accent), var(--pink)) border-box; }
+
+  /* Conversation list: the open chat gets a thin pink line on its left */
+  [data-theme="midnight"] .chat-item.active, [data-theme="midnight"] .proposal.active .open { box-shadow: inset 2px 0 0 var(--pink); }
+
+  /* Messages: yours on the right, outlined; Bot's answers open, with a line on the left instead of a box */
+  [data-theme="midnight"] .me { background: var(--mine); border: 1px solid var(--line); border-radius: 18px 18px 4px 18px; margin-left: auto; width: fit-content; max-width: 80%; }
+  [data-theme="midnight"] .bot { background: transparent; border: 0; border-left: 2px solid var(--line); border-radius: 0; padding: 4px 0 4px 16px; }
+  [data-theme="midnight"] .bot.think { border-left-color: var(--accent); }
+  [data-theme="midnight"] .badge { background: transparent; border: 1px solid var(--line); font-weight: 500; }
+  [data-theme="midnight"] pre { border: 1px solid var(--line); }
+
+  /* Cards, quota bars, pop-ups */
+  [data-theme="midnight"] .card, [data-theme="midnight"] .files li { border-radius: 18px; }
+  [data-theme="midnight"] .bar { height: 4px; }
+  [data-theme="midnight"] .bar > span { background: linear-gradient(90deg, var(--accent), var(--pink)); }
+  [data-theme="midnight"] .toast { border: 1px solid var(--line); border-left: 3px solid var(--pink); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+  @media (max-width: 760px) {
+    [data-theme="midnight"] .me { max-width: 90%; }
+  }
 </style>
 </head>
 <body>
@@ -209,6 +263,13 @@
       <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
       <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
     </section>
+    <section aria-label="Look">
+      <div class="row" style="margin-top:0">
+        <strong>Look</strong>
+        <select id="themePick" aria-label="Page design"><option value="midnight">Midnight</option><option value="classic">Classic</option></select>
+      </div>
+    </section>
+    <button id="studyBtn" title="One tab for each course: upload materials and study with Bot">Courses</button>
     <button class="improve" id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
   </aside>
 
@@ -243,6 +304,19 @@
         </div>
       </div>
     </form>
+  </section>
+
+  <section class="chat" id="studyView" hidden>
+    <div class="topbar">
+      <button class="iconbtn" id="menu3" aria-label="Show conversations" aria-expanded="false" aria-controls="side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="titles"><strong>Bot</strong><span>Courses</span></div>
+    </div>
+    <div class="scroll"><div class="inner">
+      <div class="row" style="margin-top:0"><h1 id="studyTitle" dir="auto">Courses</h1><span class="status" id="studyStatus" role="status"></span></div>
+      <div id="studyBody"></div>
+    </div></div>
   </section>
 
   <section class="chat" id="improveView" hidden>
@@ -787,6 +861,23 @@
   $("new").addEventListener("click", newChat);
   $("refresh").addEventListener("click", loadQuota);
 
+  // ---- Page design ----
+  // Each design is a block in the <style> above, switched by data-theme on <html>. The choice is kept on this device.
+  const THEME_COLORS = { midnight: "#0c0b10", classic: "#9333ea" }; // the phone's status-bar color
+  function applyTheme(name) {
+    if (![...$("themePick").options].some((o) => o.value === name)) name = "midnight"; // an old or unknown name
+    document.documentElement.dataset.theme = name;
+    $("themePick").value = name;
+    document.querySelector('meta[name="theme-color"]').content = THEME_COLORS[name] || THEME_COLORS.midnight;
+  }
+  let savedTheme = null;
+  try { savedTheme = localStorage.getItem("botTheme"); } catch (error) { /* private mode: the default */ }
+  applyTheme(savedTheme || "midnight");
+  $("themePick").addEventListener("change", () => {
+    applyTheme($("themePick").value);
+    try { localStorage.setItem("botTheme", $("themePick").value); } catch (error) { /* private mode: only for now */ }
+  });
+
   // ---- Navigation: the phone's Back button ----
   // The History API: history.pushState adds an entry to the browser's back-stack WITHOUT loading a
   // page. When Back is pressed the browser fires "popstate" and hands us the state we saved, so we
@@ -801,7 +892,7 @@
   function setSide(open) {
     $("side").classList.toggle("open", open);
     $("backdrop").classList.toggle("show", open);
-    ["menu", "menu2"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
+    ["menu", "menu2", "menu3"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
   }
 
   // Go somewhere new (another chat, the Improve view). Never adds a duplicate of where we already are.
@@ -843,6 +934,7 @@
     if (!s || !s.view) return; // not one of ours
     navState = s;
     if (s.view === "improve") showView("improve");
+    else if (s.view === "study") showView("study");
     else if (s.id && s.id !== currentId) openChat(s.id, true);
     else if (!s.id && currentId) newChat(true);
     else showView("chat");
@@ -874,6 +966,8 @@
   function showView(name) {
     $("chatView").hidden = name !== "chat";
     $("improveView").hidden = name !== "improve";
+    $("studyView").hidden = name !== "study";
+    if (name === "study") window.studyShow && window.studyShow(); else window.studyHide && window.studyHide();
     if (name === "improve") {
       updateGate();
       if (!adminLocked()) loadProposals();
@@ -1409,8 +1503,10 @@
     showEmpty();
     loadChats();
     loadQuota();
+    if (matchMedia("(pointer: coarse)").matches) $("task").placeholder = "Type a task..."; // a phone has no Shift+Enter
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
   })();
 </script>
+<script src="/study.js"></script>
 </body>
 </html>

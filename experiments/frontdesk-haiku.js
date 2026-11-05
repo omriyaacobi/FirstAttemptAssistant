@@ -130,14 +130,14 @@ async function askLab(variant, prompt, userOnly) {
   return { seconds: r.seconds, raw: r.raw, error: r.error, usage: r.usage };
 }
 
-// "real": the production path, frontdesk.decide with the desk "haiku" (no fallback to Flash is expected to fire)
+// "real": the production BACKUP path: frontdesk.decide with the Gemini desk forced to fail, so Claude Haiku decides
 async function askReal(message, history) {
   const { decide } = require("../frontdesk");
   const logs = [];
   const t0 = Date.now();
   try {
-    const d = await decide(message, { history, about, desk: "haiku", log: (l) => logs.push(l) });
-    return { seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), decision: d, error: d.via === "haiku" ? null : "FELL BACK: " + logs.join(" ") };
+    const d = await decide(message, { history, about, askStructured: async () => { throw new Error("forced"); }, log: (l) => logs.push(l) });
+    return { seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), decision: d, error: d.via === "haiku" ? null : "NOT HAIKU: " + logs.join(" ") };
   } catch (e) { return { seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), error: String(e.message).slice(0, 120) }; }
 }
 

@@ -40,7 +40,6 @@ const SONNET_TIMEOUT_MS = 3 * 60 * 1000;
 const ARGON_TIMEOUT_MS = 4 * 60 * 1000; // Argon medium took 155 s once, so it needs room
 const OPUS_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000;
-const FRONT_DESK_CLAUDE_TIMEOUT_MS = 40 * 1000; // a front desk call takes seconds; past this, Flash takes over
 const WEB_TIMEOUT_MS = 2 * 60 * 1000; // one or two searches
 const RESEARCH_TIMEOUT_MS = 6 * 60 * 1000; // many searches across many sites
 
@@ -66,6 +65,16 @@ function withTimeout(child, timeoutMs, reject, name) {
     reject(new Error(name + " timed out after " + Math.round(timeoutMs / 1000) + " s"));
   }, timeoutMs);
   child.on("close", () => clearTimeout(timer));
+}
+
+// Stops a child (and its process tree) when the AbortSignal fires. Used by the front desk's hedging: the call
+// that lost the race is killed instead of being left to run.
+function killOnAbort(child, signal, reject) {
+  if (!signal) return;
+  const onAbort = () => { killTree(child); reject(new Error("aborted")); };
+  if (signal.aborted) return onAbort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  child.on("close", () => signal.removeEventListener("abort", onAbort));
 }
 
 function sandbox() {
@@ -98,34 +107,6 @@ function askClaude(question, model) {
   });
 }
 
-// Claude Code CLI, answer forced into a JSON schema. `--output-format json` wraps the reply in an
-// envelope; with --json-schema the clean object is in "structured_output". The schema goes through
-// the shell, so double quotes are escaped (the schema holds no other shell-special characters).
-// Returns the object. Throws on a login problem or limit (the envelope has is_error true).
-// systemFile (optional): a file that REPLACES Claude Code's own long system prompt. A fixed system prompt is
-// cached by Claude between calls, and the message then holds only what changes.
-function askClaudeStructured(question, model, schema, { systemFile } = {}) {
-  checkModelName(model);
-  const json = JSON.stringify(schema).replace(/"/g, '\\"');
-  const system = systemFile ? ` --system-prompt-file "${systemFile}"` : "";
-  const command = `${claudeCommand(model)} --output-format json --json-schema "${json}"${system}`;
-  return new Promise((resolve, reject) => {
-    const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
-      let envelope = null;
-      try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: report below */ }
-      if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message)).trim().slice(0, 200)));
-      if (envelope.is_error) return reject(new Error(String(envelope.result || "claude reported an error").slice(0, 200)));
-      try {
-        resolve(envelope.structured_output ?? JSON.parse(envelope.result));
-      } catch (resultError) {
-        reject(new Error("claude did not return valid structured output"));
-      }
-    });
-    withTimeout(child, FRONT_DESK_CLAUDE_TIMEOUT_MS, reject, model);
-    child.stdin.end(question);
-  });
-}
-
 // Antigravity CLI. agy is a real .exe, so no shell is involved at all.
 function askAgy(question, model) {
   checkModelName(model);
@@ -141,7 +122,8 @@ function askAgy(question, model) {
 // Asks agy for an answer that must match a JSON schema (a description of the shape we want).
 // agy only allows --json-schema together with --output-format json, and puts the clean
 // result in a "structured_output" field. Returns that result as a JavaScript object.
-function askAgyStructured(question, model, schema) {
+// options.signal: an AbortSignal that kills the process. options.timeoutMs: a shorter limit than the model's usual one.
+function askAgyStructured(question, model, schema, { signal, timeoutMs } = {}) {
   checkModelName(model);
   const args = ["-p", question, "--model", model, "--output-format", "json", "--json-schema", JSON.stringify(schema)];
   return new Promise((resolve, reject) => {
@@ -151,10 +133,38 @@ function askAgyStructured(question, model, schema) {
         const envelope = JSON.parse(stdout);
         resolve(envelope.structured_output ?? JSON.parse(envelope.response));
       } catch (parseError) {
-        reject(new Error("agy did not return valid structured output"));
+        reject(new Error("agy did not return valid structured output: " + String(stdout).replace(/\s+/g, " ").trim().slice(0, 150)));
       }
     });
-    withTimeout(child, timeoutFor(model), reject, model);
+    withTimeout(child, timeoutMs || timeoutFor(model), reject, model);
+    killOnAbort(child, signal, reject);
+  });
+}
+
+// The same idea through the Claude CLI: the reply must match a JSON schema. claude prints one JSON object
+// ("--output-format json"); the checked reply is in "structured_output". claude reports problems such as a used-up
+// plan or an expired login INSIDE that object (is_error), so those become errors here too and the caller can fall back.
+// The schema is a constant of ours (never user text), so putting it in the command line is safe once its quotes are escaped.
+// systemFile (optional): a file that REPLACES Claude Code's own long system prompt (the front desk's briefing goes
+// there, so the message only holds what changes). It is a path of ours, never user text.
+function askClaudeStructured(question, model, schema, { signal, timeoutMs, systemFile } = {}) {
+  const system = systemFile ? ` --system-prompt-file "${systemFile}"` : "";
+  const command = `${claudeCommand(model)} --output-format json --json-schema "${JSON.stringify(schema).replace(/"/g, '\\"')}"${system}`;
+  return new Promise((resolve, reject) => {
+    const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      let envelope = null;
+      try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: handled below */ }
+      if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message) || "claude gave no output").trim().slice(0, 200)));
+      if (envelope.is_error) return reject(new Error(String(envelope.result || "claude reported an error").slice(0, 200)));
+      try {
+        resolve(envelope.structured_output ?? JSON.parse(envelope.result));
+      } catch (resultError) {
+        reject(new Error("claude did not return valid structured output"));
+      }
+    });
+    withTimeout(child, timeoutMs || timeoutFor(model), reject, model);
+    killOnAbort(child, signal, reject);
+    child.stdin.end(question);
   });
 }
 
@@ -171,6 +181,26 @@ async function askAgyWithImage(model, question, imagePath) {
         if (error) return reject(new Error(stderr || error.message));
         resolve(stdout.trim());
       });
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Gemini reading one course file (PDF, photo). Same idea as askAgyWithImage: the file is copied into a brand-new
+// EMPTY folder under a FIXED name (never the uploaded name), agy runs there, the folder is deleted afterwards.
+// A long PDF takes minutes (120 pages: 266 s in my test), so this has its own generous timeout.
+async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000 } = {}) {
+  checkModelName(model);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-file-"));
+  try {
+    fs.copyFileSync(filePath, path.join(dir, "material" + path.extname(filePath)));
+    return await new Promise((resolve, reject) => {
+      const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+        if (error) return reject(new Error(stderr || error.message));
+        resolve(stdout.trim());
+      });
+      withTimeout(child, timeoutMs, reject, model);
     });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -254,5 +284,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, askClaudeStructured, askAgyWithImage, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { ask, askChain, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };

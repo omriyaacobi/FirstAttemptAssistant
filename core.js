@@ -279,7 +279,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the front desk failed, so Claude Sonnet took it");
   }
   const target = decision.action === "delegate" ? ` -> ${decision.destination}` : "";
-  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason}) in ${timing.frontDeskSeconds} s`);
+  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason}) in ${timing.frontDeskSeconds} s${decision.hedged ? " (a second call was started because the first was slow)" : ""}`);
 
   // The user turned splitting off, so a "split" decision is handled as one job instead.
   if (decision.action === "split" && noPlan) {
