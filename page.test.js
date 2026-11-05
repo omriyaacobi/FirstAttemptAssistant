@@ -22,6 +22,21 @@ test("the page uses a purple accent", () => {
   assert.match(html, /--accent:\s*#9333ea/);
 });
 
+test("the dark Midnight design is the default, and the Classic design is kept to switch back to", () => {
+  assert.match(html, /<html[^>]*data-theme="midnight"/);
+  assert.match(html, /:root\[data-theme="midnight"\]\s*\{[^}]*--bg:\s*#0c0b10/);
+  assert.match(html, /:root\[data-theme="midnight"\]\s*\{[^}]*--pink:/);
+  // every design in the picker is either Classic (the base styles) or has its own block
+  const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
+  const picker = side.match(/<select id="themePick"[^>]*>([\s\S]*?)<\/select>/);
+  assert.ok(picker, "the design picker is in the sidebar");
+  const names = [...picker[1].matchAll(/value="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(names.slice(0, 2), ["midnight", "classic"]);
+  for (const name of names.filter((n) => n !== "classic")) assert.ok(html.includes(`:root[data-theme="${name}"]`), name);
+  assert.ok(side.indexOf('id="themePick"') < side.indexOf('id="improveBtn"'), "Improve Bot stays last");
+  assert.match(html, /localStorage\.setItem\("botTheme"/);
+});
+
 test("the phone's Back button is handled with the History API", () => {
   assert.match(html, /history\.pushState/);
   assert.match(html, /addEventListener\("popstate"/);

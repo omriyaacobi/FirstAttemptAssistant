@@ -184,6 +184,26 @@ async function askAgyWithImage(model, question, imagePath) {
   }
 }
 
+// Gemini reading one course file (PDF, photo). Same idea as askAgyWithImage: the file is copied into a brand-new
+// EMPTY folder under a FIXED name (never the uploaded name), agy runs there, the folder is deleted afterwards.
+// A long PDF takes minutes (120 pages: 266 s in my test), so this has its own generous timeout.
+async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000 } = {}) {
+  checkModelName(model);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-file-"));
+  try {
+    fs.copyFileSync(filePath, path.join(dir, "material" + path.extname(filePath)));
+    return await new Promise((resolve, reject) => {
+      const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+        if (error) return reject(new Error(stderr || error.message));
+        resolve(stdout.trim());
+      });
+      withTimeout(child, timeoutMs, reject, model);
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // Web search. agy has a built-in search_web tool (Google search, on the Google AI Pro plan).
 // Two depths: "quick" is one fact from one or two searches, "deep" is real research across many sources.
 // SECURITY: what a web page says is untrusted text that could try to give the model orders. So the model
@@ -261,5 +281,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { ask, askChain, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
