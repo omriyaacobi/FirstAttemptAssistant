@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { createSelfEdit, isProtected, parseTestSummary, buildFeedback, MAX_REQUEST_CHARS, MAX_ATTEMPTS } = require("./selfedit");
+const { createSelfEdit, describeStreamLine, isProtected, parseTestSummary, buildFeedback, MAX_REQUEST_CHARS, MAX_ATTEMPTS } = require("./selfedit");
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
@@ -337,4 +337,108 @@ test("isProtected: security files, secrets, git and data are protected; normal f
 test("parseTestSummary reads node's test summary", () => {
   assert.deepStrictEqual(parseTestSummary("x\nℹ tests 75\nℹ suites 0\nℹ pass 75\nℹ fail 0\n"), { total: 75, failed: 0 });
   assert.deepStrictEqual(parseTestSummary("nothing"), { total: null, failed: null });
+});
+
+// ---- Improve Bot as a chat: progress, follow-ups, preview ----
+
+test("describeStreamLine turns the editor's stream into plain words", () => {
+  const line = (content) => JSON.stringify({ type: "assistant", message: { content } });
+  assert.strictEqual(describeStreamLine(line([{ type: "tool_use", name: "Read", input: { file_path: "C:\\x\\public\\index.html" } }])), "Reading index.html");
+  assert.strictEqual(describeStreamLine(line([{ type: "tool_use", name: "Edit", input: { file_path: "/a/b/core.js" } }])), "Editing core.js");
+  assert.strictEqual(describeStreamLine(line([{ type: "tool_use", name: "Grep", input: { pattern: "x" } }])), "Looking through the code");
+  assert.match(describeStreamLine(line([{ type: "text", text: "Now I will fix the colors\nmore" }])), /^Editor: Now I will fix the colors$/);
+  assert.strictEqual(describeStreamLine('{"type":"system"}'), null);
+  assert.strictEqual(describeStreamLine("not json"), null);
+});
+
+test("progress and chat are recorded while the editor works", async () => {
+  const s = setup(({ worktree, onProgress }) => {
+    onProgress("Editing greet.js");
+    goodEdit({ worktree });
+  });
+  const { record, finished } = await s.manager.start("friendlier");
+  assert.strictEqual(record.chat[0].text, "friendlier");
+  const done = await finished;
+  assert.ok(done.progress.some((p) => /private copy/.test(p.text)), "says it makes a private copy");
+  assert.ok(done.progress.some((p) => /Running the tests/.test(p.text)), "says it runs the tests");
+  assert.strictEqual(done.chat[done.chat.length - 1].role, "bot");
+  assert.strictEqual(done.chat[done.chat.length - 1].text, "I changed things.");
+  s.cleanup();
+});
+
+test("a follow-up continues in the SAME private copy and the result can be approved", async () => {
+  let call = 0;
+  const feedbacks = [];
+  const s = setup(({ worktree, feedback }) => {
+    feedbacks.push(feedback);
+    if (call++ === 0) goodEdit({ worktree });
+    else {
+      write(worktree, "greet.js", 'module.exports = () => "hello world!";\n');
+      write(worktree, "greet.test.js", read(worktree, "greet.test.js").replace('"hello world")', '"hello world!")'));
+    }
+  });
+  const { record, finished } = await s.manager.start("friendlier");
+  const first = await finished;
+  const treeBefore = first.treeHash;
+  const { record: running, finished: finished2 } = await s.manager.followUp(record.id, "add an exclamation mark");
+  assert.strictEqual(running.status, "running");
+  const second = await finished2;
+  assert.strictEqual(second.status, "ready", second.note);
+  assert.notStrictEqual(second.treeHash, treeBefore);
+  assert.match(feedbacks[1], /add an exclamation mark/);
+  assert.match(feedbacks[1], /friendlier/); // the editor is reminded of the conversation
+  assert.deepStrictEqual(second.chat.map((m) => m.role), ["user", "bot", "user", "bot"]);
+  assert.match(second.diff, /hello world!/);
+  assert.strictEqual(read(s.repoDir, "greet.js"), 'module.exports = () => "hello";\n'); // still nothing merged
+  await s.manager.approve(record.id);
+  assert.strictEqual(read(s.repoDir, "greet.js"), 'module.exports = () => "hello world!";\n');
+  s.cleanup();
+});
+
+test("SECURITY: a follow-up that breaks the rules is undone and the earlier version stays approvable", async () => {
+  let call = 0;
+  const s = setup(({ worktree }) => {
+    if (call++ === 0) goodEdit({ worktree });
+    else write(worktree, "server.js", "// hacked\n"); // protected, on every retry
+  });
+  const { record, finished } = await s.manager.start("friendlier");
+  const first = await finished;
+  const second = await (await s.manager.followUp(record.id, "also change server.js")).finished;
+  assert.strictEqual(second.status, "ready");
+  assert.strictEqual(second.treeHash, first.treeHash);
+  assert.match(second.chat[second.chat.length - 1].text, /put your previous version back/);
+  assert.strictEqual(read(path.join(s.workRoot, record.id), "server.js"), "// protected\n"); // the bad file is gone again
+  const approved = await s.manager.approve(record.id);
+  assert.strictEqual(approved.status, "approved");
+  assert.strictEqual(read(s.repoDir, "server.js"), "// protected\n");
+  s.cleanup();
+});
+
+test("a follow-up is refused unless the proposal is ready, while another runs, or with an empty message", async () => {
+  const s = setup(goodEdit);
+  const { record, finished } = await s.manager.start("friendlier");
+  await assert.rejects(s.manager.followUp(record.id, "more"), /still running/);
+  await finished;
+  await assert.rejects(s.manager.followUp(record.id, "   "), /write what you want/);
+  await assert.rejects(s.manager.followUp(record.id, "x".repeat(MAX_REQUEST_CHARS + 1)), /longer than/);
+  await assert.rejects(s.manager.followUp("../etc", "more"), /not found/);
+  await s.manager.reject(record.id);
+  await assert.rejects(s.manager.followUp(record.id, "more"), /only "ready"/);
+  s.cleanup();
+});
+
+test("previewDir exists only while the copy is ready", async () => {
+  const s = setup(({ worktree }) => {
+    fs.mkdirSync(path.join(worktree, "public"));
+    write(worktree, "public/index.html", "<p>hi</p>\n");
+  });
+  const { record, finished } = await s.manager.start("add a page");
+  assert.strictEqual(s.manager.previewDir(record.id), null); // still running
+  await finished;
+  const dir = s.manager.previewDir(record.id);
+  assert.strictEqual(read(dir, "index.html"), "<p>hi</p>\n");
+  assert.strictEqual(s.manager.previewDir("../x"), null);
+  await s.manager.reject(record.id);
+  assert.strictEqual(s.manager.previewDir(record.id), null);
+  s.cleanup();
 });

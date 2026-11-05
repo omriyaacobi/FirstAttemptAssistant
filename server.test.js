@@ -12,6 +12,10 @@ const path = require("node:path");
 const { createServer, parseUsage, MAX_BODY, MAX_RUNNING } = require("./server");
 const { createStore } = require("./store");
 
+// A tiny "changed page" for the preview route.
+const PREVIEW_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "orch-preview-"));
+fs.writeFileSync(path.join(PREVIEW_DIR, "index.html"), "<!doctype html><html><head><title>Preview page</title></head><body><p>Preview page</p></body></html>");
+
 // Starts a server with fake models and returns a small helper for sending requests to it.
 // Conversations are saved in a temporary folder, never in your real data/ folder.
 async function start(handle = async () => ({ mode: "single", answer: "hello", used: { provider: "p", model: "m" } }), { supervised = false } = {}) {
@@ -25,6 +29,8 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
     list: () => [{ id: "0123456789abcdef", status: "ready" }],
     approve: async (id) => { calls.push(["approve", id]); if (id === "ffffffffffffffff") throw new Error("proposal not found"); return { id, status: "approved" }; },
     reject: async (id) => { calls.push(["reject", id]); return { id, status: "rejected" }; },
+    followUp: async (id, message) => { calls.push(["message", id, message]); if (!message) throw new Error("write what you want changed"); return { record: { id, status: "running" } }; },
+    previewDir: (id) => (id === "0123456789abcdef" ? PREVIEW_DIR : null),
     isActive: () => false,
   };
   // Fake GitHub operations and a fake restart (a real restart would end the test run).
@@ -375,4 +381,29 @@ test("SECURITY: restart and push refuse other websites and non-JSON", async () =
 test("parseUsage reads agy's tab-separated output", () => {
   const rows = parseUsage("Gemini Models\tFive Hour Limit Remaining\t99%\t2026-10-28T01:41:40Z\n\nnoise\n");
   assert.deepStrictEqual(rows, [{ pool: "Gemini Models", window: "Five Hour Limit Remaining", remaining: 99, resets: "2026-10-28T01:41:40Z" }]);
+});
+
+test("self-edit: a follow-up message goes to the manager, and bad ones are refused", async () => {
+  const s = await start();
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/message", { message: "more blue" })).status, 202);
+  assert.deepStrictEqual(s.calls[0], ["message", "0123456789abcdef", "more blue"]);
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/message", {})).status, 400);
+  assert.strictEqual((await s.request("POST", "/api/selfedit/0123456789abcdef/message", { headers: { "Content-Type": "text/plain" }, body: "{}" })).status, 415);
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/message", { message: "x" }, { Origin: "https://evil.example.com" })).status, 403);
+  assert.strictEqual(s.calls.length, 2); // the refused ones never reached the manager
+  await s.close();
+});
+
+test("SECURITY: the preview is sandboxed, shows sample data, and only exists for a ready proposal", async () => {
+  const s = await start();
+  const res = await s.request("GET", "/api/selfedit/0123456789abcdef/preview");
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers["content-security-policy"], /sandbox allow-scripts;/);
+  assert.doesNotMatch(res.headers["content-security-policy"], /allow-same-origin/);
+  assert.match(res.headers["content-security-policy"], /connect-src 'none'/);
+  assert.match(res.body, /Preview page/);
+  assert.match(res.body, /Sample chat (preview)/); // the fake API sits in front of the page's own scripts
+  assert.strictEqual((await s.request("GET", "/api/selfedit/ffffffffffffffff/preview")).status, 404);
+  assert.strictEqual((await s.request("GET", "/api/selfedit/0123456789abcdef/preview", { headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
+  await s.close();
 });

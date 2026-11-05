@@ -15,6 +15,8 @@
 //   POST   /api/selfedit           -> start one: an editor model changes a PRIVATE COPY of the project
 //   GET    /api/selfedit/:id       -> one proposal (diff, test results)
 //   POST   /api/selfedit/:id/approve | /reject  -> merge it into the project, or throw it away
+//   POST   /api/selfedit/:id/message  -> a follow-up message: the editor continues in the SAME private copy
+//   GET    /api/selfedit/:id/preview  -> the changed page, sandboxed, with sample data (see preview.js)
 //   (see selfedit.js: nothing changes in your project until you approve, and nothing is pushed)
 //   POST   /api/restart            -> restart Bot to load new code (only when started by start-web.cmd)
 //   GET    /api/git                -> which commits are on this computer but not on GitHub yet
@@ -50,6 +52,7 @@ const { execFile } = require("node:child_process");
 const { handleTask, resultText } = require("./core");
 const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
+const { buildPreviewHtml, PREVIEW_CSP } = require("./preview");
 const { createGitOps } = require("./gitops");
 const { getReminders } = require("./reminders");
 const { createAuth, loadPhoneConfig } = require("./auth");
@@ -381,14 +384,32 @@ function createServer({
         return sendJson(res, selfEditStatus(error), { error: error.message });
       }
     }
-    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject))?$/);
+    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject|message|preview))?$/);
     if (selfEditRoute) {
       const [, id, action] = selfEditRoute;
       if (!action && req.method === "GET") {
         const proposal = selfEdit.get(id);
-        return proposal ? sendJson(res, 200, { proposal }) : sendJson(res, 404, { error: "proposal not found" });
+        return proposal ? sendJson(res, 200, { proposal, now: Date.now() }) : sendJson(res, 404, { error: "proposal not found" });
       }
-      if (action && req.method === "POST") {
+      if (action === "preview" && req.method === "GET") {
+        const dir = selfEdit.previewDir(id);
+        const html = dir && buildPreviewHtml(dir);
+        if (!html) return sendJson(res, 404, { error: "there is no page to preview (it must be ready, and have a public/index.html)" });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": PREVIEW_CSP });
+        res.end(html);
+        return;
+      }
+      if (action === "message" && req.method === "POST") {
+        const input = await readJsonBody(req, res);
+        if (!input) return;
+        try {
+          const { record } = await selfEdit.followUp(id, input.message);
+          return sendJson(res, 202, { proposal: record });
+        } catch (error) {
+          return sendJson(res, selfEditStatus(error), { error: error.message });
+        }
+      }
+      if ((action === "approve" || action === "reject") && req.method === "POST") {
         if (!(await readJsonBody(req, res))) return;
         try {
           const proposal = action === "approve" ? await selfEdit.approve(id) : await selfEdit.reject(id);
