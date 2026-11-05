@@ -56,6 +56,14 @@
   .chat-item .del { background: transparent; color: var(--muted); padding: 4px 8px; font-weight: 400; }
   .chat-item .del:hover { color: var(--bad); }
 
+  /* Courses (public/study.js) */
+  .course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
+  .course-card { text-align: left; cursor: pointer; color: var(--text); font-weight: 400; }
+  .files { list-style: none; padding: 0; margin: 12px 0; }
+  .files li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+  .pages-panel { margin-top: 10px; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 8px; }
+  .sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  button.chip { padding: 2px 10px; font-size: .8rem; }
   /* Messages */
   .msg { margin-bottom: 16px; }
   .me { background: var(--mine); border-radius: 12px; padding: 10px 14px; margin-left: 15%; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -209,6 +217,7 @@
       <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
       <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
     </section>
+    <button id="studyBtn" title="One tab for each course: upload materials and study with Bot">Courses</button>
     <button class="improve" id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
   </aside>
 
@@ -243,6 +252,19 @@
         </div>
       </div>
     </form>
+  </section>
+
+  <section class="chat" id="studyView" hidden>
+    <div class="topbar">
+      <button class="iconbtn" id="menu3" aria-label="Show conversations" aria-expanded="false" aria-controls="side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="titles"><strong>Bot</strong><span>Courses</span></div>
+    </div>
+    <div class="scroll"><div class="inner">
+      <div class="row" style="margin-top:0"><h1 id="studyTitle" dir="auto">Courses</h1><span class="status" id="studyStatus" role="status"></span></div>
+      <div id="studyBody"></div>
+    </div></div>
   </section>
 
   <section class="chat" id="improveView" hidden>
@@ -801,7 +823,7 @@
   function setSide(open) {
     $("side").classList.toggle("open", open);
     $("backdrop").classList.toggle("show", open);
-    ["menu", "menu2"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
+    ["menu", "menu2", "menu3"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
   }
 
   // Go somewhere new (another chat, the Improve view). Never adds a duplicate of where we already are.
@@ -843,6 +865,7 @@
     if (!s || !s.view) return; // not one of ours
     navState = s;
     if (s.view === "improve") showView("improve");
+    else if (s.view === "study") showView("study");
     else if (s.id && s.id !== currentId) openChat(s.id, true);
     else if (!s.id && currentId) newChat(true);
     else showView("chat");
@@ -874,6 +897,8 @@
   function showView(name) {
     $("chatView").hidden = name !== "chat";
     $("improveView").hidden = name !== "improve";
+    $("studyView").hidden = name !== "study";
+    if (name === "study") window.studyShow && window.studyShow(); else window.studyHide && window.studyHide();
     if (name === "improve") {
       updateGate();
       if (!adminLocked()) loadProposals();
@@ -1412,5 +1437,6 @@
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
   })();
 </script>
+<script src="/study.js"></script>
 </body>
 </html>

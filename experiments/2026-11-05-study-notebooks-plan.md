@@ -1,6 +1,6 @@
 # Study notebooks for Bot: plan and experiments (2026-11-05)
 
-**Status: plan only. Nothing is built. I need your OK and a few answers (last section).**
+**Status: you approved the direction. Step 1 (courses, upload, reading, asking inside a course) is being built; steps 2-4 wait for your review.**
 
 ## The short version
 
@@ -59,12 +59,25 @@ Honest limits: the corpus is tiny (16 pages, so "top 3" is easy), and I wrote th
 
 New: `courses.js` (courses, file list, folders), `upload.js` (raw upload checks, like `photo.js`), `ingest.js` (chunking, prompts, page-count check), `search.js` (BM25, pure and easy to test), `study.js` (prompt builder, model choice), `public/study.js` (the tabs, loaded by `index.html`) + tests. Small edits to existing files: `server.js` (new routes; it is protected, so Claude Code does this), `store.js` (a `courseId` on a chat; protected too), `jobs.js` (a course chat runs the course handler instead of `handleTask`), `index.html` (one new nav entry). Nothing in `frontdesk-speed`'s files changes, so no merge conflict with that chat except `index.html` if both edit it.
 
+## Added: your pace, progress, and messy courses
+
+**Course outline.** Each course has an ordered list of *units* (a lecture or a topic): `data/courses/<course>/outline.json`, `[{n, title, files, pages}]`. Every saved page is tagged with its unit.
+- *Organized course* (Lecture 1, 2, 3 with slides): code reads the numbers from the file names; the reading step also asks the model for each page's lecture/topic title, so the outline comes from names and contents together.
+- *Messy course* (loose files, unclear names, mixed topics, no slides): one Gemini call looks at the page titles/keywords of all files and **proposes** an order and unit names. You see the list once and fix it by chat ("merge 3 and 4", "the file about pointers is lecture 6"). Bot never silently reorders.
+- *Almost no files:* the outline is then just "Unit 1: whatever you uploaded". Best thing to do: upload the course syllabus (סילבוס) or the table of contents of the textbook; Bot builds the outline from it, and unit-less questions still work from the few pages there. Bot says clearly "I only have 3 pages for this course" instead of guessing.
+
+**Where I am.** You say "I finished lecture 5 in Algorithms" (or Hebrew: "סיימתי את הרצאה 5 באלגוריתמים"); the front desk is skipped here too: inside a course tab a tiny rule plus one Flash call extracts `{unit}`, code validates it exists in the outline, and shows "Algorithms: done up to lecture 5 [Undo]". With no clear order, "where I am" is a *topic* ("up to dynamic programming") or a tick-list of units. Saved in `data/courses/<course>/progress.json`: `{doneUpTo, covered:[units], wrong:[{topic, unit, at}], log:[{at, unit}]}`.
+
+**Questions from what you covered.** Exercises and quizzes search only units you have covered, weighted to the latest 2 units; later units are never sent. "Got it wrong" taps add to `wrong`, and Bot returns to those topics every few sessions.
+
+**Pace vs exams.** Pace = units finished per week (from the `log`) vs units left and weeks until the exam. Bot says "at this pace you finish 2 weeks before the exam" or "you're behind in Calculus 2: 4 lectures left, 3 weeks". Pure arithmetic in code, no model. **It works without the planner:** the exam date is one field in `course.json` that you set in the course tab (default: 28 Jan 2027 as an assumed "end of January", marked "assumed" until you set it). When the planner in `organizer-plan.md` is built, exam dates move there (the planner is the home of anything with a date) and the course reads them from it; `progress.json` stays with the course because it is study data, not a calendar item. Neither writes into the other.
+
 ## Order of work (each step is usable alone)
 
 1. **Courses + upload + reading + page viewer.** You can create the 4 courses, upload from the phone, watch the reading progress, and read every page's text. Value already: searchable notes in Hebrew from scans. About 700 lines + 25 tests, one session.
 2. **Course chat with search and sources.** The main feature. First thing measured: search quality with the keyword lines on your real files. About 450 lines + 20 tests.
 3. **Practice buttons + Think harder + photo answer check.** About 300 lines.
-4. **Weak topics + exam countdown + focus-on-file chip.** About 250 lines.
+4. **Outline + where I am + weak topics + pace vs exam + focus-on-file chip.** The "progress" section above. About 450 lines (about 200 more than before).
 5. Later, if wanted: backup button, rename/merge courses, search across all courses.
 
 **Quota per day (estimate, unmeasured):** a study day of about 30 chat turns is 30 Flash calls, a few percent of the 5-hour Gemini pool; 3-5 "Think harder" calls use the separate Argon pool. Uploads are the heavy part: about 5% of a 5-hour pool per 250 pages, once per file.
