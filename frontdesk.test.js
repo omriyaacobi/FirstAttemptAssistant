@@ -125,3 +125,64 @@ test("the prompt tells the model the current time and zone, for working out 'tom
 test("the schema asks for the reminder fields", () => {
   for (const f of ["reminderText", "remindAt", "timezone"]) assert.ok(SCHEMA.required.includes(f) && SCHEMA.properties[f]);
 });
+
+// ---- the Haiku desk and its Flash fallback ----
+const { resetCoolDowns, DESK_COOLDOWN_MS, FRONT_DESK } = require("./frontdesk");
+const GOOD = { action: "delegate", destination: "claude-sonnet", answer: "", reason: "code" };
+
+test("the default front desk is still Flash (Haiku is opt-in by changing one word)", () => {
+  assert.strictEqual(FRONT_DESK, "flash");
+});
+
+test("haiku desk: Claude answers when it works, and Flash is never called", async () => {
+  resetCoolDowns();
+  const calls = [];
+  const claude = async (p, model) => { calls.push("claude:" + model); return GOOD; };
+  const flash = async () => { calls.push("flash"); return GOOD; };
+  const d = await decide("fix my code", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B" });
+  assert.strictEqual(d.via, "haiku");
+  assert.deepStrictEqual(calls, ["claude:haiku"]);
+});
+
+test("haiku desk: a failing Claude (login, limit, timeout) hands the message to Flash at once", async () => {
+  resetCoolDowns();
+  const logs = [];
+  const claude = async () => { throw new Error("OAuth session expired"); };
+  const flash = async (p, model) => { assert.strictEqual(model, "gemini-3.8-flash-medium"); return GOOD; };
+  const d = await decide("fix my code", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", log: (l) => logs.push(l) });
+  assert.strictEqual(d.via, "flash");
+  assert.strictEqual(d.destination, "claude-sonnet");
+  assert.match(logs[0], /claude\/haiku failed \(OAuth session expired\)/);
+});
+
+test("haiku desk: after a failure the next messages skip Claude for a while, then try it again", async () => {
+  resetCoolDowns();
+  let claudeCalls = 0;
+  const claude = async () => { claudeCalls++; throw new Error("rate limit"); };
+  const flash = async () => GOOD;
+  const t0 = 1_000_000;
+  await decide("a", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", now: t0 });
+  await decide("b", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", now: t0 + 1000 });
+  assert.strictEqual(claudeCalls, 1, "the second message did not pay for a failed Claude call");
+  await decide("c", { desk: "haiku", askStructured: claude, askFallback: flash, brief: "B", now: t0 + DESK_COOLDOWN_MS + 1 });
+  assert.strictEqual(claudeCalls, 2, "after the cool-down Claude is tried again");
+});
+
+test("haiku desk: a reply that fails the checks falls back for that message only (no cool-down)", async () => {
+  resetCoolDowns();
+  let claudeCalls = 0;
+  const claude = async () => { claudeCalls++; return { action: "delegate", destination: "evil" }; };
+  const d1 = await decide("a", { desk: "haiku", askStructured: claude, askFallback: async () => GOOD, brief: "B" });
+  assert.strictEqual(d1.via, "flash");
+  await decide("b", { desk: "haiku", askStructured: claude, askFallback: async () => GOOD, brief: "B" });
+  assert.strictEqual(claudeCalls, 2);
+});
+
+test("haiku desk: when Flash fails too, decide throws so core.js can use Claude Sonnet", async () => {
+  resetCoolDowns();
+  await assert.rejects(decide("x", { desk: "haiku", askStructured: async () => { throw new Error("down"); }, askFallback: async () => { throw new Error("agy down"); }, brief: "B" }), /agy down/);
+});
+
+test("an unknown desk name is refused", async () => {
+  await assert.rejects(decide("x", { desk: "gpt", brief: "B" }), /unknown front desk/);
+});

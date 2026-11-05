@@ -11,13 +11,28 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { askAgyStructured } = require("./providers");
+const { askAgyStructured, askClaudeStructured } = require("./providers");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
 const { checkRequest } = require("./calendar-chat");
 
-const FRONT_DESK_MODEL = MODELS.flashMedium; // medium was ~5 s faster than high with identical decisions on 19 prompts (experiments/2026-11-04-speed-part2.md)
+// THE ONE SETTING: who runs the front desk. Change this one word to switch.
+//   "flash" = Gemini Flash medium through agy (the default; medium was ~5 s faster than high with identical
+//             decisions on 19 prompts, experiments/2026-11-04-speed-part2.md)
+//   "haiku" = Claude Haiku through `claude -p` (experiments/2026-11-05-frontdesk-haiku.md). If Claude is
+//             logged out, out of quota, slow or returns nonsense, Flash answers instead, so Bot never stops.
+const FRONT_DESK = "flash";
+const FLASH_DESK = { model: MODELS.flashMedium, ask: askAgyStructured };
+const FRONT_DESKS = {
+  flash: FLASH_DESK,
+  haiku: { model: { provider: "claude", model: "haiku", pool: null }, ask: askClaudeStructured, fallback: FLASH_DESK },
+};
+const FRONT_DESK_MODEL = FRONT_DESKS[FRONT_DESK].model; // core.js prints it
+// After Claude fails (login, limit, timeout), the next messages go straight to Flash for this long
+// instead of each paying for a failed call first. Kept in memory only.
+const DESK_COOLDOWN_MS = 5 * 60 * 1000;
+const coolDownUntil = {}; // desk name -> time (ms) until which it is skipped
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
@@ -138,14 +153,36 @@ function validateDecision(raw, { now = Date.now() } = {}) {
   return { action: "split", destination: null, answer: "", reason };
 }
 
-// Asks the front desk model. Throws if it fails or its reply is unusable, so the caller
-// can fall back to Claude Sonnet.
-async function decide(task, { history = "", allowSplit = true, askStructured = askAgyStructured, brief, low = [], about = "" } = {}) {
-  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about });
-  const raw = await askStructured(prompt, FRONT_DESK_MODEL.model, SCHEMA);
-  const decision = validateDecision(raw);
+// One attempt with one desk: ask, then CHECK. Throws if the call fails or the reply is unusable.
+async function tryDesk(desk, ask, prompt) {
+  const decision = validateDecision(await ask(prompt, desk.model.model, SCHEMA));
   if (!decision) throw new Error("the front desk returned an unusable decision");
   return decision;
 }
 
-module.exports = { decide, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, BRIEF_FILE };
+// Asks the front desk. A desk with a fallback (Haiku -> Flash) is tried first; if it fails or is
+// cooling down, its fallback answers. Throws only when everything failed, so the caller can fall back
+// to Claude Sonnet. askStructured / askFallback / now are parameters so tests can plug in fakes.
+async function decide(task, { history = "", allowSplit = true, askStructured, askFallback, brief, low = [], about = "", desk = FRONT_DESK, log = () => {}, now = Date.now() } = {}) {
+  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about });
+  const main = FRONT_DESKS[desk];
+  if (!main) throw new Error("unknown front desk: " + desk);
+  const ask = askStructured || main.ask;
+  if (!main.fallback) return { ...(await tryDesk(main, ask, prompt)), via: desk };
+
+  const backup = main.fallback;
+  if (now >= (coolDownUntil[desk] || 0)) {
+    try {
+      return { ...(await tryDesk(main, ask, prompt)), via: desk };
+    } catch (error) {
+      // A reply that failed our checks is a one-off; a call that failed (login, limit, timeout) is likely to fail again.
+      if (!/unusable decision/.test(error.message)) coolDownUntil[desk] = now + DESK_COOLDOWN_MS;
+      log(`[frontdesk] ${main.model.provider}/${main.model.model} failed (${String(error.message).slice(0, 120)}); ${backup.model.model} answers instead`);
+    }
+  }
+  return { ...(await tryDesk(backup, askFallback || backup.ask, prompt)), via: "flash" };
+}
+
+const resetCoolDowns = () => { for (const k of Object.keys(coolDownUntil)) delete coolDownUntil[k]; };
+
+module.exports = { decide, validateDecision, buildPrompt, quotaLine, resetCoolDowns, FRONT_DESK, FRONT_DESKS, FRONT_DESK_MODEL, DESK_COOLDOWN_MS, ACTIONS, SCHEMA, BRIEF_FILE };

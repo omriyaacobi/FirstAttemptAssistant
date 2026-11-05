@@ -40,6 +40,7 @@ const SONNET_TIMEOUT_MS = 3 * 60 * 1000;
 const ARGON_TIMEOUT_MS = 4 * 60 * 1000; // Argon medium took 155 s once, so it needs room
 const OPUS_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000;
+const FRONT_DESK_CLAUDE_TIMEOUT_MS = 40 * 1000; // a front desk call takes seconds; past this, Flash takes over
 const WEB_TIMEOUT_MS = 2 * 60 * 1000; // one or two searches
 const RESEARCH_TIMEOUT_MS = 6 * 60 * 1000; // many searches across many sites
 
@@ -93,6 +94,31 @@ function askClaude(question, model) {
       resolve(stdout.trim());
     });
     withTimeout(child, timeoutFor(model), reject, model);
+    child.stdin.end(question);
+  });
+}
+
+// Claude Code CLI, answer forced into a JSON schema. `--output-format json` wraps the reply in an
+// envelope; with --json-schema the clean object is in "structured_output". The schema goes through
+// the shell, so double quotes are escaped (the schema holds no other shell-special characters).
+// Returns the object. Throws on a login problem or limit (the envelope has is_error true).
+function askClaudeStructured(question, model, schema) {
+  checkModelName(model);
+  const json = JSON.stringify(schema).replace(/"/g, '\\"');
+  const command = `${claudeCommand(model)} --output-format json --json-schema "${json}"`;
+  return new Promise((resolve, reject) => {
+    const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      let envelope = null;
+      try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: report below */ }
+      if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message)).trim().slice(0, 200)));
+      if (envelope.is_error) return reject(new Error(String(envelope.result || "claude reported an error").slice(0, 200)));
+      try {
+        resolve(envelope.structured_output ?? JSON.parse(envelope.result));
+      } catch (resultError) {
+        reject(new Error("claude did not return valid structured output"));
+      }
+    });
+    withTimeout(child, FRONT_DESK_CLAUDE_TIMEOUT_MS, reject, model);
     child.stdin.end(question);
   });
 }
@@ -225,5 +251,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, askAgyWithImage, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { ask, askChain, askAgyStructured, askClaudeStructured, askAgyWithImage, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
