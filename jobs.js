@@ -24,6 +24,7 @@ const { resultText } = require("./core");
 const JOB_ID_PATTERN = /^[a-f0-9]{32}$/;
 const KEEP_FINISHED_MS = 30 * 60 * 1000; // finished jobs stay visible this long
 const MAX_FINISHED = 50;
+const MAX_PARTIAL_CHARS = 20000; // the growing answer sent to the page while a job runs
 const MAX_LOG_LINES = 200; // kept per job in memory
 const SAVED_LOG_LINES = 40; // saved into the conversation
 const WATCH_FRESH_MS = 8000; // a page that asked this recently counts as "looking at it"
@@ -91,6 +92,7 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
       now: now(),
       step: job.status === "running" ? describeProgress(job.log) : job.status === "done" ? "Done" : "Failed",
     };
+    if (job.status === "running" && job.partial) out.partial = job.partial; // the answer so far (streaming); gone once the job ends
     if (job.status === "error") out.error = job.error;
     if (withLog) out.log = job.log;
     return out;
@@ -124,6 +126,7 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
       startedAt,
       finishedAt: null,
       log: [],
+      partial: "",
       lastWatched: 0,
     };
     jobs.set(job.id, job);
@@ -137,6 +140,7 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
           noPlan: noPlan === true,
           history,
           image,
+          onPartial: (text) => { job.partial = String(text).slice(-MAX_PARTIAL_CHARS); },
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
         });
         message = { role: "assistant", text: resultText(result), result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
