@@ -13,7 +13,7 @@ test("the Improve button is the last thing in the sidebar and has its own big st
   const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
   const button = side.indexOf('id="improveBtn"');
   assert.ok(button > 0, "button is inside the sidebar");
-  assert.ok(button > side.indexOf('aria-label="Quota"'), "button comes after the quota panel");
+  assert.ok(button > side.indexOf('id="quotaBtn"'), "button comes after the quota button");
   assert.match(side.slice(side.lastIndexOf("<button", button), button), /class="improve"/);
   assert.match(html, /button\.improve\s*\{[^}]*margin-top:\s*auto/);
 });
@@ -81,3 +81,32 @@ test("sending a message starts a background job and the page follows it by polli
   // no chat switching or composer lock-out depends on a request being open any more
   assert.doesNotMatch(html, /if \(busy\) return;/);
 });
+
+test("the quota is a pop-up opened from a sidebar button, not a panel in the middle of the sidebar", () => {
+  const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
+  assert.match(side, /<button id="quotaBtn"[^>]*aria-haspopup="dialog"/);
+  assert.doesNotMatch(side, /id="quota"/); // the numbers live in the dialog, outside the sidebar
+  const dialog = html.match(/<dialog class="popup" id="quotaDialog"[\s\S]*?<\/dialog>/);
+  assert.ok(dialog, "the dialog exists");
+  assert.match(dialog[0], /id="quota"/);
+  assert.match(dialog[0], /id="quotaClose"/);
+  assert.match(html, /showModal\(\)/);
+  assert.match(html, /\[data-theme="midnight"\] dialog\.popup/); // styled in both designs
+  assert.match(html, /dialog\.popup \{[^}]*var\(--card\)/);
+  assert.match(html, /dialog\.popup \{[^}]*calc\(100vw - 32px\)/); // fits a phone
+});
+
+test("Improve Bot is a chat: progress, follow-ups, preview, and simple Approve and Reject buttons", () => {
+  const view = html.slice(html.indexOf('<section class="chat" id="improveView"'), html.indexOf("<script>"));
+  for (const id of ["improveThread", "improveText", "improveStart", "newImprove", "previewFrame", "pinForm"]) assert.ok(view.includes(`id="${id}"`), id);
+  assert.match(view, /<iframe id="previewFrame"[^>]*sandbox="allow-scripts"/); // no allow-same-origin
+  assert.doesNotMatch(view, /allow-same-origin/);
+  assert.ok(html.includes("`/api/selfedit/${p.id}/message`")); // a follow-up goes to the same proposal
+  assert.ok(html.includes("`/api/selfedit/${id}/preview`"));
+  assert.match(html, /"approve", "Approve"/);
+  assert.match(html, /"danger", "Reject"/);
+  assert.match(html, /Show the technical details and code changes/); // the diff is folded away, not removed
+  assert.match(html, /Last sign of life/); // so it is clear the editor is alive
+  assert.match(html, /queued\.push/); // messages typed while it works wait their turn
+});
+

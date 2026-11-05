@@ -80,6 +80,11 @@
   details pre { color: var(--muted); font-size: .8rem; white-space: pre-wrap; }
   .empty { color: var(--muted); text-align: center; margin-top: 15vh; }
 
+  /* Pop-up window (the quota). A native <dialog>: Esc closes it and the page behind it is dimmed. */
+  dialog.popup { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y: auto; margin: auto; padding: 16px;
+                 background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, .35); }
+  dialog.popup::backdrop { background: rgba(20, 8, 32, .55); }
+  dialog.popup .quota-row { font-size: .9rem; margin: 10px 0; }
   /* Quota panel */
   .quota-row { display: grid; grid-template-columns: 1fr 70px 40px; gap: 8px; align-items: center; font-size: .8rem; margin: 6px 0; }
   .bar { height: 8px; border-radius: 4px; background: var(--code); overflow: hidden; }
@@ -87,6 +92,24 @@
   .status { color: var(--muted); font-size: .85rem; min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
 
   /* Improve-Bot panel */
+  .improve-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .improve-head h1 { margin: 0; }
+  .improve-head .actions { margin: 0; }
+  .improve-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .improve-body[hidden] { display: none; }
+  #pinForm { margin: 12px 16px; }
+  #improveThread .empty { margin-top: 8vh; }
+  #improveThread .me .sub { color: var(--muted); font-size: .75rem; margin: 2px 0 0; }
+  .progress-lines { margin: 0 0 8px; padding-left: 18px; list-style: disc; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+  .think-step { overflow-wrap: anywhere; }
+  button.approve { background: var(--ok); color: #0c0b10; }
+  details.card > summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  details.card section { margin-top: 12px; }
+  details.card ul .open { padding: 6px 8px; }
+  .preview-overlay { position: fixed; inset: 0; z-index: 25; background: var(--bg); display: flex; flex-direction: column; }
+  .preview-overlay[hidden] { display: none; }
+  .preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--card); border-bottom: 1px solid var(--line); font-size: .85rem; color: var(--muted); }
+  #previewFrame { flex: 1; width: 100%; border: 0; background: var(--bg); }
   .chat[hidden] { display: none; }
   .scroll { flex: 1; overflow-y: auto; padding: 24px 16px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; }
@@ -211,7 +234,8 @@
   [data-theme="midnight"] pre { border: 1px solid var(--line); }
 
   /* Cards, quota bars, pop-ups */
-  [data-theme="midnight"] .card, [data-theme="midnight"] .files li { border-radius: 18px; }
+  [data-theme="midnight"] .card, [data-theme="midnight"] .files li, [data-theme="midnight"] dialog.popup { border-radius: 18px; }
+  [data-theme="midnight"] dialog.popup { box-shadow: 0 8px 32px rgba(0, 0, 0, .6); }
   [data-theme="midnight"] .bar { height: 4px; }
   [data-theme="midnight"] .bar > span { background: linear-gradient(90deg, var(--accent), var(--pink)); }
   [data-theme="midnight"] .toast { border: 1px solid var(--line); border-left: 3px solid var(--pink); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
@@ -230,6 +254,16 @@
     <div class="row"><span class="status" id="loginStatus" role="status"></span><button type="submit">Log in</button></div>
   </form>
 </div>
+<dialog class="popup" id="quotaDialog" aria-labelledby="quotaTitle">
+  <div class="row" style="margin-top:0">
+    <strong id="quotaTitle">Quota (agy)</strong>
+    <span class="actions" style="margin-top:0">
+      <button class="ghost" id="refresh">Refresh</button>
+      <button class="ghost" id="quotaClose">Close</button>
+    </span>
+  </div>
+  <div id="quota" class="sub">Loading...</div>
+</dialog>
 <div class="app">
   <div class="backdrop" id="backdrop"></div>
   <aside class="side" id="side" aria-label="Conversations and tools">
@@ -244,13 +278,7 @@
     </div>
     <button id="new">+ New chat</button>
     <nav aria-label="Conversations"><ul id="chats"></ul></nav>
-    <section aria-label="Quota">
-      <div class="row" style="margin-top:0">
-        <strong>Quota (agy)</strong>
-        <button class="ghost" id="refresh">Refresh</button>
-      </div>
-      <div id="quota" class="sub">Loading...</div>
-    </section>
+    <button id="quotaBtn" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
     <section aria-label="Reminders">
       <div class="row" style="margin-top:0">
         <strong>Reminders</strong>
@@ -326,42 +354,53 @@
       </button>
       <div class="titles"><strong>Bot</strong><span>Improve Bot</span></div>
     </div>
-    <div class="scroll"><div class="inner">
-      <div class="row" style="margin-top:0">
-        <h1>Improve Bot</h1>
-        <div class="actions" style="margin-top:0">
-          <button class="ghost" id="restartBtn" title="Restart Bot to load new code after an approved change">Restart Bot</button>
-          <button class="ghost" id="backToChat">Back to chat</button>
+    <div class="improve-head">
+      <h1>Improve Bot</h1>
+      <div class="actions" style="margin-top:0">
+        <button class="ghost" id="newImprove" title="Start a different request">New request</button>
+        <button class="ghost" id="restartBtn" title="Restart Bot to load new code after an approved change">Restart Bot</button>
+        <button class="ghost" id="backToChat">Back to chat</button>
+      </div>
+    </div>
+    <form id="pinForm" class="card" hidden>
+      <strong>Enter your PIN</strong>
+      <p class="sub">Improve Bot changes the code running on your computer, so the phone asks for your PIN (BOT_ADMIN_PIN). It stays unlocked for 15 minutes.</p>
+      <input id="pinInput" type="password" autocomplete="off" aria-label="PIN" placeholder="PIN">
+      <div class="row"><span class="status" id="pinStatus" role="status"></span><button type="submit">Unlock</button></div>
+    </form>
+    <div id="improveBody" class="improve-body">
+      <div class="scroll" id="improveScroll"><div class="inner">
+        <div id="improveThread" aria-live="polite"></div>
+        <details class="card" id="moreCard">
+          <summary>Earlier requests and GitHub</summary>
+          <ul id="proposals"></ul>
+          <section id="gitCard" aria-label="GitHub">
+            <div class="row">
+              <strong>GitHub</strong>
+              <button class="ghost" id="gitRefresh">Refresh</button>
+            </div>
+            <div id="gitStatus" class="sub">Loading...</div>
+            <div class="actions"><button id="pushBtn" hidden>Push to GitHub</button></div>
+          </section>
+        </details>
+      </div></div>
+      <div class="composer" id="improveComposer"><div class="inner">
+        <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
+        <div class="row">
+          <label id="improveModelLabel">Editor <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select></label>
+          <span class="status" id="improveStatus" role="status"></span>
+          <button id="improveStart">Send</button>
         </div>
-      </div>
-      <form id="pinForm" class="card" hidden>
-        <strong>Enter your PIN</strong>
-        <p class="sub">Improve Bot changes the code running on your computer, so the phone asks for your PIN (BOT_ADMIN_PIN). It stays unlocked for 15 minutes.</p>
-        <input id="pinInput" type="password" autocomplete="off" aria-label="PIN" placeholder="PIN">
-        <div class="row"><span class="status" id="pinStatus" role="status"></span><button type="submit">Unlock</button></div>
-      </form>
-      <div id="improveBody">
-      <p class="sub">Describe a change to Bot's own code or page. An editor model (Claude) makes it in a <strong>private copy</strong> of the project, never in your live files. The tests run automatically; if they fail, the editor gets the errors and tries again (up to 3 times). You review the changes below. Nothing happens to your project until you press Approve, and nothing goes to GitHub until you press Push.</p>
-      <textarea id="improveText" dir="auto" aria-label="The change you want" placeholder="For example: make the page more colorful, with a different color for Gemini and Claude answers."></textarea>
-      <div class="row">
-        <label>Editor model <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select></label>
-        <span class="status" id="improveStatus" role="status"></span>
-        <button id="improveStart">Start</button>
-      </div>
-      <h2 style="font-size:1.05rem">Proposals</h2>
-      <ul id="proposals"></ul>
-      <div id="proposalDetail"></div>
-      <section class="card" id="gitCard" aria-label="GitHub">
-        <div class="row" style="margin-top:0">
-          <strong>GitHub</strong>
-          <button class="ghost" id="gitRefresh">Refresh</button>
-        </div>
-        <div id="gitStatus" class="sub">Loading...</div>
-        <div class="actions"><button id="pushBtn" hidden>Push to GitHub</button></div>
-      </section>
-      </div>
-    </div></div>
+      </div></div>
+    </div>
   </section>
+  <div class="preview-overlay" id="previewOverlay" hidden>
+    <div class="preview-bar">
+      <span>Preview of the change. Sample chat, nothing here is saved.</span>
+      <button class="ghost" id="previewClose">Close</button>
+    </div>
+    <iframe id="previewFrame" title="Preview of the changed page" sandbox="allow-scripts"></iframe>
+  </div>
 </div>
 
 <script>
@@ -829,8 +868,12 @@
   pollJobs();
 
   // ---- Quota panel ----
+  // The numbers are read from agy only while the pop-up is open (it is a slow call, and nobody sees them otherwise).
   async function loadQuota() {
+    if (!$("quotaDialog").open) return;
     const box = $("quota");
+    box.className = "sub";
+    if (!box.firstChild) box.textContent = "Loading...";
     try {
       const res = await fetch("/api/usage");
       const data = await res.json();
@@ -860,6 +903,10 @@
   });
   $("new").addEventListener("click", newChat);
   $("refresh").addEventListener("click", loadQuota);
+  $("quotaBtn").addEventListener("click", () => { $("quotaDialog").showModal(); loadQuota(); });
+  $("quotaClose").addEventListener("click", () => $("quotaDialog").close());
+  // A tap on the dimmed area outside the pop-up closes it too.
+  $("quotaDialog").addEventListener("click", (e) => { if (e.target === $("quotaDialog")) $("quotaDialog").close(); });
 
   // ---- Page design ----
   // Each design is a block in the <style> above, switched by data-theme on <html>. The choice is kept on this device.
@@ -960,7 +1007,6 @@
   // ---- Improve Bot (self-edit) ----
   const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted" };
   let openProposalId = null;
-  let renderedStatus = null;
   let pollTimer = null;
 
   function showView(name) {
@@ -970,7 +1016,7 @@
     if (name === "study") window.studyShow && window.studyShow(); else window.studyHide && window.studyHide();
     if (name === "improve") {
       updateGate();
-      if (!adminLocked()) loadProposals();
+      if (!adminLocked()) loadProposals(true);
       loadGit();
     }
   }
@@ -1010,7 +1056,7 @@
       session.adminUnlocked = true;
       setStatus("pinStatus", "");
       updateGate();
-      loadProposals();
+      loadProposals(true);
     } catch (error) {
       setStatus("pinStatus", error.message, true);
     }
@@ -1020,6 +1066,7 @@
   function openImproveWith(request) {
     navGo({ view: "improve", id: currentId });
     showView("improve");
+    newImprove(); // a fresh request, not a follow-up to the one that may be open
     $("improveText").value = request;
     $("improveText").focus();
   }
@@ -1094,35 +1141,65 @@
 
   const statusBadge = (status) => el("span", "badge st-" + (STATUS_CLASS[status] || "muted"), status);
 
-  // While an editor is working, refresh every few seconds; stop when it is done.
+  // ---- Improve Bot as a chat ----
+  // `current` is the request open in the chat. While the editor works the page asks Bot every 2 seconds
+  // and shows what the editor is doing in plain words. Messages typed while it is busy wait in `queued`
+  // and are sent on their own when it finishes, so you can keep talking to it like a normal chat.
+  let current = null;
+  let queued = [];
+  let renderedKey = null;
+  let serverOffset = 0; // server clock minus this device's clock, so "N seconds ago" is right on the phone too
+  let declined = false; // you pressed "New request": do not jump back to the open one
+
+  // While an editor is working, refresh every 2 seconds; stop when it is done.
   function schedulePoll(busy) {
     if (busy && !pollTimer) {
       pollTimer = setInterval(() => {
         loadProposals();
         if (openProposalId) openProposal(openProposalId, true);
-      }, 3000);
+      }, 2000);
     } else if (!busy && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
   }
 
-  async function loadProposals() {
+  // What the Send button and the box under the chat do right now.
+  function updateImproveComposer(serverBusy) {
+    const status = current && current.status;
+    const mine = status === "running";
+    $("improveModelLabel").hidden = status === "ready" || mine;
+    $("improveText").placeholder = mine
+      ? "The editor is busy. Write more here: it is sent when the editor finishes."
+      : status === "ready"
+        ? "Ask for another change, or press Approve above if you like it."
+        : "Describe a change to Bot. For example: make the page more colorful.";
+    $("improveStart").textContent = mine ? "Queue" : "Send";
+    $("improveStart").disabled = !mine && status !== "ready" && Boolean(serverBusy); // another editor runs elsewhere
+    if (!mine && status !== "ready" && serverBusy) setStatus("improveStatus", "Another editor is still working...");
+    else if (!$("improveStatus").classList.contains("bad")) setStatus("improveStatus", "");
+  }
+
+  async function loadProposals(adopt) {
     try {
       const { proposals, busy } = await (await adminFetch("/api/selfedit")).json();
       const list = $("proposals");
       list.replaceChildren();
-      if (!proposals.length) list.appendChild(el("li", "sub", "No proposals yet."));
+      if (!proposals.length) list.appendChild(el("li", "sub", "No requests yet."));
       proposals.forEach((p) => {
         const li = el("li", "proposal" + (p.id === openProposalId ? " active" : ""));
         const open = el("button", "open");
         open.append(statusBadge(p.status), document.createTextNode(" " + p.request));
-        open.addEventListener("click", () => openProposal(p.id));
+        open.addEventListener("click", () => { queued = []; openProposal(p.id); });
         li.appendChild(open);
         list.appendChild(li);
       });
-      $("improveStart").disabled = busy;
-      setStatus("improveStatus", busy ? "An editor is working..." : "");
+      // Coming back to this page: carry on with the request that is running, or waiting for your decision.
+      if (adopt && !openProposalId && !declined) {
+        const live = proposals.find((p) => p.status === "running" || p.status === "ready");
+        if (live) openProposal(live.id);
+      }
+      updateImproveComposer(busy);
       schedulePoll(busy);
     } catch (error) { /* the list refreshes again on the next poll */ }
   }
@@ -1140,17 +1217,9 @@
     return pre;
   }
 
-  function renderProposal(p) {
-    const box = el("section", "card");
-    const head = el("div", "step-head");
-    head.append(statusBadge(p.status), el("span", "", p.request));
-    box.appendChild(head);
-    box.appendChild(el("p", "sub", p.note || ""));
-
-    if (p.summary) {
-      box.appendChild(el("strong", "", "What the editor says"));
-      box.appendChild(renderText(p.summary));
-    }
+  // The technical details, folded away by default: attempts, safety reasons, files, test results, the code changes.
+  function renderDetails(p) {
+    const box = el("div");
     if (p.attempts && p.attempts.length > 1) {
       const tries = p.attempts.map((a) => `try ${a.attempt}: ${a.problems.length ? a.problems.join("; ") : "passed"}`).join("  |  ");
       box.appendChild(el("p", "sub", `The editor needed ${p.attempts.length} attempts (${tries})`));
@@ -1180,47 +1249,147 @@
       box.appendChild(el("strong", "", "The changes"));
       box.appendChild(renderDiff(p.diff));
     }
-    const actions = el("div", "actions");
-    if (p.status === "approved") {
-      box.appendChild(el("p", "", `Merged as commit ${String(p.mergedCommit).slice(0, 7)}. It is on your computer only; use "Push to GitHub" below when you are happy with it.`));
-      box.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Code changed: restart Bot to load it." : "Only the page changed: reload it (F5) to see the result."));
-      if (p.needsRestart) {
-        const restart = el("button", "", "Restart Bot now");
-        restart.addEventListener("click", restartBot);
-        actions.appendChild(restart);
+    return box;
+  }
+
+  const ago = (ms) => (ms < 5000 ? "just now" : `${clock(ms)} ago`);
+
+  function bubble(role, text, tag) {
+    const m = el("div", "msg");
+    if (role === "user") {
+      const b = el("div", "me", text);
+      b.dir = "auto";
+      if (tag) b.appendChild(el("div", "sub", tag));
+      m.appendChild(b);
+    } else {
+      const b = el("div", "bot");
+      b.appendChild(renderText(text));
+      m.appendChild(b);
+    }
+    return m;
+  }
+
+  // The card under the last message: what is happening, or what you can do next.
+  function statusCard(p) {
+    const box = el("div", "msg");
+    const card = el("div", "bot" + (p.status === "running" ? " think" : ""));
+    const head = el("div", "step-head");
+    box.appendChild(card);
+    if (p.status === "running") {
+      head.append(el("span", "spinner"), el("span", "", "The editor is working"), el("span", "badge", "0:00"));
+      head.lastChild.id = "improveElapsed";
+      card.append(head, el("div", "think-step", p.phase || "Starting..."));
+      const lines = (p.progress || []).slice(-6, -1);
+      if (lines.length) {
+        const ul = el("ul", "progress-lines");
+        lines.forEach((l) => ul.appendChild(el("li", "", l.text)));
+        card.appendChild(ul);
       }
+      card.appendChild(el("div", "think-hint", "It works in a private copy, so your live Bot is untouched. You can leave this page; it keeps going. Write more messages below if you like: they are sent when it finishes."));
+      const live = el("div", "think-hint");
+      live.id = "improveAlive";
+      card.appendChild(live);
+      return box;
     }
     if (p.status === "ready") {
-      const approve = el("button", "", "Approve and merge");
+      const nFiles = p.files ? p.files.length : 0;
+      head.append(statusBadge("ready"), el("span", "", `${nFiles} file${nFiles === 1 ? "" : "s"} changed`), el("span", "badge", p.tests && p.tests.ok ? `tests pass (${p.tests.total})` : "tests?"));
+      card.appendChild(head);
+      card.appendChild(el("p", "sub", "Nothing is changed in your real Bot yet. Look at it, ask for more changes below, then approve or reject."));
+      const actions = el("div", "actions");
+      const pageChanged = (p.files || []).some((f) => f.path.startsWith("public/"));
+      if (pageChanged) {
+        const preview = el("button", "", "Preview");
+        preview.title = "See the changed page running (with sample data) before you decide";
+        preview.addEventListener("click", () => openPreview(p.id));
+        actions.appendChild(preview);
+      }
+      const approve = el("button", "approve", "Approve");
       approve.addEventListener("click", () => decide(p.id, "approve"));
-      actions.appendChild(approve);
-    }
-    if (["ready", "blocked", "failed"].includes(p.status)) {
-      const reject = el("button", "danger", p.status === "ready" ? "Reject (throw it away)" : "Dismiss");
+      const reject = el("button", "danger", "Reject");
       reject.addEventListener("click", () => decide(p.id, "reject"));
-      actions.appendChild(reject);
+      actions.append(approve, reject);
+      card.appendChild(actions);
+      if (!pageChanged) card.appendChild(el("p", "sub", "This change is to Bot's code, not to the page, so there is nothing to preview."));
+    } else if (p.status === "approved") {
+      head.append(statusBadge("approved"), el("span", "", "Merged into your project"));
+      card.append(head, el("p", "", `Commit ${String(p.mergedCommit).slice(0, 7)}. It is on your computer only; use "Push to GitHub" under "Earlier requests and GitHub" when you are happy with it.`));
+      card.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Code changed: restart Bot to load it." : "Only the page changed: reload it to see the result."));
+      const actions = el("div", "actions");
+      const go = el("button", "", p.needsRestart ? "Restart Bot now" : "Reload the page");
+      go.addEventListener("click", p.needsRestart ? restartBot : () => location.reload());
+      actions.appendChild(go);
+      card.appendChild(actions);
+    } else {
+      head.append(statusBadge(p.status), el("span", "", p.status === "rejected" ? "Thrown away" : "Stopped"));
+      card.append(head, el("p", p.status === "rejected" ? "sub" : "err", p.note || ""));
+      if (p.status !== "rejected") {
+        const actions = el("div", "actions");
+        const dismiss = el("button", "danger", "Dismiss");
+        dismiss.addEventListener("click", () => decide(p.id, "reject"));
+        actions.appendChild(dismiss);
+        card.appendChild(actions);
+      }
+      card.appendChild(el("p", "sub", "Write a new request below to try again."));
     }
-    box.appendChild(actions);
+    if (p.diff || (p.blocked && p.blocked.length) || (p.files && p.files.length)) {
+      const details = el("details");
+      details.append(el("summary", "", "Show the technical details and code changes"), renderDetails(p));
+      card.appendChild(details);
+    }
     return box;
+  }
+
+  function renderImprove() {
+    const thread = $("improveThread");
+    const scroller = $("improveScroll");
+    const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
+    thread.replaceChildren();
+    const p = current;
+    if (!p) {
+      thread.appendChild(el("p", "empty", "Tell Bot what to change about itself. A copy of Bot is edited in private, you can watch it work, steer it with more messages, preview the result, and only then approve it."));
+    } else {
+      const chat = p.chat || [{ role: "user", text: p.request }, ...(p.summary ? [{ role: "bot", text: p.summary }] : [])];
+      chat.forEach((m) => thread.appendChild(bubble(m.role, m.text)));
+      queued.forEach((text) => thread.appendChild(bubble("user", text, "waiting for the editor to finish")));
+      thread.appendChild(statusCard(p));
+    }
+    updateImproveClock();
+    if (nearBottom || !p) scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  // Every second while the editor works: the timer, and how long ago it last reported something.
+  function updateImproveClock() {
+    const p = current;
+    const elapsed = $("improveElapsed");
+    if (!p || p.status !== "running" || !elapsed) return;
+    const now = Date.now() + serverOffset;
+    elapsed.textContent = clock(now - (p.roundStartedAt || p.createdAt));
+    $("improveAlive").textContent = `Last sign of life: ${ago(now - (p.updatedAt || p.createdAt))}`;
   }
 
   async function openProposal(id, quiet) {
     try {
       const res = await adminFetch("/api/selfedit/" + id);
       if (!res.ok) return;
-      const { proposal } = await res.json();
-      // When polling, only redraw if something changed (so scrolling through a diff is not interrupted).
-      // The note changes too while it runs ("Attempt 2 of 3..."), so it counts as a change.
-      const shown = `${proposal.status}|${proposal.note}`;
-      if (quiet && id === openProposalId && shown === renderedStatus) return;
+      const { proposal, now } = await res.json();
+      if (now) serverOffset = now - Date.now();
+      // When polling, only redraw if something changed (so reading or scrolling is not interrupted).
+      const key = `${proposal.status}|${proposal.phase}|${(proposal.chat || []).length}|${queued.length}`;
+      if (quiet && id === openProposalId && key === renderedKey) return;
       openProposalId = id;
-      renderedStatus = shown;
-      $("proposalDetail").replaceChildren(renderProposal(proposal));
+      declined = false;
+      renderedKey = key;
+      current = proposal;
+      renderImprove();
+      updateImproveComposer();
+      if (proposal.status === "ready" && queued.length) sendImprove(); // the editor finished: send what you wrote meanwhile
     } catch (error) { /* try again on the next poll */ }
   }
 
   async function decide(id, action) {
-    if (action === "approve" && !confirm("Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub.")) return;
+    const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub." : "Throw this away?\n\nNothing in your project will change.";
+    if (!confirm(text)) return;
     try {
       const res = await adminFetch(`/api/selfedit/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json();
@@ -1228,10 +1397,80 @@
     } catch (error) {
       alert(error.message);
     }
-    renderedStatus = null;
+    queued = [];
+    renderedKey = null;
     await openProposal(id);
     loadProposals();
     loadGit();
+  }
+
+  // ---- Preview: the changed page, in a sandboxed frame on top of the chat ----
+  // The server sends it with a Content-Security-Policy that gives it no access to Bot (see preview.js), and the
+  // frame has no allow-same-origin either. It shows sample data, never your chats.
+  function openPreview(id) {
+    $("previewFrame").src = `/api/selfedit/${id}/preview`;
+    $("previewOverlay").hidden = false;
+  }
+  function closePreview() {
+    $("previewOverlay").hidden = true;
+    $("previewFrame").src = "about:blank";
+  }
+  $("previewClose").addEventListener("click", closePreview);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("previewOverlay").hidden) closePreview(); });
+
+  // Send: a new request, a follow-up on the open request, or (while the editor is busy) a message that waits its turn.
+  let sending = false;
+  async function sendImprove() {
+    const typed = $("improveText").value.trim();
+    const p = current;
+    if (typed && p && p.status === "running") {
+      queued.push(typed);
+      $("improveText").value = "";
+      renderImprove();
+      return;
+    }
+    const text = queued.length && p && p.status === "ready" ? queued.concat(typed || []).join("\n\n") : typed;
+    if (!text || sending) return;
+    sending = true;
+    const wasQueue = text !== typed;
+    $("improveStart").disabled = true;
+    setStatus("improveStatus", "Sending...");
+    try {
+      const followUp = p && p.status === "ready";
+      const res = await adminFetch(followUp ? `/api/selfedit/${p.id}/message` : "/api/selfedit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(followUp ? { message: text } : { request: text, model: $("improveModel").value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+      if (wasQueue) queued = [];
+      else $("improveText").value = "";
+      setStatus("improveStatus", "");
+      openProposalId = data.proposal.id;
+      current = data.proposal;
+      renderedKey = null;
+      renderImprove();
+      loadProposals();
+    } catch (error) {
+      setStatus("improveStatus", error.message, true); // the text stays in the box (or the queue)
+    } finally {
+      sending = false;
+      updateImproveComposer();
+    }
+  }
+
+  // Start a different request instead of continuing the open one.
+  function newImprove() {
+    current = null;
+    openProposalId = null;
+    declined = true;
+    renderedKey = null;
+    queued = [];
+    renderImprove();
+    updateImproveComposer();
+    loadProposals();
+    $("improveText").focus();
   }
 
   $("improveBtn").addEventListener("click", () => { navGo({ view: "improve", id: currentId }); showView("improve"); });
@@ -1244,29 +1483,14 @@
   $("gitRefresh").addEventListener("click", loadGit);
   $("pushBtn").addEventListener("click", pushToGitHub);
   $("menu2").addEventListener("click", openSide);
-  $("improveStart").addEventListener("click", async () => {
-    const request = $("improveText").value.trim();
-    if (!request) return;
-    $("improveStart").disabled = true;
-    setStatus("improveStatus", "Starting...");
-    try {
-      const res = await adminFetch("/api/selfedit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ request, model: $("improveModel").value }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
-      $("improveText").value = "";
-      renderedStatus = null;
-      await openProposal(data.proposal.id);
-    } catch (error) {
-      setStatus("improveStatus", error.message, true);
-      $("improveStart").disabled = false;
-      return; // keep the message on screen
-    }
-    loadProposals();
+  $("newImprove").addEventListener("click", newImprove);
+  $("improveStart").addEventListener("click", sendImprove);
+  $("improveText").addEventListener("keydown", (e) => {
+    // Like the main chat: Enter sends, Shift+Enter makes a new line (on the phone's keyboard Enter is a new line).
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); sendImprove(); }
   });
+  setInterval(() => { if (!$("improveView").hidden) updateImproveClock(); }, 1000);
+  renderImprove();
 
   // ---- Reminders ----
   // Bot saves reminders on the PC and checks the clock there. This page asks every 30 s for ones that
