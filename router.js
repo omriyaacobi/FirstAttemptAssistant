@@ -11,10 +11,12 @@
 //   - Claude inside agy has the smallest quota, so it only appears as a last resort.
 
 // Every model we can run. "provider" is the tool that runs it:
-//   "claude" = Claude Code CLI (Claude plan), "agy" = Antigravity CLI (Google AI Pro plan).
+//   "claude" = Claude Code CLI (Claude plan), "agy" = Antigravity CLI (Google AI Pro plan),
+//   "web" and "research" = agy with its search_web tool, for a quick look-up or for real research.
 // "pool" is the quota bucket the model draws from, spelled exactly as `agy -p "/usage"` names it
 // (quota.js compares these). null = no numbers available (the Claude CLI plan), so it is never
 // treated as low.
+const GEMINI = "Gemini Models", ARGON = "Gemini 4 Argon", CLAUDE_AGY = "Claude and GPT models"; // the pool names
 const MODELS = {
   flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
   flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the planner
@@ -23,6 +25,12 @@ const MODELS = {
   claudeSonnet: { provider: "claude", model: "sonnet", pool: null },
   claudeOpus: { provider: "claude", model: "opus", pool: null },
   claudeInAgy: { provider: "agy", model: "claude-sonnet-5-5-medium", pool: "Claude and GPT models" }, // smallest quota: last resort only
+  webFlash: { provider: "web", model: "gemini-3.8-flash-medium", pool: GEMINI },
+  webFlashHigh: { provider: "web", model: "gemini-3.8-flash-high", pool: GEMINI },
+  webClaude: { provider: "web", model: "claude-sonnet-5-5-medium", pool: CLAUDE_AGY },
+  researchArgon: { provider: "research", model: "gemini-4-argon-medium", pool: ARGON },
+  researchFlash: { provider: "research", model: "gemini-3.8-flash-high", pool: GEMINI },
+  researchClaude: { provider: "research", model: "claude-sonnet-5-5-medium", pool: CLAUDE_AGY },
 };
 
 // The names the front desk may choose. Keep this list and router-brief.md in sync
@@ -33,6 +41,9 @@ const DESTINATIONS = {
   "gemini-argon-medium": [MODELS.argonMedium, MODELS.claudeOpus, MODELS.claudeInAgy],
   "claude-sonnet": [MODELS.claudeSonnet, MODELS.argonMedium, MODELS.claudeInAgy],
   "claude-opus": [MODELS.claudeOpus, MODELS.argonMedium, MODELS.claudeSonnet],
+  // Only models that can search: a model without the web would just guess.
+  "web-search": [MODELS.webFlash, MODELS.webFlashHigh, MODELS.webClaude],
+  "web-research": [MODELS.researchArgon, MODELS.researchFlash, MODELS.researchClaude],
 };
 
 // Used whenever something goes wrong with the front desk: Claude Sonnet takes the task.
@@ -45,6 +56,8 @@ const TYPE_TO_DESTINATION = {
   hard: "gemini-argon-medium",
   google: "gemini-flash",
   general: "gemini-argon-low",
+  web: "web-search",
+  research: "web-research",
 };
 
 function chainForDestination(name) {

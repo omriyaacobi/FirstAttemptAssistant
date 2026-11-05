@@ -46,3 +46,17 @@ test("every model says which quota pool it draws from (null for the Claude CLI)"
     assert.strictEqual(m.pool === null, m.provider === "claude", `${name}: only the claude CLI has no pool`);
   }
 });
+
+test("web destinations only use models that can search, so nobody answers from memory", () => {
+  for (const name of ["web-search", "web-research"]) {
+    assert.ok(chainForDestination(name).length >= 2);
+    for (const m of chainForDestination(name)) assert.ok(["web", "research"].includes(m.provider), name);
+  }
+  assert.strictEqual(chainForDestination("web-search")[0].provider, "web");
+  assert.strictEqual(chainForDestination("web-research")[0].provider, "research");
+});
+
+test("planner steps can use the web too", () => {
+  assert.strictEqual(chainForType("web"), chainForDestination("web-search"));
+  assert.strictEqual(chainForType("research"), chainForDestination("web-research"));
+});

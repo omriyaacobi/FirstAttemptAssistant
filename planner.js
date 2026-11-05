@@ -9,7 +9,7 @@ const { askChain, askAgyStructured } = require("./providers");
 const { chainForType, MODELS } = require("./router");
 
 const MAX_SUBTASKS = 5;
-const TYPES = ["quick", "code", "hard", "google", "general"];
+const TYPES = ["quick", "code", "hard", "google", "general", "web", "research"];
 
 // Only Gemini plans, because that quota pool has the most room.
 const PLANNER_MODELS = [MODELS.flashHigh, MODELS.argonLow];
@@ -42,7 +42,7 @@ Rules:
 - If the request refers to earlier messages ("it", "the same thing", "that code"), write each subtask so it makes sense without the conversation.
 - Split only when the request clearly contains separate jobs. If it is a single job, return exactly one subtask whose "task" is the request unchanged.
 - Each subtask must be self-contained: copy into it any text, code or details from the request that it needs.
-- "type" is one of: quick (short factual answer or small rewrite), code (write, fix or explain code), hard (deep reasoning, design, analysis, comparing options), google (about the user's Google Calendar, Gmail, Docs, Drive and similar), general (everything else: writing, summaries, explanations).
+- "type" is one of: quick (short factual answer or small rewrite), code (write, fix or explain code), hard (deep reasoning, design, analysis, comparing options), google (about the user's Google Calendar, Gmail, Docs, Drive and similar), web (needs one quick look on the internet), research (needs thorough searching across many websites), general (everything else: writing, summaries, explanations).
 - "needs" lists the ids of earlier subtasks whose output this subtask requires. Usually it is empty. Never reference a later id.
 - At most ${MAX_SUBTASKS} subtasks, numbered from 1.
 
