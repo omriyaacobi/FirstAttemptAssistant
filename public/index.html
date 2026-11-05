@@ -130,6 +130,7 @@
 
   /* "Bot is thinking" card, the dots in the chat list, the "done" line */
   .bot.think { border-color: var(--accent); }
+  .partial { margin-bottom: 8px; }
   .think-step { font-weight: 600; margin-bottom: 6px; }
   .think-hint { color: var(--muted); font-size: .85rem; margin-bottom: 8px; }
   .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .9s linear infinite; }
@@ -750,15 +751,27 @@
       const head = el("div", "step-head");
       head.append(el("span", "spinner"), el("span", "", "Bot is thinking"), el("span", "badge elapsed", "0:00"));
       const step = el("div", "think-step", job.step);
+      const partial = el("div", "answer partial"); // the answer so far, filled in by the poll (textContent only)
+      partial.dir = "auto";
+      partial.hidden = true;
       const hint = el("div", "think-hint", `You can leave this chat, start a new one, or close the app. Bot keeps working on your PC and saves the answer here. ${notifyHint()}`);
       const details = logDetails([]);
-      box.append(head, step, hint, details.details);
+      box.append(head, step, partial, hint, details.details);
       root.appendChild(box);
       $("messages").appendChild(root);
-      card = jobState.card = { jobId: job.id, root, step, pre: details.pre, elapsed: head.querySelector(".elapsed") };
+      card = jobState.card = { jobId: job.id, root, step, partial, pre: details.pre, elapsed: head.querySelector(".elapsed") };
       scrollDown();
     }
     card.step.textContent = job.step + "...";
+    // Streaming: the text written so far (untrusted, so textContent). It is replaced whole each poll, and disappears if a model fails.
+    const text = job.partial || "";
+    if (card.partial.textContent !== text) {
+      const th = $("thread");
+      const atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 80; // do not drag the page down if you scrolled up to read
+      card.partial.textContent = text;
+      if (text && atBottom) scrollDown();
+    }
+    card.partial.hidden = !text;
     if (job.log) card.pre.textContent = job.log.join("\n");
     card.elapsed.textContent = clock(elapsedOf(job));
   }
@@ -818,8 +831,8 @@
     } catch (error) { /* offline for a moment: the next poll will catch up */ } finally {
       jobState.polling = false;
       clearTimeout(jobState.timer);
-      // Often while something runs, rarely when idle, not at all while the page is hidden (it catches up when shown again).
-      jobState.timer = document.hidden ? null : setTimeout(pollJobs, jobState.active.size ? 2000 : 10000);
+      // Often while something runs (fast while a model is writing, so the streamed text moves), rarely when idle, not at all while the page is hidden (it catches up when shown again).
+      jobState.timer = document.hidden ? null : setTimeout(pollJobs, [...jobState.active.values()].some((j) => j.partial || /^Asking /.test(j.step)) ? 600 : jobState.active.size ? 2000 : 10000);
     }
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });

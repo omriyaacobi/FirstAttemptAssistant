@@ -84,7 +84,7 @@ async function handleTask(task, options = {}) {
   }
 }
 
-async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, deps = {} } = {}) {
+async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {} } = {}) {
   const d = { ...defaultDeps, ...deps };
   const started = Date.now();
   const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
@@ -135,6 +135,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const { answer, used, attempts } = await d.askChain(info.chain, personalize(info.chain, prompt, about), {
       onTry: (m) => log(`[router] trying ${label(m)}`),
       onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
+      onText: onPartial, // lets the page show the answer while it is written (agy only)
     });
     timing.attempts = attempts || [];
     const last = timing.attempts[timing.attempts.length - 1];
@@ -270,7 +271,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const low = await getLow(); // never waits: just the in-memory flag from the last lookup
     const deskStart = Date.now();
     try {
-      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout });
+      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout, log });
     } finally {
       timing.frontDeskSeconds = secondsSince(deskStart);
     }
