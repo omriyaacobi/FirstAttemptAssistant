@@ -9,6 +9,7 @@
 //        answer   -> it replies itself            clarify -> it asks you a question
 //        delegate -> one model from the menu      split   -> the planner splits it into steps
 //        remind   -> the time is checked and saved (reminders.js)
+//        remember -> a fact is PROPOSED; the page asks you to Save it (profile.js, never saved by itself)
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
 
@@ -19,13 +20,14 @@ const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
 const { getLowPools, prioritize } = require("./quota");
 const { getReminders, formatWhen } = require("./reminders");
+const { aboutBlock, personalize } = require("./profile");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty (cached; never throws, see quota.js).
-const defaultDeps = { decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools,
+const defaultDeps = { about: () => aboutBlock(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools,
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -81,6 +83,10 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   const timing = { quotaSeconds: 0, frontDeskSeconds: null, plannerSeconds: null, attempts: [] };
   // The front desk decides from the newest message (plus the history for context).
   const prompt = withContext(task, history);
+  // What Bot knows about the user (profile.js), read fresh for every task. Goes to the front desk and to
+  // the models, but personalize() keeps it away from the web routes. A problem here never breaks a task.
+  let about = "";
+  try { about = d.about() || ""; } catch (error) { /* no profile, same as before */ }
 
   // Which quota pools are low right now. Asked at most once per task. If the lookup fails for any
   // reason we treat it as "nothing is low", so quota can never break a task.
@@ -115,7 +121,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     if (info.rule !== "forced") info = { ...info, chain: quotaChain(info.chain, await getLow()) };
     log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
-    const { answer, used, attempts } = await d.askChain(info.chain, prompt, {
+    const { answer, used, attempts } = await d.askChain(info.chain, personalize(info.chain, prompt, about), {
       onTry: (m) => log(`[router] trying ${label(m)}`),
       onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
     });
@@ -154,10 +160,22 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     }
   }
 
+  // The user said something worth remembering. The front desk only PROPOSED it (and profile.js checked it):
+  // the page shows Save / Don't save, and only a click on Save stores it (POST /api/memory).
+  function proposeFact(decision) {
+    log(`[memory] ${decision.fact ? "proposed a fact (not saved)" : "refused: " + decision.answer}`);
+    log(timingLine());
+    const answer = decision.fact ? `Should Bot remember this? "${decision.fact}"` : decision.answer;
+    const result = { mode: "single", rule: "remember?", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
+    if (decision.fact) result.remember = { fact: decision.fact };
+    return result;
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
+      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about)), // web steps get no profile
       chainFor: (type) => quotaChain(d.chainForType(type), low),
       onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
       onDone: ({ subtask, result }) =>
@@ -176,7 +194,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     const chain = quotaChain(PHOTO_CHAIN, await getLow());
     log("[router] photo: a photo is attached, so only Gemini (through agy) can look at it");
     log(`[router] plan: ${chainText(chain)}`);
-    const question = `${prompt}\n\n${photoNote("photo" + path.extname(image.path))}`;
+    const question = `${personalize(chain, prompt, about)}\n\n${photoNote("photo" + path.extname(image.path))}`;
     const { answer, used } = await d.askChain(chain, question, {
       askOne: (provider, model, q) => d.askImage(model, q, image.path),
       onTry: (m) => log(`[router] trying ${label(m)}`),
@@ -204,7 +222,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     timing.quotaSeconds = secondsSince(quotaStart);
     const deskStart = Date.now();
     try {
-      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low });
+      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about });
     } finally {
       timing.frontDeskSeconds = secondsSince(deskStart);
     }
@@ -227,6 +245,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   // 2. Act on the decision.
   if (["answer", "clarify", "improve"].includes(decision.action)) return frontDeskReply(decision);
   if (decision.action === "remind") return setReminder(decision);
+  if (decision.action === "remember") return proposeFact(decision);
 
   if (decision.action === "delegate") {
     return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });
