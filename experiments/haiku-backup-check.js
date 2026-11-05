@@ -1,13 +1,14 @@
-// frontdesk.backup.test.js
+// experiments/haiku-backup-check.js (run by hand: node --test experiments/haiku-backup-check.js)
 // A REAL test of the backup front desk: the Gemini desk is forced to fail, and the real Claude Haiku (through the real
 // `claude -p`) must make the decision for a calendar message and for a reminder message. Each call takes about 4 s.
+// It lives here, not with the normal tests, because the test suite (also the one Improve Bot runs) must not spend quota or need the network.
 // It needs Claude's login token (CLAUDE_CODE_OAUTH_TOKEN in .env or in the environment); without one it is skipped,
 // so a checkout that has no .env does not fail.
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { decide } = require("./frontdesk");
-const { claudeEnv } = require("./providers");
+const { decide } = require("../frontdesk");
+const { claudeEnv } = require("../providers");
 
 const hasLogin = Boolean(claudeEnv().CLAUDE_CODE_OAUTH_TOKEN);
 const NOW = Date.UTC(2026, 10, 5, 12, 0, 0); // Thursday 2026-11-05 14:00 in Jerusalem
