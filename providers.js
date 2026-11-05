@@ -3,7 +3,7 @@
 // Each takes a question and a model name and returns a Promise of the answer text.
 // (A Promise is JavaScript's way of saying "the answer will arrive later".)
 
-const { exec, execFile } = require("node:child_process");
+const { exec, execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -116,6 +116,50 @@ function askAgy(question, model) {
       resolve(stdout.trim());
     });
     withTimeout(child, timeoutFor(model), reject, model);
+  });
+}
+
+// Like askAgy, but the answer is read AS IT IS WRITTEN. agy's "stream-json" mode sends small pieces of text ("text_delta")
+// while the model writes; each time one arrives, onText gets all the text so far. The final "result" event is the
+// authority for the returned answer. If agy dies before the result, this rejects (the caller drops the partial text).
+// Measured in experiments/2026-11-05-answer-low-vs-medium.md: the first words arrive before the whole answer.
+function askAgyStream(question, model, onText, { signal, command = AGY_CMD, prefixArgs = [] } = {}) { // command/prefixArgs: so tests can use a fake agy
+  checkModelName(model);
+  const args = [...prefixArgs, "-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd: sandbox(), windowsHide: true });
+    let buffer = "", text = "", step = null, settled = false;
+    const finish = (fn, value) => { if (!settled) { settled = true; fn(value); } };
+    for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", () => {}); // a broken pipe is handled by "close"
+    child.stderr.on("data", () => {});
+    child.on("error", (error) => finish(reject, new Error("could not start agy: " + error.message)));
+    child.on("close", () => finish(reject, new Error("agy closed before it finished the answer")));
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      let i;
+      while ((i = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, i);
+        buffer = buffer.slice(i + 1);
+        let event;
+        try { event = JSON.parse(line); } catch (error) { continue; }
+        const u = event.step_update;
+        if (event.event === "init") {
+          child.stdin.write(JSON.stringify({ event: "user", message: { content: question } }) + "\n"); // the format agy expects on stdin
+        } else if (event.event === "step_update" && u && u.step_type === "agent_response" && u.text_delta) {
+          if (step !== null && u.step_index !== step) text += "\n\n"; // a second reply step (after a tool) starts a new paragraph
+          step = u.step_index;
+          text += u.text_delta;
+          try { onText(text); } catch (error) { /* showing the text must never break the answer */ }
+        } else if (event.event === "result") {
+          const result = event.result || {};
+          killTree(child);
+          if (result.status && result.status !== "SUCCESS") finish(reject, new Error("agy status " + result.status));
+          else finish(resolve, String(result.response ?? text).trim());
+        }
+      }
+    });
+    withTimeout(child, timeoutFor(model), (error) => finish(reject, error), model);
+    killOnAbort(child, signal, (error) => finish(reject, error));
   });
 }
 
@@ -249,8 +293,11 @@ const PROVIDERS = {
   research: (question, model) => askWeb("deep", question, model),
 };
 
-function ask(provider, model, question) {
+// onText (optional) gets the answer so far while it is written. Only agy can do that; every other provider ignores it
+// and its answer simply arrives whole, as before.
+function ask(provider, model, question, onText) {
   if (!PROVIDERS[provider]) throw new Error(`Unknown provider: ${provider}`);
+  if (onText && provider === "agy") return askAgyStream(question, model, onText);
   return PROVIDERS[provider](question, model);
 }
 
@@ -259,7 +306,9 @@ function ask(provider, model, question) {
 // Every attempt is timed: onFail gets "seconds", and the result lists all attempts in "attempts"
 // ([{ provider, model, seconds, ok }]), so the real cost of a message is visible.
 // askOne, clock and the callbacks are parameters so tests can plug in fakes.
-async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFail = () => {}, clock = Date.now } = {}) {
+// onText (optional) gets the answer so far while a model writes it. When a model fails after writing some text, onText("")
+// is called, so half of a failed answer never stays on screen and the next model starts from nothing.
+async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFail = () => {}, onText = null, clock = Date.now } = {}) {
   const errors = [];
   const attempts = [];
   for (const { provider, model } of chain) {
@@ -267,12 +316,13 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
     const t0 = clock();
     const secondsSince = () => Number(((clock() - t0) / 1000).toFixed(1));
     try {
-      const answer = await askOne(provider, model, question);
+      const answer = await askOne(provider, model, question, onText || undefined);
       if (!answer) throw new Error("empty answer");
       attempts.push({ provider, model, seconds: secondsSince(), ok: true });
       return { answer, used: { provider, model }, attempts };
     } catch (error) {
       const message = String(error.message).trim().slice(0, 200);
+      if (onText) onText("");
       errors.push(`${provider}/${model}: ${message}`);
       attempts.push({ provider, model, seconds: secondsSince(), ok: false });
       onFail({ provider, model, message, seconds: secondsSince() });
@@ -281,5 +331,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
