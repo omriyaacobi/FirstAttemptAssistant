@@ -7,7 +7,7 @@
 
 const { sniffImage } = require("./photo");
 
-const MAX_FILE_BYTES = 40 * 1024 * 1024; // one file
+const MAX_FILE_BYTES = 50 * 1024 * 1024; // one file
 const MAX_TEXT_BYTES = 2 * 1024 * 1024; // a plain-text file is read directly, so it can be smaller
 const MAX_NAME_CHARS = 120;
 

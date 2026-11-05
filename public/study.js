@@ -187,7 +187,7 @@
     const { course } = current;
     const form = el("div", "card");
     form.appendChild(el("strong", "", "Add materials"));
-    form.appendChild(el("p", "sub", "PDF (slides, exams, notes, Hebrew is fine, scans too), a photo of notes, or a text file. Up to 40 MB each. PowerPoint or Word: save it as PDF first. Bot reads each file once; a long PDF takes a few minutes, in the background."));
+    form.appendChild(el("p", "sub", "PDF (slides, exams, notes, Hebrew is fine, scans too), a photo of notes, or a text file. Up to 50 MB each. PowerPoint or Word: save it as PDF first. Bot reads each file once; a long PDF takes a few minutes, in the background."));
     form.appendChild(button("Choose files", () => picker.click(), "primary"));
     body.appendChild(form);
 
@@ -268,7 +268,7 @@
   // XMLHttpRequest instead of fetch only because it can report upload progress (big files, phone network).
   function upload(courseId, file, say) {
     return new Promise((resolve, reject) => {
-      if (file.size > 40 * 1024 * 1024) return reject(new Error("too big (40 MB at most)"));
+      if (file.size > 50 * 1024 * 1024) return reject(new Error("too big (50 MB at most)"));
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/api/courses/${courseId}/files?name=${encodeURIComponent(file.name)}`);
       xhr.setRequestHeader("Content-Type", "application/octet-stream");

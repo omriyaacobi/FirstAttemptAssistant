@@ -8,7 +8,7 @@
 //   GET    /api/courses/<id>                     the course, its files and its chat
 //   POST   /api/courses/<id>/rename {name}
 //   DELETE /api/courses/<id>
-//   POST   /api/courses/<id>/files?name=...      upload one file (raw bytes, up to 40 MB)
+//   POST   /api/courses/<id>/files?name=...      upload one file (raw bytes, up to 50 MB)
 //   DELETE /api/courses/<id>/files/<fid>
 //   POST   /api/courses/<id>/files/<fid>/retry   read a failed file again
 //   GET    /api/courses/<id>/files/<fid>/pages?from=1   the saved text of up to 20 pages
