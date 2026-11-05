@@ -108,8 +108,12 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
     const key = keyOf(model, schema);
     const old = spares.get(key);
     if (old && old.alive && old.age < maxSpareAgeMs) return;
-    if (old) old.kill();
-    spares.set(key, fresh(model, schema));
+    if (old) { clearTimeout(old.expiry); old.kill(); }
+    const proc = fresh(model, schema);
+    // An unused spare is not left running for hours: it is killed when it gets too old (unref: this timer never keeps Bot alive).
+    proc.expiry = setTimeout(() => { if (spares.get(key) === proc) { spares.delete(key); proc.kill(); } }, maxSpareAgeMs);
+    proc.expiry.unref();
+    spares.set(key, proc);
   }
 
   // Same shape as providers.askAgyStructured(question, model, schema, { signal, timeoutMs }).
@@ -119,6 +123,7 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
     const key = keyOf(model, schema);
     let proc = spares.get(key);
     spares.delete(key);
+    if (proc) clearTimeout(proc.expiry);
     let warm = true;
     if (!proc || !proc.alive || proc.age >= maxSpareAgeMs) {
       if (proc) proc.kill();
@@ -145,7 +150,7 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
   }
 
   function closeAll() {
-    for (const proc of spares.values()) proc.kill();
+    for (const proc of spares.values()) { clearTimeout(proc.expiry); proc.kill(); }
     spares.clear();
   }
 

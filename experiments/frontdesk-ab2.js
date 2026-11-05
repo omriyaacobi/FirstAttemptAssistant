@@ -19,10 +19,11 @@ const { SANDBOX_DIR } = require("../providers");
 
 // JSON as plain text: no --json-schema flag, the reply shape is described in the prompt and checked by validateDecision.
 const JSON_TAIL = "\n\nReply with ONLY one JSON object, nothing before or after it, no markdown. It must have exactly these keys, all with string values (use \"\" for the ones the action does not need): action, destination, answer, reason, reminderText, remindAt, timezone, fact, replaces, calendarFrom, calendarDays.";
-function askAgyText(prompt, model) {
+const COMPACT_TAIL = "\n\nReply with ONLY one JSON object, nothing before or after it, no markdown, with string values. Always include: action, destination (\"none\" unless delegate) and reason. Add only the keys the action needs and leave out all others: answer (for answer, clarify, improve); reminderText, remindAt, timezone (for remind); fact, replaces (for remember, forget); calendarFrom, calendarDays (for calendar).";
+function askAgyText(prompt, model, tail = JSON_TAIL) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(SANDBOX_DIR, { recursive: true });
-    const c = execFile(process.env.AGY_CMD || path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe"), ["-p", prompt + JSON_TAIL, "--model", model], { cwd: SANDBOX_DIR, maxBuffer: 1e7, timeout: 120000 }, (e, o, er) => {
+    const c = execFile(process.env.AGY_CMD || path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe"), ["-p", prompt + tail, "--model", model], { cwd: SANDBOX_DIR, maxBuffer: 1e7, timeout: 120000 }, (e, o, er) => {
       if (e) return reject(new Error(String(er || e.message).slice(0, 120)));
       const m = o.match(/\{[\s\S]*\}/);
       try { resolve(JSON.parse(m[0])); } catch (x) { reject(new Error("not JSON: " + o.slice(0, 80))); }
@@ -35,7 +36,7 @@ const NOW = Date.UTC(2026, 10, 5, 8, 0, 0); // 10:00 in Jerusalem (UTC+2)
 const TZ = "Asia/Jerusalem";
 const PROFILE = "C:/Claude Code Project/FirstAttemptAssistant/data/profile.md";
 const FULL = fs.readFileSync(path.join(__dirname, "router-brief-full-before.md"), "utf8"); // the briefing Bot used before 2026-11-05
-const SHORT = fs.readFileSync(path.join(__dirname, "router-brief-short.md"), "utf8");
+const SHORT = fs.readFileSync(path.join(__dirname, "..", "router-brief.md"), "utf8"); // the CURRENT briefing (the name is historical)
 
 const FACTS = [ // numbered newest first: [1] Calculus, [2] tea, [3] gym
   { id: "aaaaaaaaaaaaaaa1", text: "Omri is taking Calculus 2 this semester", at: 3000 },
@@ -65,7 +66,7 @@ const CASES = [
   ["en-essay", "Write a 500 word essay about the causes of the French revolution.", "", noFacts, dest("gemini-argon-low", "gemini-flash")],
   ["code-write", "Write a Python function that merges two sorted linked lists, with tests.", "", noFacts, dest("claude-sonnet")],
   ["code-debug", "My Node server crashes with 'EADDRINUSE :::3000' when I restart it. What do I do?", "", noFacts, dest("claude-sonnet")],
-  ["code-review", "for (var i=0;i<3;i++){ setTimeout(()=>console.log(i),0) } Why does it print 3 3 3 and how do I fix it?", "", noFacts, dest("claude-sonnet", "gemini-flash")],
+  ["code-review", "for (var i=0;i<3;i++){ setTimeout(()=>console.log(i),0) } Why does it print 3 3 3 and how do I fix it?", "", noFacts, dest("claude-sonnet")],
   ["hard-proof", "Prove that the square root of 2 is irrational, then prove there exist irrational a, b with a^b rational.", "", noFacts, dest("gemini-argon-medium", "claude-opus")],
   ["hard-algo", "Design an algorithm to find the k-th smallest element in the union of two sorted arrays in O(log(min(n,m))) time and prove its correctness.", "", noFacts, dest("gemini-argon-medium", "claude-opus")],
   ["hard-logic", "Three gods A, B, C are Truth, Lie and Random, answering in a language where da/ja mean yes/no. With three yes/no questions, how do you identify all three?", "", noFacts, dest("gemini-argon-medium", "claude-opus")],
@@ -88,7 +89,9 @@ const CASES = [
   ["forget-saved", "forget that I like tea", "", withFacts, (d) => d.action === "forget" && d.replaces === "2"],
   ["forget-unknown", "forget that I have a dog", "", withFacts, (d) => (d.action === "forget" && d.replaces === "") || d.action === "answer"],
   ["cal-tomorrow", "What meetings do I have tomorrow?", "", noFacts, cal(["2026-11-06"], [1])],
-  ["cal-week", "what's my week like?", "", noFacts, cal(["2026-11-05", "2026-11-08"], [5, 6, 7])],
+  ["cal-week", "what's my week like?", "", noFacts, cal(["2026-11-05"], [7])],
+  ["cal-this-week", "What do I have this week?", "", noFacts, cal(["2026-11-05"], [7])],
+  ["code-explain-short", "why does [1,2,3].map(parseInt) return [1,NaN,NaN]?", "", noFacts, dest("claude-sonnet")],
   ["cal-he-thursday", "מה יש לי ביום חמישי?", "", noFacts, cal(["2026-11-05", "2026-11-12"], [1])],
   ["cal-add", "add a dentist appointment on Sunday at 10", "", noFacts, any(act("answer"), act("clarify"))],
   ["gmail", "summarize my latest emails", "", noFacts, act("answer")],
@@ -111,6 +114,8 @@ const VARIANTS = {
   flashshort: { kind: "agy", brief: SHORT },
   flashfull: { kind: "agy", brief: FULL },
   flashtext: { kind: "agytext", brief: SHORT },
+  // compact reply: only the keys the action needs (fewer tokens to write)
+  flashlowcompact: { kind: "agytext", brief: SHORT, model: "gemini-3.8-flash-low", tail: COMPACT_TAIL },
   realdesk: { kind: "real" }, // frontdesk.decide as Bot runs it; GAP_MS = pause after each call, like a user reading the answer
   // Other models/efforts for the front desk (Omri allowed low effort and stronger models here, if fast and without mistakes).
   flashlowshort: { kind: "agy", brief: SHORT, model: "gemini-3.8-flash-low" },
@@ -133,7 +138,7 @@ async function run(variant, [label, message, history, memory, ok]) {
   try {
     // The REAL front desk: Flash low, short briefing, warm spare, hedging. It validates itself.
     if (v.kind === "real") { realDecision = await decide(message, { history, about, now: NOW, timezone: TZ }); extra = { hedged: realDecision.hedged }; await new Promise((r) => setTimeout(r, Number(process.env.GAP_MS || 0))); }
-    else if (v.kind === "agytext") raw = await askAgyText(prompt, v.model || FRONT_DESK_MODEL.model);
+    else if (v.kind === "agytext") raw = await askAgyText(prompt, v.model || FRONT_DESK_MODEL.model, v.tail);
     else if (v.kind === "agy") raw = await askAgyStructured(prompt, v.model || FRONT_DESK_MODEL.model, SCHEMA);
     else { const r = await claudeFrontDesk(prompt, v.model || "haiku", v.sysFile ? `--system-prompt-file "${v.sysFile}"` : ""); raw = r.raw; error = r.error; extra = { usage: r.usage, cost: r.cost, model: r.model }; }
   } catch (e) { error = String(e.message).slice(0, 150); }

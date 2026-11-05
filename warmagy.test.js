@@ -99,6 +99,14 @@ test("a spare that is too old is thrown away and a fresh process is used", async
   });
 });
 
+test("an unused spare is killed when it gets too old, so an idle Bot leaves no agy running", async () => {
+  const p = pool({ maxSpareAgeMs: 150 });
+  p.warmUp("m", SCHEMA);
+  assert.strictEqual(p._spares.size, 1);
+  await wait(400);
+  assert.strictEqual(p._spares.size, 0);
+});
+
 test("a spare that died while waiting does not break the call", async () => {
   const p = pool();
   await withEnv({ FAKE_MODE: "exitearly" }, async () => { p.warmUp("m", SCHEMA); await wait(400); });
