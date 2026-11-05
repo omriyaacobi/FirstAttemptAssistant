@@ -158,10 +158,10 @@ function validateDecision(raw, { now = Date.now() } = {}) {
 // can fall back to Claude Sonnet.
 // A reply that fails validateDecision counts as a failed call: the next call is started at once.
 // The result says "hedged: true" when the second call had to be started.
-async function decide(task, { history = "", allowSplit = true, askStructured = warm.askStructured, brief, low = [], about = "", hedgeAfterMs = HEDGE_AFTER_MS, deadlineMs = DEADLINE_MS, calls = DESK_CALLS } = {}) {
-  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about }) + REPLY_FORMAT;
+async function decide(task, { history = "", allowSplit = true, askStructured = warm.askStructured, brief, low = [], about = "", now, timezone, hedgeAfterMs = HEDGE_AFTER_MS, deadlineMs = DEADLINE_MS, calls = DESK_CALLS } = {}) {
+  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about, now, timezone }) + REPLY_FORMAT;
   const starts = Array.from({ length: calls }, () => (signal) => askStructured(prompt, FRONT_DESK_MODEL.model, null, { signal, timeoutMs: deadlineMs }));
-  const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw), hedgeAfterMs, deadlineMs });
+  const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw, { now }), hedgeAfterMs, deadlineMs });
   return { ...result, hedged: started > 1 };
 }
 

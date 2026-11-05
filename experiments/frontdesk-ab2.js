@@ -8,7 +8,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { buildPrompt, validateDecision, FRONT_DESK_MODEL, SCHEMA } = require("../frontdesk");
+const { buildPrompt, validateDecision, decide, FRONT_DESK_MODEL, SCHEMA } = require("../frontdesk");
 const { askAgyStructured } = require("../providers");
 const { aboutBlock } = require("../profile");
 const { historyBlock } = require("../core");
@@ -111,6 +111,7 @@ const VARIANTS = {
   flashshort: { kind: "agy", brief: SHORT },
   flashfull: { kind: "agy", brief: FULL },
   flashtext: { kind: "agytext", brief: SHORT },
+  realdesk: { kind: "real" }, // frontdesk.decide as Bot runs it; GAP_MS = pause after each call, like a user reading the answer
   // Other models/efforts for the front desk (Omri allowed low effort and stronger models here, if fast and without mistakes).
   flashlowshort: { kind: "agy", brief: SHORT, model: "gemini-3.8-flash-low" },
   flashlowtext: { kind: "agytext", brief: SHORT, model: "gemini-3.8-flash-low" },
@@ -128,14 +129,16 @@ async function run(variant, [label, message, history, memory, ok]) {
   const about = aboutBlock({ profileFile: PROFILE, memory, numbered: true });
   const prompt = buildPrompt(message, { history, brief: v.brief, about, now: NOW, timezone: TZ });
   const t0 = Date.now();
-  let raw = null, error = null, extra = {};
+  let raw = null, error = null, extra = {}, realDecision = null;
   try {
-    if (v.kind === "agytext") raw = await askAgyText(prompt, v.model || FRONT_DESK_MODEL.model);
+    // The REAL front desk: Flash low, short briefing, warm spare, hedging. It validates itself.
+    if (v.kind === "real") { realDecision = await decide(message, { history, about, now: NOW, timezone: TZ }); extra = { hedged: realDecision.hedged }; await new Promise((r) => setTimeout(r, Number(process.env.GAP_MS || 0))); }
+    else if (v.kind === "agytext") raw = await askAgyText(prompt, v.model || FRONT_DESK_MODEL.model);
     else if (v.kind === "agy") raw = await askAgyStructured(prompt, v.model || FRONT_DESK_MODEL.model, SCHEMA);
     else { const r = await claudeFrontDesk(prompt, v.model || "haiku", v.sysFile ? `--system-prompt-file "${v.sysFile}"` : ""); raw = r.raw; error = r.error; extra = { usage: r.usage, cost: r.cost, model: r.model }; }
   } catch (e) { error = String(e.message).slice(0, 150); }
-  const seconds = Number(((Date.now() - t0) / 1000).toFixed(1));
-  const d = raw ? validateDecision(raw, { now: NOW }) : null;
+  const seconds = Number(((Date.now() - t0 - (v.kind === "real" ? Number(process.env.GAP_MS || 0) : 0)) / 1000).toFixed(1));
+  const d = realDecision || (raw ? validateDecision(raw, { now: NOW }) : null);
   let local = null;
   if (d && d.action === "remind") local = localIso(d.reminder.at, d.reminder.timezone || TZ);
   const good = d ? !!ok(d, { local }) : false;
@@ -165,4 +168,5 @@ async function run(variant, [label, message, history, memory, ok]) {
     const s = rs.map((r) => r.seconds).sort((a, b) => a - b);
     console.log(JSON.stringify({ variant: n, n: rs.length, median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1], invalid: rs.filter((r) => !r.valid).length, wrong: rs.filter((r) => r.valid && !r.good).length }));
   }
+  process.exit(0); // a waiting pre-warmed agy is killed by the exit hook
 })();
