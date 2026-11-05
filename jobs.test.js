@@ -210,3 +210,26 @@ test("server: job routes list running jobs, reject bad ids, and a same-chat seco
   g.release();
   await s.close();
 });
+
+test("a message in a course chat goes to the course handler (not the front desk), the chat remembers its course, and photos are refused", async () => {
+  const store = tempStore();
+  const calls = [];
+  const jobs = createJobs({
+    handle: async () => { throw new Error("the regular handler must not answer a course chat"); },
+    handleCourse: async (task, o) => { calls.push({ task, courseId: o.courseId, deeper: o.deeper, history: o.history }); o.onPartial("so far"); return { mode: "course", courseId: o.courseId, answer: "from the course", sources: [] }; },
+    store,
+  });
+  const course = "0123456789abcdef";
+  const first = jobs.start({ task: "hello", courseId: course, deeper: true });
+  await tick(30);
+  const chat = store.get(first.conversationId);
+  assert.strictEqual(chat.courseId, course);
+  assert.strictEqual(chat.messages[1].text, "from the course");
+  assert.strictEqual(chat.messages[1].result.mode, "course");
+  jobs.start({ task: "next", conversationId: chat.id }); // no courseId sent: the chat itself knows
+  await tick(30);
+  assert.deepStrictEqual(calls.map((c) => [c.task, c.courseId, c.deeper]), [["hello", course, true], ["next", course, false]]);
+  assert.deepStrictEqual(calls[1].history.map((m) => m.text), ["hello", "from the course"]);
+  assert.throws(() => jobs.start({ task: "x", courseId: course, image: { path: "p", ext: ".png" } }), (e) => e.status === 400);
+  assert.throws(() => createJobs({ handle: async () => answer, store }).start({ task: "x", courseId: course }), (e) => e.status === 404); // notebooks are off
+});

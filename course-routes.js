@@ -5,25 +5,44 @@
 //
 //   GET    /api/courses                          list the courses
 //   POST   /api/courses            {name}        add a course
-//   GET    /api/courses/<id>                     the course, its files and its chat
+//   GET    /api/courses/<id>                     the course, its files and the list of its chats
 //   POST   /api/courses/<id>/rename {name}
 //   DELETE /api/courses/<id>
 //   POST   /api/courses/<id>/files?name=...      upload one file (raw bytes, up to 50 MB)
 //   DELETE /api/courses/<id>/files/<fid>
 //   POST   /api/courses/<id>/files/<fid>/retry   read a failed file again
 //   GET    /api/courses/<id>/files/<fid>/pages?from=1   the saved text of up to 20 pages
-//   POST   /api/courses/<id>/ask   {text, deeper}   ask a question using only this course
-//   POST   /api/courses/<id>/chat/clear
+//
+// The chats of a course are ordinary conversations (store.js) that carry a courseId. They are started and answered
+// through POST /api/ask {courseId} like any chat: jobs.js calls answer() below for them, so they stream, survive a
+// reload and send a notification exactly like the regular chat.
 
 const { validId } = require("./courses");
 const { sniffFile, readRawBody } = require("./upload");
 
-const MAX_QUESTION_CHARS = 4000;
 const PAGES_PER_REQUEST = 20;
-const MAX_ASKS = 2; // questions running at once, across all courses
 
-function createCourseRoutes({ courses, askCourse, ingestFile, askFile, about = () => "", askChain, log = () => {} }) {
+// Before course chats, each course had one chat.json. It becomes the first real chat of that course, once;
+// the old file is set aside (renamed, never deleted).
+function migrateOldChats(courses, store) {
+  for (const { id } of courses.list()) {
+    const old = courses.legacyChat(id).filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string");
+    if (old.length) {
+      const chat = store.create((old.find((m) => m.role === "user") || old[0]).text, { courseId: id });
+      store.append(chat.id, old.map((m) => {
+        if (m.role === "user") return { role: "user", text: m.text, at: m.at };
+        if (m.error) return { role: "assistant", text: m.text, error: true, at: m.at };
+        const result = { mode: "course", courseId: id, answer: m.text, sources: m.sources || [], used: { model: m.model || "" }, seconds: m.seconds || 0, searched: m.searched || 0 };
+        return { role: "assistant", text: m.text, result, at: m.at };
+      }));
+    }
+    courses.retireLegacyChat(id);
+  }
+}
+
+function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, about = () => "", askChain, log = () => {} }) {
   courses.recover();
+  migrateOldChats(courses, store);
 
   // Files are read one at a time (each reading is a big model call, and quota is limited).
   const queue = [];
@@ -39,7 +58,15 @@ function createCourseRoutes({ courses, askCourse, ingestFile, askFile, about = (
   }
   const enqueue = (courseId, fileId) => { queue.push({ courseId, fileId }); pump(); };
 
-  const asking = new Map(); // course id -> { since, text }
+  const chatsOf = (id) => store.list().filter((c) => c.courseId === id);
+
+  // Answers one message of a course chat (called by jobs.js). The result is saved in the chat as it is.
+  async function answer(courseId, question, { history = [], deeper = false, onPartial = () => {}, log: say = log } = {}) {
+    const course = courses.get(courseId);
+    if (!course) throw new Error("this course was deleted");
+    const r = await askCourse({ course, pages: courses.allPages(courseId), question, history, deeper, about: about(), askChain: (chain, prompt, o) => askChain(chain, prompt, { ...o, onText: onPartial }), log: say });
+    return { mode: "course", courseId, answer: r.answer, sources: r.sources, used: { model: r.model }, seconds: r.seconds, searched: r.searched };
+  }
 
   async function handle(req, res, url, { sendJson, readJsonBody }) {
     const m = url.pathname.match(/^\/api\/courses(?:\/([^/]+))?(?:\/(.*))?$/);
@@ -62,11 +89,10 @@ function createCourseRoutes({ courses, askCourse, ingestFile, askFile, about = (
 
     if (rest === "") {
       if (get) {
-        const a = asking.get(id);
-        return sendJson(res, 200, { course, chat: courses.getChat(id), asking: a ? { since: a.since } : null }), true;
+        return sendJson(res, 200, { course, chats: chatsOf(id) }), true;
       }
       if (req.method === "DELETE") {
-        if (asking.has(id)) return sendJson(res, 409, { error: "Bot is answering a question in this course; wait for it to finish" }), true;
+        chatsOf(id).forEach((c) => store.remove(c.id));
         courses.remove(id);
         return sendJson(res, 200, { ok: true }), true;
       }
@@ -76,12 +102,6 @@ function createCourseRoutes({ courses, askCourse, ingestFile, askFile, about = (
       const input = await readJsonBody(req, res);
       if (!input) return true;
       try { return sendJson(res, 200, { course: courses.rename(id, input.name) }), true; } catch (error) { return sendJson(res, error.status || 400, { error: error.message }), true; }
-    }
-
-    if (rest === "chat/clear" && req.method === "POST") {
-      if (!(await readJsonBody(req, res))) return true;
-      courses.clearChat(id);
-      return sendJson(res, 200, { ok: true }), true;
     }
 
     if (rest === "files" && req.method === "POST") {
@@ -123,36 +143,10 @@ function createCourseRoutes({ courses, askCourse, ingestFile, askFile, about = (
       }
     }
 
-    if (rest === "ask" && req.method === "POST") {
-      const input = await readJsonBody(req, res);
-      if (!input) return true;
-      const text = typeof input.text === "string" ? input.text.trim() : "";
-      if (!text) return sendJson(res, 400, { error: "the question is empty" }), true;
-      if (text.length > MAX_QUESTION_CHARS) return sendJson(res, 413, { error: `the question is longer than ${MAX_QUESTION_CHARS} characters` }), true;
-      if (asking.has(id)) return sendJson(res, 409, { error: "Bot is still answering your last question in this course" }), true;
-      if (asking.size >= MAX_ASKS) return sendJson(res, 429, { error: "busy, wait for the current tasks to finish" }), true;
-      const history = courses.getChat(id);
-      courses.appendChat(id, [{ role: "user", text, at: Date.now() }]);
-      asking.set(id, { since: Date.now() });
-      // Runs in the background: the page polls GET /api/courses/<id>, so closing or reloading the page loses nothing.
-      (async () => {
-        let message;
-        try {
-          const result = await askCourse({ course, pages: courses.allPages(id), question: text, history, deeper: input.deeper === true, about: about(), askChain, log });
-          message = { role: "assistant", text: result.answer, sources: result.sources, model: result.model, seconds: result.seconds, searched: result.searched, at: Date.now() };
-        } catch (error) {
-          message = { role: "assistant", text: "Something went wrong: " + String(error.message).slice(0, 300), error: true, at: Date.now() };
-        }
-        try { courses.appendChat(id, [message]); } catch (error) { /* the course was deleted meanwhile */ }
-        asking.delete(id);
-      })();
-      return sendJson(res, 202, { ok: true }), true;
-    }
-
     return sendJson(res, 404, { error: "not found" }), true;
   }
 
-  return { handle, idle: () => queue.length === 0 && !reading && asking.size === 0 };
+  return { handle, answer, exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
-module.exports = { createCourseRoutes, MAX_QUESTION_CHARS };
+module.exports = { createCourseRoutes };
