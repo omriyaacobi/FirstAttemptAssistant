@@ -402,7 +402,7 @@ test("SECURITY: the preview is sandboxed, shows sample data, and only exists for
   assert.doesNotMatch(res.headers["content-security-policy"], /allow-same-origin/);
   assert.match(res.headers["content-security-policy"], /connect-src 'none'/);
   assert.match(res.body, /Preview page/);
-  assert.match(res.body, /Sample chat (preview)/); // the fake API sits in front of the page's own scripts
+  assert.ok(res.body.includes("Sample chat (preview)")); // the fake API sits in front of the page's own scripts
   assert.strictEqual((await s.request("GET", "/api/selfedit/ffffffffffffffff/preview")).status, 404);
   assert.strictEqual((await s.request("GET", "/api/selfedit/0123456789abcdef/preview", { headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
   await s.close();
