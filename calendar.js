@@ -164,13 +164,13 @@ function parseDay(day) {
   return d;
 }
 
-// Events of one local day on your main calendar, read-only.
-async function listEvents(day, deps) {
+// Events of `days` local days (default 1) from `day` on your main calendar, read-only.
+async function listEvents(day, deps, days = 1) {
   const start = parseDay(day);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  const query = new URLSearchParams({ timeMin: start.toISOString(), timeMax: end.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "50" });
+  end.setDate(end.getDate() + days);
+  const query = new URLSearchParams({ timeMin: start.toISOString(), timeMax: end.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "100" });
   const data = await api("GET", `/calendar/v3/calendars/primary/events?${query}`, null, deps);
   return (data.items || []).map((e) => ({
     summary: e.summary || "(no title)",
