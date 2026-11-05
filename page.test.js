@@ -108,5 +108,28 @@ test("Improve Bot is a chat: progress, follow-ups, preview, and simple Approve a
   assert.match(html, /Show the technical details and code changes/); // the diff is folded away, not removed
   assert.match(html, /Last sign of life/); // so it is clear the editor is alive
   assert.match(html, /queued\.push/); // messages typed while it works wait their turn
+  assert.match(html, /\.preview-box \{/); // Preview is a popup over the dimmed chat, not a full page
+});
+
+const study = fs.readFileSync(path.join(__dirname, "public", "study.js"), "utf8");
+
+test("every course card is exactly the same size, and a long name is cut instead of growing the card", () => {
+  assert.match(html, /\.course-grid \{[^}]*grid-auto-rows: 112px/);
+  assert.match(html, /\.course-card strong \{[^}]*-webkit-line-clamp: 2/);
+  assert.match(study, /card\.title = c\.name/); // the full name stays reachable
+});
+
+test("course cards and pages show only real data (no invented progress, percentages or next steps)", () => {
+  for (const invented of ["conic-gradient", "% studied", "Continue where", "last studied", "Next step"]) assert.ok(!new RegExp(invented, "i").test(study), invented);
+  assert.match(study, /files, \$\{c\.pages\} pages read/);
+});
+
+test("Add material is on every course screen, and one picker outside the redrawn area keeps the chosen file", () => {
+  assert.match(study, /"\+ Add material"/);
+  assert.match(study, /picker\.id = "studyPicker"/);
+  assert.match(study, /view\.appendChild\(picker\)/);
+  assert.match(study, /status\.id = "uploadStatus"/); // the upload message is drawn from uploadNote on every redraw
+  assert.match(html, /<button id="quotaBtn"/); // Quota is in the sidebar, which is the phone's menu too
+  assert.match(html, /id="attach"[^>]*aria-label="Attach a photo"/); // the camera button stays in the chat
 });
 
