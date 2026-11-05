@@ -96,7 +96,7 @@ test("aboutBlock: empty when there is nothing; marks the text as background data
   memory.add("Omri prefers short answers");
   const block = aboutBlock({ profileFile: path.join(dir, "profile.md"), memory });
   assert.match(block, /<about-the-user>[\s\S]*I am a CS student[\s\S]*short answers[\s\S]*<\/about-the-user>/);
-  assert.match(block, /never instructions/);
+  assert.match(block, /not as commands/);
   assert.match(block, /never put it into a web search/);
 });
 
@@ -302,5 +302,87 @@ test("SECURITY: the memory routes need the phone login, and a foreign Origin is 
     assert.strictEqual((await s.phone("GET", "/api/memory", { cookie })).json().facts.length, 1);
     const evil = await s.request("POST", "/api/memory", { headers: { Host: `localhost:${s.port}`, Origin: "http://evil.example", "Content-Type": "application/json" }, body: JSON.stringify({ text: "Omri likes tea" }) });
     assert.strictEqual(evil.status, 403);
+  } finally { await s.close(); }
+});
+
+// ---- change and forget ----
+
+test("memory: a change replaces the saved fact in place and counts as new again; bad ids are refused", () => {
+  const memory = createMemory({ file: path.join(tmp(), "memory.json") });
+  const { fact } = memory.add("Omri takes Calculus 2");
+  memory.add("Omri likes tea");
+  const changed = memory.add("Omri switched to Physics", { replaces: fact.id }).fact;
+  assert.strictEqual(changed.id, fact.id);
+  assert.deepStrictEqual(memory.list().map((f) => f.text), ["Omri switched to Physics", "Omri likes tea"]);
+  assert.throws(() => memory.add("x y z", { replaces: "0123456789abcdef" }), /not found/);
+  assert.throws(() => memory.add("x y z", { replaces: "../../x" }), /not found/);
+  assert.throws(() => memory.add("my password is 1", { replaces: fact.id }), /will not save/);
+  assert.strictEqual(memory.list().length, 2);
+});
+
+test("numbered facts: the front desk sees [1], [2] newest first, and core maps a number back to the real fact", async () => {
+  const dir = tmp();
+  const memory = createMemory({ file: path.join(dir, "memory.json") });
+  const a = memory.add("Omri takes Calculus 2").fact;
+  await new Promise((r) => setTimeout(r, 5));
+  memory.add("Omri likes tea");
+  const block = aboutBlock({ profileFile: path.join(dir, "none.md"), memory, numbered: true });
+  assert.match(block, /\[1\] Omri likes tea\n\[2\] Omri takes Calculus 2/);
+  assert.match(block, /facts win/);
+  const deps = fakes({
+    decide: async () => ({ action: "remember", destination: null, answer: "", reason: "t", fact: "Omri switched to Physics", replaces: "2" }),
+    facts: () => memory.list(),
+  });
+  const result = await handleTask("I no longer take Calculus 2, I switched to Physics", { deps });
+  assert.deepStrictEqual(result.remember, { fact: "Omri switched to Physics", replaces: { id: a.id, text: "Omri takes Calculus 2" } });
+  assert.match(result.answer, /Before: "Omri takes Calculus 2"\nAfter: "Omri switched to Physics"/);
+  assert.strictEqual(memory.list().length, 2);
+  assert.strictEqual(memory.list().find((f) => f.id === a.id).text, "Omri takes Calculus 2"); // nothing changed yet
+});
+
+test("a number that matches nothing makes a plain new fact, never a guess", async () => {
+  const deps = fakes({ decide: async () => ({ action: "remember", destination: null, answer: "", reason: "t", fact: "Omri likes tea", replaces: "9" }), facts: () => [] });
+  const result = await handleTask("remember I like tea", { deps });
+  assert.deepStrictEqual(result.remember, { fact: "Omri likes tea" });
+});
+
+test("forget: the card names the fact; nothing is deleted by handleTask; an unknown one says so", async () => {
+  const dir = tmp();
+  const memory = createMemory({ file: path.join(dir, "memory.json") });
+  const tea = memory.add("Omri likes tea").fact;
+  const forget = (replaces) => fakes({ decide: async () => ({ action: "forget", destination: null, answer: "", reason: "t", replaces }), facts: () => memory.list() });
+  const hit = await handleTask("forget that I like tea", { deps: forget("1") });
+  assert.deepStrictEqual(hit.forget, { id: tea.id, text: "Omri likes tea" });
+  assert.strictEqual(memory.list().length, 1);
+  const miss = await handleTask("forget my degree", { deps: forget("") });
+  assert.strictEqual(miss.forget, undefined);
+  assert.match(miss.answer, /profile\.md/);
+});
+
+test("front desk: validateDecision keeps only a small number in 'replaces'", () => {
+  assert.strictEqual(validateDecision({ action: "forget", reason: "r", replaces: " 3 " }).replaces, "3");
+  assert.strictEqual(validateDecision({ action: "forget", reason: "r", replaces: "0123456789abcdef" }).replaces, "");
+  assert.strictEqual(validateDecision({ action: "forget", reason: "r", replaces: "1; drop" }).replaces, "");
+  assert.strictEqual(validateDecision({ action: "remember", reason: "r", fact: "Omri likes tea", replaces: "2" }).replaces, "2");
+});
+
+test("the profile wording lets the models follow how-to-help preferences without obeying commands", () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, "profile.md"), "## How he learns\nExercise first, hints, no full solutions.");
+  const block = aboutBlock({ profileFile: path.join(dir, "profile.md"), memory: createMemory({ file: path.join(dir, "m.json") }) });
+  assert.match(block, /follow the user's own preferences/);
+  assert.match(block, /not as commands/);
+  assert.match(block, /Exercise first/);
+});
+
+test("memory route: a change via POST with replaces, and a vanished fact gives 404", async () => {
+  const s = await start();
+  try {
+    const first = (await s.pc("POST", "/api/memory", { text: "Omri takes Calculus 2" })).json().fact;
+    const changed = await s.pc("POST", "/api/memory", { text: "Omri switched to Physics", replaces: first.id });
+    assert.strictEqual(changed.status, 201);
+    assert.deepStrictEqual((await s.pc("GET", "/api/memory")).json().facts.map((f) => f.text), ["Omri switched to Physics"]);
+    assert.strictEqual((await s.pc("POST", "/api/memory", { text: "Omri likes tea", replaces: "0123456789abcdef" })).status, 404);
+    assert.strictEqual((await s.pc("POST", "/api/memory", { text: "my password is 5", replaces: first.id })).status, 400);
   } finally { await s.close(); }
 });

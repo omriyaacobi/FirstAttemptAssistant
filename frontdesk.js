@@ -24,7 +24,7 @@ const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // text and the time; validateDecision checks the time is a real future moment (see reminders.js).
 // "remember" means: the user stated a lasting fact or asked Bot to remember something. The model only
 // PROPOSES the fact; validateDecision checks it (profile.js) and nothing is saved until the user presses Save.
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember"];
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget"];
 const MAX_ANSWER_CHARS = 8000;
 
 // The shape we force the model's reply into. "none" is for the actions that need no destination.
@@ -41,8 +41,10 @@ const SCHEMA = {
     timezone: { type: "string" },
     // Only for the action "remember"; empty otherwise.
     fact: { type: "string" },
+    // For "remember" (when it CHANGES a saved fact) and "forget": the number of that saved fact, else "".
+    replaces: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces"],
 };
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
@@ -99,10 +101,13 @@ function validateDecision(raw, { now = Date.now() } = {}) {
     }
   }
 
+  // The number of a saved fact (see profile.js recentFacts). Only digits get through; core.js maps it to the real fact.
+  const replaces = /^\d{1,3}$/.test(String(raw.replaces || "").trim()) ? String(raw.replaces).trim() : "";
+  if (raw.action === "forget") return { action: "forget", destination: null, answer: "", reason, replaces };
   if (raw.action === "remember") {
     // Code decides whether the proposed fact may be offered. A refused one (a secret, too long) becomes a plain reply.
     try {
-      return { action: "remember", destination: null, answer: "", reason, fact: checkFact(raw.fact) };
+      return { action: "remember", destination: null, answer: "", reason, fact: checkFact(raw.fact), replaces };
     } catch (error) {
       return { action: "remember", destination: null, answer: error.message, reason, fact: "" };
     }

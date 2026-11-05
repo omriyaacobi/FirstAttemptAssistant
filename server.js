@@ -23,7 +23,7 @@
 //   POST   /api/reminders/:id/ack  -> the page says it showed one (so it is not shown twice)
 //   DELETE /api/reminders/:id      -> cancel (or dismiss) a reminder
 //   GET    /api/memory             -> the facts Bot remembers about you (and whether data/profile.md is loaded)
-//   POST   /api/memory             -> save ONE fact you approved with the Save button (checked again in code, see profile.js)
+//   POST   /api/memory             -> save ONE fact you approved with the Save button, or change one ({ text, replaces: id }); checked again in code, see profile.js
 //   DELETE /api/memory/:id         -> forget one fact
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
 //   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
@@ -305,10 +305,10 @@ function createServer({
       const input = await readJsonBody(req, res);
       if (!input) return;
       try {
-        const { fact, already } = memory.add(input.text);
+        const { fact, already } = memory.add(input.text, input.replaces === undefined ? {} : { replaces: input.replaces });
         return sendJson(res, already ? 200 : 201, { fact, already });
       } catch (error) {
-        return sendJson(res, 400, { error: error.message });
+        return sendJson(res, /not found/.test(error.message) ? 404 : 400, { error: error.message });
       }
     }
     const memoryRoute = url.pathname.match(/^\/api\/memory\/([^/]+)$/);

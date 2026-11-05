@@ -338,7 +338,8 @@
         card.appendChild(actions);
       }
       // Bot only PROPOSED a fact. Nothing is stored until you press Save.
-      if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact));
+      if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact, result.remember.replaces && result.remember.replaces.id));
+      if (result.forget && result.forget.id) card.appendChild(rememberButtons(null, result.forget.id));
       wrap.appendChild(card);
     } else if (result.mode === "split") {
       result.steps.forEach((s) => {
@@ -351,19 +352,22 @@
     return wrap;
   }
 
-  function rememberButtons(fact) {
+  // fact + no id = add; fact + id = change that saved fact; no fact + id = forget it. Nothing happens until a tap.
+  function rememberButtons(fact, id) {
     const actions = el("div", "actions");
-    const save = el("button", "", "Save");
+    const save = el("button", "", fact ? "Save" : "Forget it");
     const skip = el("button", "ghost", "Don't save");
     const note = el("span", "sub");
     skip.addEventListener("click", () => actions.replaceChildren(el("span", "sub", "Not saved.")));
     save.addEventListener("click", async () => {
       save.disabled = skip.disabled = true;
       try {
-        const res = await fetch("/api/memory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: fact }) });
+        const res = fact
+          ? await fetch("/api/memory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(id ? { text: fact, replaces: id } : { text: fact }) })
+          : await fetch("/api/memory/" + id, { method: "DELETE" });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "could not save");
-        actions.replaceChildren(el("span", "sub", data.already ? "Bot already knew this." : "Saved."));
+        actions.replaceChildren(el("span", "sub", !fact ? "Forgotten." : data.already ? "Bot already knew this." : "Saved."));
         loadMemory();
       } catch (error) {
         save.disabled = skip.disabled = false;
