@@ -16,7 +16,7 @@ const fakes = (overrides = {}) => ({
   chainForDestination: () => chain,
   chainForType: () => chain,
   lowPools: async () => [], // never the real agy /usage in tests
-  refreshQuota: () => {}, prewarmAnswer: () => {},
+  refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
   about: () => "", // never the real data/profile.md in tests (profile.test.js covers the profile)
   askChain: async () => ({ answer: "model answer", used }),
   plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }], plannedBy: "fake-planner" }),
