@@ -121,7 +121,7 @@ test("every course card is exactly the same size, and a long name is cut instead
 
 test("course cards and pages show only real data (no invented progress, percentages or next steps)", () => {
   for (const invented of ["conic-gradient", "% studied", "Continue where", "last studied", "Next step"]) assert.ok(!new RegExp(invented, "i").test(study), invented);
-  assert.match(study, /files, \$\{c\.pages\} pages read/);
+  assert.ok(study.includes("${c.pages} pages read")); // name, files, pages read, files being read: what /api/courses gives
 });
 
 test("Add material is on every course screen, and one picker outside the redrawn area keeps the chosen file", () => {
