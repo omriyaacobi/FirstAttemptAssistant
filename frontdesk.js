@@ -11,13 +11,22 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { askAgyStructured } = require("./providers");
+const { createWarmAgy } = require("./warmagy");
+const { race } = require("./deskrace");
 const { MODELS, DESTINATIONS } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
 const { checkRequest } = require("./calendar-chat");
 
-const FRONT_DESK_MODEL = MODELS.flashMedium; // medium was ~5 s faster than high with identical decisions on 19 prompts (experiments/2026-11-04-speed-part2.md)
+// Flash LOW: with the short briefing it made the same decisions as medium on 49 messages (0 wrong, 0 invalid) in about half
+// the time, and in about 3.5 s when its process is pre-warmed (experiments/2026-11-05-frontdesk-speed.md).
+const FRONT_DESK_MODEL = MODELS.flashLow;
+
+// The slow tail: if the first call has not answered after HEDGE_AFTER_MS, a second identical call is started and the first
+// valid reply wins (the loser is killed). After DEADLINE_MS the front desk gives up and core.js uses its default.
+const HEDGE_AFTER_MS = 7000;
+const DEADLINE_MS = 20000;
+const DESK_CALLS = 2;
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
@@ -53,6 +62,13 @@ const SCHEMA = {
   },
   required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays"],
 };
+
+// The reply shape is described in the prompt and CHECKED by validateDecision, instead of agy's --json-schema mode: in about
+// 300 test calls the schema mode gave every invalid reply and the one 90 s hang, the plain mode none.
+const REPLY_FORMAT = "\n\nReply with ONLY one JSON object, nothing before or after it, no markdown. It must have exactly these keys, all with string values (use \"\" for the ones the action does not need): " + SCHEMA.required.join(", ") + ".";
+
+// One pre-warmed agy waits for the next message (warmagy.js).
+const warm = createWarmAgy();
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
 const readBrief = () => fs.readFileSync(BRIEF_FILE, "utf8");
@@ -140,12 +156,13 @@ function validateDecision(raw, { now = Date.now() } = {}) {
 
 // Asks the front desk model. Throws if it fails or its reply is unusable, so the caller
 // can fall back to Claude Sonnet.
-async function decide(task, { history = "", allowSplit = true, askStructured = askAgyStructured, brief, low = [], about = "" } = {}) {
-  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about });
-  const raw = await askStructured(prompt, FRONT_DESK_MODEL.model, SCHEMA);
-  const decision = validateDecision(raw);
-  if (!decision) throw new Error("the front desk returned an unusable decision");
-  return decision;
+// A reply that fails validateDecision counts as a failed call: the next call is started at once.
+// The result says "hedged: true" when the second call had to be started.
+async function decide(task, { history = "", allowSplit = true, askStructured = warm.askStructured, brief, low = [], about = "", hedgeAfterMs = HEDGE_AFTER_MS, deadlineMs = DEADLINE_MS, calls = DESK_CALLS } = {}) {
+  const prompt = buildPrompt(task, { history, allowSplit, brief, low, about }) + REPLY_FORMAT;
+  const starts = Array.from({ length: calls }, () => (signal) => askStructured(prompt, FRONT_DESK_MODEL.model, null, { signal, timeoutMs: deadlineMs }));
+  const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw), hedgeAfterMs, deadlineMs });
+  return { ...result, hedged: started > 1 };
 }
 
-module.exports = { decide, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, BRIEF_FILE };
+module.exports = { decide, warm, REPLY_FORMAT, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, BRIEF_FILE };
