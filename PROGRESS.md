@@ -111,6 +111,9 @@
 
 ## Open right now (2026-11-05)
 
+- Live 2026-11-06: answer streaming (agy models), spare front desk always ready (about 2 s after a pause), Improve Bot as a chat with Preview popup, equal course cards with real data only, Quota popup. preview.js is protected.
+- Still to try on the real phone: upload material, camera. Claude answers do not stream yet. Flash low stays off the answer step until tested on harder questions.
+
 - Done 2026-11-05: Gemini front desk merged, Haiku backup merged (real check: experiments/haiku-backup-check.js, run by hand), the 4 courses created in Bot, upload errors stay on screen.
 - Upload: the exact failure Omri saw is unknown. Uploads work on the PC; the phone was not tried. PowerPoint and Word are refused (save as PDF). Reading them directly could be added.
 - Running: UI options chat (mockups first, Omri picks), answer-speed chat (streaming, Flash low accuracy test).
