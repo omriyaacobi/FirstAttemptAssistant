@@ -5,11 +5,9 @@
   const view = $("studyView");
   const body = $("studyBody");
   let courses = [];
-  let current = null; // { course, chat, asking } of the open course, or null for the course list
-  let tab = "chat";
+  let current = null; // { course, chats } of the open course, or null for the course list
+  let tab = "chats";
   let timer = null;
-  let deeper = false;
-  let draft = ""; // what is typed in the question box, kept across redraws
   let uploadNote = null; // { text, bad }: kept across redraws too, so a refused file is never wiped off the screen
   const openPages = new Map();
   // The file picker lives outside the redrawn area (a redraw while the phone's file dialog is open would
@@ -33,22 +31,29 @@
   function toast(text) { const s = $("studyStatus"); s.textContent = text; s.className = "status bad"; }
   function fail(error) { toast(error.message); }
 
-  // ---- polling: only while something is happening, and only while this screen is visible ----
+  // ---- polling: only while a file is being read or a chat of this course is thinking, and only while this screen is visible ----
+  const thinking = () => (current ? current.chats.filter((c) => jobState.active.has(c.id)).map((c) => c.id) : []);
   function busyNow() {
-    return current && (current.asking || current.course.files.some((f) => f.status === "queued" || f.status === "reading"));
+    return current && (thinking().length > 0 || current.course.files.some((f) => f.status === "queued" || f.status === "reading"));
   }
   function schedule() {
     clearTimeout(timer);
-    if (view.hidden || !busyNow()) return;
+    // Keeps going while busy, and also while the screen is waiting for you to stop typing so the news can be drawn.
+    if (view.hidden || !current || !(busyNow() || snapshot() !== drawn)) return;
     timer = setTimeout(() => refresh().catch(() => schedule()), 3000);
   }
+  // What the screen was last drawn from. A refresh redraws ONLY when this changed, and never while you are typing in
+  // a box on this screen: a redraw replaces every element, which would throw away the cursor and what you typed.
+  let drawn = "";
+  const snapshot = () => JSON.stringify([current, thinking()]);
+  const typingHere = () => { const a = document.activeElement; return !!a && body.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
   async function refresh() {
     if (!current) return;
     const id = current.course.id;
     const data = await api("/api/courses/" + id);
     if (!current || current.course.id !== id) return;
     current = data;
-    draw();
+    if (snapshot() !== drawn && !typingHere()) draw();
     schedule();
   }
 
@@ -59,18 +64,21 @@
     draw();
   }
 
-  async function openCourse(id) {
+  // focus (optional): { fileId, page }, opens that page of a file in the Materials tab (used by the source chips in a chat).
+  async function openCourse(id, focus) {
     current = await api("/api/courses/" + id);
-    tab = "chat";
+    courseNames.set(id, current.course.name);
+    tab = "chats";
     uploadNote = null;
     openPages.clear();
     draw();
     schedule();
+    if (focus) openFilePages(focus.fileId, focus.page);
   }
+  const goCourse = (id) => { navGo({ view: "study", id: currentId, course: id }); return openCourse(id).catch(fail); };
 
   function draw() {
-    const keep = $("studyQ");
-    if (keep) draft = keep.value;
+    drawn = snapshot();
     body.replaceChildren();
     $("studyTitle").textContent = current ? current.course.name : "Courses";
     $("studyStatus").textContent = "";
@@ -79,7 +87,7 @@
   }
 
   function drawList() {
-    body.appendChild(el("p", "sub", "One tab for each course. Upload its slides, exams and notes once, then ask Bot about it: Bot searches only that course and reads only the few pages that matter."));
+    body.appendChild(el("p", "sub", "One tab for each course. Upload its slides, exams and notes once, then start chats in it: every chat can use the course materials, and Bot searches only that course and reads only the few pages that matter."));
     const grid = el("div", "course-grid");
     courses.forEach((c) => {
       const card = el("button", "card course-card");
@@ -88,7 +96,7 @@
       name.dir = "auto";
       card.title = c.name; // the card cuts a long name; the full one shows on hover
       card.appendChild(el("div", "sub", `${c.files} file${c.files === 1 ? "" : "s"}, ${c.pages} pages read` + (c.reading ? `, ${c.reading} being read` : "")));
-      card.addEventListener("click", () => openCourse(c.id).catch(fail));
+      card.addEventListener("click", () => goCourse(c.id));
       grid.appendChild(card);
     });
     body.appendChild(grid);
@@ -112,7 +120,7 @@
     const { course } = current;
     const head = el("div", "row");
     head.style.marginTop = "0";
-    head.append(button("< All courses", () => loadList().catch(fail)), button("+ Add material", () => picker.click(), "primary add-material"));
+    head.append(button("< All courses", () => { navGo({ view: "study", id: currentId, course: null }); loadList().catch(fail); }), button("+ Add material", () => picker.click(), "primary add-material"));
     body.appendChild(head);
     // The upload messages stay here across redraws, in both tabs, so a refused file is never wiped off the screen.
     const status = el("div", uploadNote && uploadNote.bad ? "status bad" : "status", uploadNote ? uploadNote.text : "");
@@ -120,67 +128,49 @@
     body.appendChild(status);
     const tabs = el("div", "row");
     tabs.style.justifyContent = "flex-start";
-    [["chat", "Chat"], ["files", `Materials (${course.files.length})`]].forEach(([key, label]) => {
+    [["chats", `Chats (${current.chats.length})`], ["files", `Materials (${course.files.length})`]].forEach(([key, label]) => {
       const b = button(label, () => { tab = key; draw(); }, tab === key ? "" : "ghost");
       tabs.appendChild(b);
     });
     body.appendChild(tabs);
-    if (tab === "chat") drawChat(); else drawFiles();
+    if (tab === "chats") drawChats(); else drawFiles();
   }
 
-  function drawChat() {
-    const { course, chat, asking } = current;
+  // The chats of this course. Opening one shows the regular chat screen (index.html), which sends the messages;
+  // the course materials are used automatically by every chat started here.
+  function drawChats() {
+    const { course, chats } = current;
     const ready = course.files.filter((f) => f.status === "ready").length;
-    if (!ready) body.appendChild(el("p", "sub", "No material is ready yet. Open the Materials tab and upload a file (PDF, photo or text)."));
-    const thread = el("div", "study-thread");
-    thread.style.cssText = "display:flex;flex-direction:column;gap:8px;margin:12px 0";
-    chat.forEach((m) => {
-      const box = el("div", m.role === "user" ? "me" : "bot");
-      box.appendChild(renderText(m.text));
-      if (m.sources && m.sources.length) {
-        const src = el("div", "sources");
-        src.appendChild(el("span", "sub", "From: "));
-        m.sources.forEach((s) => src.appendChild(button(`${s.file}, p.${s.page}`, () => { tab = "files"; openFilePages(s.fileId, s.page); }, "ghost chip")));
-        box.appendChild(src);
-      }
-      if (m.role !== "user" && m.model) box.appendChild(el("div", "sub", `${m.model}, ${m.seconds} s, searched ${m.searched} pages of this course only`));
-      thread.appendChild(box);
-    });
-    if (asking) thread.appendChild(el("div", "bot", "Bot is thinking... you can leave this screen, the answer will be saved here."));
-    body.appendChild(thread);
-
-    const form = el("form");
-    const q = el("textarea");
-    q.id = "studyQ";
-    q.dir = "auto";
-    q.value = draft;
-    q.setAttribute("aria-label", "Your question about this course");
-    q.placeholder = "Ask about this course, or say: give me an exercise on ... (Enter sends)";
-    q.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+    if (!ready) body.appendChild(el("p", "sub", "No material is ready yet. Open the Materials tab and upload a file (PDF, photo or text). You can already start a chat; it will use the materials once they are ready."));
+    const start = button("+ New chat", () => newChat(false, { id: course.id, name: course.name }), "primary");
+    start.id = "newCourseChat";
     const row = el("div", "row");
-    const label = el("label");
-    const cb = el("input");
-    cb.type = "checkbox";
-    cb.checked = deeper;
-    cb.addEventListener("change", () => { deeper = cb.checked; });
-    label.append(cb, document.createTextNode(" Think harder (slower, stronger model)"));
-    row.append(label, el("span", "status"), button("Clear chat", async () => { try { await post(`/api/courses/${course.id}/chat/clear`); await refresh(); } catch (error) { fail(error); } }));
-    const send = el("button", "", "Send");
-    send.disabled = !!asking;
-    row.appendChild(send);
-    form.append(q, row);
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const text = q.value.trim();
-      if (!text) return;
-      try {
-        await post(`/api/courses/${course.id}/ask`, { text, deeper });
-        draft = "";
-        await refresh();
-      } catch (error) { fail(error); }
+    row.style.justifyContent = "flex-start";
+    row.appendChild(start);
+    body.appendChild(row);
+    if (!chats.length) body.appendChild(el("p", "sub", "No chats in this course yet. Start one: Bot answers from this course's materials and shows the file and page."));
+    const list = el("ul", "files");
+    chats.forEach((c) => {
+      const li = el("li", "chat-item");
+      const open = el("button", "open", c.title);
+      open.type = "button";
+      open.dir = "auto";
+      open.title = c.title;
+      const mark = chatMarker(c.id); // the same pulsing dot as the sidebar while Bot thinks in that chat
+      if (mark) open.prepend(mark);
+      open.addEventListener("click", () => openChat(c.id));
+      const del = el("button", "del", "x");
+      del.type = "button";
+      del.setAttribute("aria-label", "Delete chat: " + c.title);
+      del.addEventListener("click", async () => {
+        if (jobState.active.has(c.id)) return fail(new Error("Bot is still working in that chat. Wait for it to finish before deleting it."));
+        if (!confirm(`Delete the chat "${c.title}"?`)) return;
+        try { await api("/api/conversations/" + c.id, { method: "DELETE" }); await refresh(); } catch (error) { fail(error); }
+      });
+      li.append(open, del);
+      list.appendChild(li);
     });
-    body.appendChild(form);
-    thread.scrollTop = thread.scrollHeight;
+    body.appendChild(list);
   }
 
   function drawFiles() {
@@ -222,7 +212,7 @@
       try { await post(`/api/courses/${course.id}/rename`, { name }); await refresh(); } catch (error) { fail(error); }
     }));
     danger.appendChild(button("Delete course", async () => {
-      if (!confirm(`Delete the course "${course.name}" with all its files and chat? This cannot be undone.`)) return;
+      if (!confirm(`Delete the course "${course.name}" with all its files and chats? This cannot be undone.`)) return;
       try { await api("/api/courses/" + course.id, { method: "DELETE" }); await loadList(); } catch (error) { fail(error); }
     }));
     body.appendChild(danger);
@@ -284,7 +274,9 @@
   }
 
   // ---- hooks into the main page ----
-  window.studyShow = () => { loadList().catch(fail); };
+  window.studyShow = (courseId, focus) => { (courseId ? openCourse(courseId, focus) : loadList()).catch(fail); };
+  // A source chip under an answer: open that page of that file in its course.
+  window.studyOpenSource = (courseId, fileId, page) => { navGo({ view: "study", id: currentId, course: courseId }); showView("study", courseId, { fileId, page }); };
   window.studyHide = () => { clearTimeout(timer); };
   $("studyBtn").addEventListener("click", () => { navGo({ view: "study", id: currentId }); showView("study"); });
   $("menu3").addEventListener("click", openSide);

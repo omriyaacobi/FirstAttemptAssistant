@@ -120,6 +120,10 @@
   .preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: .85rem; color: var(--muted); }
   #previewFrame { flex: 1; width: 100%; border: 0; background: var(--bg); }
   .chat[hidden] { display: none; }
+  .coursebar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .coursebar[hidden] { display: none; }
+  .coursebar button { margin: 0; flex: none; }
+  .coursebar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
   .scroll { flex: 1; overflow-y: auto; padding: 24px 16px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; }
   select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
@@ -318,6 +322,7 @@
       </button>
       <div class="titles"><strong>Bot</strong><span id="chatName" dir="auto">New chat</span></div>
     </div>
+    <div class="coursebar" id="courseBar" hidden><button type="button" class="ghost" id="courseBack">&lt; Course</button><span id="courseName" dir="auto"></span></div>
     <div id="thread" aria-live="polite"><div class="inner" id="messages"></div></div>
     <form class="composer" id="form">
       <div class="inner">
@@ -328,7 +333,7 @@
         </div>
         <textarea id="task" dir="auto" aria-label="Your message" placeholder="Type a task. Enter sends, Shift+Enter adds a new line."></textarea>
         <div class="row">
-          <label><input type="checkbox" id="noplan"> Don't split into steps</label>
+          <label><input type="checkbox" id="noplan"> <span id="noplanText">Don't split into steps</span></label>
           <span class="status" id="status" role="status"></span>
           <span class="tools">
             <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
@@ -421,6 +426,8 @@
   const $ = (id) => document.getElementById(id);
 
   let currentId = null; // the open conversation, or null for a new one
+  let currentCourse = null; // { id, name } when the open chat belongs to a course (it then uses that course's materials), else null
+  const courseNames = new Map(); // course id -> name, filled by public/study.js
   let busy = false;
 
   function el(tag, className, text) {
@@ -482,6 +489,25 @@
       if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact, result.remember.replaces && result.remember.replaces.id));
       if (result.forget && result.forget.id) card.appendChild(rememberButtons(null, result.forget.id));
       wrap.appendChild(card);
+    } else if (result.mode === "course") {
+      // An answer from a course chat. The sources were built by the server from the pages it really sent, never from what the model claims.
+      const head = [["Answer"]];
+      if (result.used && result.used.model) head.push([result.used.model, "badge"]);
+      if (result.seconds) head.push([`${result.seconds}s`, "badge"]);
+      const card = botCard(head, renderText(result.answer));
+      if (result.sources && result.sources.length) {
+        const src = el("div", "sources");
+        src.appendChild(el("span", "sub", "From: "));
+        result.sources.forEach((s) => {
+          const chip = el("button", "ghost chip", `${s.file}, p.${s.page}`);
+          chip.type = "button";
+          chip.addEventListener("click", () => window.studyOpenSource && window.studyOpenSource(result.courseId, s.fileId, s.page));
+          src.appendChild(chip);
+        });
+        card.appendChild(src);
+      }
+      if (result.searched !== undefined) card.appendChild(el("div", "sub", `Searched ${result.searched} pages of this course only`));
+      wrap.appendChild(card);
     } else if (result.mode === "split") {
       result.steps.forEach((s) => {
         const head = [[`Step ${s.id}: ${s.task}`], [s.type, "badge"]];
@@ -542,7 +568,9 @@
   function scrollDown() { $("thread").scrollTop = $("thread").scrollHeight; }
 
   function showEmpty() {
-    $("messages").replaceChildren(el("p", "empty", "Ask anything. Follow-up questions remember this conversation."));
+    $("messages").replaceChildren(el("p", "empty", currentCourse
+      ? "Ask about this course. Bot uses the course materials automatically, searches only this course and shows the file and page each answer came from."
+      : "Ask anything. Follow-up questions remember this conversation."));
   }
 
   // ---- Conversation list ----
@@ -553,8 +581,9 @@
       list.replaceChildren();
       chatTitles.clear();
       conversations.forEach((c) => {
-        const li = el("li", "chat-item" + (c.id === currentId ? " active" : ""));
         chatTitles.set(c.id, c.title);
+        if (c.courseId) return; // a course chat is listed inside its course
+        const li = el("li", "chat-item" + (c.id === currentId ? " active" : ""));
         const open = el("button", "open", c.title);
         open.title = c.title;
         const mark = chatMarker(c.id); // a pulsing dot while Bot thinks there, a green one for a new answer
@@ -574,8 +603,10 @@
     const res = await fetch("/api/conversations/" + id);
     if (!res.ok) return;
     const conversation = await res.json();
-    if (!fromHistory) navGo({ view: "chat", id });
+    const course = conversation.courseId ? { id: conversation.courseId, name: conversation.courseName || courseNames.get(conversation.courseId) || "Course" } : null;
+    if (!fromHistory) navGo({ view: "chat", id, course: course && course.id });
     currentId = id;
+    currentCourse = course;
     showView("chat");
     unreadChats.delete(id);
     await pollJobs(); // fresh news about running tasks, so the thinking card is right
@@ -607,9 +638,12 @@
     updateChatName();
   }
 
-  function newChat(fromHistory) {
-    if (fromHistory !== true) navGo({ view: "chat", id: null });
+  // course (optional, { id, name }): a new chat inside that course. A click passes an event as the first argument; that is fine.
+  function newChat(fromHistory, course) {
+    course = course && course.id ? course : null;
+    if (fromHistory !== true) navGo({ view: "chat", id: null, course: course && course.id });
     currentId = null;
+    currentCourse = course;
     showView("chat");
     showEmpty();
     updateChatName();
@@ -861,7 +895,7 @@
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, noPlan: $("noplan").checked, conversationId: currentId, ...(attached ? { image: attached.dataUrl } : {}) }),
+        body: JSON.stringify({ task, noPlan: $("noplan").checked, conversationId: currentId, ...(currentCourse ? { deeper: $("noplan").checked, ...(currentId ? {} : { courseId: currentCourse.id }) } : {}), ...(attached ? { image: attached.dataUrl } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `server answered ${res.status}`);
@@ -926,6 +960,11 @@
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
   $("new").addEventListener("click", newChat);
+  $("courseBack").addEventListener("click", () => {
+    if (!currentCourse) return;
+    navGo({ view: "study", id: currentId, course: currentCourse.id });
+    showView("study", currentCourse.id);
+  });
   $("refresh").addEventListener("click", loadQuota);
   $("quotaBtn").addEventListener("click", () => { $("quotaDialog").showModal(); loadQuota(); });
   $("quotaClose").addEventListener("click", () => $("quotaDialog").close());
@@ -958,6 +997,11 @@
 
   function updateChatName() {
     $("chatName").textContent = (currentId && chatTitles.get(currentId)) || "New chat";
+    // A course chat: say which course, and offer the way back. No camera there (photos are not read with the course), and the box becomes "Think harder".
+    $("courseBar").hidden = !currentCourse;
+    if (currentCourse) $("courseName").textContent = currentCourse.name;
+    $("attach").hidden = !!currentCourse;
+    $("noplanText").textContent = currentCourse ? "Think harder (slower, stronger model)" : "Don't split into steps";
   }
 
   function setSide(open) {
@@ -967,28 +1011,32 @@
   }
 
   // Go somewhere new (another chat, the Improve view). Never adds a duplicate of where we already are.
+  // Where we are now. For a chat screen the course comes from the open chat (a first message may have created a chat since).
+  const herePlace = () => ({ ...navState, id: currentId, course: navState.view === "chat" ? (currentCourse && currentCourse.id) || null : navState.course || null });
+  const sameCourse = (a, b) => (a || null) === (b || null);
+
   function navGo(target) {
-    const here = { ...navState, id: currentId }; // a first message may have created a chat since
+    const here = herePlace();
     history.replaceState(here, "");
     navState = here;
     if (here.side) {
       // The sidebar entry is on top: replace it by the destination, or just step back if that is the screen under it.
-      if (target.view === here.under.view && target.id === here.under.id) { history.back(); return; }
-      navState = { view: target.view, id: target.id, side: false, d: here.d };
+      if (target.view === here.under.view && target.id === here.under.id && sameCourse(target.course, here.under.course)) { history.back(); return; }
+      navState = { view: target.view, id: target.id, course: target.course || null, side: false, d: here.d };
       history.replaceState(navState, "");
       setSide(false);
       return;
     }
-    if (target.view === here.view && target.id === here.id) return;
-    navState = { view: target.view, id: target.id, side: false, d: here.d + 1 };
+    if (target.view === here.view && target.id === here.id && sameCourse(target.course, here.course)) return;
+    navState = { view: target.view, id: target.id, course: target.course || null, side: false, d: here.d + 1 };
     history.pushState(navState, "");
   }
 
   function openSide() {
     if (navState.side) return;
-    const here = { ...navState, id: currentId };
+    const here = herePlace();
     history.replaceState(here, "");
-    navState = { view: here.view, id: here.id, side: true, d: here.d + 1, under: { view: here.view, id: here.id } };
+    navState = { view: here.view, id: here.id, course: here.course, side: true, d: here.d + 1, under: { view: here.view, id: here.id, course: here.course } };
     history.pushState(navState, "");
     setSide(true);
   }
@@ -1005,9 +1053,9 @@
     if (!s || !s.view) return; // not one of ours
     navState = s;
     if (s.view === "improve") showView("improve");
-    else if (s.view === "study") showView("study");
+    else if (s.view === "study") showView("study", s.course);
     else if (s.id && s.id !== currentId) openChat(s.id, true);
-    else if (!s.id && currentId) newChat(true);
+    else if (!s.id && (currentId || !sameCourse(s.course, currentCourse && currentCourse.id))) newChat(true, s.course ? { id: s.course, name: courseNames.get(s.course) || "Course" } : null);
     else showView("chat");
     setSide(!!s.side);
   });
@@ -1033,11 +1081,12 @@
   let openProposalId = null;
   let pollTimer = null;
 
-  function showView(name) {
+  // course/focus only matter for "study": open that course (and that file page) instead of the list of courses.
+  function showView(name, course, focus) {
     $("chatView").hidden = name !== "chat";
     $("improveView").hidden = name !== "improve";
     $("studyView").hidden = name !== "study";
-    if (name === "study") window.studyShow && window.studyShow(); else window.studyHide && window.studyHide();
+    if (name === "study") window.studyShow && window.studyShow(course, focus); else window.studyHide && window.studyHide();
     if (name === "improve") {
       updateGate();
       if (!adminLocked()) loadProposals(true);

@@ -3,7 +3,8 @@
 // (the server uses data/conversations/, which is git-ignored because chats are private).
 //
 // A conversation looks like:
-//   { id, title, created, updated, messages: [ { role, text, at, result?, log? }, ... ] }
+//   { id, title, created, updated, courseId?, messages: [ { role, text, at, result?, log? }, ... ] }
+//   courseId is set only for a chat inside a study notebook (see course-routes.js).
 //   role is "user" or "assistant"; result/log are kept for assistant messages so an old
 //   chat can be shown exactly as it looked.
 
@@ -39,7 +40,8 @@ function createStore(dir) {
     }
   }
 
-  function create(firstMessage) {
+  // courseId (optional): this chat belongs to a study notebook; it uses that course's materials and is hidden from the sidebar list.
+  function create(firstMessage, { courseId = null } = {}) {
     const now = Date.now();
     const conversation = {
       id: crypto.randomBytes(8).toString("hex"),
@@ -48,6 +50,7 @@ function createStore(dir) {
       updated: now,
       messages: [],
     };
+    if (courseId) conversation.courseId = courseId;
     write(conversation);
     return conversation;
   }
@@ -67,7 +70,7 @@ function createStore(dir) {
       .filter((name) => name.endsWith(".json"))
       .map((name) => get(name.slice(0, -5)))
       .filter(Boolean)
-      .map(({ id, title, updated }) => ({ id, title, updated }))
+      .map(({ id, title, updated, courseId }) => ({ id, title, updated, ...(courseId ? { courseId } : {}) }))
       .sort((a, b) => b.updated - a.updated);
   }
 

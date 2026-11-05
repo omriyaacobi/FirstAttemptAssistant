@@ -58,7 +58,7 @@ test("search returns nothing when nothing matches, and keywords count", () => {
 });
 
 // ---- courses.js ----
-test("courses: create, list, rename, files, pages, chat, remove", () => {
+test("courses: create, list, rename, files, pages, remove", () => {
   const c = createCourses(tmp());
   const course = c.create("  Calculus 2 ");
   assert.strictEqual(course.name, "Calculus 2");
@@ -71,8 +71,6 @@ test("courses: create, list, rename, files, pages, chat, remove", () => {
   assert.strictEqual(c.getPages(course.id, file.id)[0].text.length, 6000);
   assert.strictEqual(c.allPages(course.id)[0].fileName, "../../evil.pdf");
   assert.strictEqual(c.list()[0].pages, 1);
-  c.appendChat(course.id, [{ role: "user", text: "hi" }]);
-  assert.strictEqual(c.getChat(course.id).length, 1);
   assert.strictEqual(c.rename(course.id, "Calc").name, "Calc");
   assert.ok(c.removeFile(course.id, file.id));
   assert.ok(c.remove(course.id));
@@ -84,7 +82,7 @@ test("courses: ids are checked (path traversal) and limits hold", () => {
   for (const bad of ["../x", "..", "0123456789abcdeg", "", null, "0123456789abcdef/../.."]) {
     assert.strictEqual(c.get(bad), null);
     assert.deepStrictEqual(c.getPages(bad, "0123456789abcdef"), []);
-    assert.deepStrictEqual(c.getChat(bad), []);
+    assert.deepStrictEqual(c.legacyChat(bad), []);
   }
   assert.throws(() => c.create("   "), (e) => e.status === 400);
   assert.throws(() => c.addFile("0123456789abcdef", { bytes: PDF, kind: "pdf", ext: ".pdf", name: "a" }), (e) => e.status === 404);
@@ -196,15 +194,17 @@ test("askCourse: no ready files means no model call; otherwise only this course'
 });
 
 // ---- the web routes (a real server on a random port, fake models) ----
-async function startServer({ askChain, askFile } = {}) {
+async function startServer({ askChain, askFile, seed } = {}) {
   const dir = tmp();
   const courses = createCourses(path.join(dir, "courses"));
+  const store = createStore(path.join(dir, "conv"));
+  if (seed) seed(courses, path.join(dir, "courses"));
   const courseRoutes = createCourseRoutes({
-    courses, ingestFile, askCourse,
+    courses, store, ingestFile, askCourse,
     askFile: askFile || fakeReader(3),
     askChain: askChain || (async () => ({ answer: "Answer [S1]", used: { model: "fake" } })),
   });
-  const server = createServer({ store: createStore(path.join(dir, "conv")), courseRoutes });
+  const server = createServer({ store, courseRoutes });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;
   const send = (method, url, body, headers = {}) => new Promise((resolve, reject) => {
@@ -218,7 +218,19 @@ async function startServer({ askChain, askFile } = {}) {
     req.end(data);
   });
   const waitIdle = async () => { for (let i = 0; i < 100 && !courseRoutes.idle(); i++) await new Promise((r) => setTimeout(r, 20)); };
-  return { send, waitIdle, close: () => server.close(), courses };
+  // Sends a message the way the page does (POST /api/ask) and waits until the chat holds the answer too.
+  const ask = async (task, extra = {}) => {
+    const res = await send("POST", "/api/ask", { task, ...extra });
+    if (res.status !== 202) return res;
+    const id = res.json.job.conversationId;
+    for (let i = 0; i < 200; i++) {
+      const chat = (await send("GET", "/api/conversations/" + id)).json;
+      if (chat.messages.length >= (extra.have || 0) + 2) return { status: 202, id, chat };
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error("no answer came");
+  };
+  return { send, waitIdle, ask, close: () => server.close(), courses, store, coursesDir: path.join(dir, "courses") };
 }
 const octet = { "Content-Type": "application/octet-stream" };
 
@@ -233,12 +245,13 @@ test("routes: create a course, upload a PDF, it is read, ask a question, get an 
     assert.strictEqual(got.course.files[0].status, "ready");
     const pages = (await s.send("GET", `/api/courses/${course.id}/files/${up.json.file.id}/pages`)).json;
     assert.strictEqual(pages.pages.length, 3);
-    assert.strictEqual((await s.send("POST", `/api/courses/${course.id}/ask`, { text: "text of page 2" })).status, 202);
-    await s.waitIdle();
+    const r = await s.ask("text of page 2", { courseId: course.id });
+    assert.strictEqual(r.status, 202);
+    assert.strictEqual(r.chat.courseId, course.id);
+    assert.strictEqual(r.chat.messages[1].text, "Answer [S1]");
+    assert.strictEqual(r.chat.messages[1].result.sources[0].file, "lec1.pdf");
     got = (await s.send("GET", `/api/courses/${course.id}`)).json;
-    assert.strictEqual(got.chat.length, 2);
-    assert.strictEqual(got.chat[1].text, "Answer [S1]");
-    assert.strictEqual(got.chat[1].sources[0].file, "lec1.pdf");
+    assert.deepStrictEqual(got.chats.map((c) => c.id), [r.id]); // the chat is listed in its course
   } finally { s.close(); }
 });
 test("routes: wrong content type, a program disguised as a PDF name, and an oversize file are refused", async () => {
@@ -265,13 +278,11 @@ test("routes: bad ids and unknown courses give 404, courses never see each other
     const fileA = s.courses.addFile(a.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "a.pdf" });
     s.courses.savePages(a.id, fileA.id, [{ page: 1, text: "shortest path in A" }]);
     s.courses.setFile(a.id, fileA.id, { status: "ready", pages: 1 });
-    await s.send("POST", `/api/courses/${a.id}/ask`, { text: "shortest path" });
-    await s.waitIdle();
-    assert.strictEqual((await s.send("GET", `/api/courses/${a.id}`)).json.chat[1].text, "clean");
+    assert.strictEqual((await s.ask("shortest path", { courseId: a.id })).chat.messages[1].text, "clean");
     assert.strictEqual((await s.send("GET", `/api/courses/${a.id}/files/${fileB.id}/pages`)).status, 404); // B's file through A's URL
   } finally { s.close(); }
 });
-test("routes: only one question at a time per course; the other-site checks still apply", async () => {
+test("routes: one message at a time per chat, a bad course id is refused, and the other-site checks still apply", async () => {
   let release;
   const gate = new Promise((r) => (release = r));
   const s = await startServer({ askChain: async () => { await gate; return { answer: "done", used: { model: "m" } }; } });
@@ -280,15 +291,73 @@ test("routes: only one question at a time per course; the other-site checks stil
     const f = s.courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "a.pdf" });
     s.courses.savePages(c.id, f.id, [{ page: 1, text: "hello" }]);
     s.courses.setFile(c.id, f.id, { status: "ready", pages: 1 });
-    assert.strictEqual((await s.send("POST", `/api/courses/${c.id}/ask`, { text: "hello" })).status, 202);
-    assert.strictEqual((await s.send("POST", `/api/courses/${c.id}/ask`, { text: "again" })).status, 409);
-    assert.strictEqual((await s.send("DELETE", `/api/courses/${c.id}`)).status, 409);
+    const first = await s.send("POST", "/api/ask", { task: "hello", courseId: c.id });
+    assert.strictEqual(first.status, 202);
+    assert.strictEqual((await s.send("POST", "/api/ask", { task: "again", conversationId: first.json.job.conversationId })).status, 409);
     release();
     await s.waitIdle();
-    assert.strictEqual((await s.send("POST", `/api/courses/${c.id}/ask`, { text: "   " })).status, 400);
+    for (const bad of ["../x", "0123456789abcdef", 5, {}]) assert.strictEqual((await s.send("POST", "/api/ask", { task: "hi", courseId: bad })).status, 404, String(bad));
     assert.strictEqual((await s.send("POST", "/api/courses", { name: "X" }, { Origin: "http://evil.example" })).status, 403);
     assert.strictEqual((await s.send("GET", "/api/courses", undefined, { Host: "evil.example" })).status, 403);
   } finally { release(); s.close(); }
+});
+test("course chats: two chats in a course keep their own history and the materials, deleting a chat or the course removes them", async () => {
+  const seen = [];
+  const s = await startServer({
+    askChain: async (chain, prompt) => { seen.push(prompt); return { answer: "Hint [S1]", used: { model: "m" } }; },
+    seed: (courses) => {
+      const c = courses.create("Calc");
+      const f = courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "limits.pdf" });
+      courses.savePages(c.id, f.id, [{ page: 4, text: "epsilon delta limits" }]);
+      courses.setFile(c.id, f.id, { status: "ready", pages: 1 });
+    },
+  });
+  try {
+    const course = (await s.send("GET", "/api/courses")).json.courses[0];
+    const one = await s.ask("first chat about epsilon", { courseId: course.id });
+    const two = await s.ask("second chat about epsilon", { courseId: course.id });
+    assert.notStrictEqual(one.id, two.id);
+    const again = await s.ask("a follow up", { conversationId: one.id, have: 2 }); // continues chat one, no courseId needed
+    assert.strictEqual(again.chat.messages.length, 4);
+    assert.strictEqual(again.chat.courseId, course.id);
+    assert.match(seen[2], /first chat about epsilon/); // chat one remembers itself...
+    assert.doesNotMatch(seen[2], /second chat/); // ...and never the other chat
+    assert.match(seen[0], /epsilon delta limits/); // the course material reached the model without any upload step
+    assert.deepStrictEqual(again.chat.messages[1].result.sources.map((x) => [x.file, x.page]), [["limits.pdf", 4]]);
+    const mine = (await s.send("GET", `/api/courses/${course.id}`)).json.chats;
+    assert.strictEqual(mine.length, 2);
+    assert.strictEqual((await s.send("GET", "/api/conversations/" + one.id)).json.courseName, "Calc");
+    assert.strictEqual((await s.send("DELETE", "/api/conversations/" + two.id)).status, 200);
+    assert.strictEqual((await s.send("GET", `/api/courses/${course.id}`)).json.chats.length, 1);
+    assert.strictEqual((await s.send("DELETE", `/api/courses/${course.id}`)).status, 200);
+    assert.strictEqual((await s.send("GET", "/api/conversations/" + one.id)).status, 404); // the course took its chats with it
+  } finally { s.close(); }
+});
+test("course chats: the old single chat of a course becomes its first chat, once, and the old file is kept", async () => {
+  let courseId;
+  const s = await startServer({
+    seed: (courses, coursesDir) => {
+      courseId = courses.create("Old").id;
+      fs.writeFileSync(path.join(coursesDir, courseId, "chat.json"), JSON.stringify([
+        { role: "user", text: "שאלה ישנה", at: 1 },
+        { role: "assistant", text: "תשובה ישנה", sources: [{ n: 1, fileId: "0123456789abcdef", file: "a.pdf", page: 2 }], model: "flash", seconds: 3, searched: 5, at: 2 },
+      ]));
+    },
+  });
+  try {
+    const { chats } = (await s.send("GET", `/api/courses/${courseId}`)).json;
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].title, "שאלה ישנה");
+    const chat = (await s.send("GET", "/api/conversations/" + chats[0].id)).json;
+    assert.deepStrictEqual(chat.messages.map((m) => m.text), ["שאלה ישנה", "תשובה ישנה"]);
+    assert.strictEqual(chat.messages[1].result.sources[0].page, 2);
+    assert.ok(fs.existsSync(path.join(s.coursesDir, courseId, "chat.migrated.json"))); // kept, not deleted
+    assert.ok(!fs.existsSync(path.join(s.coursesDir, courseId, "chat.json")));
+    // a second start must not copy it again
+    const { createCourseRoutes: again } = require("./course-routes");
+    again({ courses: s.courses, store: s.store, ingestFile, askCourse });
+    assert.strictEqual((await s.send("GET", `/api/courses/${courseId}`)).json.chats.length, 1);
+  } finally { s.close(); }
 });
 test("data/ stays git-ignored, so course files can never reach the public repo", () => {
   assert.match(fs.readFileSync(path.join(__dirname, ".gitignore"), "utf8"), /^data\/$/m);

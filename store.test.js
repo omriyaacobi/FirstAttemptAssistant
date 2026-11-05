@@ -99,3 +99,13 @@ test("append to a missing conversation throws", () => {
   assert.throws(() => store.append("0123456789abcdef", [{ role: "user", text: "x" }]), /not found/);
   cleanup();
 });
+
+test("a course chat remembers its course and list() says so", () => {
+  const store = createStore(fs.mkdtempSync(path.join(os.tmpdir(), "bot-store-")));
+  const plain = store.create("regular");
+  const inCourse = store.create("about limits", { courseId: "0123456789abcdef" });
+  assert.strictEqual(store.get(plain.id).courseId, undefined);
+  assert.strictEqual(store.get(inCourse.id).courseId, "0123456789abcdef");
+  const listed = Object.fromEntries(store.list().map((c) => [c.id, c.courseId]));
+  assert.deepStrictEqual(listed, { [plain.id]: undefined, [inCourse.id]: "0123456789abcdef" });
+});

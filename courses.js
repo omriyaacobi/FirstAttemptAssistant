@@ -5,7 +5,7 @@
 //   data/courses/<course id>/course.json        name, exam date (later), the list of files and their reading status
 //   data/courses/<course id>/files/<id>.pdf     the original file, saved under a RANDOM name
 //   data/courses/<course id>/files/<id>.pages.json   the text of each page, made once when the file was read
-//   data/courses/<course id>/chat.json          the chat of this course
+//   data/courses/<course id>/chat.migrated.json the old single chat (now a real chat in data/conversations/, see course-routes.js)
 //
 // Every id is 16 random hex characters and is checked on every call, because an id becomes part of a
 // file path ("../../x" must never get through). Names typed by you are only ever stored as text.
@@ -163,16 +163,15 @@ function createCourses(dir) {
     return out;
   }
 
-  // ---- chat ----
-  function getChat(id) {
+  // ---- the old single chat of a course ----
+  // Before course chats, each course had one chat.json. The server turns it into the first real chat of the course
+  // once (course-routes.js), then sets the file aside under another name (never deleted: it is your data).
+  function legacyChat(id) {
     return (validId(id) && readJson(path.join(courseDir(id), "chat.json"))) || [];
   }
-  function appendChat(id, messages) {
-    if (!get(id)) throw fail(404, "course not found");
-    writeJson(path.join(courseDir(id), "chat.json"), [...getChat(id), ...messages].slice(-MAX_CHAT_MESSAGES));
-  }
-  function clearChat(id) {
-    if (get(id)) writeJson(path.join(courseDir(id), "chat.json"), []);
+  function retireLegacyChat(id) {
+    const old = path.join(courseDir(id), "chat.json");
+    if (validId(id) && fs.existsSync(old)) fs.renameSync(old, path.join(courseDir(id), "chat.migrated.json"));
   }
 
   // After a restart nothing is reading any more: files that were queued or being read are marked so you can retry.
@@ -184,7 +183,7 @@ function createCourses(dir) {
     }
   }
 
-  return { list, get, create, rename, remove, addFile, setFile, getFile, removeFile, originalPath, savePages, getPages, allPages, getChat, appendChat, clearChat, recover };
+  return { list, get, create, rename, remove, addFile, setFile, getFile, removeFile, originalPath, savePages, getPages, allPages, legacyChat, retireLegacyChat, recover };
 }
 
 module.exports = { createCourses, validId, ID_PATTERN, MAX_PAGE_CHARS, MAX_COURSES, MAX_COURSE_BYTES };

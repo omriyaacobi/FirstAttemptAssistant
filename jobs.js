@@ -67,7 +67,9 @@ function describeProgress(lines) {
   return text;
 }
 
-function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
+// handleCourse(task, { courseId, history, deeper, onPartial, log }) answers a message in a course chat
+// (a conversation with a courseId); it is only given when the study notebooks are on.
+function createJobs({ handle, handleCourse = null, store, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
   const jobs = new Map(); // id -> job
   let runningCount = 0;
 
@@ -100,7 +102,8 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
 
   // Starts a job. `task` must already be checked by the caller. Throws errors with a `status` for the server to send.
   // `image` ({ path, ext }) is a photo the server already checked and saved; the job deletes it when it ends.
-  function start({ task, noPlan = false, conversationId = null, image = null }) {
+  // `courseId` (checked by the caller) starts a NEW chat inside a course; an existing chat remembers its own course.
+  function start({ task, noPlan = false, conversationId = null, image = null, courseId = null, deeper = false }) {
     let conversation = null;
     if (conversationId !== null && conversationId !== undefined) {
       conversation = store.get(conversationId);
@@ -110,11 +113,14 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
       }
     }
     if (runningCount >= maxRunning) throw Object.assign(new Error("busy, wait for the current tasks to finish"), { status: 429 });
+    const inCourse = conversation ? conversation.courseId : courseId;
+    if (inCourse && !handleCourse) throw Object.assign(new Error("the study notebooks are off"), { status: 404 });
+    if (inCourse && image) throw Object.assign(new Error("photos are not supported in course chats yet"), { status: 400 });
 
     // The earlier messages become the memory for this task (a failed answer is not memory).
     const history = conversation ? conversation.messages.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text })) : [];
     // Save the question right away: if you reload or come back later, the chat already shows it.
-    if (!conversation) conversation = store.create(task);
+    if (!conversation) conversation = store.create(task, { courseId });
     const startedAt = now();
     store.append(conversation.id, [{ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt }]);
 
@@ -136,14 +142,15 @@ function createJobs({ handle, store, maxRunning = 2, onFinish = () => {}, now = 
     (async () => {
       let message;
       try {
-        const result = await handle(task, {
-          noPlan: noPlan === true,
+        const common = {
           history,
-          image,
           onPartial: (text) => { job.partial = String(text).slice(-MAX_PARTIAL_CHARS); },
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
-        });
-        message = { role: "assistant", text: resultText(result), result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
+        };
+        const result = inCourse
+          ? await handleCourse(task, { ...common, courseId: inCourse, deeper: deeper === true })
+          : await handle(task, { ...common, noPlan: noPlan === true, image });
+        message = { role: "assistant", text: result.mode === "course" ? result.answer : resultText(result), result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
         job.status = "done";
       } catch (error) {
         const text = String(error && error.message).slice(0, 500);
