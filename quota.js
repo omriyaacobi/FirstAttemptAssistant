@@ -56,10 +56,18 @@ function prioritize(chain, low) {
 
 function fetchUsage() {
   return new Promise((resolve, reject) => {
-    execFile(AGY_CMD, ["-p", "/usage"], { timeout: LOOKUP_TIMEOUT_MS }, (error, stdout, stderr) => {
+    const child = execFile(AGY_CMD, ["-p", "/usage"], (error, stdout, stderr) => {
+      clearTimeout(timer);
       if (error) return reject(new Error(String(stderr || error.message).slice(0, 200)));
       resolve(parseUsage(stdout));
     });
+    // Our own unref'd timer instead of execFile's "timeout" option (that timer would keep Bot open).
+    const timer = setTimeout(() => child.kill(), LOOKUP_TIMEOUT_MS);
+    timer.unref();
+    // The lookup runs after the answer; it must not keep `node bot.js` open for 5 more seconds (the flag lives in memory only).
+    child.unref();
+    child.stdout.unref();
+    child.stderr.unref();
   });
 }
 
