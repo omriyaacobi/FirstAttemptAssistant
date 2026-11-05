@@ -36,15 +36,24 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
   const ready = new Promise((resolve) => { onReady = resolve; });
   let deathReason = "agy closed before it answered";
 
-  const die = (reason) => {
+  // processDied marks an error as "the agy process itself went away" (not a model answer), so the caller may start a fresh one.
+  const died = (reason) => Object.assign(new Error(reason), { processDied: true });
+  const die = (reason, onPurpose = false) => {
     isDead = true;
     deathReason = reason || deathReason;
-    if (waiter) { const w = waiter; waiter = null; w.reject(new Error(deathReason)); }
+    if (waiter) { const w = waiter; waiter = null; w.reject(onPurpose ? new Error(deathReason) : died(deathReason)); }
   };
 
   child.on("error", (error) => die("could not start agy: " + error.message));
+  // A pipe to a process that already exited raises "write EPIPE" as an EVENT; with no handler that is an uncaught exception
+  // (it would take the whole Bot down). Every stream gets a handler, and a broken pipe just means "this process is gone".
+  for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", (error) => die("agy pipe error: " + error.code));
   child.on("close", () => die());
   child.stderr.on("data", () => {}); // agy's noise on stderr is not needed
+  // A waiting spare must never keep a program alive: without this a script (or `node bot.js "task"`) would hang after it is
+  // finished until the spare expires. While a call is running its own timer keeps Bot alive.
+  child.unref();
+  for (const stream of [child.stdin, child.stdout, child.stderr]) if (stream && typeof stream.unref === "function") stream.unref();
   child.stdout.on("data", (chunk) => {
     buffer += chunk;
     let i;
@@ -70,6 +79,7 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
   });
 
   return {
+    get pid() { return child.pid; },
     get alive() { return !isDead && child.exitCode === null; },
     get ready() { return isReady; },
     get age() { return clock() - born; },
@@ -77,17 +87,17 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
     run(prompt) {
       used = true;
       return new Promise((resolve, reject) => {
-        if (isDead) return reject(new Error(deathReason));
+        if (isDead) return reject(died(deathReason));
         waiter = { resolve, reject };
         ready.then(() => {
           if (isDead) return;
           // The message format agy expects on stdin in stream-json mode: one JSON line per user turn.
-          child.stdin.write(JSON.stringify({ event: "user", message: { content: prompt } }) + "\n");
+          child.stdin.write(JSON.stringify({ event: "user", message: { content: prompt } }) + "\n", (error) => { if (error) die("could not send the prompt to agy: " + error.code); });
         });
       });
     },
     kill() {
-      if (!isDead) die("stopped");
+      if (!isDead) die("stopped", true);
       try { child.stdin.end(); } catch (error) { /* already closed */ }
       try { child.kill(); } catch (error) { /* already gone */ } // synchronous, so it also works while Bot is exiting
       killTree(child);
@@ -95,9 +105,13 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
   };
 }
 
+// One exit hook for all pools (never leave an agy behind); synchronous kills only, so it also works while Bot is exiting.
+const allSpares = new Set();
+process.once("exit", () => { for (const spares of allSpares) for (const proc of spares.values()) proc.kill(); });
+
 function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS } = {}) {
   const spares = new Map(); // "model|schema" -> a waiting process
-  process.once("exit", () => { for (const proc of spares.values()) proc.kill(); }); // never leave an agy behind
+  allSpares.add(spares);
 
   const keyOf = (model, schema) => model + "|" + (schema ? JSON.stringify(schema) : "");
   const fresh = (model, schema) => startProcess({ command, prefixArgs, model, schema, clock });
@@ -139,8 +153,17 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
       }
     });
     try {
-      const reply = await Promise.race([proc.run(question), stop]);
-      return reply;
+      try {
+        return await Promise.race([proc.run(question), stop]);
+      } catch (error) {
+        // A waiting spare can die without anyone noticing (agy crashed, the network dropped, the PC slept). That must not cost
+        // the user a failed message: go cold at once with a fresh process, with the same time limit.
+        if (!(warm && error.processDied)) throw error;
+        proc.kill();
+        proc = fresh(model, schema);
+        warm = false;
+        return await Promise.race([proc.run(question), stop]);
+      }
     } finally {
       clearTimeout(timer);
       proc.kill(); // one process, one message

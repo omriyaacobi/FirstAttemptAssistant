@@ -34,11 +34,12 @@ process.stdin.on("data", (d) => {
     const prompt = JSON.parse(line).message.content;
     if (mode === "stuck") return;
     if (mode === "die") return process.exit(1);
+    if (mode === "dieonce" && !require("fs").existsSync(process.env.FAKE_DIE_FLAG)) { require("fs").writeFileSync(process.env.FAKE_DIE_FLAG, "x"); return process.exit(1); }
     setTimeout(() => {
       if (mode === "status") return out({ event: "result", result: { status: "ERROR" } });
       if (mode === "garbage") return out({ event: "result", result: { status: "SUCCESS", response: "no json here" } });
       if (mode === "textjson") return out({ event: "result", result: { status: "SUCCESS", response: 'sure! {"action":"answer"} done' } });
-      out({ event: "result", result: { status: "SUCCESS", structured_output: { seen, prompt, model: args[args.indexOf("--model") + 1], flags: args } } });
+      out({ event: "result", result: { status: "SUCCESS", structured_output: { pid: process.pid, seen, prompt, model: args[args.indexOf("--model") + 1], flags: args } } });
     }, thinkMs);
   }
 });
@@ -65,16 +66,18 @@ test("a cold call (no spare yet) works and then prepares a spare for the next me
   p.closeAll();
 });
 
-test("a waiting spare saves the start-up time", async () => {
-  await withEnv({ FAKE_INIT_MS: "1500", FAKE_THINK_MS: "20" }, async () => {
-    const p = pool();
-    p.warmUp("m", SCHEMA);
-    await wait(2500); // the spare has printed init by now (generous: other test files run at the same time)
-    const warm = await time(() => p.askStructured("q1", "m", SCHEMA));
-    assert.ok(warm.ms < 1000, `warm call took ${warm.ms} ms, a cold start would take 1500+`);
-    const cold = await time(() => p.askStructured("q2", "m", SCHEMA)); // the spare made after q1 is still starting
-    p.closeAll();
-  });
+// These two tests check WHICH process answered (its pid), not how fast: timing checks were flaky when the whole suite
+// ran at once and the laptop was busy.
+test("the waiting spare is the process that answers the next message", async () => {
+  const p = pool();
+  p.warmUp("m", SCHEMA);
+  const sparePid = p._spares.values().next().value.pid;
+  const out = await p.askStructured("q1", "m", SCHEMA);
+  assert.strictEqual(out.pid, sparePid);
+  const nextSparePid = p._spares.values().next().value.pid; // a new spare was prepared after the call
+  assert.notStrictEqual(nextSparePid, sparePid);
+  assert.strictEqual((await p.askStructured("q2", "m", SCHEMA)).pid, nextSparePid);
+  p.closeAll();
 });
 
 test("every process serves exactly one message (nothing leaks between messages)", async () => {
@@ -88,14 +91,13 @@ test("every process serves exactly one message (nothing leaks between messages)"
 });
 
 test("a spare that is too old is thrown away and a fresh process is used", async () => {
-  await withEnv({ FAKE_INIT_MS: "300" }, async () => {
-    const p = pool({ maxSpareAgeMs: 100 });
-    p.warmUp("m", SCHEMA);
-    await wait(450);
-    const { ms } = await time(() => p.askStructured("q", "m", SCHEMA));
-    assert.ok(ms >= 250, `expected a cold start, took ${ms} ms`);
-    p.closeAll();
-  });
+  const p = pool({ maxSpareAgeMs: 100 });
+  p.warmUp("m", SCHEMA);
+  const sparePid = p._spares.values().next().value.pid;
+  await wait(450); // older than the maximum age
+  const out = await p.askStructured("q", "m", SCHEMA);
+  assert.notStrictEqual(out.pid, sparePid);
+  p.closeAll();
 });
 
 test("an unused spare is killed when it gets too old, so an idle Bot leaves no agy running", async () => {
@@ -112,6 +114,34 @@ test("a spare that died while waiting does not break the call", async () => {
   const out = await p.askStructured("q", "m", SCHEMA); // normal agy now; the dead spare must be skipped
   assert.strictEqual(out.prompt, "q");
   p.closeAll();
+});
+
+test("a spare that dies at the moment the prompt arrives is replaced at once, the call still succeeds", async () => {
+  const flag = path.join(dir, "died-once");
+  fs.rmSync(flag, { force: true });
+  await withEnv({ FAKE_MODE: "dieonce", FAKE_DIE_FLAG: flag }, async () => {
+    const p = pool();
+    p.warmUp("m", SCHEMA);
+    await wait(600); // the spare is alive and ready, so the pool will pick it
+    const out = await p.askStructured("q", "m", SCHEMA);
+    assert.strictEqual(out.prompt, "q");
+    assert.ok(fs.existsSync(flag), "the first process really did die");
+    p.closeAll();
+  });
+});
+
+test("a waiting spare does not keep a program alive: a script that is done exits at once", async () => {
+  const script = path.join(dir, "uses-pool.js");
+  fs.writeFileSync(script, `
+    const { createWarmAgy } = require(${JSON.stringify(path.join(__dirname, "warmagy.js"))});
+    const p = createWarmAgy({ command: process.execPath, prefixArgs: [${JSON.stringify(fake)}] });
+    p.askStructured("q", "m", null).then(() => console.log("done, spare waiting: " + p._spares.size));
+  `);
+  const { execFile } = require("node:child_process");
+  const started = Date.now();
+  const out = await new Promise((resolve, reject) => execFile(process.execPath, [script], { timeout: 10000, env: { ...process.env, FAKE_INIT_MS: "200" } }, (e, o) => (e ? reject(e) : resolve(o))));
+  assert.match(out, /done, spare waiting: 1/);
+  assert.ok(Date.now() - started < 5000, "the process waited for the spare instead of exiting");
 });
 
 test("a text reply with JSON inside is accepted; one without JSON is an error", async () => {

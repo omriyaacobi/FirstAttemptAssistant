@@ -22,11 +22,14 @@ const { checkRequest } = require("./calendar-chat");
 // the time, and in about 3.5 s when its process is pre-warmed (experiments/2026-11-05-frontdesk-speed.md).
 const FRONT_DESK_MODEL = MODELS.flashLow;
 
-// The slow tail: if the first call has not answered after HEDGE_AFTER_MS, a second identical call is started and the first
-// valid reply wins (the loser is killed). After DEADLINE_MS the front desk gives up and core.js uses its default.
-const HEDGE_AFTER_MS = 7000;
-const DEADLINE_MS = 20000;
-const DESK_CALLS = 2;
+// The slow tail: if the first call has not answered after HEDGE_AFTER_MS, a second identical call is started (a third after
+// another HEDGE_AFTER_MS) and the first valid reply wins (the others are killed). A call that fails or returns an invalid reply
+// starts the next one at once. After DEADLINE_MS the front desk gives up and core.js uses its default (Claude Sonnet).
+// Measured: some messages (for example "what do I have on Thursday?") make Flash low think for 10-15 s in one call out of four,
+// and the thinking time is random per call, so several independent calls shorten the tail.
+const HEDGE_AFTER_MS = 4500; // a warm call normally answers in about 3 s, a cold one in about 5 s
+const DEADLINE_MS = 30000;
+const DESK_CALLS = 3; // so the 2nd call starts at 4.5 s and the 3rd at 9 s
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
