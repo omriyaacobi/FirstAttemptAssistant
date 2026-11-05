@@ -89,6 +89,8 @@
 
 - Photos: the page has a camera button; a message with a photo goes to Gemini (agy, Flash then Argon) in a private empty folder, never the front desk. Server checks size (3 MB) and magic bytes (`photo.js`); the saved copy in `data/uploads/` is deleted when the job ends; the chat keeps "(photo attached)". Calendar is NOT wired, so Bot lists the events as text. Live-tested with a real PNG.
 
+- Web search (2026-11-05, main). `agy` has a built-in `search_web` tool, so Bot can use the internet. Two new destinations in `router.js`: `web-search` (one quick fact: Flash medium, about 40 s) and `web-research` (compare many sites: Argon medium, about 2.5 min, 6 min limit). The front desk picks (9 of 9 right in a test, Hebrew included). Chains hold only models that can search, so nobody answers from memory. Planner types `web` and `research` exist too. SECURITY: runs in the empty sandbox, no --dangerously-skip-permissions (agy refuses shell commands), prompt says page contents are untrusted information. Prompts live in `webPrompt` in `providers.js`. `router-brief.md` no longer says Bot has no internet.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
