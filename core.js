@@ -18,7 +18,7 @@ const path = require("node:path");
 const { askChain, askAgyWithImage } = require("./providers");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
-const { getLowPools, prioritize } = require("./quota");
+const { getLowPools, refreshQuota, prioritize } = require("./quota");
 const { getReminders, formatWhen } = require("./reminders");
 const { aboutBlock, personalize, recentFacts, createMemory } = require("./profile");
 const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
@@ -27,8 +27,9 @@ const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
 // deps lets tests swap in fakes for the real models.
-// lowPools says which quota pools are nearly empty (cached; never throws, see quota.js).
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, readCalendar: readCalendarEvents,
+// lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
+// refreshQuota updates that flag in the background AFTER each answer, for the next message.
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, readCalendar: readCalendarEvents,
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -74,14 +75,23 @@ const photoNote = (name) =>
   `The user attached a photo. It is the file "${name}" in your current folder. Open and look at that one file to answer; do not read or change anything else. ` +
   "You cannot add anything to a calendar yet: if the photo shows a schedule or events, list each one clearly (date, start and end time, title) so the user can add them.";
 
-async function handleTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, deps = {} } = {}) {
+// Runs one task. A message never waits for the quota lookup; the lookup runs after the answer is ready.
+async function handleTask(task, options = {}) {
+  try {
+    return await runTask(task, options);
+  } finally {
+    try { Promise.resolve((options.deps?.refreshQuota || defaultDeps.refreshQuota)()).catch(() => {}); } catch (error) { /* quota can never break a task */ }
+  }
+}
+
+async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, deps = {} } = {}) {
   const d = { ...defaultDeps, ...deps };
   const started = Date.now();
   const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
   const seconds = () => secondsSince(started);
   // Where the time went, shown in the log and on the page ("What Bot did"). Filled in as we go.
   // attempts lists every model that was tried, including failed ones (see askChain).
-  const timing = { quotaSeconds: 0, frontDeskSeconds: null, plannerSeconds: null, attempts: [] };
+  const timing = { frontDeskSeconds: null, plannerSeconds: null, attempts: [] };
   // The front desk decides from the newest message (plus the history for context).
   const prompt = withContext(task, history);
   // What Bot knows about the user (profile.js), read fresh for every task. Goes to the front desk and to
@@ -110,7 +120,6 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   // "[timing] quota 0 s, front desk 8.4 s, gemini-4-argon-low 41.2 s (failed), sonnet 6 s, total 56.1 s"
   const timingLine = () => {
     const parts = [];
-    if (timing.quotaSeconds >= 0.1) parts.push(`quota ${timing.quotaSeconds} s`);
     if (timing.frontDeskSeconds !== null) parts.push(`front desk ${timing.frontDeskSeconds} s`);
     if (timing.plannerSeconds !== null) parts.push(`planner ${timing.plannerSeconds} s`);
     for (const a of timing.attempts) parts.push(`${a.step ? `step ${a.step}: ` : ""}${a.model} ${a.seconds} s${a.ok ? "" : " (failed)"}`);
@@ -258,9 +267,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
   log(`[frontdesk] asking ${label(FRONT_DESK_MODEL)}`);
   let decision;
   try {
-    const quotaStart = Date.now();
-    const low = await getLow(); // usually instant now: quota.js answers with the last known value
-    timing.quotaSeconds = secondsSince(quotaStart);
+    const low = await getLow(); // never waits: just the in-memory flag from the last lookup
     const deskStart = Date.now();
     try {
       decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout });
@@ -272,7 +279,7 @@ async function handleTask(task, { noPlan = false, planOnly = false, forced = nul
     return planOnly ? { mode: "plan", subtasks: null, note: error.message } : fallback("the front desk failed, so Claude Sonnet took it");
   }
   const target = decision.action === "delegate" ? ` -> ${decision.destination}` : "";
-  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason}) in ${timing.frontDeskSeconds} s`);
+  log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason}) in ${timing.frontDeskSeconds} s${decision.hedged ? " (a second call was started because the first was slow)" : ""}`);
 
   // The user turned splitting off, so a "split" decision is handled as one job instead.
   if (decision.action === "split" && noPlan) {

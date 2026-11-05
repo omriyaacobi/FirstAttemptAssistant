@@ -54,73 +54,42 @@ test("prioritize: no low pools means no change, and the input is not modified", 
   assert.deepStrictEqual(chain, [A, B]);
 });
 
-test("createQuota: caches a good lookup until it expires", async () => {
-  let calls = 0, time = 0;
-  const q = createQuota({ fetchRows: async () => { calls++; return [row("Pool A", 5)]; }, now: () => time, cacheMs: 1000 });
-  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
-  time = 999;
-  await q.get();
-  assert.strictEqual(calls, 1);
-  time = 1000;
-  await q.get();
-  assert.strictEqual(calls, 2);
-});
+const settle = () => new Promise((r) => setImmediate(r));
 
-test("createQuota: a failing lookup returns 'nothing low' and is retried only after a pause", async () => {
-  let calls = 0, time = 0;
-  const q = createQuota({ fetchRows: async () => { calls++; throw new Error("agy is down"); }, now: () => time, retryMs: 500 });
-  assert.deepStrictEqual(await q.get(), []);
-  time = 499;
-  assert.deepStrictEqual(await q.get(), []);
-  assert.strictEqual(calls, 1);
-  time = 500;
-  await q.get();
-  assert.strictEqual(calls, 2);
-});
-
-test("createQuota: tasks started at the same time share one lookup", async () => {
+test("createQuota: the flag starts as 'nothing is low' and get() never starts a lookup", async () => {
   let calls = 0;
-  const q = createQuota({ fetchRows: async () => { calls++; return []; } });
-  await Promise.all([q.get(), q.get(), q.get()]);
+  const q = createQuota({ fetchRows: async () => { calls++; return [row("Pool A", 5)]; } });
+  assert.deepStrictEqual(await q.get(), []);
+  assert.strictEqual(calls, 0); // even the very first message does not look anything up
+});
+
+test("createQuota: get() answers at once even while a lookup is still running", async () => {
+  const q = createQuota({ fetchRows: () => new Promise(() => {}) }); // never finishes
+  q.refresh();
+  assert.deepStrictEqual(await q.get(), []);
+});
+
+test("createQuota: refresh() updates the flag for the next message", async () => {
+  const q = createQuota({ fetchRows: async () => [row("Pool A", 5)] });
+  await q.refresh();
+  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
+});
+
+test("createQuota: a failed refresh leaves the flag as it was", async () => {
+  let calls = 0;
+  const q = createQuota({ fetchRows: async () => { if (++calls > 1) throw new Error("agy is down"); return [row("Pool A", 5)]; } });
+  await q.refresh();
+  await q.refresh(); // fails, and does not throw
+  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
+});
+
+test("createQuota: no new lookup starts while one is running", async () => {
+  let calls = 0, release;
+  const q = createQuota({ fetchRows: () => { calls++; return new Promise((r) => { release = () => r([row("Pool A", 90)]); }); } });
+  q.refresh(); q.refresh(); q.refresh();
   assert.strictEqual(calls, 1);
-});
-
-test("createQuota: an expired value is returned at once and refreshed in the background", async () => {
-  let time = 0, calls = 0, release;
-  const q = createQuota({
-    fetchRows: () => { calls++; return calls === 1 ? Promise.resolve([row("Pool A", 5)]) : new Promise((r) => { release = () => r([row("Pool A", 90)]); }); },
-    now: () => time, cacheMs: 1000,
-  });
-  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
-  time = 1000;
-  // The refresh (call 2) never finishes until we say so, yet get() answers immediately with the old value.
-  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
+  release();
+  await settle();
+  q.refresh(); // the first one is done, so a new one may start
   assert.strictEqual(calls, 2);
-  release();
-  await new Promise((r) => setImmediate(r));
-  assert.deepStrictEqual(await q.get(), []); // the refreshed value (90% left) is used from now on
-});
-
-test("createQuota: a failed refresh keeps the last known value", async () => {
-  let time = 0, calls = 0;
-  const q = createQuota({
-    fetchRows: async () => { if (++calls > 1) throw new Error("agy is down"); return [row("Pool A", 5)]; },
-    now: () => time, cacheMs: 1000, retryMs: 500,
-  });
-  await q.get();
-  time = 1000;
-  await q.get(); // starts the failing refresh
-  await new Promise((r) => setImmediate(r));
-  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]);
-});
-
-test("createQuota: the very first lookup is waited for only a short time", async () => {
-  let release;
-  const q = createQuota({ fetchRows: () => new Promise((r) => { release = () => r([row("Pool A", 5)]); }), firstWaitMs: 20 });
-  const started = Date.now();
-  assert.deepStrictEqual(await q.get(), []); // too slow: route normally this time
-  assert.ok(Date.now() - started < 1000);
-  release();
-  await new Promise((r) => setImmediate(r));
-  assert.deepStrictEqual(await q.get(), [{ pool: "Pool A", remaining: 5 }]); // the late answer is kept for next time
 });

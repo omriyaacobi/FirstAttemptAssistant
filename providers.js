@@ -67,6 +67,16 @@ function withTimeout(child, timeoutMs, reject, name) {
   child.on("close", () => clearTimeout(timer));
 }
 
+// Stops a child (and its process tree) when the AbortSignal fires. Used by the front desk's hedging: the call
+// that lost the race is killed instead of being left to run.
+function killOnAbort(child, signal, reject) {
+  if (!signal) return;
+  const onAbort = () => { killTree(child); reject(new Error("aborted")); };
+  if (signal.aborted) return onAbort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  child.on("close", () => signal.removeEventListener("abort", onAbort));
+}
+
 function sandbox() {
   fs.mkdirSync(SANDBOX_DIR, { recursive: true });
   return SANDBOX_DIR;
@@ -112,7 +122,8 @@ function askAgy(question, model) {
 // Asks agy for an answer that must match a JSON schema (a description of the shape we want).
 // agy only allows --json-schema together with --output-format json, and puts the clean
 // result in a "structured_output" field. Returns that result as a JavaScript object.
-function askAgyStructured(question, model, schema) {
+// options.signal: an AbortSignal that kills the process. options.timeoutMs: a shorter limit than the model's usual one.
+function askAgyStructured(question, model, schema, { signal, timeoutMs } = {}) {
   checkModelName(model);
   const args = ["-p", question, "--model", model, "--output-format", "json", "--json-schema", JSON.stringify(schema)];
   return new Promise((resolve, reject) => {
@@ -122,10 +133,35 @@ function askAgyStructured(question, model, schema) {
         const envelope = JSON.parse(stdout);
         resolve(envelope.structured_output ?? JSON.parse(envelope.response));
       } catch (parseError) {
-        reject(new Error("agy did not return valid structured output"));
+        reject(new Error("agy did not return valid structured output: " + String(stdout).replace(/\s+/g, " ").trim().slice(0, 150)));
       }
     });
-    withTimeout(child, timeoutFor(model), reject, model);
+    withTimeout(child, timeoutMs || timeoutFor(model), reject, model);
+    killOnAbort(child, signal, reject);
+  });
+}
+
+// The same idea through the Claude CLI: the reply must match a JSON schema. claude prints one JSON object
+// ("--output-format json"); the checked reply is in "structured_output". claude reports problems such as a used-up
+// plan or an expired login INSIDE that object (is_error), so those become errors here too and the caller can fall back.
+// The schema is a constant of ours (never user text), so putting it in the command line is safe once its quotes are escaped.
+function askClaudeStructured(question, model, schema, { signal, timeoutMs } = {}) {
+  const command = `${claudeCommand(model)} --output-format json --json-schema "${JSON.stringify(schema).replace(/"/g, '\\"')}"`;
+  return new Promise((resolve, reject) => {
+    const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      let envelope = null;
+      try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: handled below */ }
+      if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message) || "claude gave no output").trim().slice(0, 200)));
+      if (envelope.is_error) return reject(new Error(String(envelope.result || "claude reported an error").slice(0, 200)));
+      try {
+        resolve(envelope.structured_output ?? JSON.parse(envelope.result));
+      } catch (resultError) {
+        reject(new Error("claude did not return valid structured output"));
+      }
+    });
+    withTimeout(child, timeoutMs || timeoutFor(model), reject, model);
+    killOnAbort(child, signal, reject);
+    child.stdin.end(question);
   });
 }
 
@@ -245,5 +281,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { ask, askChain, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };

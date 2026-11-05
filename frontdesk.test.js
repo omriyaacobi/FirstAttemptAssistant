@@ -73,14 +73,45 @@ test("the prompt says so when splitting is turned off, and when there is no hist
 
 test("decide returns a validated decision from the model's reply", async () => {
   let seen = null;
-  const fake = async (prompt, model, schema) => {
-    seen = { prompt, model, schema };
+  const fake = async (prompt, model, schema, options) => {
+    seen = { prompt, model, schema, options };
     return { action: "delegate", destination: "gemini-flash", answer: "", reason: "easy" };
   };
   const decision = await decide("summarize this", { askStructured: fake, brief: "B" });
   assert.strictEqual(decision.destination, "gemini-flash");
-  assert.strictEqual(seen.model, "gemini-3.8-flash-medium");
-  assert.strictEqual(seen.schema, SCHEMA);
+  assert.strictEqual(seen.model, "gemini-3.8-flash-low");
+  assert.strictEqual(seen.schema, null); // the shape is described in the prompt and checked in code, not forced by agy
+  assert.match(seen.prompt, /Reply with ONLY one JSON object/);
+  for (const key of SCHEMA.required) assert.ok(seen.prompt.includes(key), key + " is named in the reply format");
+  assert.ok(seen.options.signal && seen.options.timeoutMs > 0); // so a losing call can be killed
+  assert.strictEqual(decision.hedged, false);
+});
+
+test("decide: a slow first call is hedged and the quick second call wins", async () => {
+  let calls = 0;
+  const fake = async (prompt, model, schema, { signal }) => {
+    const mine = ++calls;
+    if (mine === 1) return new Promise((resolve, reject) => { signal.addEventListener("abort", () => reject(new Error("aborted"))); }); // never answers
+    return { action: "answer", destination: "none", answer: "hi", reason: "r" };
+  };
+  const decision = await decide("hello", { askStructured: fake, brief: "B", hedgeAfterMs: 30, deadlineMs: 2000 });
+  assert.strictEqual(decision.action, "answer");
+  assert.strictEqual(decision.hedged, true);
+  assert.strictEqual(calls, 2);
+});
+
+test("decide: an unusable first reply starts the second call at once, and a good one is used", async () => {
+  let calls = 0;
+  const fake = async () => (++calls === 1 ? { action: "delegate", destination: "evil" } : { action: "delegate", destination: "gemini-flash", reason: "ok" });
+  const decision = await decide("x", { askStructured: fake, brief: "B", hedgeAfterMs: 60000, deadlineMs: 120000 });
+  assert.strictEqual(decision.destination, "gemini-flash");
+});
+
+test("decide: gives up at the deadline so the caller can use its default", async () => {
+  const stuck = (p, m, s, { signal }) => new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  const started = Date.now();
+  await assert.rejects(decide("x", { askStructured: stuck, brief: "B", hedgeAfterMs: 20, deadlineMs: 150 }), /did not answer within/);
+  assert.ok(Date.now() - started < 1500);
 });
 
 test("decide throws when the reply is unusable, so the caller can fall back", async () => {

@@ -16,6 +16,7 @@ const fakes = (overrides = {}) => ({
   chainForDestination: () => chain,
   chainForType: () => chain,
   lowPools: async () => [], // never the real agy /usage in tests
+  refreshQuota: () => {},
   about: () => "", // never the real data/profile.md in tests (profile.test.js covers the profile)
   askChain: async () => ({ answer: "model answer", used }),
   plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }], plannedBy: "fake-planner" }),
@@ -270,6 +271,32 @@ test("quota: the front desk is told which pools are low", async () => {
   const deps = fakes({ lowPools: lowArgon, decide: async (task, opts) => { seenLow = opts.low; return { action: "answer", destination: null, answer: "hi", reason: "t" }; } });
   await handleTask("hi", { deps });
   assert.deepStrictEqual(seenLow, [{ pool: "Gemini 4 Argon", remaining: 4 }]);
+});
+
+test("quota: the lookup runs after the answer, never before it", async () => {
+  const order = [];
+  const deps = fakes({
+    lowPools: async () => { order.push("read flag"); return []; },
+    askChain: async () => { order.push("model answers"); return { answer: "ok", used }; },
+    refreshQuota: () => order.push("refresh"),
+  });
+  await handleTask("x", { deps });
+  assert.deepStrictEqual(order, ["read flag", "model answers", "refresh"]);
+});
+
+test("quota: the lookup also runs after a failed task, and a failing lookup breaks nothing", async () => {
+  let refreshed = 0;
+  const failing = fakes({ decide: async () => { throw new Error("desk down"); }, askChain: async () => { throw new Error("all down"); }, refreshQuota: () => { refreshed++; throw new Error("boom"); } });
+  await assert.rejects(handleTask("x", { deps: failing }), /all down/);
+  assert.strictEqual(refreshed, 1);
+  const ok = fakes({ refreshQuota: () => Promise.reject(new Error("rejected later")) });
+  assert.strictEqual((await handleTask("x", { deps: ok })).answer, "model answer");
+});
+
+test("quota: the timing line has no quota part any more", async () => {
+  const logs = [];
+  await handleTask("x", { deps: fakes(), log: (l) => logs.push(l) });
+  assert.ok(logs.some((l) => l.startsWith("[timing]") && !/quota/.test(l)));
 });
 
 test("quota: a forced chain is never reordered", async () => {

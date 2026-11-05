@@ -12,7 +12,7 @@
 // The web page (node server.js) uses the same core.js, so both behave the same way.
 
 const { DEFAULT_CHAIN, DESTINATIONS } = require("./router");
-const { getLowPools, prioritize } = require("./quota");
+const { getLowPools, refreshQuota, prioritize } = require("./quota");
 const { FRONT_DESK_MODEL } = require("./frontdesk");
 const { handleTask, chainText, label } = require("./core");
 
@@ -38,6 +38,11 @@ async function main() {
 
   if (dryRun) {
     // Reads the real quota (agy /usage; this calls no model) and shows what it would change.
+    // A dry run has no earlier answer to learn from, so look the quota up now. The lookup itself does not keep a program
+    // alive (so a normal run can exit at once), hence the timer while we wait for it.
+    const keepAlive = setInterval(() => {}, 1000);
+    await refreshQuota();
+    clearInterval(keepAlive);
     const low = await getLowPools();
     console.error(low.length ? `[quota] low pools: ${low.map((p) => `${p.pool} ${p.remaining}%`).join(", ")}` : "[quota] no pool is low (or the lookup failed), routing normally");
     for (const [name, chain] of Object.entries(DESTINATIONS)) {
