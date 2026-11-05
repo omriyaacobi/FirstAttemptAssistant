@@ -1503,6 +1503,7 @@
     showEmpty();
     loadChats();
     loadQuota();
+    if (matchMedia("(pointer: coarse)").matches) $("task").placeholder = "Type a task..."; // a phone has no Shift+Enter
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
   })();
 </script>
