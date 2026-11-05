@@ -25,7 +25,7 @@ const { ID_PATTERN } = require("./store");
 // store.js validates conversation ids, selfedit.js is this safety gate itself, and the rest
 // protect secrets, git, and your private chats.
 // gitops.js is protected because it pushes to GitHub.
-const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", "gitops.js", ".gitignore", ".gitattributes", "start-web.cmd"];
+const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", "gitops.js", "auth.js", ".gitignore", ".gitattributes", "start-web.cmd"];
 const PROTECTED_PREFIXES = [".git/", ".github/", "data/", "node_modules/"];
 
 function isProtected(file) {

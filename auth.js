@@ -6,6 +6,7 @@
 // Settings, in .env (git-ignored, never committed):
 //   BOT_PHONE_HOST=my-pc.tailXXXX.ts.net   the exact Tailscale name of this PC
 //   BOT_PHONE_TOKEN=<a long random password> you type it once on the phone
+//   BOT_ADMIN_PIN=<at least 6 characters>   optional second lock, see below
 // If either is missing, phone access is OFF and only this computer can use Bot.
 //
 // How logging in works:
@@ -18,6 +19,12 @@
 //     Its value is an HMAC of the token (a keyed fingerprint), so changing the token in .env logs
 //     every phone out, and the token itself is never stored on the phone.
 //   - After 5 wrong tokens, logins are refused for 15 minutes, so the token can't be guessed.
+//
+// The PIN: Improve Bot and Restart change the code that runs on this computer, so on the phone they
+// need more than the saved login: someone holding your unlocked phone is logged in too. The PIN is
+// never stored on the phone. Typing it gives a random "unlocked" value that the server keeps in MEMORY
+// for 15 minutes, so a restart locks it again. It has its own lockout. Without BOT_ADMIN_PIN those
+// features stay PC-only.
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -27,6 +34,9 @@ const MIN_TOKEN = 24;
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const COOKIE_DAYS = 30;
+const ADMIN_COOKIE = "bot_admin";
+const MIN_PIN = 6;
+const UNLOCK_MS = 15 * 60 * 1000;
 
 // Minimal .env reader: KEY=value lines, # comments.
 function parseEnv(text) {
@@ -46,7 +56,8 @@ function loadPhoneConfig(envFile) {
   if (!host || !token) return { enabled: false, reason: "BOT_PHONE_HOST or BOT_PHONE_TOKEN is not set in .env" };
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/.test(host)) return { enabled: false, reason: "BOT_PHONE_HOST must be this PC's Tailscale name, ending in .ts.net" };
   if (token.length < MIN_TOKEN) return { enabled: false, reason: `BOT_PHONE_TOKEN must be at least ${MIN_TOKEN} characters` };
-  return { enabled: true, host, token };
+  const pin = String(env.BOT_ADMIN_PIN || "");
+  return { enabled: true, host, token, ...(pin.length >= MIN_PIN ? { adminPin: pin } : {}) };
 }
 
 const sameText = (a, b) => {
@@ -66,16 +77,40 @@ function readCookie(req, name) {
 function createAuth({ config, now = () => Date.now() }) {
   const sessionValue = config.enabled ? crypto.createHmac("sha256", config.token).update("bot-phone-session-v1").digest("base64url") : null;
   let fails = [];
+  let pinFails = [];
+  let unlocked = null; // { value, until }, in memory only
 
-  const lockedUntil = () => {
-    fails = fails.filter((t) => now() - t < LOCK_MS);
-    return fails.length >= MAX_FAILS ? fails[0] + LOCK_MS : 0;
-  };
+  const recent = (list) => list.filter((t) => now() - t < LOCK_MS);
+  const lockTime = (list) => (list.length >= MAX_FAILS ? list[0] + LOCK_MS : 0);
+  const lockedUntil = () => lockTime((fails = recent(fails)));
+  const adminCookie = (value, seconds) => `${ADMIN_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${seconds}`;
 
   return {
     enabled: config.enabled,
     host: config.enabled ? config.host : null,
     reason: config.reason,
+    adminEnabled: Boolean(config.enabled && config.adminPin),
+    isUnlocked(req) {
+      const value = readCookie(req, ADMIN_COOKIE);
+      return Boolean(unlocked && value && now() < unlocked.until && sameText(value, unlocked.value));
+    },
+    // Returns { ok, cookie } or { ok: false, status, error }.
+    unlock(pin) {
+      if (!config.enabled || !config.adminPin) return { ok: false, status: 403, error: "no PIN is set" };
+      const until = lockTime((pinFails = recent(pinFails)));
+      if (until) return { ok: false, status: 429, error: `too many wrong PINs, try again in ${Math.ceil((until - now()) / 60000)} min` };
+      if (typeof pin !== "string" || !sameText(pin, config.adminPin)) {
+        pinFails.push(now());
+        return { ok: false, status: 401, error: "wrong PIN" };
+      }
+      pinFails = [];
+      unlocked = { value: crypto.randomBytes(32).toString("base64url"), until: now() + UNLOCK_MS };
+      return { ok: true, cookie: adminCookie(unlocked.value, UNLOCK_MS / 1000) };
+    },
+    lock() {
+      unlocked = null;
+      return adminCookie("", 0);
+    },
     isLoggedIn(req) {
       const value = readCookie(req, COOKIE);
       return Boolean(sessionValue && value && sameText(value, sessionValue));
@@ -96,4 +131,4 @@ function createAuth({ config, now = () => Date.now() }) {
   };
 }
 
-module.exports = { parseEnv, loadPhoneConfig, createAuth, readCookie, COOKIE, MAX_FAILS, LOCK_MS, MIN_TOKEN };
+module.exports = { parseEnv, loadPhoneConfig, createAuth, readCookie, COOKIE, MAX_FAILS, LOCK_MS, MIN_TOKEN, UNLOCK_MS };

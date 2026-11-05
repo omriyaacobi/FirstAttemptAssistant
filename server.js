@@ -28,11 +28,12 @@
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
 //   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
 //   POST   /api/login | /api/logout -> the phone login (see auth.js)
+//   POST   /api/admin/unlock       -> the phone's PIN, for Improve Bot and Restart (see auth.js)
 //   POST   /api/push/subscribe | /api/push/unsubscribe | /api/push/test -> push notifications (see webpush.js)
 //
 // THE PHONE: it reaches Bot through Tailscale (`tailscale serve`), which runs on this PC and forwards
-// to 127.0.0.1. Such requests must log in first, and they can only chat, see reminders and get
-// notifications. Improve Bot, Restart and GitHub stay usable from this computer only.
+// to 127.0.0.1. Such requests must log in first. Improve Bot and Restart also need the PIN
+// (BOT_ADMIN_PIN, see auth.js) and are off without it. GitHub stays usable from this computer only.
 //
 // Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
 // The models themselves remember nothing, so for each new message we send them the recent
@@ -77,8 +78,10 @@ const RESTART_EXIT_CODE = 75;
 // A proxy (like tailscale serve) adds these headers. A browser on this PC never sends them, so their
 // presence means "this request came from another device", even if the Host header looks local.
 const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "forwarded", "tailscale-user-login"];
-// What the phone may never do, even when logged in.
-const PC_ONLY = /^\/api\/(selfedit|restart|git)(\/|$)/;
+// What the phone may never do, even when logged in: the repository is public.
+const PC_ONLY = /^\/api\/git(\/|$)/;
+// What the phone may do only with the PIN: these change the code that runs on this computer.
+const NEEDS_PIN = /^\/api\/(selfedit|restart)(\/|$)/;
 
 // agy prints tab-separated lines like: Gemini Models<TAB>Five Hour Limit Remaining<TAB>99%<TAB>2026-10-28T01:41:40Z
 function parseUsage(text) {
@@ -206,8 +209,10 @@ function createServer({
     // CHECK 3 (phone only) - log in first, and never the PC-only routes.
     if (remote) {
       const open = pageFile || url.pathname === "/api/session" || url.pathname === "/api/login";
-      if (!open && PC_ONLY.test(url.pathname)) return sendJson(res, 403, { error: "this only works on the PC" });
+      const needsPin = !open && NEEDS_PIN.test(url.pathname);
+      if (!open && (PC_ONLY.test(url.pathname) || (needsPin && !auth.adminEnabled))) return sendJson(res, 403, { error: "this only works on the PC" });
       if (!open && !auth.isLoggedIn(req)) return sendJson(res, 401, { error: "log in first" });
+      if (needsPin && !auth.isUnlocked(req)) return sendJson(res, 403, { error: "enter your PIN first", needPin: true });
     }
 
     // Phone login and session info
@@ -218,6 +223,8 @@ function createServer({
         loggedIn: remote ? auth.isLoggedIn(req) : true,
         images: true, // this Bot can receive a photo with a message
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
+        adminPin: remote && auth.adminEnabled && auth.isLoggedIn(req),
+        adminUnlocked: remote && auth.isLoggedIn(req) && auth.isUnlocked(req),
       });
     }
     if (req.method === "POST" && url.pathname === "/api/login") {
@@ -229,9 +236,18 @@ function createServer({
       res.setHeader("Set-Cookie", result.cookie);
       return sendJson(res, 200, { ok: true });
     }
+    if (req.method === "POST" && url.pathname === "/api/admin/unlock") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      if (!remote) return sendJson(res, 400, { error: "no PIN is needed on this computer" });
+      const result = auth.unlock(input.pin);
+      if (!result.ok) return sendJson(res, result.status, { error: result.error });
+      res.setHeader("Set-Cookie", result.cookie);
+      return sendJson(res, 200, { ok: true });
+    }
     if (req.method === "POST" && url.pathname === "/api/logout") {
       if (!(await readJsonBody(req, res))) return;
-      res.setHeader("Set-Cookie", auth.logoutCookie());
+      res.setHeader("Set-Cookie", [auth.logoutCookie(), auth.lock()]);
       return sendJson(res, 200, { ok: true });
     }
 

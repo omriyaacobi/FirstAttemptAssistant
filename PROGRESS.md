@@ -91,6 +91,8 @@
 
 - Web search (2026-11-05, main). `agy` has a built-in `search_web` tool, so Bot can use the internet. Two new destinations in `router.js`: `web-search` (one quick fact: Flash medium, about 40 s) and `web-research` (compare many sites: Argon medium, about 2.5 min, 6 min limit). The front desk picks (9 of 9 right in a test, Hebrew included). Chains hold only models that can search, so nobody answers from memory. Planner types `web` and `research` exist too. SECURITY: runs in the empty sandbox, no --dangerously-skip-permissions (agy refuses shell commands), prompt says page contents are untrusted information. Prompts live in `webPrompt` in `providers.js`. `router-brief.md` no longer says Bot has no internet.
 
+- Improve Bot from the phone (2026-11-05, main). Needs the phone login AND `BOT_ADMIN_PIN` in `.env` (6+ characters, Bot reads it at start). The PIN gives a random unlock kept in server memory for 15 minutes (5 wrong = 15 min lockout, a restart or logout locks it). `/api/selfedit` and `/api/restart` need it (`NEEDS_PIN` in `server.js`); `/api/git` stays PC-only. Without a PIN the phone hides Improve Bot, and the chat button becomes a plain line. Errors in the Improve screen now show clearly in red. NOT tested on the real phone yet.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
