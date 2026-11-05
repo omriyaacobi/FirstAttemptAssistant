@@ -118,13 +118,27 @@ const LAB = { // name -> { brief file, model, flags, schema }
   "lab-h2-low": { brief: "router-brief-haiku.md", flags: "--effort low" },
   "lab-h2-fullschema": { brief: "router-brief-haiku.md", schema: SCHEMA },
   "lab-full": { brief: "router-brief.md" },
+  "lab-plain": { brief: "router-brief-haiku.md", plain: true }, // no --json-schema: JSON as plain text, validated in code
+  "lab-plain-low": { brief: "router-brief-haiku.md", plain: true, flags: "--effort low" },
   "lab-sonnet": { brief: "router-brief-haiku.md", model: "sonnet" },
   "lab-sonnet-low": { brief: "router-brief-haiku.md", model: "sonnet", flags: "--effort low" },
 };
 async function askLab(variant, prompt, userOnly) {
   const o = LAB[variant];
-  const r = await call({ user: userOnly, systemFile: path.join(__dirname, "..", o.brief), systemMode: "replace", schema: o.schema || COMPACT, model: o.model || "haiku", flags: o.flags || "" });
+  if (o.plain) userOnly += "\n\nReply with ONLY one JSON object: action, destination (a menu name, or none), reason, and only the other fields that action needs (answer, reminderText, remindAt, timezone, fact, replaces, calendarFrom, calendarDays). No other text.";
+  const r = await call({ user: userOnly, systemFile: path.join(__dirname, "..", o.brief), systemMode: "replace", schema: o.plain ? null : o.schema || COMPACT, model: o.model || "haiku", flags: o.flags || "" });
   return { seconds: r.seconds, raw: r.raw, error: r.error, usage: r.usage };
+}
+
+// "real": the production path, frontdesk.decide with the desk "haiku" (no fallback to Flash is expected to fire)
+async function askReal(message, history) {
+  const { decide } = require("../frontdesk");
+  const logs = [];
+  const t0 = Date.now();
+  try {
+    const d = await decide(message, { history, about, desk: "haiku", log: (l) => logs.push(l) });
+    return { seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), decision: d, error: d.via === "haiku" ? null : "FELL BACK: " + logs.join(" ") };
+  } catch (e) { return { seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), error: String(e.message).slice(0, 120) }; }
 }
 
 async function ask(variant, prompt, userOnly) {
@@ -148,9 +162,9 @@ async function ask(variant, prompt, userOnly) {
     for (const [label, message, history, ok, check] of CASES) {
       if (only && !label.startsWith(only)) continue;
       const prompt = buildPrompt(message, { history, about, brief, timezone: TZ });
-      const r = await ask(variant, prompt, buildPrompt(message, { history, about, brief: "", timezone: TZ }));
-      const seconds = variant.startsWith("haiku") || LAB[variant] ? r.seconds : r._t;
-      const d = r.raw ? validateDecision(r.raw) : null;
+      const r = variant === "real" ? await askReal(message, history) : await ask(variant, prompt, buildPrompt(message, { history, about, brief: "", timezone: TZ }));
+      const seconds = variant.startsWith("haiku") || LAB[variant] || variant === "real" ? r.seconds : r._t;
+      const d = variant === "real" ? r.decision || null : r.raw ? validateDecision(r.raw) : null;
       const key = r.error ? "ERROR" : keyOf(d);
       const right = !!d && ok.includes(key) && (!check || !!check(d));
       rows.push({ round, label, seconds, key, right, invalid: !r.error && !d, error: r.error || null, usage: r.usage || null, reason: d ? d.reason : "", detail: d && (d.reminder ? { at: localIso(d.reminder.at, d.reminder.timezone), tz: d.reminder.timezone } : d.calendar || (d.replaces ? { replaces: d.replaces } : d.fact ? { fact: d.fact } : d.answer ? { answer: d.answer.slice(0, 80) } : undefined)) });

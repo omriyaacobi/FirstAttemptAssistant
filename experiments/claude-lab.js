@@ -19,7 +19,7 @@ function call({ user, schema, systemFile, systemMode = "append", model = "haiku"
       let j = null; try { j = JSON.parse(o); } catch (x) { /* not json */ }
       resolve({
         seconds, error: j ? (j.is_error ? String(j.result).slice(0, 150) : null) : String(e ? e.message : "no json").slice(0, 150) + " " + String(er).slice(0, 100),
-        raw: j && !j.is_error ? (j.structured_output ?? (() => { try { return JSON.parse(j.result); } catch (x) { return null; } })()) : null,
+        raw: j && !j.is_error ? (j.structured_output ?? (() => { try { return JSON.parse(String(j.result).trim().replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch (x) { return null; } })()) : null,
         text: j && j.result, usage: j && j.usage ? { in: j.usage.input_tokens, out: j.usage.output_tokens, cacheRead: j.usage.cache_read_input_tokens, cacheWrite: j.usage.cache_creation_input_tokens } : null,
         apiMs: j && j.duration_api_ms, turns: j && j.num_turns, cost: j && j.total_cost_usd,
       });
@@ -27,4 +27,5 @@ function call({ user, schema, systemFile, systemMode = "append", model = "haiku"
     c.stdin.end(user);
   });
 }
+process.env.CLAUDE_CODE_OAUTH_TOKEN = TOKEN; // so Bot's own claudeEnv() works in a worktree that has no .env (the token is never printed)
 module.exports = { call };
