@@ -1,6 +1,8 @@
 # Front desk on Claude Haiku (measured 2026-11-05)
 
-Branch `claude/frontdesk-haiku-d42fac`. Haiku is **opt-in**: `FRONT_DESK = "flash"` is still the default in `frontdesk.js`. Switching is one word: `"haiku"`.
+**Update (after merging main):** Omri chose Haiku as the BACKUP desk, not the main one. The `FRONT_DESK` setting, the Flash fallback and the 5-minute cool-down described below were removed. In the merged code the Gemini desk (Flash low, warm, hedged) is first, and `frontdesk.decide` asks Haiku (`router-brief-haiku.md` as system prompt, compact schema, 25 s limit, same `validateDecision`) only when Gemini fails or hits its deadline; if Haiku fails too, `core.js` uses Claude Sonnet. The speed and quality numbers below are for Haiku itself and still apply to the backup path. Real test: `frontdesk.backup.test.js`.
+
+Branch `claude/frontdesk-haiku-d42fac`. (Originally Haiku was built as an opt-in main desk: `FRONT_DESK = "flash"` default, `"haiku"` one-word switch.)
 
 Test set: 55 messages (`experiments/frontdesk-haiku.js`): the 21 of `frontdesk-ab.js` plus Hebrew/mixed, web-search vs web-research, reminders with checked local times, calendar ranges, numbered remember/forget, improve, clarify, split, history follow-ups, a prompt-injection try. A made-up profile with 3 numbered facts is used (not Omri's). "Right" means the action/destination is one a sensible person accepts, and extra checks pass (exact reminder moment, calendar range, fact number). Calls run one after another. The other session was also using the laptop at times, so look at the spread, not single numbers.
 
