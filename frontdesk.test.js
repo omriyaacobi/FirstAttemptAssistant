@@ -57,6 +57,12 @@ test("the briefing describes every destination and every action", () => {
   for (const action of ACTIONS) assert.ok(brief.includes(action), `router-brief.md does not mention ${action}`);
 });
 
+test("the Haiku briefing describes every destination and every action too", () => {
+  const brief = fs.readFileSync(require("./frontdesk").HAIKU_BRIEF_FILE, "utf8");
+  for (const name of Object.keys(DESTINATIONS)) assert.ok(brief.includes(name), `router-brief-haiku.md does not mention ${name}`);
+  for (const action of ACTIONS) assert.ok(brief.includes(action), `router-brief-haiku.md does not mention ${action}`);
+});
+
 test("the prompt contains the briefing, the history and the message between markers", () => {
   const prompt = buildPrompt("what is 7 times 8?", { history: "Conversation so far (oldest first), for context only:\nUser: hi", brief: "BRIEF TEXT" });
   assert.match(prompt, /^BRIEF TEXT/);
@@ -185,4 +191,26 @@ test("haiku desk: when Flash fails too, decide throws so core.js can use Claude 
 
 test("an unknown desk name is refused", async () => {
   await assert.rejects(decide("x", { desk: "gpt", brief: "B" }), /unknown front desk/);
+});
+
+test("haiku desk: Claude gets the briefing as a system file, a message without it, and the compact schema", async () => {
+  resetCoolDowns();
+  const { HAIKU_BRIEF_FILE, COMPACT_SCHEMA } = require("./frontdesk");
+  let seen = null;
+  const claude = async (prompt, model, schema, opts) => { seen = { prompt, model, schema, opts }; return { action: "answer", answer: "391", reason: "math" }; }; // no empty fields: the compact shape
+  const d = await decide("17 times 23", { desk: "haiku", askStructured: claude, askFallback: async () => GOOD });
+  assert.strictEqual(d.via, "haiku");
+  assert.strictEqual(d.answer, "391");
+  assert.strictEqual(seen.opts.systemFile, HAIKU_BRIEF_FILE);
+  assert.strictEqual(seen.schema, COMPACT_SCHEMA);
+  assert.match(seen.prompt, /<message>\n17 times 23\n<\/message>/);
+  assert.doesNotMatch(seen.prompt, /Front desk briefing/); // the briefing travels in the system file instead
+});
+
+test("the compact schema only requires action and reason, and a reply without the empty fields still validates", () => {
+  const { COMPACT_SCHEMA } = require("./frontdesk");
+  assert.deepStrictEqual(COMPACT_SCHEMA.required, ["action", "reason"]);
+  assert.strictEqual(validateDecision({ action: "delegate", destination: "web-search", reason: "weather" }).destination, "web-search");
+  assert.strictEqual(validateDecision({ action: "calendar", calendarFrom: "2026-11-06", calendarDays: "1", reason: "r" }).calendar.days, 1);
+  assert.strictEqual(validateDecision({ action: "forget", replaces: "3", reason: "r" }).replaces, "3");
 });

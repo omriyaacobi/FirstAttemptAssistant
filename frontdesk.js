@@ -26,7 +26,9 @@ const FRONT_DESK = "flash";
 const FLASH_DESK = { model: MODELS.flashMedium, ask: askAgyStructured };
 const FRONT_DESKS = {
   flash: FLASH_DESK,
-  haiku: { model: { provider: "claude", model: "haiku", pool: null }, ask: askClaudeStructured, fallback: FLASH_DESK },
+  // systemFile: the briefing is Haiku's system prompt, so the message only holds what changes.
+  // (getters, because the schema and the file name are defined further down)
+  haiku: { model: { provider: "claude", model: "haiku", pool: null }, ask: askClaudeStructured, get schema() { return COMPACT_SCHEMA; }, get systemFile() { return HAIKU_BRIEF_FILE; }, fallback: FLASH_DESK },
 };
 const FRONT_DESK_MODEL = FRONT_DESKS[FRONT_DESK].model; // core.js prints it
 // After Claude fails (login, limit, timeout), the next messages go straight to Flash for this long
@@ -34,6 +36,7 @@ const FRONT_DESK_MODEL = FRONT_DESKS[FRONT_DESK].model; // core.js prints it
 const DESK_COOLDOWN_MS = 5 * 60 * 1000;
 const coolDownUntil = {}; // desk name -> time (ms) until which it is skipped
 const BRIEF_FILE = path.join(__dirname, "router-brief.md");
+const HAIKU_BRIEF_FILE = path.join(__dirname, "router-brief-haiku.md"); // the briefing Claude Haiku gets as its system prompt
 // "improve" means: the user wants Bot to change itself. The front desk only REPLIES; the page then
 // offers a button that opens "Improve Bot" with the request filled in, and the user starts it.
 // "remind" means: the user wants to be reminded of something at a time. The model only EXTRACTS the
@@ -68,6 +71,10 @@ const SCHEMA = {
   },
   required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays"],
 };
+
+// The same shape with only "action" and "reason" required: Claude then leaves out the empty fields,
+// which means about half as many words to write (and wait for). validateDecision treats a missing field as empty.
+const COMPACT_SCHEMA = { ...SCHEMA, required: ["action", "reason"] };
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
 const readBrief = () => fs.readFileSync(BRIEF_FILE, "utf8");
@@ -154,8 +161,11 @@ function validateDecision(raw, { now = Date.now() } = {}) {
 }
 
 // One attempt with one desk: ask, then CHECK. Throws if the call fails or the reply is unusable.
-async function tryDesk(desk, ask, prompt) {
-  const decision = validateDecision(await ask(prompt, desk.model.model, SCHEMA));
+async function tryDesk(desk, ask, prompt, userPrompt) {
+  const raw = desk.systemFile && userPrompt !== undefined
+    ? await ask(userPrompt, desk.model.model, desk.schema, { systemFile: desk.systemFile })
+    : await ask(prompt, desk.model.model, SCHEMA);
+  const decision = validateDecision(raw);
   if (!decision) throw new Error("the front desk returned an unusable decision");
   return decision;
 }
@@ -166,14 +176,16 @@ async function tryDesk(desk, ask, prompt) {
 async function decide(task, { history = "", allowSplit = true, askStructured, askFallback, brief, low = [], about = "", desk = FRONT_DESK, log = () => {}, now = Date.now() } = {}) {
   const prompt = buildPrompt(task, { history, allowSplit, brief, low, about });
   const main = FRONT_DESKS[desk];
+  // A desk with its own system prompt gets a message without the briefing (unless a test passes its own brief).
+  const userPrompt = main && main.systemFile && brief === undefined ? buildPrompt(task, { history, allowSplit, brief: "", low, about }) : undefined;
   if (!main) throw new Error("unknown front desk: " + desk);
   const ask = askStructured || main.ask;
-  if (!main.fallback) return { ...(await tryDesk(main, ask, prompt)), via: desk };
+  if (!main.fallback) return { ...(await tryDesk(main, ask, prompt, userPrompt)), via: desk };
 
   const backup = main.fallback;
   if (now >= (coolDownUntil[desk] || 0)) {
     try {
-      return { ...(await tryDesk(main, ask, prompt)), via: desk };
+      return { ...(await tryDesk(main, ask, prompt, userPrompt)), via: desk };
     } catch (error) {
       // A reply that failed our checks is a one-off; a call that failed (login, limit, timeout) is likely to fail again.
       if (!/unusable decision/.test(error.message)) coolDownUntil[desk] = now + DESK_COOLDOWN_MS;
@@ -185,4 +197,4 @@ async function decide(task, { history = "", allowSplit = true, askStructured, as
 
 const resetCoolDowns = () => { for (const k of Object.keys(coolDownUntil)) delete coolDownUntil[k]; };
 
-module.exports = { decide, validateDecision, buildPrompt, quotaLine, resetCoolDowns, FRONT_DESK, FRONT_DESKS, FRONT_DESK_MODEL, DESK_COOLDOWN_MS, ACTIONS, SCHEMA, BRIEF_FILE };
+module.exports = { decide, validateDecision, buildPrompt, quotaLine, resetCoolDowns, FRONT_DESK, FRONT_DESKS, FRONT_DESK_MODEL, DESK_COOLDOWN_MS, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, HAIKU_BRIEF_FILE };

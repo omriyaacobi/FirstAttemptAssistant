@@ -13,6 +13,7 @@ const { aboutBlock } = require("../profile");
 const { historyBlock } = require("../core");
 const { askAgyStructured } = require("../providers");
 const { claudeFrontDesk } = require("./claude-fd");
+const { call } = require("./claude-lab");
 const { localIso } = require("../reminders");
 
 const TZ = "Asia/Jerusalem";
@@ -67,7 +68,7 @@ const CASES = [
   ["remind-tonight", "remind me tonight to take out the trash", "", ["remind"], (d) => remindIs(dayShift(0) + "T20:00")(d)],
   ["remind-notime", "remind me to call the bank", "", ["clarify"]],
   ["remind-mixed", "תזכיר לי tomorrow morning לשלוח את התרגיל", "", ["remind"], (d) => remindIs(dayShift(1) + "T09:00")(d)],
-  ["remind-utc", "remind me at 15:00 New York time tomorrow to join the call", "", ["remind"], (d) => d.reminder && d.reminder.timezone === "America/New_York" && localIso(d.reminder.at, "America/New_York").slice(11, 16) === "15:00"],
+  ["remind-utc", "remind me at 15:00 New York time tomorrow to join the call", "", ["remind"], (d) => d.reminder && localIso(d.reminder.at, "America/New_York").slice(11, 16) === "15:00" && localIso(d.reminder.at, "America/New_York").slice(0, 10) === dayShift(1)],
   // ---- calendar ranges ----
   ["cal-tomorrow", "What meetings do I have tomorrow?", "", ["calendar"], calIs(dayShift(1), 1)],
   ["cal-week", "מה המצב שלי השבוע?", "", ["calendar"], (d) => d.calendar && d.calendar.from >= dayShift(0) && d.calendar.from <= dayShift(3) && d.calendar.days >= 5],
@@ -109,7 +110,25 @@ const CASES = [
 const keyOf = (d) => (d ? d.action + (d.action === "delegate" ? "/" + d.destination : "") : "INVALID");
 const SHORT = fs.readFileSync(path.join(__dirname, "router-brief-short.md"), "utf8");
 
-async function ask(variant, prompt) {
+// "lab" variants: haiku-<briefname>[-low|-sonnet|...]: the briefing goes in as the SYSTEM prompt (a file, replacing
+// Claude Code's own), only the changing parts (time, history, message) are the user message, and the schema is compact.
+const COMPACT = { ...SCHEMA, required: ["action", "reason"] };
+const LAB = { // name -> { brief file, model, flags, schema }
+  "lab-h2": { brief: "router-brief-haiku.md" },
+  "lab-h2-low": { brief: "router-brief-haiku.md", flags: "--effort low" },
+  "lab-h2-fullschema": { brief: "router-brief-haiku.md", schema: SCHEMA },
+  "lab-full": { brief: "router-brief.md" },
+  "lab-sonnet": { brief: "router-brief-haiku.md", model: "sonnet" },
+  "lab-sonnet-low": { brief: "router-brief-haiku.md", model: "sonnet", flags: "--effort low" },
+};
+async function askLab(variant, prompt, userOnly) {
+  const o = LAB[variant];
+  const r = await call({ user: userOnly, systemFile: path.join(__dirname, "..", o.brief), systemMode: "replace", schema: o.schema || COMPACT, model: o.model || "haiku", flags: o.flags || "" });
+  return { seconds: r.seconds, raw: r.raw, error: r.error, usage: r.usage };
+}
+
+async function ask(variant, prompt, userOnly) {
+  if (LAB[variant]) return askLab(variant, prompt, userOnly);
   const t0 = Date.now();
   const secondsNow = () => Number(((Date.now() - t0) / 1000).toFixed(1));
   if (variant.startsWith("haiku")) {
@@ -129,8 +148,8 @@ async function ask(variant, prompt) {
     for (const [label, message, history, ok, check] of CASES) {
       if (only && !label.startsWith(only)) continue;
       const prompt = buildPrompt(message, { history, about, brief, timezone: TZ });
-      const r = await ask(variant, prompt);
-      const seconds = variant.startsWith("haiku") ? r.seconds : r._t;
+      const r = await ask(variant, prompt, buildPrompt(message, { history, about, brief: "", timezone: TZ }));
+      const seconds = variant.startsWith("haiku") || LAB[variant] ? r.seconds : r._t;
       const d = r.raw ? validateDecision(r.raw) : null;
       const key = r.error ? "ERROR" : keyOf(d);
       const right = !!d && ok.includes(key) && (!check || !!check(d));

@@ -102,10 +102,13 @@ function askClaude(question, model) {
 // envelope; with --json-schema the clean object is in "structured_output". The schema goes through
 // the shell, so double quotes are escaped (the schema holds no other shell-special characters).
 // Returns the object. Throws on a login problem or limit (the envelope has is_error true).
-function askClaudeStructured(question, model, schema) {
+// systemFile (optional): a file that REPLACES Claude Code's own long system prompt. A fixed system prompt is
+// cached by Claude between calls, and the message then holds only what changes.
+function askClaudeStructured(question, model, schema, { systemFile } = {}) {
   checkModelName(model);
   const json = JSON.stringify(schema).replace(/"/g, '\\"');
-  const command = `${claudeCommand(model)} --output-format json --json-schema "${json}"`;
+  const system = systemFile ? ` --system-prompt-file "${systemFile}"` : "";
+  const command = `${claudeCommand(model)} --output-format json --json-schema "${json}"${system}`;
   return new Promise((resolve, reject) => {
     const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
       let envelope = null;
