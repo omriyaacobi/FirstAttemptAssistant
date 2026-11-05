@@ -99,6 +99,8 @@
   - Live-tested on port 3041 with real agy (scratch data, since deleted): a 6-page Hebrew/English PDF read in about 40 s, a scanned one-page PDF read, a Hebrew question about Dijkstra answered correctly in 11 s citing page 2, "give me an exercise on knapsack" gave an exercise and a hint question, not the solution, in 16 s, citing page 5. Found and fixed: sources were labelled [1], which the model mixed up with page numbers; they are now [S1].
   - Not done: quota-aware model order, outline / progress / pace (step 4), practice buttons and photo answer check (step 3), opening the original PDF, markdown/math rendering of answers (answers show raw `$...$` and tables), tested on the real phone, tested with real course files.
 
+- New page design "Midnight" (2026-11-05): near-black, with small touches of purple and pink, now the default. The earlier design is kept as "Classic": switch under **Look** in the sidebar (saved per device). Each design is a block in the `<style>` of `public/index.html` (`data-theme` on `<html>`); to try another one, add a block and an option, so earlier designs stay available.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
