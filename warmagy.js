@@ -109,7 +109,9 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
 const allSpares = new Set();
 process.once("exit", () => { for (const spares of allSpares) for (const proc of spares.values()) proc.kill(); });
 
-function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS } = {}) {
+// keepReady: when a spare gets too old it is replaced at once, so a message after a long pause is warm too. Waiting spares use
+// no model quota (the model is only called when a prompt arrives).
+function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS, keepReady = false } = {}) {
   const spares = new Map(); // "model|schema" -> a waiting process
   allSpares.add(spares);
 
@@ -124,8 +126,13 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
     if (old && old.alive && old.age < maxSpareAgeMs) return;
     if (old) { clearTimeout(old.expiry); old.kill(); }
     const proc = fresh(model, schema);
-    // An unused spare is not left running for hours: it is killed when it gets too old (unref: this timer never keeps Bot alive).
-    proc.expiry = setTimeout(() => { if (spares.get(key) === proc) { spares.delete(key); proc.kill(); } }, maxSpareAgeMs);
+    // A spare too old to trust is killed, and replaced when keepReady is on (unref: this timer never keeps Bot alive).
+    proc.expiry = setTimeout(() => {
+      if (spares.get(key) !== proc) return;
+      spares.delete(key);
+      proc.kill();
+      if (keepReady) warmUp(model, schema);
+    }, maxSpareAgeMs);
     proc.expiry.unref();
     spares.set(key, proc);
   }

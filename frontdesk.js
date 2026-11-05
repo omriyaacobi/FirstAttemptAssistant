@@ -85,7 +85,9 @@ const COMPACT_SCHEMA = { ...SCHEMA, required: ["action", "reason"] };
 const REPLY_FORMAT = "\n\nReply with ONLY one JSON object, nothing before or after it, no markdown. It must have exactly these keys, all with string values (use \"\" for the ones the action does not need): " + SCHEMA.required.join(", ") + ".";
 
 // One pre-warmed agy waits for the next message (warmagy.js).
-const warm = createWarmAgy();
+const warm = createWarmAgy({ keepReady: true });
+// Called when Bot starts, so the first message is warm too.
+const warmUpDesk = () => warm.warmUp(FRONT_DESK_MODEL.model, null);
 
 // Reads the briefing each time, so edits to the file take effect on the next message.
 const readBrief = () => fs.readFileSync(BRIEF_FILE, "utf8");
@@ -197,4 +199,4 @@ async function decide(task, { history = "", allowSplit = true, askStructured = w
   }
 }
 
-module.exports = { decide, warm, REPLY_FORMAT, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE };
+module.exports = { decide, warm, warmUpDesk, REPLY_FORMAT, validateDecision, buildPrompt, quotaLine, FRONT_DESK_MODEL, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE };

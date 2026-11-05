@@ -108,6 +108,18 @@ test("an unused spare is killed when it gets too old, so an idle Bot leaves no a
   assert.strictEqual(p._spares.size, 0);
 });
 
+test("keepReady: a spare that gets too old is replaced by a new one, so a message after a pause is warm", async () => {
+  const p = pool({ maxSpareAgeMs: 150, keepReady: true });
+  p.warmUp("gemini-3.8-flash-low", SCHEMA);
+  const first = [...p._spares.values()][0];
+  await wait(400);
+  const now = [...p._spares.values()][0];
+  assert.strictEqual(p._spares.size, 1);
+  assert.notStrictEqual(now, first);
+  assert.strictEqual(first.alive, false);
+  p.closeAll();
+});
+
 test("a spare that died while waiting does not break the call", async () => {
   const p = pool();
   await withEnv({ FAKE_MODE: "exitearly" }, async () => { p.warmUp("m", SCHEMA); await wait(400); });
