@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Option A - Bot design</title>
+<link rel="stylesheet" href="shared.css"></head>
+<body>
+<div id="app" style="display:flex;flex:1;min-height:0;flex-direction:column"></div>
+<script src="shared.js"></script>
+<script>
+banner("A", "Chat first: Improve Bot is a normal chat filling the main area. Courses are tabs, one per course, each with Chat / Files / Progress.");
+mountShell($("#app"), {
+  chat: (v) => plainChat(v),
+  improve: (v) => { const t = el("div", "topline"); t.append(el("strong", "grad", "Improve Bot"), el("span", "muted small", "Preview, approve or reject when it is ready")); v.append(t); const box = el("div"); box.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column"; v.appendChild(box); ImproveChat(box); },
+  courses: (v) => {
+    const tabs = el("div", "tabs"), body = el("div"); body.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column";
+    let cur = COURSES[0], sub = "Chat";
+    function draw() {
+      tabs.replaceChildren();
+      COURSES.forEach((c) => { const b = el("button", c === cur ? "on" : "", c.name); b.onclick = () => { cur = c; draw(); }; tabs.appendChild(b); });
+      const add = el("button", "", "+ Add course"); add.onclick = () => alert("(mockup) add a course"); tabs.appendChild(add);
+      body.replaceChildren();
+      const head = el("div", "topline"); const seg = el("div", "seg");
+      ["Chat", "Files", "Progress"].forEach((s) => { const b = el("button", s === sub ? "on" : "", s); b.onclick = () => { sub = s; draw(); }; seg.appendChild(b); });
+      head.append(el("span", "muted small", `${cur.progress}% studied · next: ${cur.next}`), seg); body.appendChild(head);
+      if (sub === "Chat") { const c = el("div"); c.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column"; plainCourse(c); body.appendChild(c); }
+      if (sub === "Files") { const p = el("div", "pad stack"); const up = el("button", "primary", "Upload files"); up.style.alignSelf = "flex-start"; up.onclick = () => alert("(mockup) pick files"); p.appendChild(up); cur.files.forEach((f) => { const r = el("div", "file"); r.append(el("span", "dot"), el("span", "grow", f.n), el("span", "muted small", f.p + " pages")); p.appendChild(r); }); body.appendChild(p); }
+      if (sub === "Progress") { const p = el("div", "pad stack"); const bar = el("div", "bar"); bar.append(Object.assign(el("span"), {})); bar.firstChild.style.width = cur.progress + "%"; p.append(el("strong", "", `${cur.progress}% of the course`), bar); cur.topics.forEach((t) => { const r = el("label", "topic"); const i = el("input"); i.type = "checkbox"; i.checked = !!t[1]; r.append(i, el("span", "", t[0])); p.appendChild(r); }); body.appendChild(p); }
+    }
+    function plainCourse(c) {
+      const t = el("div", "ic-thread"); cur.chat.forEach((m) => t.appendChild(el("div", m[0] === "me" ? "me" : "bot", m[1])));
+      const comp = el("div", "ic-composer"); comp.append(Object.assign(el("textarea"), { rows: 2, placeholder: `Ask about ${cur.name}...` })); const r = el("div", "row"); r.append(el("span", "muted small", "Uses all " + cur.files.length + " files in this course"), el("button", "primary", "Send")); comp.appendChild(r);
+      c.append(t, comp);
+    }
+    v.append(tabs, body); draw();
+  },
+}, { labels: { chat: "Chat", improve: "Improve Bot", courses: "Courses" } });
+</script></body></html>

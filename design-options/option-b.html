@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Option B - Bot design</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .split { flex: 1; min-height: 0; display: flex; }
+  .split > .left { width: 44%; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  .split > .right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .right .pad { display: none; } .right .pad.on { display: flex; flex-direction: column; }
+  @media (max-width: 760px) {
+    .split > .left { width: 100%; border-right: 0; } .split > .right { display: none; }
+    .split.show-right > .left { display: none; } .split.show-right > .right { display: flex; width: 100%; }
+  }
+  .cardlink { text-align: left; border-radius: 18px; padding: 14px; background: var(--card); display: flex; gap: 12px; align-items: center; width: 100%; }
+  .big { font-size: 1.05rem; font-weight: 600; }
+</style></head>
+<body>
+<div id="app" style="display:flex;flex:1;min-height:0;flex-direction:column"></div>
+<script src="shared.js"></script>
+<script>
+banner("B", "Split screen: Improve Bot is a chat on the left with a live Preview and Changes panel on the right. Courses are a dashboard of cards that open into a course page.");
+mountShell($("#app"), {
+  chat: (v) => plainChat(v),
+  improve: (v) => {
+    const split = el("div", "split"), left = el("div", "left"), right = el("div", "right");
+    const bar = el("div", "topline"); const seg = el("div", "seg"); const tabs = {}; let tab = "Preview";
+    ["Preview", "Changes"].forEach((s) => { const b = el("button", s === tab ? "on" : "", s); tabs[s] = b; b.onclick = () => { tab = s; sync(); }; seg.appendChild(b); });
+    const back = el("button", "ghost show-phone", "Back to chat"); back.onclick = () => split.classList.remove("show-right");
+    bar.append(seg, back);
+    const pPrev = el("div", "pad"), pChg = el("div", "pad");
+    right.append(bar, pPrev, pChg);
+    let S = null;
+    function sync() {
+      Object.entries(tabs).forEach(([k, b]) => b.classList.toggle("on", k === tab));
+      pPrev.classList.toggle("on", tab === "Preview"); pChg.classList.toggle("on", tab === "Changes");
+      pPrev.replaceChildren(); pChg.replaceChildren();
+      if (!S || S.status === "idle" || !S.msgs.length) { const m = el("div", "empty", "The preview and the list of changes appear here once the editor has something to show."); pPrev.appendChild(m); pChg.appendChild(el("div", "empty", "No changes yet.")); return; }
+      if (S.status === "running") { const m = el("div", "empty"); m.append(el("span", "spin"), document.createTextNode("The editor is working... the preview unlocks when it is ready.")); pPrev.appendChild(m); pChg.appendChild(Object.assign(el("div", "muted"), { textContent: "Files so far: " + (S.steps.filter((s) => /^(Editing|Writing)/.test(s)).join(", ") || "none yet") })); return; }
+      if (S.status === "rejected") { pPrev.appendChild(el("div", "empty", "Thrown away. Your Bot keeps its current look.")); return; }
+      pPrev.appendChild(previewBox(S));
+      const list = el("div", "stack"); S.files.forEach((f) => { const r = el("div", "file"); r.append(el("span", "dot"), el("span", "grow", f), el("span", "badge", "changed")); list.appendChild(r); });
+      list.appendChild(Object.assign(el("div", "diff"), { innerHTML: `<span class="d">-  --accent: #b57bff;</span>\n<span class="a">+  --accent: ${S.accent};</span>` })); list.appendChild(el("div", "muted small", "Tests pass: 312 (before: 306)"));
+      pChg.appendChild(list);
+    }
+    const open = el("button", "ghost show-phone", "See preview / changes"); open.onclick = () => split.classList.add("show-right");
+    const top = el("div", "topline"); top.append(el("strong", "grad", "Improve Bot"), open); left.appendChild(top);
+    const chatHost = el("div"); chatHost.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column"; left.appendChild(chatHost);
+    const ic = ImproveChat(chatHost, { onChange: (s) => { S = s; sync(); }, onPreview: () => { tab = "Preview"; sync(); split.classList.add("show-right"); } }); S = ic.state;
+    split.append(left, right); v.appendChild(split); sync();
+  },
+  courses: (v) => {
+    const host = el("div", "view on"); host.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0"; v.appendChild(host);
+    function dash() {
+      host.replaceChildren(); const t = el("div", "topline"); t.append(el("strong", "grad", "Your courses"), Object.assign(el("button", "primary", "+ Add course"), { onclick: () => alert("(mockup) add a course") })); host.appendChild(t);
+      const p = el("div", "pad stack"); const cont = el("button", "cardlink"); cont.append(el("div", "ring")); cont.firstChild.style.setProperty("--p", COURSES[0].progress); cont.firstChild.appendChild(el("i", "", COURSES[0].progress + "%"));
+      const tx = el("div"); tx.append(el("div", "muted small", "Continue where you left off"), el("div", "big", COURSES[0].name), el("div", "muted small", COURSES[0].next)); cont.appendChild(tx); cont.onclick = () => page(COURSES[0]);
+      const g = el("div", "grid"); COURSES.forEach((c) => { const b = el("button", "cardlink"); const r = el("div", "ring"); r.style.setProperty("--p", c.progress); r.appendChild(el("i", "", c.progress + "%")); const x = el("div"); x.append(el("div", "big", c.name), el("div", "muted small", `${c.files.length} files · last studied ${c.last}`)); b.append(r, x); b.onclick = () => page(c); g.appendChild(b); });
+      p.append(cont, el("h3", "muted small", "ALL COURSES"), g); host.appendChild(p);
+    }
+    function page(c) {
+      host.replaceChildren(); const t = el("div", "topline"); const back = el("button", "ghost", "< All courses"); back.onclick = dash; t.append(back, el("strong", "", c.name), el("span", "badge", c.progress + "%")); host.appendChild(t);
+      const p = el("div", "pad stack");
+      const next = el("div", "card"); next.append(el("div", "muted small", "Next step"), el("div", "big", c.next), Object.assign(el("button", "primary", "Study this with Bot"), { onclick: () => drawer.classList.add("on"), style: "margin-top:10px" })); p.appendChild(next);
+      p.appendChild(el("h3", "muted small", "FILES")); c.files.forEach((f) => { const r = el("div", "file"); r.append(el("span", "dot"), el("span", "grow", f.n), el("span", "muted small", f.p + "p")); p.appendChild(r); });
+      p.appendChild(el("h3", "muted small", "TOPICS")); c.topics.forEach((x) => { const r = el("label", "topic"); const i = el("input"); i.type = "checkbox"; i.checked = !!x[1]; r.append(i, document.createTextNode(x[0])); p.appendChild(r); });
+      host.appendChild(p);
+      const drawer = el("div", "modal"); const box = el("div", "box"); const h = el("div", "topline"); h.style.padding = "0 0 8px"; h.append(el("strong", "", "Chat: " + c.name), Object.assign(el("button", "ghost", "Close"), { onclick: () => drawer.classList.remove("on") }));
+      const th = el("div", "stack"); c.chat.forEach((m) => th.appendChild(el("div", m[0] === "me" ? "me" : "bot", m[1]))); th.appendChild(Object.assign(el("textarea"), { rows: 2, placeholder: "Ask about this course..." })); box.append(h, th); drawer.appendChild(box); host.appendChild(drawer);
+    }
+    dash();
+  },
+}, { labels: { chat: "Chat", improve: "Improve Bot", courses: "Courses" } });
+</script></body></html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Option C - Bot design</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--bg); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(0,0,0,.5); display: none; flex-direction: column; z-index: 20; }
+  .drawer.on { display: flex; }
+  @media (max-width: 760px) { .drawer { top: 12%; left: 0; width: 100%; border-left: 0; border-top: 1px solid var(--accent); border-radius: 18px 18px 0 0; } }
+  .work { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px 1fr 260px; }
+  .work > div { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  .work > div:last-child { border-right: 0; }
+  .colhead { padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: .8rem; color: var(--muted); letter-spacing: .08em; }
+  .work .pad { gap: 8px; display: flex; flex-direction: column; }
+  .panesw { display: none; }
+  @media (max-width: 760px) {
+    .work { display: flex; flex-direction: column; }
+    .work > div { display: none; border: 0; flex: 1; } .work > div.on { display: flex; }
+    .panesw { display: flex; justify-content: center; padding: 8px; border-bottom: 1px solid var(--line); }
+  }
+</style></head>
+<body>
+<div id="app" style="display:flex;flex:1;min-height:0;flex-direction:column"></div>
+<script src="shared.js"></script>
+<script>
+banner("C", "Side panel: you stay in the regular chat; Improve Bot slides in over it (bottom sheet on the phone). Courses are a three-part workspace: files, chat and progress together.");
+let drawer, ic;
+mountShell($("#app"), {
+  chat: (v) => {
+    plainChat(v, { onImprove: () => drawer.classList.add("on") });
+    drawer = el("aside", "drawer"); const h = el("div", "topline"); h.append(el("strong", "grad", "Improve Bot"), Object.assign(el("button", "ghost", "Close"), { onclick: () => drawer.classList.remove("on") }));
+    const host = el("div"); host.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column"; drawer.append(h, host); v.appendChild(drawer);
+    ic = ImproveChat(host, { ideas: ["Make the accent color red", "Make the Send button bigger"] });
+  },
+  improve: (v) => { const m = el("div", "empty"); m.append(el("p", "", "In this option Improve Bot is not a separate page: it opens over the chat from the button at the top right of the chat."), Object.assign(el("button", "primary", "Open it"), { onclick: () => { document.querySelector(".rail button").click(); drawer.classList.add("on"); } })); v.appendChild(m); },
+  courses: (v) => {
+    const sel = { c: COURSES[0] };
+    const top = el("div", "topline"); const pick = el("div", "seg"); const body = el("div", "work");
+    const files = el("div"), chat = el("div"), prog = el("div");
+    const sw = el("div", "panesw"); const seg = el("div", "seg");
+    function draw() {
+      pick.replaceChildren(); COURSES.forEach((c) => { const b = el("button", c === sel.c ? "on" : "", c.name); b.onclick = () => { sel.c = c; draw(); }; pick.appendChild(b); });
+      const c = sel.c;
+      files.replaceChildren(el("div", "colhead", "FILES (ticked = Bot may use it)")); const fp = el("div", "pad");
+      c.files.forEach((f) => { const r = el("label", "file"); const i = el("input"); i.type = "checkbox"; i.checked = true; i.style.width = "auto"; r.append(i, el("span", "grow", f.n)); fp.appendChild(r); });
+      fp.appendChild(Object.assign(el("button", "", "+ Upload"), { onclick: () => alert("(mockup) pick files") })); files.appendChild(fp);
+      chat.replaceChildren(el("div", "colhead", "CHAT ABOUT " + c.name.toUpperCase())); const th = el("div", "ic-thread"); c.chat.forEach((m) => th.appendChild(el("div", m[0] === "me" ? "me" : "bot", m[1])));
+      const comp = el("div", "ic-composer"); comp.append(Object.assign(el("textarea"), { rows: 2, placeholder: "Ask about the ticked files..." })); const row = el("div", "row"); const q = el("div", "chips"); ["Summarize", "Quiz me", "Explain simply"].forEach((t) => q.appendChild(el("button", "", t))); row.append(q, el("button", "primary", "Send")); comp.appendChild(row); chat.append(th, comp);
+      prog.replaceChildren(el("div", "colhead", "PROGRESS")); const pp = el("div", "pad"); const bar = el("div", "bar"); bar.append(el("span")); bar.firstChild.style.width = c.progress + "%"; pp.append(el("strong", "", c.progress + "% studied"), bar, el("div", "muted small", "Next: " + c.next));
+      c.topics.forEach((t) => { const r = el("label", "topic"); const i = el("input"); i.type = "checkbox"; i.checked = !!t[1]; r.append(i, document.createTextNode(t[0])); pp.appendChild(r); }); prog.appendChild(pp);
+    }
+    [["Files", files], ["Chat", chat], ["Progress", prog]].forEach(([n, p], i) => { const b = el("button", i === 1 ? "on" : "", n); b.onclick = () => { [files, chat, prog].forEach((x) => x.classList.toggle("on", x === p)); [...seg.children].forEach((x) => x.classList.toggle("on", x === b)); }; seg.appendChild(b); });
+    chat.classList.add("on"); sw.appendChild(seg); body.append(files, chat, prog); top.append(pick, Object.assign(el("button", "ghost", "+ Add course"), { onclick: () => alert("(mockup) add a course") }));
+    v.append(top, sw, body); draw();
+  },
+}, { labels: { chat: "Chat", improve: "Improve Bot", courses: "Courses" }, start: "chat" });
+</script></body></html>
