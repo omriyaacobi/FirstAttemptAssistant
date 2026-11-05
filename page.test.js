@@ -132,4 +132,10 @@ test("Add material is on every course screen, and one picker outside the redrawn
   assert.match(html, /<button id="quotaBtn"/); // Quota is in the sidebar, which is the phone's menu too
   assert.match(html, /id="attach"[^>]*aria-label="Attach a photo"/); // the camera button stays in the chat
 });
-
+
+test("the page polls fast (0.6 s) during the first 40 s of a task, so a front desk reply is not shown up to 2 s late", () => {
+  assert.match(html, /FAST_POLL_WINDOW_MS\s*=\s*40000/);
+  const poll = html.slice(html.indexOf("async function pollJobs"), html.indexOf("window.addEventListener(\"focus\", pollJobs)"));
+  assert.match(poll, /Date\.now\(\) \+ jobState\.offset - j\.startedAt < FAST_POLL_WINDOW_MS/); // the age of the job, by the server's clock
+  assert.match(poll, /\? 600 : jobState\.active\.size \? 2000 : 10000/); // fast, then slow while something long runs, then idle
+});

@@ -16,7 +16,7 @@ const fakes = (overrides = {}) => ({
   chainForDestination: () => chain,
   chainForType: () => chain,
   lowPools: async () => [], // never the real agy /usage in tests
-  refreshQuota: () => {},
+  refreshQuota: () => {}, prewarmAnswer: () => {},
   about: () => "", // never the real data/profile.md in tests (profile.test.js covers the profile)
   askChain: async () => ({ answer: "model answer", used }),
   plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }], plannedBy: "fake-planner" }),
@@ -297,6 +297,35 @@ test("quota: the timing line has no quota part any more", async () => {
   const logs = [];
   await handleTask("x", { deps: fakes(), log: (l) => logs.push(l) });
   assert.ok(logs.some((l) => l.startsWith("[timing]") && !/quota/.test(l)));
+});
+
+test("answer process: the spare is prepared when the message arrives, before the front desk answers", async () => {
+  const order = [];
+  const deps = fakes({ prewarmAnswer: () => order.push("prewarm"), decide: async () => { order.push("front desk"); return { action: "delegate", destination: "claude-sonnet", answer: "", reason: "t" }; } });
+  await handleTask("x", { deps });
+  assert.deepStrictEqual(order, ["prewarm", "front desk"]);
+});
+
+test("answer process: a failing prewarm never breaks a task, and the models are asked through askOne", async () => {
+  let askOneSeen = null;
+  const myAskOne = async () => "from my askOne";
+  const deps = fakes({ prewarmAnswer: () => { throw new Error("no agy"); }, askOne: myAskOne, askChain: async (c, q, opts) => { askOneSeen = opts.askOne; return { answer: "ok", used: c[0] }; } });
+  const result = await handleTask("x", { deps });
+  assert.strictEqual(result.answer, "ok");
+  assert.strictEqual(askOneSeen, myAskOne);
+});
+
+test("answer process: planner steps use askOne too", async () => {
+  let stepOptions = null;
+  const myAskOne = async () => "x";
+  const deps = fakes({
+    decide: decision("split"), askOne: myAskOne,
+    plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }, { id: 2, task: "b", type: "quick", needs: [] }], plannedBy: "p" }),
+    askChain: async (c, q, opts) => { stepOptions = opts; return { answer: "ok", used: c[0] }; },
+    runPlan: async (subtasks, p, opts) => { await opts.run(chain, "q"); return subtasks.map((s) => ({ ...s, answer: "x", used })); },
+  });
+  await handleTask("a then b", { deps });
+  assert.strictEqual(stepOptions.askOne, myAskOne);
 });
 
 test("quota: a forced chain is never reordered", async () => {

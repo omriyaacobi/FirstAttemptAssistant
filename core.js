@@ -15,7 +15,8 @@
 
 const { chainForDestination, chainForType, DEFAULT_CHAIN, MODELS } = require("./router");
 const path = require("node:path");
-const { askChain, askAgyWithImage } = require("./providers");
+const { ask, askChain, askAgyWithImage, timeoutFor } = require("./providers");
+const { createWarmAgy } = require("./warmagy");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
 const { getLowPools, refreshQuota, prioritize } = require("./quota");
@@ -26,10 +27,23 @@ const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
+// ---- Pre-warmed answer process ----
+// Starting agy costs about 2.5 s before the answer model even sees the question. For the model most answers come from, one agy
+// process waits ready (warmagy.js: ONE process per message, the same flags as a normal call, a dead or old spare is replaced at once),
+// so the answer skips the start-up. It is started when a message arrives, while the front desk is still deciding, and again after
+// each answer. Waiting processes use no model quota (the model is only called when the question arrives).
+const WARM_ANSWER_MODELS = new Set([MODELS.flashMedium.model]);
+const answerPool = createWarmAgy({ keepReady: true });
+const prewarmAnswer = () => { for (const model of WARM_ANSWER_MODELS) answerPool.warmUp(model, null); };
+function askOneWarm(provider, model, question, onText) {
+  if (provider === "agy" && WARM_ANSWER_MODELS.has(model)) return answerPool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
+  return ask(provider, model, question, onText);
+}
+
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
 // refreshQuota updates that flag in the background AFTER each answer, for the next message.
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, readCalendar: readCalendarEvents,
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, prewarmAnswer, askOne: askOneWarm, readCalendar: readCalendarEvents,
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -86,6 +100,7 @@ async function handleTask(task, options = {}) {
 
 async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {} } = {}) {
   const d = { ...defaultDeps, ...deps };
+  try { d.prewarmAnswer(); } catch (error) { /* a missing spare only means the answer starts agy itself */ }
   const started = Date.now();
   const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
   const seconds = () => secondsSince(started);
@@ -133,6 +148,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
     const { answer, used, attempts } = await d.askChain(info.chain, personalize(info.chain, prompt, about), {
+      askOne: d.askOne,
       onTry: (m) => log(`[router] trying ${label(m)}`),
       onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
       onText: onPartial, // lets the page show the answer while it is written (agy only)
@@ -226,7 +242,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
-      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about)), // web steps get no profile
+      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne }), // web steps get no profile
       chainFor: (type) => quotaChain(d.chainForType(type), low),
       onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
       onDone: ({ subtask, result }) =>
