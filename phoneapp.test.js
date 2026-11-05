@@ -133,9 +133,13 @@ test("the page has a reminders list, a notifications button and a push-to-talk m
 });
 
 test("the page script still parses, and still never uses innerHTML", () => {
-  const script = html.slice(html.lastIndexOf("<script>") + 8, html.lastIndexOf("</script>"));
-  assert.doesNotThrow(() => new Function(script));
-  assert.ok(!/\.innerHTML|insertAdjacentHTML|document\.write/.test(script));
+  // the inline script is the only <script> without src; public/study.js (the course tabs) is checked the same way
+  const inline = html.slice(html.indexOf("<script>") + 8, html.indexOf("</script>"));
+  const study = fs.readFileSync(path.join(__dirname, "public", "study.js"), "utf8");
+  for (const script of [inline, study]) {
+    assert.doesNotThrow(() => new Function(script));
+    assert.ok(!/\.innerHTML|insertAdjacentHTML|document\.write/.test(script));
+  }
 });
 
 test("the service worker caches nothing", () => {
