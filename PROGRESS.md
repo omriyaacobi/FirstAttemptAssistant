@@ -101,6 +101,15 @@
 
 - New page design "Midnight" (2026-11-05): near-black, with small touches of purple and pink, now the default. The earlier design is kept as "Classic": switch under **Look** in the sidebar (saved per device). Each design is a block in the `<style>` of `public/index.html` (`data-theme` on `<html>`); to try another one, add a block and an option, so earlier designs stay available.
 
+## Open right now (2026-11-05)
+- **Front desk:** chat frontdesk-speed, branch `claude/frontdesk-speed-01ec9f`: Flash low, short briefing, plain JSON, pre-warmed agy (warmagy.js), hedging (deskrace.js). Fixing what the review found: a flaky warmagy test and one 20 s timeout. Omri approved merging once the manager's own checks pass (20 fresh messages plus repeated test runs): then merge, restart Bot, tell him. Its branch needs main merged in first.
+- **Haiku backup:** branch `claude/frontdesk-haiku-d42fac`: 3.8 s, 164/165, one setting. Add it as the fallback after Gemini is merged, if it merges cleanly. It has its own briefing, so routing rules live in two files.
+- **Next UI branch, one chat, after or alongside the merge:** quota as a popup behind a sidebar button; Improve Bot as a real chat, with live progress, follow-up messages on the same copy, a Preview button, and simple Approve/Reject, with the PIN on the phone. Needs selfedit.js and server.js, so Claude Code builds it, not Improve Bot.
+- **Organizer:** plan approved in principle, `experiments/2026-11-05-organizer-plan.md`. Not started. Step 1 needs a photo of the timetable.
+- **Study notebooks:** step 1 merged and pushed, not tried with real files yet. First uploads: Hebrew slides PDF, a large scanned exam, a 100+ page PDF. Steps 2-4 wait for that.
+- **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
+- **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
