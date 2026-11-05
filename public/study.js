@@ -11,7 +11,15 @@
   let deeper = false;
   let draft = ""; // what is typed in the question box, kept across redraws
   let uploadNote = null; // { text, bad }: kept across redraws too, so a refused file is never wiped off the screen
-  const openPages = new Map(); // file id -> { pages, more } for the "view text" panels
+  const openPages = new Map();
+  // The file picker lives outside the redrawn area (a redraw while the phone's file dialog is open would
+  // otherwise throw the chosen file away). Every "Add material" button just clicks this one.
+  const picker = el("input");
+  picker.type = "file";
+  picker.multiple = true;
+  picker.hidden = true; // no "accept" filter: it greys out other files with no explanation. The server says why it refused.
+  picker.id = "studyPicker";
+  view.appendChild(picker); // file id -> { pages, more } for the "view text" panels
 
   const api = async (url, options) => {
     const res = await fetch(url, options);
@@ -76,12 +84,15 @@
     courses.forEach((c) => {
       const card = el("button", "card course-card");
       card.type = "button";
-      card.appendChild(el("strong", "", c.name)).dir = "auto";
+      const name = card.appendChild(el("strong", "", c.name));
+      name.dir = "auto";
+      card.title = c.name; // the card cuts a long name; the full one shows on hover
       card.appendChild(el("div", "sub", `${c.files} file${c.files === 1 ? "" : "s"}, ${c.pages} pages read` + (c.reading ? `, ${c.reading} being read` : "")));
       card.addEventListener("click", () => openCourse(c.id).catch(fail));
       grid.appendChild(card);
     });
     body.appendChild(grid);
+    if (!courses.length) body.appendChild(el("p", "sub", "No courses yet. Add your first one below."));
     const form = el("form", "row");
     const input = el("input");
     input.placeholder = "Add a course (for example: Calculus 2)";
@@ -99,14 +110,20 @@
 
   function drawCourse() {
     const { course } = current;
+    const head = el("div", "row");
+    head.style.marginTop = "0";
+    head.append(button("< All courses", () => loadList().catch(fail)), button("+ Add material", () => picker.click(), "primary add-material"));
+    body.appendChild(head);
+    // The upload messages stay here across redraws, in both tabs, so a refused file is never wiped off the screen.
+    const status = el("div", uploadNote && uploadNote.bad ? "status bad" : "status", uploadNote ? uploadNote.text : "");
+    status.id = "uploadStatus";
+    body.appendChild(status);
     const tabs = el("div", "row");
+    tabs.style.justifyContent = "flex-start";
     [["chat", "Chat"], ["files", `Materials (${course.files.length})`]].forEach(([key, label]) => {
       const b = button(label, () => { tab = key; draw(); }, tab === key ? "" : "ghost");
       tabs.appendChild(b);
     });
-    const spacer = el("span", "status");
-    tabs.appendChild(spacer);
-    tabs.appendChild(button("All courses", () => loadList().catch(fail)));
     body.appendChild(tabs);
     if (tab === "chat") drawChat(); else drawFiles();
   }
@@ -171,27 +188,7 @@
     const form = el("div", "card");
     form.appendChild(el("strong", "", "Add materials"));
     form.appendChild(el("p", "sub", "PDF (slides, exams, notes, Hebrew is fine, scans too), a photo of notes, or a text file. Up to 40 MB each. PowerPoint or Word: save it as PDF first. Bot reads each file once; a long PDF takes a few minutes, in the background."));
-    const input = el("input");
-    input.type = "file";
-    input.multiple = true;
-    // No "accept" filter: it greys out other files with no explanation. The server decides, and says why it refused.
-    const status = el("span", uploadNote && uploadNote.bad ? "status bad" : "status", uploadNote ? uploadNote.text : "");
-    status.id = "uploadStatus";
-    const note = (text, bad = false) => {
-      uploadNote = { text, bad };
-      const s = $("uploadStatus"); // a redraw may have replaced the element
-      if (s) { s.textContent = text; s.className = bad ? "status bad" : "status"; }
-    };
-    input.addEventListener("change", async () => {
-      const refused = [];
-      for (const file of input.files) {
-        try { await upload(course.id, file, (text) => note(text)); } catch (error) { refused.push(file.name + ": " + error.message); }
-      }
-      input.value = "";
-      if (refused.length) note(refused.join("; "), true);
-      await refresh().catch(fail);
-    });
-    form.append(input, status);
+    form.appendChild(button("Choose files", () => picker.click(), "primary"));
     body.appendChild(form);
 
     const list = el("ul", "files");
@@ -230,6 +227,23 @@
     }));
     body.appendChild(danger);
   }
+
+  const note = (text, bad = false) => {
+    uploadNote = { text, bad };
+    const s = $("uploadStatus"); // a redraw may have replaced the element
+    if (s) { s.textContent = text; s.className = bad ? "status bad" : "status"; }
+  };
+  picker.addEventListener("change", async () => {
+    if (!current) return;
+    const courseId = current.course.id;
+    const refused = [];
+    for (const file of [...picker.files]) {
+      try { await upload(courseId, file, (text) => note(text)); } catch (error) { refused.push(file.name + ": " + error.message); }
+    }
+    picker.value = "";
+    if (refused.length) note(refused.join("; "), true);
+    await refresh().catch(fail);
+  });
 
   // The saved text of a file, so you can check what Bot actually read. Opens at page `from`.
   async function openFilePages(fileId, from) {

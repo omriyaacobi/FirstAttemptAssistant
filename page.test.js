@@ -13,7 +13,7 @@ test("the Improve button is the last thing in the sidebar and has its own big st
   const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
   const button = side.indexOf('id="improveBtn"');
   assert.ok(button > 0, "button is inside the sidebar");
-  assert.ok(button > side.indexOf('aria-label="Quota"'), "button comes after the quota panel");
+  assert.ok(button > side.indexOf('id="quotaBtn"'), "button comes after the quota button");
   assert.match(side.slice(side.lastIndexOf("<button", button), button), /class="improve"/);
   assert.match(html, /button\.improve\s*\{[^}]*margin-top:\s*auto/);
 });
@@ -81,3 +81,55 @@ test("sending a message starts a background job and the page follows it by polli
   // no chat switching or composer lock-out depends on a request being open any more
   assert.doesNotMatch(html, /if \(busy\) return;/);
 });
+
+test("the quota is a pop-up opened from a sidebar button, not a panel in the middle of the sidebar", () => {
+  const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
+  assert.match(side, /<button id="quotaBtn"[^>]*aria-haspopup="dialog"/);
+  assert.doesNotMatch(side, /id="quota"/); // the numbers live in the dialog, outside the sidebar
+  const dialog = html.match(/<dialog class="popup" id="quotaDialog"[\s\S]*?<\/dialog>/);
+  assert.ok(dialog, "the dialog exists");
+  assert.match(dialog[0], /id="quota"/);
+  assert.match(dialog[0], /id="quotaClose"/);
+  assert.match(html, /showModal\(\)/);
+  assert.match(html, /\[data-theme="midnight"\] dialog\.popup/); // styled in both designs
+  assert.match(html, /dialog\.popup \{[^}]*var\(--card\)/);
+  assert.match(html, /dialog\.popup \{[^}]*calc\(100vw - 32px\)/); // fits a phone
+});
+
+test("Improve Bot is a chat: progress, follow-ups, preview, and simple Approve and Reject buttons", () => {
+  const view = html.slice(html.indexOf('<section class="chat" id="improveView"'), html.indexOf("<script>"));
+  for (const id of ["improveThread", "improveText", "improveStart", "newImprove", "previewFrame", "pinForm"]) assert.ok(view.includes(`id="${id}"`), id);
+  assert.match(view, /<iframe id="previewFrame"[^>]*sandbox="allow-scripts"/); // no allow-same-origin
+  assert.doesNotMatch(view, /allow-same-origin/);
+  assert.ok(html.includes("`/api/selfedit/${p.id}/message`")); // a follow-up goes to the same proposal
+  assert.ok(html.includes("`/api/selfedit/${id}/preview`"));
+  assert.match(html, /"approve", "Approve"/);
+  assert.match(html, /"danger", "Reject"/);
+  assert.match(html, /Show the technical details and code changes/); // the diff is folded away, not removed
+  assert.match(html, /Last sign of life/); // so it is clear the editor is alive
+  assert.match(html, /queued\.push/); // messages typed while it works wait their turn
+  assert.match(html, /\.preview-box \{/); // Preview is a popup over the dimmed chat, not a full page
+});
+
+const study = fs.readFileSync(path.join(__dirname, "public", "study.js"), "utf8");
+
+test("every course card is exactly the same size, and a long name is cut instead of growing the card", () => {
+  assert.match(html, /\.course-grid \{[^}]*grid-auto-rows: 112px/);
+  assert.match(html, /\.course-card strong \{[^}]*-webkit-line-clamp: 2/);
+  assert.match(study, /card\.title = c\.name/); // the full name stays reachable
+});
+
+test("course cards and pages show only real data (no invented progress, percentages or next steps)", () => {
+  for (const invented of ["conic-gradient", "% studied", "Continue where", "last studied", "Next step"]) assert.ok(!new RegExp(invented, "i").test(study), invented);
+  assert.match(study, /files, \$\{c\.pages\} pages read/);
+});
+
+test("Add material is on every course screen, and one picker outside the redrawn area keeps the chosen file", () => {
+  assert.match(study, /"\+ Add material"/);
+  assert.match(study, /picker\.id = "studyPicker"/);
+  assert.match(study, /view\.appendChild\(picker\)/);
+  assert.match(study, /status\.id = "uploadStatus"/); // the upload message is drawn from uploadNote on every redraw
+  assert.match(html, /<button id="quotaBtn"/); // Quota is in the sidebar, which is the phone's menu too
+  assert.match(html, /id="attach"[^>]*aria-label="Attach a photo"/); // the camera button stays in the chat
+});
+
