@@ -21,6 +21,7 @@
 # This project: FirstAttemptAssistant
 
 - **Mode: LEARNING.** Go in small steps. At every step, tell me which tool, language or concept you are using and why, so I understand the workflow.
+- **Workflow coaching (asked for):** learning how to work with Claude Code is a main goal. With each task, say in a line or two how to handle it best: this chat or a fresh one, which model, whether to plan first, and what it costs in context. Tell me when context use gets high.
 - **Name:** the project is called **Bot** (it used to be called "the orchestrator", which I found too long). Always call it Bot when talking to me, in notes, in the web page, and in anything Bot says about itself.
 - **Goal:** a small local app (Bot) that runs on my computer and sends tasks to both Claude (through the Claude Code CLI, so it uses my Claude Pro plan) and Gemini (Google AI Studio API key or Gemini CLI), then combines the results.
 - **Language:** JavaScript (Node.js).
