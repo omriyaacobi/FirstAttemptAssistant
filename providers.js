@@ -133,7 +133,7 @@ function askAgyStructured(question, model, schema, { signal, timeoutMs } = {}) {
         const envelope = JSON.parse(stdout);
         resolve(envelope.structured_output ?? JSON.parse(envelope.response));
       } catch (parseError) {
-        reject(new Error("agy did not return valid structured output"));
+        reject(new Error("agy did not return valid structured output: " + String(stdout).replace(/\s+/g, " ").trim().slice(0, 150)));
       }
     });
     withTimeout(child, timeoutMs || timeoutFor(model), reject, model);
@@ -261,5 +261,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStructured, askClaudeStructured, killOnAbort, askAgyWithImage, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { ask, askChain, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
