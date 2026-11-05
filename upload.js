@@ -25,7 +25,7 @@ function sniffFile(bytes) {
       return { kind: "text", ext: ".txt" };
     } catch (error) { /* not text */ }
   }
-  throw fail(415, "only PDF, JPEG/PNG/WebP photos or plain text files (UTF-8, up to 2 MB) are accepted");
+  throw fail(415, "this file type is not supported: use a PDF, a JPEG/PNG/WebP photo or a plain text file (UTF-8, up to 2 MB). PowerPoint or Word: save it as PDF first");
 }
 
 // The name shown in the list. It is only ever displayed as text and never used as a path.

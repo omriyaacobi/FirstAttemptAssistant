@@ -10,6 +10,7 @@
   let timer = null;
   let deeper = false;
   let draft = ""; // what is typed in the question box, kept across redraws
+  let uploadNote = null; // { text, bad }: kept across redraws too, so a refused file is never wiped off the screen
   const openPages = new Map(); // file id -> { pages, more } for the "view text" panels
 
   const api = async (url, options) => {
@@ -53,6 +54,7 @@
   async function openCourse(id) {
     current = await api("/api/courses/" + id);
     tab = "chat";
+    uploadNote = null;
     openPages.clear();
     draw();
     schedule();
@@ -168,17 +170,25 @@
     const { course } = current;
     const form = el("div", "card");
     form.appendChild(el("strong", "", "Add materials"));
-    form.appendChild(el("p", "sub", "PDF (slides, exams, notes, Hebrew is fine, scans too), a photo of notes, or a text file. Up to 40 MB each. Bot reads each file once; a long PDF takes a few minutes, in the background."));
+    form.appendChild(el("p", "sub", "PDF (slides, exams, notes, Hebrew is fine, scans too), a photo of notes, or a text file. Up to 40 MB each. PowerPoint or Word: save it as PDF first. Bot reads each file once; a long PDF takes a few minutes, in the background."));
     const input = el("input");
     input.type = "file";
     input.multiple = true;
-    input.accept = ".pdf,.txt,.md,image/*";
-    const status = el("span", "status");
+    // No "accept" filter: it greys out other files with no explanation. The server decides, and says why it refused.
+    const status = el("span", uploadNote && uploadNote.bad ? "status bad" : "status", uploadNote ? uploadNote.text : "");
+    status.id = "uploadStatus";
+    const note = (text, bad = false) => {
+      uploadNote = { text, bad };
+      const s = $("uploadStatus"); // a redraw may have replaced the element
+      if (s) { s.textContent = text; s.className = bad ? "status bad" : "status"; }
+    };
     input.addEventListener("change", async () => {
+      const refused = [];
       for (const file of input.files) {
-        try { await upload(course.id, file, (text) => { status.textContent = text; }); } catch (error) { status.textContent = file.name + ": " + error.message; status.className = "status bad"; }
+        try { await upload(course.id, file, (text) => note(text)); } catch (error) { refused.push(file.name + ": " + error.message); }
       }
       input.value = "";
+      if (refused.length) note(refused.join("; "), true);
       await refresh().catch(fail);
     });
     form.append(input, status);
