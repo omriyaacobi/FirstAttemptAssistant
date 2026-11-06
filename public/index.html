@@ -305,6 +305,18 @@
       <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
       <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
     </section>
+    <section aria-label="Morning brief" id="morningBox" hidden>
+      <div class="row" style="margin-top:0">
+        <strong>Morning brief</strong>
+        <label class="sub"><input type="checkbox" id="morningOn"> On</label>
+        <input type="time" id="morningTime" aria-label="Time of the morning brief">
+      </div>
+      <div class="sub">Today's calendar and reminders, in a new chat each morning. No model reads them.</div>
+      <div class="row">
+        <button class="ghost" id="morningNow">Show me one now</button>
+        <span class="sub" id="morningNote"></span>
+      </div>
+    </section>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -488,6 +500,10 @@
       // Bot only PROPOSED a fact. Nothing is stored until you press Save.
       if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact, result.remember.replaces && result.remember.replaces.id));
       if (result.forget && result.forget.id) card.appendChild(rememberButtons(null, result.forget.id));
+      // You said "remember that ..." yourself, so it is already saved. One tap takes it back.
+      if (result.remembered && result.remembered.id) card.appendChild(undoButton(result.remembered.id));
+      // A question about an earlier chat: buttons that open the chats the answer came from.
+      if (Array.isArray(result.chats) && result.chats.length) card.appendChild(chatButtons(result.chats));
       wrap.appendChild(card);
     } else if (result.mode === "course") {
       // An answer from a course chat. The sources were built by the server from the pages it really sent, never from what the model claims.
@@ -542,6 +558,30 @@
       }
     });
     actions.append(save, skip, note);
+    return actions;
+  }
+
+  function undoButton(id) {
+    const actions = el("div", "actions");
+    const undo = el("button", "ghost", "Undo");
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      const res = await fetch("/api/memory/" + id, { method: "DELETE" }).catch(() => null);
+      actions.replaceChildren(el("span", "sub", res && res.ok ? "Forgotten." : "It was already gone."));
+      loadMemory();
+    });
+    actions.appendChild(undo);
+    return actions;
+  }
+
+  function chatButtons(chats) {
+    const actions = el("div", "actions");
+    for (const chat of chats) {
+      const open = el("button", "ghost", "Open: " + chat.title);
+      open.dir = "auto";
+      open.addEventListener("click", () => openChat(chat.id));
+      actions.appendChild(open);
+    }
     return actions;
   }
 
@@ -1658,6 +1698,15 @@
         const text = el("div", "", f.text);
         text.dir = "auto";
         what.appendChild(text);
+        // A pinned fact goes to the models with every message; the others only when the message is about them.
+        const pin = el("button", "", f.pinned ? "★" : "☆");
+        pin.title = f.pinned ? "Always used. Tap to use it only when it fits" : "Used only when it fits. Tap to always use it";
+        pin.setAttribute("aria-label", (f.pinned ? "Stop always using: " : "Always use: ") + f.text);
+        pin.setAttribute("aria-pressed", String(!!f.pinned));
+        pin.addEventListener("click", async () => {
+          await fetch("/api/memory/" + f.id + "/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !f.pinned }) }).catch(() => {});
+          loadMemory();
+        });
         const forget = el("button", "", "✕");
         forget.title = "Forget this";
         forget.setAttribute("aria-label", "Forget: " + f.text);
@@ -1665,13 +1714,50 @@
           await fetch("/api/memory/" + f.id, { method: "DELETE" }).catch(() => {});
           loadMemory();
         });
-        row.append(what, forget);
+        row.append(what, pin, forget);
         return row;
       }));
     } catch (error) {
       $("memory").textContent = error.message;
     }
   }
+
+  // The morning brief (morning.js). The box stays hidden if this Bot has none (for example in the Improve Bot preview).
+  async function saveMorning(change) {
+    const res = await fetch("/api/morning", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
+    const data = await res.json();
+    $("morningNote").textContent = res.ok ? (data.on ? `On, every day at ${data.time}.` : "Off.") : data.error;
+    if (res.ok) showMorning(data);
+  }
+  function showMorning({ on, time }) {
+    $("morningOn").checked = on;
+    $("morningTime").value = time;
+  }
+  async function loadMorning() {
+    try {
+      const res = await fetch("/api/morning");
+      if (!res.ok) return;
+      const data = await res.json();
+      showMorning(data);
+      $("morningNote").textContent = data.on && !data.devices ? "Turn on notifications to get it on the phone too." : "";
+      $("morningBox").hidden = false;
+    } catch (error) { /* no morning brief here */ }
+  }
+  $("morningOn").addEventListener("change", (event) => saveMorning({ on: event.target.checked }).catch((error) => { $("morningNote").textContent = error.message; }));
+  $("morningTime").addEventListener("change", (event) => { if (event.target.value) saveMorning({ time: event.target.value }).catch((error) => { $("morningNote").textContent = error.message; }); });
+  $("morningNow").addEventListener("click", async () => {
+    $("morningNow").disabled = true;
+    try {
+      const res = await fetch("/api/morning/now", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not make the brief");
+      await loadChats();
+      await openChat(data.conversationId);
+    } catch (error) {
+      $("morningNote").textContent = error.message;
+    }
+    $("morningNow").disabled = false;
+  });
 
   // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
   // gives us a "subscription" (an address at Google's push service), and we hand it to Bot.
@@ -1796,6 +1882,7 @@
     setupNotifyButton();
     loadReminders();
     loadMemory();
+    loadMorning();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
     showEmpty();
