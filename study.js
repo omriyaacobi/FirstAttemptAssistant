@@ -160,6 +160,7 @@ function buildPrompt({ courseName, files, picked, history, question, about = "",
     STUDY_RULES.replace("COURSE", defang(courseName)),
     `Files in this course:\n${map || "(none)"}`,
     lectureMap(index, picked, totalPages),
+    `The user's message, which the material below was chosen for:\n${question}`, // also said here: with a whole course in between, a model can lose sight of the end of the prompt
     `<course-material id="${marker}">\n${material}\n</course-material id="${marker}">`,
     historyBlock(history),
     `The user's new message (answer this one):\n${question}`,
