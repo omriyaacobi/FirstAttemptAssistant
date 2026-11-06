@@ -78,7 +78,9 @@ function historyBlock(history = []) {
   let newestCard = true;
   for (let i = history.length - 1; i >= 0; i--) { // walk from newest to oldest, so the newest survive
     const message = history[i];
-    let line = `${message.role === "user" ? "User" : "Assistant"}: ${String(message.text).slice(0, MAX_MESSAGE_CHARS)}`;
+    // `label` is written by CODE (jobs.js, thread only): an answer that came from a course says so, e.g. "Assistant [course answer: Calculus 2]".
+    const who = message.role === "user" ? "User" : message.label ? `Assistant [${String(message.label).replace(/[\[\]\n]/g, " ").slice(0, 80)}]` : "Assistant";
+    let line = `${who}: ${String(message.text).slice(0, MAX_MESSAGE_CHARS)}`;
     if (message.note) {
       const full = "\n" + message.note;
       line += newestCard ? (total + line.length + full.length <= MAX_HISTORY_CHARS ? full : "\n" + CARD_TOO_LONG) : "\n" + (message.noteShort || "");
@@ -134,7 +136,9 @@ async function handleTask(task, options = {}) {
   }
 }
 
-async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {} } = {}) {
+// courses (thread only): the real course list [{ id, name }] and studyState (one line per course, written by code). With a list, the front
+// desk may choose the action "course"; without it (BOT_THREAD off) that action does not exist and nothing below changes.
+async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false } = {}) {
   const d = { ...defaultDeps, ...deps };
   try { d.prewarmAnswer(); } catch (error) { /* a missing spare only means the answer starts agy itself */ }
   const started = Date.now();
@@ -357,6 +361,23 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     }
   }
 
+  // The front desk chose "course" (thread only): the message is about studying. Code has already checked the course against the real list.
+  // The answer comes from the course's notebook exactly as a course chat's did (study.js, through d.courseAnswer). With no course named
+  // ("what should I study today?") code asks which course; the reply is written by code, never by a model.
+  async function courseAnswer(decision) {
+    if (!d.courseAnswer) return runSingle({ chain: d.chainForDestination("gemini-flash"), rule: "course (notebooks are off)", reason: "the study notebooks are not available" });
+    if (!decision.course) {
+      const names = (courses || []).map((c) => c.name).join(", ");
+      log("[course] no course named, asking which one");
+      log(timingLine());
+      return { mode: "single", rule: "asked you a question", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: `Which course is this about? Your courses: ${names}.`, seconds: seconds(), timing, topic: "study" };
+    }
+    log(`[course] ${decision.course.name} (${decision.studyIntent})`);
+    const result = await d.courseAnswer(decision.course.id, task, { history, deeper: deeper === true, onPartial: onPartial || undefined, log });
+    log(timingLine());
+    return { ...result, courseName: decision.course.name, studyIntent: decision.studyIntent, reason: decision.reason };
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
@@ -478,7 +499,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const low = await getLow(); // never waits: just the in-memory flag from the last lookup
     const deskStart = Date.now();
     try {
-      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout, log });
+      decision = await d.decide(task, { history: historyBlock(history), allowSplit: !noPlan, low, about: deskAbout, log, ...(courses && courses.length ? { courses, studyState } : {}) });
     } finally {
       timing.frontDeskSeconds = secondsSince(deskStart);
     }
@@ -505,6 +526,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   if (decision.action === "calendar") return readCalendar(decision);
   if (decision.action === "addEvent") return addEvent(decision);
   if (decision.action === "recall") return recall(decision);
+  if (decision.action === "course") return courseAnswer(decision);
 
   if (decision.action === "delegate") {
     const info = { chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason };

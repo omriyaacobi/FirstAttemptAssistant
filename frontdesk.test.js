@@ -5,7 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
-const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE } = require("./frontdesk");
+const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE, briefText, readBrief, REPLY_FORMAT, SCHEMA_COURSE, COMPACT_SCHEMA_COURSE, backupBriefFile } = require("./frontdesk");
 const { DESTINATIONS } = require("./router");
 
 test("validateDecision accepts each kind of good decision", () => {
@@ -187,7 +187,9 @@ test("backup: a Gemini failure gives the decision to Claude Haiku, with the brie
   assert.deepStrictEqual(d.calendar, { from: "2026-11-06", days: 1 });
   assert.strictEqual(seen.model, "haiku");
   assert.strictEqual(seen.schema, COMPACT_SCHEMA);
-  assert.strictEqual(seen.options.systemFile, BACKUP_BRIEF_FILE);
+  const sent = fs.readFileSync(seen.options.systemFile, "utf8");
+  assert.doesNotMatch(sent, /thread-->|\*\*course\*\*/); // thread off: no course rules
+  assert.strictEqual(sent, briefText(fs.readFileSync(BACKUP_BRIEF_FILE, "utf8"), false));
   assert.ok(seen.options.timeoutMs > 0);
   assert.match(seen.prompt, /The current time is 2026-11-05T14:00:00\+02:00/);
   assert.match(seen.prompt, /<message>\nwhat do I have tomorrow\?\n<\/message>/);
@@ -259,4 +261,100 @@ test("quota: a low Gemini pool alone does not stop the Haiku backup desk", async
   const haiku = async () => ({ action: "answer", answer: "hello", reason: "r" });
   const d = await decide("x", { askStructured: geminiDown, askBackup: haiku, brief: "B", low: [{ pool: "Gemini Models", remaining: 3 }] });
   assert.strictEqual(d.via, "haiku");
+});
+
+// ---- the "course" action (only with BOT_THREAD on) ----
+const COURSES = [
+  { id: "aaaaaaaaaaaaaaa1", name: "Calculus 2" },
+  { id: "aaaaaaaaaaaaaaa2", name: "Systems Programming" },
+  { id: "aaaaaaaaaaaaaaa3", name: "High-Performance Systems Programming S1" },
+  { id: "aaaaaaaaaaaaaaa4", name: "Algorithms Planning" },
+];
+
+test("course: a named real course is accepted, the id is the real one, the intent is checked", () => {
+  const d = validateDecision({ action: "course", course: "calculus 2", studyIntent: "Quiz", reason: "r" }, { courses: COURSES });
+  assert.deepStrictEqual(d, { action: "course", destination: null, answer: "", reason: "r", course: { id: "aaaaaaaaaaaaaaa1", name: "Calculus 2" }, studyIntent: "quiz" });
+  assert.strictEqual(validateDecision({ action: "course", course: "Calculus 2", studyIntent: "hack", reason: "r" }, { courses: COURSES }).studyIntent, "ask"); // an unknown intent becomes the safe one
+  assert.strictEqual(validateDecision({ action: "course", course: "aaaaaaaaaaaaaaa2", reason: "r" }, { courses: COURSES }).course.name, "Systems Programming");
+});
+
+test("course: a made-up course makes the decision invalid; an empty course means all of my studies", () => {
+  assert.strictEqual(validateDecision({ action: "course", course: "Quantum Cooking", studyIntent: "ask", reason: "r" }, { courses: COURSES }), null);
+  assert.strictEqual(validateDecision({ action: "course", course: "../../etc", reason: "r" }, { courses: COURSES }), null);
+  const none = validateDecision({ action: "course", course: "", studyIntent: "plan", reason: "r" }, { courses: COURSES });
+  assert.strictEqual(none.course, null);
+  assert.strictEqual(none.studyIntent, "plan");
+});
+
+test("course: two overlapping names are never mixed up (the exact name wins; a vague word that fits two is refused)", () => {
+  assert.strictEqual(validateDecision({ action: "course", course: "Systems Programming", reason: "r" }, { courses: COURSES }).course.id, "aaaaaaaaaaaaaaa2");
+  assert.strictEqual(validateDecision({ action: "course", course: "High-Performance Systems Programming S1", reason: "r" }, { courses: COURSES }).course.id, "aaaaaaaaaaaaaaa3");
+  assert.strictEqual(validateDecision({ action: "course", course: "Programming", reason: "r" }, { courses: COURSES }), null); // fits two
+  assert.strictEqual(validateDecision({ action: "course", course: "Calculus", reason: "r" }, { courses: COURSES }).course.id, "aaaaaaaaaaaaaaa1"); // fits one
+});
+
+test("course: without a course list (the thread is off) the action does not exist", () => {
+  assert.strictEqual(validateDecision({ action: "course", course: "Calculus 2", reason: "r" }), null);
+  assert.strictEqual(validateDecision({ action: "course", course: "Calculus 2", reason: "r" }, { courses: [] }), null);
+  assert.ok(!ACTIONS.includes("course")); // the base list is what it was
+});
+
+test("course: the prompt lists the courses and the study state, and asks for the two extra keys, only when courses are given", async () => {
+  const withCourses = buildPrompt("explain pointers", { courses: COURSES, studyState: "Calculus 2: exam in 31 days" });
+  assert.match(withCourses, /## Courses\nCourses: Calculus 2; Systems Programming; High-Performance Systems Programming S1; Algorithms Planning\./);
+  assert.match(withCourses, /Study state \(written by Bot's code[^\n]*\n.*exam in 31 days/);
+  assert.match(withCourses, /\*\*course\*\*/); // the course rules are in the briefing
+  const plain = buildPrompt("explain pointers");
+  assert.doesNotMatch(plain, /## Courses|\*\*course\*\*|thread-->|feelings/);
+  let seen = null;
+  const fake = async (prompt) => { seen = prompt; return { action: "course", destination: "none", answer: "", reason: "r", course: "Systems Programming", studyIntent: "ask" }; };
+  const d = await decide("explain pointers", { askStructured: fake, courses: COURSES });
+  assert.strictEqual(d.course.id, "aaaaaaaaaaaaaaa2");
+  assert.match(seen, /course, studyIntent\./);
+  await decide("hi", { askStructured: async (p) => { seen = p; return { action: "answer", answer: "hello", reason: "r" }; } });
+  assert.ok(seen.endsWith(REPLY_FORMAT)); // thread off: the reply format is the old one, byte for byte
+});
+
+test("course: a desk reply naming an unknown course is invalid, so the backup desk decides (and is told about the courses)", async () => {
+  let seen = null;
+  const haiku = async (prompt, model, schema, options) => { seen = { prompt, schema, options }; return { action: "course", course: "Calculus 2", studyIntent: "quiz", reason: "r" }; };
+  const d = await decide("quiz me on limits", { askStructured: async () => ({ action: "course", course: "Made Up", reason: "r" }), askBackup: haiku, courses: COURSES, hedgeAfterMs: 10, deadlineMs: 300, calls: 1 });
+  assert.strictEqual(d.via, "haiku");
+  assert.strictEqual(d.course.name, "Calculus 2");
+  assert.strictEqual(seen.schema, COMPACT_SCHEMA_COURSE);
+  assert.match(fs.readFileSync(seen.options.systemFile, "utf8"), /\*\*course\*\*/);
+  assert.match(seen.prompt, /## Courses/);
+});
+
+test("DRIFT (courses): both briefings carry the course rules, the three extra lines and the same marked blocks", () => {
+  const read = (f) => fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+  for (const file of [BRIEF_FILE, BACKUP_BRIEF_FILE]) {
+    const text = read(file);
+    const blocks = text.match(/<!--thread-->[\s\S]*?<!--\/thread-->/g) || [];
+    assert.ok(blocks.length >= 3, file + " has its thread blocks");
+    const all = blocks.join("\n");
+    assert.match(all, /\*\*course\*\*/);
+    assert.match(all, /feelings/); // feelings get an answer first
+    assert.match(all, /claude-sonnet/); // code in another language
+    assert.match(all, /which course/i); // no clue about the course: ask
+    assert.strictEqual((text.match(/<!--thread-->/g) || []).length, (text.match(/<!--\/thread-->/g) || []).length, "every block is closed");
+  }
+  assert.match(read(BRIEF_FILE), /ask, quiz, exercises, summary, plan, open/);
+  // thread off: no trace of courses left, no gaps; thread on: no markers left
+  for (const f of [BRIEF_FILE, BACKUP_BRIEF_FILE]) {
+    const off = briefText(read(f), false);
+    assert.doesNotMatch(off, /thread-->|\*\*course\*\*|## Courses|feelings/);
+    assert.doesNotMatch(off, /\n{3,}/);
+    assert.doesNotMatch(briefText(read(f), true), /thread-->/);
+  }
+  assert.ok(fs.readFileSync(backupBriefFile(true), "utf8").includes("**course**"));
+  assert.ok(!fs.readFileSync(backupBriefFile(false), "utf8").includes("**course**"));
+  assert.ok(readBrief(true).includes("**course**") && !readBrief(false).includes("**course**"));
+});
+
+test("course: the schema for the thread has the two extra fields, and the old schema is untouched", () => {
+  assert.ok(SCHEMA_COURSE.properties.action.enum.includes("course"));
+  assert.ok(SCHEMA_COURSE.required.includes("course") && SCHEMA_COURSE.required.includes("studyIntent"));
+  assert.ok(!SCHEMA.required.includes("course") && !SCHEMA.properties.action.enum.includes("course"));
+  assert.deepStrictEqual(COMPACT_SCHEMA.required, ["action", "reason"]);
 });
