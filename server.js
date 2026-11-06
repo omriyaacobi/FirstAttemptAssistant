@@ -29,6 +29,7 @@
 //   POST   /api/memory             -> save ONE fact you approved with the Save button, or change one ({ text, replaces: id }); checked again in code, see profile.js
 //   DELETE /api/memory/:id         -> forget one fact
 //   POST   /api/memory/:id/pin     -> always send this fact to the models, or stop ({ pinned: true | false })
+//   GET    /api/backup             -> when the last backup of data/ ran and whether it failed (see backup.js)
 //   GET    /api/morning            -> the morning brief settings; POST to change them; POST /api/morning/now for one right now (see morning.js)
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
 //   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
@@ -69,6 +70,7 @@ const { askCourse } = require("./study");
 const { ingestFile } = require("./ingest");
 const { askChain, askAgyWithFile } = require("./providers");
 const { createMorning } = require("./morning");
+const { createBackupScheduler, loadBackupConfig } = require("./backup");
 const { getCards } = require("./calendar-add");
 const { friendlyError } = require("./calendar-chat");
 
@@ -178,6 +180,7 @@ function createServer({
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
+  backup = null, // the data/ backup (backup.js); off unless given, so tests never read data/
   morning = null, // the morning brief (morning.js); off unless given, so tests never touch data/morning.json
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
   supervised = process.env.BOT_SUPERVISED === "1",
@@ -357,6 +360,12 @@ function createServer({
       const input = await readJsonBody(req, res);
       if (!input) return;
       return memory.pin(pinRoute[1], input.pinned === true) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "fact not found" });
+    }
+
+    // When the last backup ran. Status only: no folder name, no passphrase.
+    if (backup && req.method === "GET" && url.pathname === "/api/backup") {
+      const { enabled, ok, lastSuccess, lastAttempt, error, running, reason } = backup.status();
+      return sendJson(res, 200, { enabled, ok, lastSuccess, lastAttempt, error, running, reason });
     }
 
     // The morning brief settings. Only the page can reach these; all the checks above have already run.
@@ -559,11 +568,14 @@ if (require.main === module) {
     store,
     courses: createCourses(path.join(__dirname, "data", "courses")),
     askCourse, ingestFile, askChain, askFile: askAgyWithFile,
+    // Other-language search words for course questions (crosslang.js): one short Flash call through the front desk's pre-warmed agy.
+    expand: (text) => { const { expandQuery } = require("./crosslang"); const fd = require("./frontdesk"); return expandQuery({ text, askStructured: fd.warm.askStructured, model: fd.FRONT_DESK_MODEL.model }); },
     about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
     log: console.log,
   });
   const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, log: console.log });
-  const server = createServer({ push, auth, courseRoutes, store, morning });
+  const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
@@ -582,6 +594,7 @@ if (require.main === module) {
     console.log(auth.enabled ? `Phone access ON for https://${auth.host} (login required)` : `Phone access off: ${auth.reason}`);
     try { require("./providers").removeStaleWorkDirs(); } catch (error) { /* only housekeeping */ } // old bot-file-* / bot-photo-* folders from earlier runs
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
+    backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
     try { require("./frontdesk").warmUpDesk(); } catch (error) { console.error("Could not prepare the front desk:", error.message); } // only makes the first message slower
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");

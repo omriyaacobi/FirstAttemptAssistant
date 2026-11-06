@@ -378,6 +378,7 @@
         <span class="sub" id="morningNote"></span>
       </div>
     </section>
+    <div class="sub" id="backupLine" hidden></div>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -2144,6 +2145,19 @@
     $("morningOn").checked = on;
     $("morningTime").value = time;
   }
+  // Backup status line (backup.js): stays hidden when backups are not set up.
+  async function loadBackup() {
+    try {
+      const res = await fetch("/api/backup");
+      if (!res.ok) return;
+      const d = await res.json();
+      const el = $("backupLine");
+      if (!d.enabled) { el.hidden = true; return; }
+      const when = d.lastSuccess ? new Date(d.lastSuccess).toLocaleString() : "never";
+      el.textContent = d.ok === false ? "Backup FAILED: " + (d.error || "unknown") + ". Last good copy: " + when : "Last backup: " + when;
+      el.hidden = false;
+    } catch (error) { /* no backup here */ }
+  }
   async function loadMorning() {
     try {
       const res = await fetch("/api/morning");
@@ -2294,6 +2308,7 @@
     loadReminders();
     loadMemory();
     loadMorning();
+    loadBackup();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
     showEmpty();
