@@ -613,7 +613,7 @@ test("several chunks run at once, never more than the limit, and each is saved a
 test("a chunk that fails keeps the rest, and Continue reads only what is still missing", async () => {
   const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 6);
   const broken = CUT_CHUNK_PAGES + 1; // the second chunk fails on every model
-  const first = cutFakeReader({ onCall: async (marks) => { if (marks[0] === broken) throw new Error("this chunk fails"); } });
+  const first = cutFakeReader({ onCall: async (marks) => { if (marks.some((m) => m >= broken && m < broken + CUT_CHUNK_PAGES)) throw new Error("this chunk fails"); } }); // its halves fail too
   await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: first });
   const f = courses.getFile(course.id, file.id);
   assert.strictEqual(f.status, "ready");
