@@ -174,7 +174,7 @@
   function drawChats(into, { data = current, withNew = true, activeId = null, onPick = () => {}, after = refresh } = {}) {
     const { course, chats } = data;
     if (withNew) {
-      if (!course.files.some((f) => f.status === "ready")) into.appendChild(el("p", "sub", "No material is ready yet. Add a file (PDF, PowerPoint, Word, photo or text) on the left. You can already start a chat; it will use the materials once they are ready."));
+      if (!course.files.some((f) => f.status === "ready" || f.pages > 0)) into.appendChild(el("p", "sub", course.files.length ? "Bot is reading your first pages. You can already start a chat; it will use them as soon as they are read." : "No material yet. Add a file (PDF, PowerPoint, Word, photo or text) in Sources. You can already start a chat; it will use the materials once they are read."));
       const start = button("+ New chat", () => { onPick(); newChat(false, { id: course.id, name: course.name }); }, "primary");
       start.id = "newCourseChat";
       const row = el("div", "row");
