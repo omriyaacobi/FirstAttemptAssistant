@@ -255,6 +255,20 @@ test("front desk: addEvent is validated in code; a bad proposal becomes a plain 
   assert.match(bad.answer, /past/);
 });
 
+test("front desk: SEVERAL events from a text conversation become one card, checked by the same code as a photo", () => {
+  const raw = { action: "addEvent", reason: "r", eventTitle: "", eventStart: "", eventEnd: "", eventRepeatUntil: "", eventsJson: timetable() };
+  const d = validateDecision(raw, { now: NOW });
+  assert.strictEqual(d.calendarAdd.events.length, 2);
+  assert.strictEqual(d.calendarAdd.events[0].date, "2026-11-08"); // the weekday became a real date in code
+  assert.deepStrictEqual(d.calendarAdd.skipped, ["Physics 08:00"]);
+  // untrusted or broken JSON is refused as a whole: a plain reply, no card
+  for (const eventsJson of ["not json", timetable({ until: "" }), JSON.stringify({ events: [{ title: "x", weekday: "Sunday", start: "10:00", end: "09:00" }] })]) {
+    const bad = validateDecision({ ...raw, eventsJson }, { now: NOW });
+    assert.strictEqual(bad.calendarAdd, null);
+    assert.match(bad.answer, /did not add anything/);
+  }
+});
+
 // ---- core ----
 const coreDeps = (over = {}) => ({ lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null, ...over });
 

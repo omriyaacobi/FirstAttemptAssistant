@@ -18,7 +18,7 @@ const { MODELS, DESTINATIONS, CLAUDE_PLAN, poolsOf } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
 const { checkRequest } = require("./calendar-chat");
-const { checkTextEvent } = require("./calendar-add");
+const { checkTextEvent, checkPhotoEvents } = require("./calendar-add");
 
 // Flash LOW: with the short briefing it made the same decisions as medium on 49 messages (0 wrong, 0 invalid) in about half
 // the time, and in about 3.5 s when its process is pre-warmed (experiments/2026-11-05-frontdesk-speed.md).
@@ -84,10 +84,12 @@ const SCHEMA = {
     eventStart: { type: "string" },
     eventEnd: { type: "string" },
     eventRepeatUntil: { type: "string" },
+    // Only for addEvent with SEVERAL events (a schedule): one JSON text {events:[{title,weekday|date,start,end,location}],repeat,until,skipped}, checked in code by checkPhotoEvents.
+    eventsJson: { type: "string" },
     // Only for the action "recall": a few search words, or "" when they ask what Bot knows about them.
     recallQuery: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays", "eventTitle", "eventStart", "eventEnd", "eventRepeatUntil", "recallQuery"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays", "eventTitle", "eventStart", "eventEnd", "eventRepeatUntil", "eventsJson", "recallQuery"],
 };
 
 // The shape for the backup desk (forced through claude's --json-schema): only "action" and "reason" are required, and
@@ -179,8 +181,9 @@ function validateDecision(raw, { now = Date.now() } = {}) {
   if (raw.action === "addEvent") {
     // Code decides whether the proposed event is usable. A refused one becomes a plain reply saying why (nothing is created).
     try {
-      const { events } = checkTextEvent({ title: raw.eventTitle, start: raw.eventStart, end: raw.eventEnd, repeatUntil: raw.eventRepeatUntil }, { now });
-      return { action: "addEvent", destination: null, answer: "", reason, calendarAdd: { events, skipped: [] } };
+      const several = typeof raw.eventsJson === "string" && raw.eventsJson.trim();
+      const proposal = several ? checkPhotoEvents(raw.eventsJson, { now }) : checkTextEvent({ title: raw.eventTitle, start: raw.eventStart, end: raw.eventEnd, repeatUntil: raw.eventRepeatUntil }, { now });
+      return { action: "addEvent", destination: null, answer: "", reason, calendarAdd: { events: proposal.events, skipped: proposal.skipped } };
     } catch (error) {
       return { action: "addEvent", destination: null, answer: `Bot did not add anything: ${error.message}.`, reason, calendarAdd: null };
     }
