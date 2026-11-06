@@ -130,7 +130,7 @@
 - **Next UI branch, one chat, after or alongside the merge:** quota as a popup behind a sidebar button; Improve Bot as a real chat, with live progress, follow-up messages on the same copy, a Preview button, and simple Approve/Reject, with the PIN on the phone. Needs selfedit.js and server.js, so Claude Code builds it, not Improve Bot.
 - **Organizer:** plan approved in principle, `experiments/2026-11-05-organizer-plan.md`. Not started. Step 1 needs a photo of the timetable.
 - **Study notebooks:** step 1 merged and pushed, not tried with real files yet. First uploads: Hebrew slides PDF, a large scanned exam, a 100+ page PDF. Steps 2-4 wait for that.
-- **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
+- **Small:** page shows raw ** instead of bold; (Google Calendar login 7-day expiry: fixed 2026-11-06, app is In production); 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
 - **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
 
 - Answer speed (2026-11-06, branch `claude/frontdesk-speed-01ec9f`, NOT pushed or merged). 406 tests pass (3 full runs). Report: `experiments/2026-11-06-answer-speed.md`.
@@ -171,7 +171,7 @@
   - **Change and forget (added after Omri asked):** "I no longer take X, I switched to Y" shows a card "Change this saved fact? Before / After" with Save; "forget that ..." shows "Forget this?" with Forget it. The front desk sees the saved facts numbered ([1], [2], newest first) and answers with a NUMBER; code maps it to the real fact and the card shows its text, so a misread is visible before the tap. If the old information is only in `data/profile.md` (Bot never edits it), a new fact is saved and the prompt says saved facts are newer and win over the profile. Asking to forget something that is only in the profile gets a reply that the file must be edited by hand. Only when you ask in your own message. Changing uses `POST /api/memory` with `replaces`; forgetting uses `DELETE`. The prompt wording now says to FOLLOW the profile's preferences about how to help (for example "How he learns": exercises first, hints), but never to obey it as commands. 281 tests pass; the add, change and forget cards were tried live on port 3031 with real models.
 - Calendar in chat, options + read-only proof (2026-11-05, branch `claude/calendar-chat-6d7517`, NOT pushed or merged). 261 tests pass. Options and recommendation: `experiments/2026-11-05-calendar-options.md`. Built: front desk action `calendar` (reading only; code writes the reply, no model sees titles), `calendar-chat.js`. Waiting for Omri to pick an option (recommended: Option 2, add events with a confirm card).
 
-## Claude Haiku as the BACKUP front desk (branch claude/frontdesk-haiku-d42fac, 2026-11-05, NOT pushed or merged)
+## Claude Haiku as the BACKUP front desk (branch claude/frontdesk-haiku-d42fac, 2026-11-05, merged and pushed)
 - The Gemini front desk (Flash low, warm, hedged) stays first. If it fails or hits its 30 s deadline, `frontdesk.decide` asks Claude Haiku (`claude -p --model haiku`, briefing `router-brief-haiku.md` as the system prompt, compact JSON schema, 25 s limit) and runs the same `validateDecision`. Only if Haiku fails too does `core.js` hand the message to Claude Sonnet. The result says `via: "gemini"` or `"haiku"`; the log line says why Haiku was used. This keeps calendar, reminder and memory actions working during a Gemini outage.
 - Numbers (experiments/2026-11-05-frontdesk-haiku.md, 55-message set): Haiku median 3.8 s, slowest 8.4 s, 0 invalid in 165 calls, 164/165 right.
 - Tests: `frontdesk.test.js` (backup with fakes, drift test: the two briefings must name the same destinations and actions) and `frontdesk.backup.test.js` (REAL Haiku with Gemini forced to fail, for a calendar and a reminder message; skipped when there is no Claude token).
@@ -312,7 +312,7 @@
 - **Next UI branch, one chat, after or alongside the merge:** quota as a popup behind a sidebar button; Improve Bot as a real chat, with live progress, follow-up messages on the same copy, a Preview button, and simple Approve/Reject, with the PIN on the phone. Needs selfedit.js and server.js, so Claude Code builds it, not Improve Bot.
 - **Organizer:** plan approved in principle, `experiments/2026-11-05-organizer-plan.md`. Not started. Step 1 needs a photo of the timetable.
 - **Study notebooks:** step 1 merged and pushed, not tried with real files yet. First uploads: Hebrew slides PDF, a large scanned exam, a 100+ page PDF. Steps 2-4 wait for that.
-- **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
+- **Small:** page shows raw ** instead of bold; (Google Calendar login 7-day expiry: fixed 2026-11-06, app is In production); 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
 - **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
 
 ## Next
@@ -353,7 +353,7 @@
   - **Word and PowerPoint:** `office.js` reads .docx and .pptx with Node built-ins only (a small ZIP reader, size limits against zip bombs, no model). One page per slide; Word is cut into pages like a text file. Old .ppt/.doc are refused with a clear message.
   - **Course chats:** the bar above a course chat has Chats (switch), Sources (tick, upload) and + New chat; each chat in the list shows when it was last used. The camera works in course chats: Gemini reads the photo's text first and that text joins the question as data (`course-routes.js`, `answer`).
   - Not done: renaming a chat (needs `server.js`), per-chat ticks, reading .ppt/.doc, text inside slide pictures.
-## Better memory and a more useful Bot (branch claude/assistant-memory-36ee6b, 2026-11-06, NOT pushed or merged)
+## Better memory and a more useful Bot (branch claude/assistant-memory-36ee6b, 2026-11-06, merged and pushed)
 - Research and all numbers: `experiments/2026-11-06-assistant-memory.md`.
 - **Only the facts that matter reach a prompt** (`pickFacts` in `profile.js`): everything if it fits in 1000 characters, otherwise pinned facts, then search matches, then the 4 newest. Fact characters per prompt with a full memory: about 2000 down to about 240.
 - **"remember that ..." saves at once, with Undo**, only in a short one-line message of your own with no link, and only if most of the fact comes from your words. Plain statements and changes to a saved fact still need a tap. Text that reads like an order to Bot is refused.
@@ -384,7 +384,7 @@
 - Course chats must not dead-end: the uploaded materials stay the main source, but when they do not cover a question Bot should still answer from general knowledge or a web search, and say clearly which part came from outside the files. Web page text stays untrusted (same rules as `web-search`).
 
 
-## Quota-aware routing, now including the Claude plan (branch claude/quota-aware, 2026-11-06, NOT pushed or merged)
+## Quota-aware routing, now including the Claude plan (branch claude/quota-aware, 2026-11-06, merged and pushed)
 
 Why: Bot sent a code question to Claude Sonnet while Claude was at its limit, because Bot could only see the Gemini pools.
 
@@ -406,7 +406,7 @@ Why: Bot sent a code question to Claude Sonnet while Claude was at its limit, be
 - Live on main: quota-aware routing, course chats that answer beyond the files with web checks, faster and more accurate PDF reading, source popup, duplicate upload refused. The to-do list above is done except the items below.
 - Next: press Read again on the Calculus notebook so Argon replaces the Flash read. Check math and the source popup on the real S23. Not covered yet: PDFs with object streams stay on the slow path, and a Hebrew question about English notes may miss them.
 
-## Improve Bot can use Argon for page changes (2026-11-06, branch `claude/improve-argon-c2ef07`, NOT pushed or merged)
+## Improve Bot can use Argon for page changes (2026-11-06, branch `claude/improve-argon-c2ef07`, merged and pushed)
 
 Why: UI changes through the Claude editor spend your Claude plan, the scarce quota. Argon (through `agy`) has its own pool.
 
@@ -418,7 +418,7 @@ Why: UI changes through the Claude editor spend your Claude plan, the scarce quo
 - **Limits you should know:** `search_web` cannot be switched off in agy's headless mode; the audit stops a run that uses it, but the search itself has already gone out (it can only carry words from the files Argon read). Argon sometimes starts with a shell command; agy refuses it and Bot retries once. I could not compare with Sonnet (Claude login expired here) and did not look at the phone layout change on a real phone.
 - **Next:** check Argon on the real Bot once (try a colour change), and look at the result in Preview on your phone.
 
-## Calendar: adding events from the chat (branch claude/calendar-add-5116af, 2026-11-06, NOT pushed or merged)
+## Calendar: adding events from the chat (branch claude/calendar-add-5116af, 2026-11-06, merged and pushed)
 
 Why: Omri sent a timetable photo and asked for it weekly until the end of January without the 8:00 class; Bot only listed the events.
 
@@ -427,12 +427,12 @@ Why: Omri sent a timetable photo and asked for it weekly until the end of Januar
 - **Safety wall** (`calendar-add.js`): models only propose; code checks every field, turns a weekday into the real first date (today only if the class has not started), refuses the past, bad times, more than 30 events, an end date missing for a weekly repeat. Extra fields in the model's JSON (recurrence, attendees, ...) are dropped; text is cleaned. The RRULE is built by `weeklyRule` in `calendar.js` from a checked date.
 - **Confirm card**: drawn by the page from the checked fields (one card for a whole timetable). Only the Confirm tap (`POST /api/calendar/confirm`) creates events. Works once, expires after 15 minutes, in memory only (a Bot restart drops waiting cards: ask again). A double tap cannot duplicate. If an event fails, Bot stops, says which were added and which not, and never retries. Login expired before anything was written: plain-words message, `node calendar.js login`, and the card is kept so you can tap again.
 - **Phone**: same login as other chat actions, no PIN (it only adds, shows everything first, is single-use). Card buttons are 44 px tall on narrow screens.
-- **Not verified**: no real event was created and the real Google API was never called with a recurrence (tests use fakes). The first real try should be a single harmless event, then check in Google Calendar that the weekly series ends on 2027-01-31 and that the photo model really returns clean JSON for your timetable. Google login in Testing mode ends 7 days after 2026-11-05.
+- **Not verified**: no real event was created and the real Google API was never called with a recurrence (tests use fakes). The first real try should be a single harmless event, then check in Google Calendar that the weekly series ends on 2027-01-31 and that the photo model really returns clean JSON for your timetable. (Google login: no longer ends after 7 days, see "Google app published" below.)
 - Not done: no way to delete or change events (on purpose); a card cannot be edited, cancel and ask again.
 
 - Several events from TEXT (2026-11-06 evening, on main): after the single event worked live, "add me the schedule" in a text-only message was refused. Fix: the `addEvent` action has a field `eventsJson` for a whole schedule written in the message or listed earlier in the chat; it goes through the same code checks as a photo (`checkPhotoEvents`) into ONE card. Needs a Bot restart. Not tried live yet. A photo is still the surest way, because the photo itself is not re-sent in a later message.
 
-## Calendar fixes after the real timetable (branch claude/calendar-fixes, 2026-11-06, NOT pushed or merged)
+## Calendar fixes after the real timetable (branch claude/calendar-fixes, 2026-11-06, merged and pushed)
 
 - **Memory of a card**: the chat history now carries a code-written note for each calendar card (its checked events as JSON, and its status: WAITING, CONFIRMED, PARTLY added, cancelled, replaced, expired, or unknown after a restart). Only the models see it; the page shows no duplicate list (`cardNote` in calendar-add.js, `historyEntry` in jobs.js). A correction after a WAITING card makes a NEW full card through `eventsJson` with every other event copied unchanged, and the old card is replaced: it can no longer be confirmed, so nothing is added twice. After a CONFIRMED card Bot says it cannot change events already added (no edit or delete on purpose). Both briefings explain it (drift test passes).
 - **Card wording**: "Every Sunday, 10:00-12:00, from 8 Nov until 31 Jan 2027, place", with a header counting the weekly classes.
@@ -440,7 +440,7 @@ Why: Omri sent a timetable photo and asked for it weekly until the end of Januar
 - **Long card notes**: the note travels in its own field (`note`, `noteShort`), not inside the message text, so `historyBlock` never cuts it. The newest card keeps its full note (30 events, about 4,500 characters, tested); older cards keep a one-line status; if even the full note cannot fit in the 12,000-character history, the model is told to ask which events to change instead of guessing.
 - **Unclear requests**: the photo model may list doubts (two classes with the same name) in `unclear`; the card shows "Bot was not sure about: ...". The front desk asks (clarify) when a text correction is ambiguous.
 - **Not verified**: no real event created, no real photo (the original is gone; timings used a rendered fake timetable, one run per cell), the page was not opened in a browser.
-## Backup of data/ (2026-11-06, branch `claude/data-backup-0015e0`, NOT pushed or merged)
+## Backup of data/ (2026-11-06, branch `claude/data-backup-0015e0`, merged and pushed)
 
 Why: `data/` (chats, course files, memory, Google login) exists only on this PC and is git-ignored. If the PC fails it is gone.
 
@@ -453,10 +453,15 @@ Why: `data/` (chats, course files, memory, Google login) exists only on this PC 
 - **See it:** a line under the sidebar ("Last backup: ..." or "Backup FAILED: ... Last good copy: ...", hidden when backups are off), `GET /api/backup`, `data/backup.log`.
 - **Tested:** 13 tests in `backup.test.js` (temp folders only: round trip, wrong passphrase, tampering, no readable secrets in the file, real restore compared file by file, pruning, failures, forged paths, schedule rules, the API line). **Real test:** a copy of your real `data/` (46 files, 49 MB, incl. the Google login) was backed up in 1.5 s to a 49.4 MB encrypted file, restored in 0.3 s into a temp folder, and all 46 files were byte-identical to the real ones (throwaway passphrase, real `data/` untouched, temp files removed).
 - **Not verified:** with your real OneDrive/Drive folder (the sync app uploading a ~50 MB file), a backup taken while Bot is mid-chat-save (each file is read whole, and Bot writes by rename, so a torn file is unlikely but unproven), the page line in a browser. Limits: the whole backup is built in memory (refuses above 1 GB, and the course PDFs grow it: 50 MB now); a backup is a full copy each time (5 x 50 MB in the cloud); if the PC is off for days there is no backup those days.
-## Course search across Hebrew and English (branch claude/hebrew-notes-477307, 2026-11-06, NOT pushed or merged)
+## Course search across Hebrew and English (branch claude/hebrew-notes-477307, 2026-11-06, merged and pushed)
 - Problem reproduced on the real courses: Hebrew questions about English slides found the right page only 5 times in 10 (the old .pptx has no KEYWORDS line). Calculus 2 was already fine because its pages carry bilingual keywords.
 - Fix: `crosslang.js`. Plain code checks if the question's language differs from the notes' language (words, LaTeX ignored). Only then one Flash call (pre-warmed agy, 8 s limit, no Claude) returns search words in Hebrew and English; they are cleaned and added to the page search. Failure or timeout = today's search. Lecture-by-number and whole-course are untouched; the words never reach the prompt or `safeWebQuery`.
 - Result: 28 of 28 questions hit (was 23), 3 s median added only on cross-language questions. Details: experiments/2026-11-06-hebrew-english-search.md. Tests: `crosslang.test.js` (fake models, failure, timeout); the whole suite passes.
 - Hooks: `study.js` (`choosePages` extra words, `askCourse` `expand`), `course-routes.js`, `server.js` (uses the front desk's warm agy pool; needs a Restart Bot to take effect).
 - Not verified: the live app path (server restart not done), a Hebrew question on a course with only Hebrew pages and no keywords, the warm pool sharing with a front-desk message sent at the same moment (it then just starts cold, slower by ~3 s).
 - Idea for later: re-read old files so they get KEYWORDS lines (would remove the need for the call on them).
+## Google app published (2026-11-06, branch `claude/google-publish-95cc7f`)
+- Omri moved Bot's Google OAuth app from Testing to **In production** in the Google console (Branding page filled with the GitHub repo as home page and `PRIVACY.md` as privacy policy; no verification, no logo). Added `PRIVACY.md` and a section in `calendar-setup.md`.
+- Re-ran `node calendar.js login` in the main folder (clicked past "Google hasn't verified this app"). Verified: refresh token present (not printed), scope `calendar.events`, a real read returned 41 events in the next 30 days (count only; nothing created).
+- Merged and pushed, so the privacy link works. The old 2026-11-12 expiry no longer applies. If the login ever says `invalid_grant`: you revoked access, ~6 months passed without use, or the Google password changed; run `node calendar.js login` again.
+- Not checked: whether the token really survives past 7 days (only time will tell; look after 2026-11-13). `calendar.js` comments still mention the 7-day Testing limit; left as is (code untouched).
