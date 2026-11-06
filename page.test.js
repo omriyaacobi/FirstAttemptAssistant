@@ -220,3 +220,7 @@ test("the page polls fast (0.6 s) during the first 40 s of a task, so a front de
   assert.match(poll, /Date\.now\(\) \+ jobState\.offset - j\.startedAt < FAST_POLL_WINDOW_MS/); // the age of the job, by the server's clock
   assert.match(poll, /\? 600 : jobState\.active\.size \? 2000 : 10000/); // fast, then slow while something long runs, then idle
 });
+
+test("the message box stays on screen: the page's row cannot grow with the sidebar or a long chat", () => {
+  assert.match(html, /\.app \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
+});

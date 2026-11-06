@@ -27,7 +27,7 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, "Segoe UI", sans-serif; }
 
   /* Layout: sidebar on the left, chat on the right. On narrow screens the sidebar slides in. */
-  .app { display: grid; grid-template-columns: 280px 1fr; height: 100%; }
+  .app { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: minmax(0, 1fr); height: 100%; } /* the row must not grow with the sidebar, or the message box slides off screen */
   .side { background: var(--side-bg); border-right: 1px solid var(--line); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
   .chat { display: flex; flex-direction: column; min-width: 0; height: 100%; }
   .topbar { display: none; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
