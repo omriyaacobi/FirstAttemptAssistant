@@ -343,6 +343,128 @@ test("no model-facing file can create an event: createEvent is only used by cale
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "calendar.js"), "utf8"), /deleteEvent|\.delete\(|"DELETE"|"PATCH"|"PUT"/);
 });
 
+// ---- memory of a card, corrections, replacing a waiting card ----
+const hebrewTimetable = () => JSON.stringify({ events: [
+  { title: "תכנות מערכות - שיעור", weekday: "Thursday", start: "12:00", end: "14:00", location: "בניין 28" },
+  { title: "אלגוריתמים - שיעור", weekday: "Sunday", start: "16:00", end: "18:00", location: "בניין 90" },
+  { title: "חדו\"א 2 - תרגיל", weekday: "Monday", start: "12:00", end: "14:00" }], repeat: "weekly", until: "2027-01-31", skipped: [] });
+
+test("MEMORY: the next message sees the card's checked events and its status, but the page text is not changed", async () => {
+  const { createJobs } = require("./jobs");
+  const store = createStore(fs.mkdtempSync(path.join(os.tmpdir(), "caladd-jobs-")));
+  const { cards } = fakeCards();
+  const histories = [];
+  let step = 0;
+  const jobs = createJobs({
+    store, cardNote: (card) => cards.note(card),
+    handle: async (task, opts) => {
+      histories.push(opts.history);
+      if (step++ === 0) return { mode: "single", answer: "Add these to your calendar? Nothing is added until you tap Confirm.", used, calendarAdd: cards.add(add.checkPhotoEvents(hebrewTimetable(), { now: NOW })) };
+      return { mode: "single", answer: "ok", used };
+    },
+  });
+  const wait = async (job) => { while (jobs.get(job.id).status === "running") await new Promise((r) => setTimeout(r, 5)); };
+  const first = jobs.start({ task: "תוסיף ליומן" });
+  await wait(first);
+  const chat = store.get(first.conversationId);
+  const cardId = chat.messages[1].result.calendarAdd.id;
+  const second = jobs.start({ task: "תעביר את החמישי", conversationId: chat.id });
+  await wait(second);
+  const seen = histories[1][1];
+  assert.match(seen.text, /Status: WAITING/);
+  assert.match(seen.text, /תכנות מערכות - שיעור/);
+  assert.match(seen.text, /"weekday":"Thursday","start":"12:00","end":"14:00","location":"בניין 28"/);
+  assert.match(seen.text, /"until":"2027-01-31"/);
+  assert.strictEqual(seen.cardId, cardId);
+  assert.doesNotMatch(store.get(chat.id).messages[1].text, /Calendar card/); // nothing extra is stored or shown as the message
+  await cards.confirm(cardId); // after Confirm the next message hears that it was added
+  const third = jobs.start({ task: "ok", conversationId: chat.id });
+  await wait(third);
+  assert.match(histories[2][1].text, /Status: CONFIRMED: all events were added/);
+});
+
+test("status words: cancelled, replaced, expired, partly added, and unknown after a restart", async () => {
+  const { cards, advance } = fakeCards({ failAt: [1] });
+  const a = cards.add(proposal());
+  assert.match(cards.status(a.id), /WAITING/);
+  cards.cancel(a.id);
+  assert.match(cards.status(a.id), /cancelled/);
+  const b = cards.add(proposal());
+  await cards.confirm(b.id);
+  assert.match(cards.status(b.id), /PARTLY added: added Calculus; NOT added: Algorithms/);
+  const c = cards.add(proposal());
+  advance(add.CARD_TTL_MS + 1);
+  assert.match(cards.status(c.id), /expired/);
+  assert.match(cards.status("f".repeat(32)), /no longer confirmable/);
+});
+
+test("A NEW CARD REPLACES A WAITING ONE: the old card can no longer be confirmed, so nothing is added twice; a confirmed one is untouched", async () => {
+  const { cards, created } = fakeCards();
+  const old = cards.add(proposal());
+  const next = cards.add(proposal(), { supersedes: [old.id] });
+  await assert.rejects(cards.confirm(old.id), (e) => e.status === 410 && /replaced/.test(e.message));
+  assert.match(cards.status(old.id), /replaced by a newer card/);
+  await cards.confirm(next.id);
+  assert.strictEqual(created.length, 2); // only the new card's events
+  const third = cards.add(proposal(), { supersedes: [next.id] }); // the confirmed one stays confirmed
+  assert.match(cards.status(next.id), /CONFIRMED/);
+  assert.strictEqual((await cards.confirm(next.id)).again, true);
+  await cards.confirm(third.id);
+  assert.strictEqual(created.length, 4);
+});
+
+test("core passes the earlier cards' ids of this chat, so the new card replaces them", async () => {
+  const seen = [];
+  const desk = async () => validateDecision({ action: "addEvent", reason: "r", eventTitle: "", eventStart: "", eventEnd: "", eventRepeatUntil: "", eventsJson: hebrewTimetable() }, { now: NOW });
+  await handleTask("תעביר את החמישי", {
+    history: [{ role: "user", text: "x" }, { role: "assistant", text: "card", cardId: "c".repeat(32) }],
+    deps: coreDeps({ decide: desk, addCalendarCard: (p, opts) => { seen.push(opts); return { id: "d".repeat(32), events: p.events, skipped: [], unclear: [] }; } }),
+  });
+  assert.deepStrictEqual(seen[0], { supersedes: ["c".repeat(32)] });
+});
+
+test("CORRECTION in Hebrew: the front desk copies the card's JSON, changes one event, and every other event stays exactly the same", () => {
+  const before = add.checkPhotoEvents(hebrewTimetable(), { now: NOW });
+  const { cards } = fakeCards();
+  const card = cards.add(before);
+  const note = cards.note(card);
+  const json = JSON.parse(note.slice(note.indexOf('{"events"'), note.lastIndexOf("}]") + 1)); // what the front desk reads in the history
+  const thursday = json.events.find((e) => e.weekday === "Thursday");
+  thursday.start = "14:00"; // "תעביר את החמישי שעתיים קדימה"
+  thursday.end = "16:00";
+  const d = validateDecision({ action: "addEvent", reason: "r", eventsJson: JSON.stringify(json) }, { now: NOW });
+  const after = d.calendarAdd.events;
+  assert.strictEqual(after.length, before.events.length);
+  const key = (e) => JSON.stringify(e);
+  for (const e of before.events.filter((x) => x.weekday !== "Thursday")) assert.ok(after.some((y) => key(y) === key(e)), "unchanged: " + e.summary);
+  const moved = after.find((e) => e.weekday === "Thursday");
+  assert.deepStrictEqual([moved.start, moved.end, moved.location, moved.repeatUntil], ["14:00", "16:00", "בניין 28", "2027-01-31"]);
+});
+
+test("both briefings explain corrections: waiting card -> full new card; confirmed card -> say it cannot be changed; unclear -> ask", () => {
+  for (const file of ["router-brief.md", "router-brief-haiku.md"]) {
+    const text = fs.readFileSync(path.join(__dirname, file), "utf8");
+    for (const word of ["CORRECTIONS", "WAITING", "CONFIRMED", "FULL corrected list", "unclear"]) assert.ok(text.includes(word), file + " lacks " + word);
+  }
+});
+
+test("UNCLEAR: doubts the photo model reports are cleaned and travel to the card; the note asks for them", () => {
+  const r = add.checkPhotoEvents(timetable({ unclear: ["Two classes called Systems: which one?\n", "", 5] }), { now: NOW });
+  assert.deepStrictEqual(r.unclear, ["Two classes called Systems: which one?", "5"]);
+  const { cards } = fakeCards();
+  assert.deepStrictEqual(cards.add(r).unclear, r.unclear);
+  assert.match(add.photoCalendarNote("photo.png", { now: NOW }), /"unclear"/);
+  assert.deepStrictEqual(add.checkPhotoEvents(timetable(), { now: NOW }).unclear, []);
+});
+
+test("the card reads 'Every Sunday ... from 8 Nov until 31 Jan 2027' with a header counting the weekly classes, and shows doubts", () => {
+  const html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
+  assert.match(html, /"Every " \+ e\.weekday/);
+  assert.match(html, /", from " \+ fmt\(e\.date\) \+ " until " \+ fmt\(e\.repeatUntil, true\)/);
+  assert.match(html, /weekly repeating/);
+  assert.match(html, /Bot was not sure about/);
+});
+
 // ---- the server routes ----
 async function startServer({ cards, remote = false }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caladd-srv-"));

@@ -187,6 +187,7 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   const jobs = createJobs({
     handle,
+    cardNote: (add) => calendarCards.note(add), // the chat history tells the next message what the calendar cards held and what happened to them
     handleCourse: courseRoutes ? (task, opts) => courseRoutes.answer(opts.courseId, task, opts) : null, // chats inside a course
     store,
     maxRunning: MAX_RUNNING,

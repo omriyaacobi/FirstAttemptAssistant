@@ -69,9 +69,21 @@ function describeProgress(lines) {
 
 // handleCourse(task, { courseId, history, deeper, onPartial, log }) answers a message in a course chat
 // (a conversation with a courseId); it is only given when the study notebooks are on.
-function createJobs({ handle, handleCourse = null, store, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
+function createJobs({ handle, handleCourse = null, cardNote = null, store, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
   const jobs = new Map(); // id -> job
   let runningCount = 0;
+
+  // A message of the chat as memory for the models. A calendar card is not in the message's text (the page draws it from result.calendarAdd),
+  // so code adds a note with the card's checked events and what happened to it (cardNote, from calendar-add.js) for the models only.
+  // It is never shown on the page. The card's id goes along, so a corrected card can replace a waiting one.
+  function historyEntry(m) {
+    const add = m.result && m.result.calendarAdd;
+    if (!cardNote || !add || !Array.isArray(add.events)) return { role: m.role, text: m.text };
+    let note = "";
+    try { note = cardNote(add); } catch (error) { /* the card note is only a help */ }
+    return { role: m.role, text: note ? `${m.text}
+${note}` : m.text, cardId: typeof add.id === "string" ? add.id : undefined };
+  }
 
   function prune() {
     const finished = [...jobs.values()].filter((j) => j.status !== "running").sort((a, b) => b.finishedAt - a.finishedAt);
@@ -117,7 +129,7 @@ function createJobs({ handle, handleCourse = null, store, maxRunning = 2, onFini
     if (inCourse && !handleCourse) throw Object.assign(new Error("the study notebooks are off"), { status: 404 });
 
     // The earlier messages become the memory for this task (a failed answer is not memory).
-    const history = conversation ? conversation.messages.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text })) : [];
+    const history = conversation ? conversation.messages.filter((m) => !m.error).map(historyEntry) : [];
     // Save the question right away: if you reload or come back later, the chat already shows it.
     if (!conversation) conversation = store.create(task, { courseId });
     const startedAt = now();

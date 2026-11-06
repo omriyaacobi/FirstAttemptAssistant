@@ -54,7 +54,7 @@ const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemo
   // The answer model started alongside the front desk (null = off). It uses the pre-warmed pool, so it is killed with its signal.
   speculate: SPECULATE_ANSWER ? (question, { signal, onText }) => answerPool.askText(question, SPECULATIVE_MODEL.model, onText, { signal, timeoutMs: timeoutFor(SPECULATIVE_MODEL.model) }) : null, readCalendar: readCalendarEvents,
   // A Confirm card for checked events (calendar-add.js). Bot only DRAFTS here: creating events needs the Confirm tap in server.js.
-  addCalendarCard: (proposal) => getCards().add(proposal),
+  addCalendarCard: (proposal, opts) => getCards().add(proposal, opts),
   searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
@@ -284,13 +284,16 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     return { mode: "single", rule: "calendar (read-only)", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
   }
 
+  // Earlier calendar cards of this chat (jobs.js gives their ids with the history): a new card replaces the ones still waiting.
+  const supersedes = history.map((h) => h.cardId).filter(Boolean);
+
   // The user asked to ADD an event. The front desk model only proposed fields and frontdesk.js checked them. Code makes the
   // Confirm card; nothing is created until the user taps Confirm (server.js). The log never contains titles.
   function addEvent(decision) {
     let extra = {}, answer = decision.answer;
     if (decision.calendarAdd) {
       try {
-        extra = { calendarAdd: d.addCalendarCard(decision.calendarAdd) };
+        extra = { calendarAdd: d.addCalendarCard(decision.calendarAdd, { supersedes }) };
         answer = "Add this to your calendar? Nothing is added until you tap Confirm.";
         log(`[calendar] drafted ${decision.calendarAdd.events.length} event(s), waiting for Confirm`);
       } catch (error) {
@@ -385,7 +388,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
         log(`[calendar] the photo answer was refused: ${error.message}`);
       }
       if (proposal) {
-        try { extra = { calendarAdd: d.addCalendarCard(proposal) }; } catch (error) { text = `Bot could not prepare the card: ${error.message}`; }
+        try { extra = { calendarAdd: d.addCalendarCard(proposal, { supersedes }) }; } catch (error) { text = `Bot could not prepare the card: ${error.message}`; }
       }
       return { mode: "single", rule: "photo (calendar add, needs Confirm)", reason: "a photo is attached and you asked to add it to the calendar", chain, used, answer: text, seconds: seconds(), ...extra, ...quotaField(low) };
     }

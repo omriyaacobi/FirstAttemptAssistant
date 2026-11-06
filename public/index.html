@@ -903,11 +903,16 @@
   // The calendar Confirm card. Every line comes from fields that code checked (calendar-add.js), never from model prose.
   function calendarCard(add) {
     const box = el("div", "calcard");
+    const fmt = (iso, year) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}), timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z"));
+    // A repeating event reads "Every Sunday, 10:00-12:00, from 8 Nov until 31 Jan 2027, place"; a single one starts with its date.
     const when = (e) => {
+      if (e.repeatUntil) return "Every " + e.weekday + ", " + e.start + "-" + e.end + ", from " + fmt(e.date) + " until " + fmt(e.repeatUntil, true) + (e.location ? ", " + e.location : "");
       const day = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(e.date + "T00:00:00Z"));
-      const until = e.repeatUntil ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(e.repeatUntil + "T00:00:00Z")) : "";
-      return day + ", " + e.start + "-" + e.end + (until ? ", every " + e.weekday + " until " + until : "") + (e.location ? ", " + e.location : "");
+      return day + ", " + e.start + "-" + e.end + (e.location ? ", " + e.location : "");
     };
+    const weekly = add.events.filter((e) => e.repeatUntil).length, single = add.events.length - weekly;
+    const header = [weekly ? weekly + " weekly repeating " + (weekly === 1 ? "event" : "classes") : "", single ? single + " single " + (single === 1 ? "event" : "events") : ""].filter(Boolean).join(" and ");
+    box.appendChild(el("p", "", header + ". Nothing is added until you tap Confirm."));
     const list = el("ul", "callist");
     for (const e of add.events) {
       const li = el("li");
@@ -915,6 +920,7 @@
       list.appendChild(li);
     }
     box.appendChild(list);
+    if (add.unclear && add.unclear.length) box.appendChild(el("p", "err", "Bot was not sure about: " + add.unclear.join("; ") + ". Cancel and tell Bot which one you mean if this is wrong."));
     if (add.skipped && add.skipped.length) box.appendChild(el("p", "sub", "Left out as you asked: " + add.skipped.join("; ")));
     const actions = el("div", "actions");
     const confirmBtn = el("button", "", "Confirm");
