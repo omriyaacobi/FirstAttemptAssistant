@@ -79,7 +79,16 @@
   .bot + .bot { margin-top: 8px; }
   .step-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-weight: 600; }
   .badge { font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--code); color: var(--muted); }
-  .answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .answer { overflow-wrap: anywhere; }
+  .answer p { margin: 0 0 8px; white-space: pre-wrap; }
+  .answer h1, .answer h2, .answer h3, .answer h4, .answer h5, .answer h6 { margin: 14px 0 8px; line-height: 1.3; font-size: 1em; }
+  .answer h1, .answer h2 { font-size: 1.3em; } .answer h3 { font-size: 1.15em; }
+  .answer > :first-child { margin-top: 0; }
+  .answer ul, .answer ol { margin: 0 0 8px; padding-inline-start: 24px; list-style: revert; }
+  .answer hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .answer :not(pre) > code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  /* A bit bigger on the PC only; the phone layout (max-width: 760px) keeps the 16px text. */
+  @media (min-width: 761px) { html { font-size: 18px; } body { font-size: 18px; } }
   pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; white-space: pre; }
   code { font-family: ui-monospace, Consolas, monospace; font-size: .9rem; }
   .err { color: var(--bad); }
@@ -437,20 +446,73 @@
     return node;
   }
 
-  // Shows text with ``` code blocks as boxes. Plain text stays plain.
+  // Shows an answer as formatted text: headings, bold, italics, lists, rules and ``` code blocks.
+  // Built only with createElement / textContent, so HTML in an answer stays plain text. While words stream in
+  // it runs again on the whole text at every poll, so an unfinished **bold or ``` block still looks right.
+  const INLINE = /\*\*(\S(?:.*?\S)?)(?:\*\*|$)|\*(\S(?:.*?\S)?)(?:\*|$)|`([^`]+)(?:`|$)/;
+  function addInline(parent, text) {
+    text = text.replace(/\*\*$/, ""); // a lone ** at the end (more words are on their way)
+    const re = new RegExp(INLINE.source, "g"); // its own copy: a nested call must not move this one's position
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1] !== undefined) addInline(parent.appendChild(el("strong")), m[1]);
+      else if (m[2] !== undefined) addInline(parent.appendChild(el("em")), m[2]);
+      else parent.appendChild(el("code", "", m[3]));
+      last = re.lastIndex;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function fillMarkdown(box, text) {
+    box.replaceChildren();
+    let para = null, list = null, listTag = "", code = null;
+    for (const line of text.replace(/\r/g, "").split("\n")) {
+      if (code) {
+        if (/^\s*```/.test(line)) code = null;
+        else code.textContent += (code.textContent ? "\n" : "") + line;
+        continue;
+      }
+      let m;
+      if (/^\s*```/.test(line)) {
+        para = list = null;
+        const pre = box.appendChild(el("pre"));
+        pre.dir = "ltr"; // code always reads left to right
+        code = pre.appendChild(el("code")); // the language word after ``` is dropped
+      } else if (!line.trim()) {
+        para = list = null;
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        para = list = null;
+        box.appendChild(el("hr"));
+      } else if ((m = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line))) {
+        para = list = null;
+        const h = box.appendChild(el("h" + m[1].length));
+        h.dir = "auto"; // right-to-left text (Hebrew) lines up correctly
+        addInline(h, m[2]);
+      } else if ((m = /^\s*(?:([-*+•])|(\d+)[.)])\s+(.*)$/.exec(line))) {
+        para = null;
+        const tag = m[1] ? "ul" : "ol";
+        if (!list || listTag !== tag) {
+          list = box.appendChild(el(tag));
+          list.dir = "auto";
+          listTag = tag;
+          if (m[2]) list.start = Number(m[2]);
+        }
+        const li = list.appendChild(el("li"));
+        li.dir = "auto";
+        addInline(li, m[3]);
+      } else {
+        list = null;
+        if (!para) { para = box.appendChild(el("p")); para.dir = "auto"; }
+        else para.appendChild(document.createTextNode("\n"));
+        addInline(para, line.trim());
+      }
+    }
+  }
+
   function renderText(text) {
     const box = el("div", "answer");
-    box.dir = "auto"; // right-to-left text (Hebrew) lines up correctly
-    text.split("```").forEach((part, i) => {
-      if (i % 2 === 0) {
-        if (part) box.appendChild(document.createTextNode(part));
-      } else {
-        const pre = el("pre");
-        pre.dir = "ltr"; // code always reads left to right
-        pre.appendChild(el("code", "", part.replace(/^[^\n]*\n/, ""))); // drop the language word after ```
-        box.appendChild(pre);
-      }
-    });
+    fillMarkdown(box, text);
     return box;
   }
 
@@ -810,10 +872,11 @@
     card.step.textContent = job.step + "...";
     // Streaming: the text written so far (untrusted, so textContent). It is replaced whole each poll, and disappears if a model fails.
     const text = job.partial || "";
-    if (card.partial.textContent !== text) {
+    if (card.partialText !== text) {
+      card.partialText = text;
       const th = $("thread");
       const atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 80; // do not drag the page down if you scrolled up to read
-      card.partial.textContent = text;
+      fillMarkdown(card.partial, text);
       if (text && atBottom) scrollDown();
     }
     card.partial.hidden = !text;
