@@ -42,7 +42,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     return fresh;
   }
   const stateFile = path.join(dir, "state.json");
-  const DEFAULT_STATE = { skips: [], settings: { paused: false, pausedUntil: null, quiet: { ...plan.DEFAULT_QUIET } }, nudges: [], lastActivity: 0 };
+  const DEFAULT_STATE = { skips: [], settings: { paused: false, pausedUntil: null, quiet: { ...plan.DEFAULT_QUIET } }, nudges: [], lastActivity: 0, activity: [] };
   function state() {
     const s = readJson(stateFile) || {};
     return {
@@ -50,6 +50,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
       settings: { ...DEFAULT_STATE.settings, ...(s.settings || {}), quiet: { ...DEFAULT_STATE.settings.quiet, ...((s.settings || {}).quiet || {}) } },
       nudges: Array.isArray(s.nudges) ? s.nudges.slice(-60) : [],
       lastActivity: Number(s.lastActivity) || 0,
+      activity: Array.isArray(s.activity) ? s.activity.filter(Number.isFinite).slice(-100) : [],
     };
   }
   const saveState = (s) => writeJson(stateFile, s);
@@ -228,7 +229,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     save(c);
     markActivity();
   }
-  function markActivity() { const s = state(); s.lastActivity = now(); saveState(s); }
+  function markActivity() { const s = state(); s.lastActivity = now(); s.activity = [...s.activity, now()].slice(-100); saveState(s); } // a study moment: a tutor turn, a graded check
 
   // ---- the tutor session (one per course, kept between messages) ----
   const getSession = (ref) => course(ref).session;
