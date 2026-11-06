@@ -21,6 +21,28 @@ const { createCourseRoutes } = require("./course-routes");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-courses-"));
 const PDF = Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n");
 
+test("the same bytes twice in one course are refused, under any name; another course or other bytes are fine", () => {
+  const c = createCourses(tmp());
+  const one = c.create("One");
+  const two = c.create("Two");
+  c.addFile(one.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  assert.throws(() => c.addFile(one.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "renamed.pdf" }), (e) => e.status === 409 && /already in the course, as "notes.pdf"/.test(e.message));
+  assert.strictEqual(c.get(one.id).files.length, 1);
+  c.addFile(two.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  c.addFile(one.id, { bytes: Buffer.concat([PDF, Buffer.from("%x")]), kind: "pdf", ext: ".pdf", name: "other.pdf" });
+  assert.strictEqual(c.get(one.id).files.length, 2);
+});
+
+test("a file saved before fingerprints existed is still recognised, from the bytes on disk", () => {
+  const dir = tmp();
+  const c = createCourses(dir);
+  const course = c.create("Old");
+  const file = c.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "old.pdf" });
+  c.setFile(course.id, file.id, { sha256: undefined });
+  assert.throws(() => c.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "again.pdf" }), (e) => e.status === 409);
+  assert.ok(c.getFile(course.id, file.id).sha256);
+});
+
 // ---- upload.js ----
 test("sniffFile decides by content, not by name", () => {
   assert.deepStrictEqual(sniffFile(PDF), { kind: "pdf", ext: ".pdf" });
@@ -369,7 +391,7 @@ const { makeZip } = require("./testzip");
 const seedCalc = (courses) => {
   const c = courses.create("Calc");
   const a = courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "keep.pdf" });
-  const b = courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "skip.pdf" });
+  const b = courses.addFile(c.id, { bytes: Buffer.concat([PDF, Buffer.from("%2")]), kind: "pdf", ext: ".pdf", name: "skip.pdf" });
   courses.savePages(c.id, a.id, [{ page: 1, text: "alpha limits" }]);
   courses.savePages(c.id, b.id, [{ page: 1, text: "beta SKIPPED-TEXT limits" }]);
   for (const f of [a, b]) courses.setFile(c.id, f.id, { status: "ready", pages: 1 });
