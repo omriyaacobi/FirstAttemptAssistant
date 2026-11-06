@@ -400,3 +400,8 @@ Why: Bot sent a code question to Claude Sonnet while Claude was at its limit, be
 - **Speed**: the front desk only reads the in-memory flag, so it is not slowed. Real front-desk times (6 messages, main vs this branch, interleaved, `--plan-only`): median 5.3 s vs 10.1 s (one noisy run with three slow Gemini calls), then 5.7 vs 5.6 s and 6.1 vs 5.4 s. Same within noise.
 - **NOT verified live**: the Claude login in this worktree is expired and there is no `.env` here, so I could not see a real `rate_limit_event` from your account. The parser follows the CLI's schema and is covered by tests with fake output, but please run `node experiments/claude-quota-probe.js` in the main checkout once to see the real numbers. If `rows` comes back empty there, the limit-error fallback still works.
 - Not done: the planner's own models and the Gemini front desk are not moved away from a low Gemini pool; the web page's quota panel (`/api/usage`, in protected `server.js`) still shows only the agy pools; `quota.js` keeps its own `parseUsage` copy because `server.js` is protected.
+
+## 2026-11-06 evening
+
+- Live on main: quota-aware routing, course chats that answer beyond the files with web checks, faster and more accurate PDF reading, source popup, duplicate upload refused. The to-do list above is done except the items below.
+- Next: press Read again on the Calculus notebook so Argon replaces the Flash read. Check math and the source popup on the real S23. Not covered yet: PDFs with object streams stay on the slow path, and a Hebrew question about English notes may miss them.
