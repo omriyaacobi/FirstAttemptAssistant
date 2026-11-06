@@ -469,10 +469,10 @@ test("ingest passes the time limit to the reader, and asks the same model again 
   assert.strictEqual(file.status, "ready");
   assert.deepStrictEqual(seen.map((x) => x[0]), ["gemini-3.8-flash-medium", "gemini-3.8-flash-medium"]); // same model twice, no Argon needed
   assert.ok(seen.every((x) => x[1] >= 6 * 60 * 1000));
-  let wrongShape = 0;
-  const bad = await readWith(async () => { wrongShape++; return "I could not read that."; });
+  const asked = [];
+  const bad = await readWith(async (model) => { asked.push(model); return "I could not read that."; });
   assert.strictEqual(bad.file.status, "failed");
-  assert.strictEqual(wrongShape, 2); // a wrong-shaped answer is not asked again with the same model: Flash once, Argon once
+  assert.deepStrictEqual(asked.slice(0, 2), ["gemini-3.8-flash-medium", "gemini-4-argon-low"]); // a wrong-shaped answer is not asked again with the same model
 });
 test("a long read that stops half way keeps its pages; Continue reads only the rest, Start over reads everything", async () => {
   const courses = createCourses(tmp());
@@ -514,4 +514,19 @@ test("the retry route continues only when asked to, and only when there is somet
     assert.ok(!s.courses.getFile(course.id, fid).resumeFrom);
     await s.waitIdle();
   } finally { s.close(); }
+});
+test("a chunk that fails as a whole is tried in halves, and the pages that work are kept", async () => {
+  const calls = [];
+  const reader = async (model, prompt) => {
+    const [, from, to] = /pages (\d+) to (\d+)/.exec(prompt).map(Number);
+    calls.push([from, to]);
+    if (from <= 13 && to >= 13) throw new Error("page 13 cannot be read"); // any range holding page 13 fails
+    return fakeReader(20)(model, prompt);
+  };
+  const { file } = await readWith(reader);
+  assert.strictEqual(file.status, "ready");
+  assert.ok(calls.some(([a, b]) => a === 1 && b === 10)); // the 20-page chunk was cut: 1-10 and 11-20 ...
+  assert.ok(calls.some(([a, b]) => a === 11 && b === 15)); // ... and 11-20 again into 11-15 and 16-20
+  assert.strictEqual(file.pages, 15); // 5 pages (11-15) lost, 1-10 and 16-20 kept
+  assert.match(file.error, /5 of 20 pages/);
 });

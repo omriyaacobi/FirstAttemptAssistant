@@ -17,6 +17,7 @@ const { MODELS } = require("./router");
 const { readOffice } = require("./office");
 
 const CHUNK_PAGES = 20;
+const MIN_SPLIT = 5; // a chunk that fails is cut in halves down to this many pages
 const MAX_PAGES = 400; // a bigger PDF is read up to this page
 const TEXT_PAGE_CHARS = 2000; // a text file is cut into pieces about this long
 const READ_CHAIN = [MODELS.flashMedium, MODELS.argonLow]; // Flash first; Argon only if Flash fails
@@ -104,7 +105,7 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
         set({ progress: total ? `pages ${from}-${Math.min(to, total)} of ${total}` : `reading the first pages` });
         let parsed;
         try {
-          parsed = await askChunk(askFile, fp, from, to, log, chunkTimeoutMs(to - from + 1, file.bytes || 0));
+          parsed = await askChunkSplit(askFile, fp, from, to, log, file.bytes || 0);
         } catch (error) {
           if (pages.length === 0) throw error;
           stoppedAt = from;
@@ -128,7 +129,7 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
       pages.sort((a, b) => a.page - b.page);
       if (pages.length === 0) throw new Error("no text could be read from this file");
       courses.savePages(courseId, fileId, pages);
-      const note = stoppedAt ? `reading stopped at page ${stoppedAt} of ${total}: press Continue to read the rest` : missing.length ? `${missing.length} of ${total} pages had no text (for example page ${missing[0]})` : "";
+      const note = stoppedAt ? `reading stopped at page ${stoppedAt} of ${total}: press Continue to read the rest` : missing.length ? `${missing.length} of ${total} pages had no text or could not be read (for example page ${missing[0]})` : "";
       set({ status: "ready", pages: pages.length, progress: "", error: note, resumeFrom: stoppedAt });
       return;
     }
@@ -137,6 +138,27 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
     set({ status: "ready", pages: pages.length, progress: "", error: "", resumeFrom: 0 });
   } catch (error) {
     set({ status: "failed", progress: "", error: String(error.message).slice(0, 200) });
+  }
+}
+
+// A chunk that fails on both models is cut in halves and each half is tried (down to MIN_SPLIT pages), so one page the models cannot
+// read costs a few pages instead of 20 (in my real 87-page test, pages 61-80 failed on both models as a whole). A timeout is not split: the halves would only time out too.
+// If some halves work, their pages are kept; the pages of the halves that failed are reported as missing.
+async function askChunkSplit(askFile, fp, from, to, log, bytes) {
+  try {
+    return await askChunk(askFile, fp, from, to, log, chunkTimeoutMs(to - from + 1, bytes));
+  } catch (error) {
+    const count = to - from + 1;
+    if (count <= MIN_SPLIT || /timed out/i.test(error.message)) throw error;
+    const mid = from + Math.ceil(count / 2) - 1;
+    log(`[ingest] pages ${from}-${to} failed as a whole, trying ${from}-${mid} and ${mid + 1}-${to} separately`);
+    const parts = [];
+    let lastError = error;
+    for (const [a, b] of [[from, mid], [mid + 1, to]]) {
+      try { parts.push(await askChunkSplit(askFile, fp, a, b, log, bytes)); } catch (halfError) { lastError = halfError; }
+    }
+    if (!parts.length) throw lastError;
+    return { total: parts.map((p) => p.total).find(Boolean) || null, pages: parts.flatMap((p) => p.pages) };
   }
 }
 
