@@ -449,10 +449,11 @@
   // Shows an answer as formatted text: headings, bold, italics, lists, rules and ``` code blocks.
   // Built only with createElement / textContent, so HTML in an answer stays plain text. While words stream in
   // it runs again on the whole text at every poll, so an unfinished **bold or ``` block still looks right.
-  const INLINE = /\*\*(\S(?:.*?\S)?)(?:\*\*|$)|\*(\S(?:.*?\S)?)(?:\*|$)|`([^`]+)(?:`|$)/;
+  // ** may be unfinished (words still streaming); a single * needs a real closing *. A * touching a letter or digit (5*3, 2**10, int *p) stays a plain star.
+  const INLINE = /(?<![\p{L}\p{N}*])\*\*(?=\S)(.*?\S)(?:\*\*|$)|(?<![\p{L}\p{N}*])\*(?![\s*])(.*?[^\s*])\*(?![\p{L}\p{N}*])|`([^`]+)(?:`|$)/u;
   function addInline(parent, text) {
     text = text.replace(/\*\*$/, ""); // a lone ** at the end (more words are on their way)
-    const re = new RegExp(INLINE.source, "g"); // its own copy: a nested call must not move this one's position
+    const re = new RegExp(INLINE.source, "gu"); // its own copy: a nested call must not move this one's position
     let last = 0, m;
     while ((m = re.exec(text))) {
       if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));

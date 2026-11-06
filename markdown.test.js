@@ -84,3 +84,18 @@ test("both chats use it: answers and the streaming text, and the font is bigger 
   const study = fs.readFileSync(path.join(__dirname, "public", "study.js"), "utf8");
   assert.ok(!/\.innerHTML|insertAdjacentHTML/.test(script + study));
 });
+
+test("a lone * in maths or code stays a star; only real *italics* are italic (English and Hebrew)", () => {
+  for (const text of ["5*3 = 15", "int *p = malloc(4);", "2*3*4", "a**b", "2**10", "x * y * z", "a *sla"]) {
+    const box = sandbox.renderText(text);
+    assert.strictEqual(box.textContent, text, text);
+    assert.strictEqual(find(box, "em").length + find(box, "strong").length, 0, text);
+  }
+  const it = sandbox.renderText("a *real italics* here and *עברית נטויה* too");
+  assert.deepStrictEqual(find(it, "em").map((n) => n.textContent), ["real italics", "עברית נטויה"]);
+  assert.strictEqual(it.textContent, "a real italics here and עברית נטויה too");
+  const b = sandbox.renderText("**bold** and **מודגש** and **half");
+  assert.deepStrictEqual(find(b, "strong").map((n) => n.textContent), ["bold", "מודגש", "half"]);
+  assert.strictEqual(sandbox.renderText("שלום **עולם").children[0].textContent, "שלום עולם"); // streaming still works
+  assert.strictEqual(sandbox.renderText("*x*").children[0].textContent, "x"); // one-letter italics
+});
