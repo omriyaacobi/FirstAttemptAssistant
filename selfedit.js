@@ -232,6 +232,13 @@ function folderMap(worktree) {
   return lines.join("\n");
 }
 
+// Removes one run's private TEMP folder, then the shared parent only if it is empty (so a running retry keeps its own).
+// It can never throw: on Windows a folder can be busy (EPERM/EBUSY), and a failed delete must not change any result or crash Bot.
+function removeAgyTmp(tmp, tmpRoot, rm = fs.rmSync, rmdir = fs.rmdirSync) {
+  try { rm(tmp, { recursive: true, force: true, maxRetries: 3 }); } catch (error) { /* left behind; harmless */ }
+  try { rmdir(tmpRoot); } catch (error) { /* not empty (another run is using it) or busy: fine */ }
+}
+
 // The Argon editor. "command" and "prefixArgs" exist so tests can use a fake agy. It never uses --dangerously-skip-permissions.
 function makeArgonEditor({ command, prefixArgs = [], noteFailure = null } = {}) {
   // One run of agy. Rejects with argonFailed(...).
@@ -252,7 +259,7 @@ function makeArgonEditor({ command, prefixArgs = [], noteFailure = null } = {}) 
         settled = true;
         clearTimeout(timer);
         try { killTree(child); } catch (error) { /* already gone */ }
-        setTimeout(() => fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 }), 2000).unref();
+        setTimeout(() => removeAgyTmp(tmp, tmpRoot), 2000).unref(); // only THIS run's folder; a retry has its own
         fn(value);
       };
       const fail = (why, retryable = false) => {
@@ -720,4 +727,4 @@ function createSelfEdit({
   return { start, followUp, previewDir, get, list, approve, reject, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, makeArgonEditor, auditAgyStep, describeAgyStep, checkProposal, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };

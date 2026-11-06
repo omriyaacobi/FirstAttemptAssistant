@@ -297,6 +297,8 @@ process.stdin.on("data", (d) => {
     out({ event: "result", result: { status: "SUCCESS", response: "Changed the page." } });
   } else if (scenario === "shell-once" && !fs.existsSync(process.env.FAKE_AGY_LOG + ".n")) { fs.writeFileSync(process.env.FAKE_AGY_LOG + ".n", "1"); tool("run_command", { CommandLine: "ls" }); setTimeout(() => out({ event: "result", result: { status: "SUCCESS", response: "oops" } }), 3000); }
   else if (scenario === "shell-once") { tool("edit_file", { Path: cwd + "/public/index.html" }); fs.writeFileSync(cwd + "/public/index.html", "<p>second try</p>\\n"); out({ event: "result", result: { status: "SUCCESS", response: "Second try worked." } }); }
+  else if (scenario === "slow-retry" && !fs.existsSync(process.env.FAKE_AGY_LOG + ".n")) { fs.writeFileSync(process.env.FAKE_AGY_LOG + ".n", "1"); tool("run_command", { CommandLine: "ls" }); }
+  else if (scenario === "slow-retry") { setTimeout(() => { let ok = false; try { fs.writeFileSync(process.env.TEMP + "/alive.txt", "1"); ok = true; } catch (e) {} out({ event: "result", result: { status: "SUCCESS", response: ok ? "TEMP alive" : "TEMP gone" } }); }, 3000); }
   else if (scenario === "shell") { tool("run_command", { CommandLine: "echo hi" }); setTimeout(() => out({ event: "result", result: { status: "SUCCESS", response: "oops" } }), 3000); }
   else if (scenario === "outside") { tool("write_file", { Path: process.env.FAKE_AGY_OUTSIDE }); setTimeout(() => out({ event: "result", result: { status: "SUCCESS", response: "oops" } }), 3000); }
   else if (scenario === "denied") out({ event: "result", result: { status: "SUCCESS", response: "", denied_actions: [{ action: "command", display_name: "RunCommand" }] } });
@@ -404,4 +406,33 @@ test("the Improve Bot window offers Argon next to Sonnet and Opus, and says whic
   assert.match(html, /Uses your Claude plan\./);
   const server = fs.readFileSync(path.join(__dirname, "server.js"), "utf8");
   assert.ok(server.includes('["sonnet", "opus", "argon"].includes(model)'));
+});
+
+test("a retry keeps its own TEMP until it has finished (the first run's cleanup must not delete it)", async () => {
+  const f = fakeAgy("slow-retry");
+  try { assert.strictEqual(await f.editor({ worktree: f.wtDir, request: "x" }), "TEMP alive"); } finally { f.cleanup(); }
+});
+
+test("removeAgyTmp never throws and removes only its own folder", () => {
+  const { removeAgyTmp } = require("./selfedit");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agytmp-"));
+  const a = path.join(root, "a"), b = path.join(root, "b");
+  fs.mkdirSync(a); fs.mkdirSync(b);
+  removeAgyTmp(a, root);
+  assert.ok(!fs.existsSync(a) && fs.existsSync(b), "the other run's folder stays, and so does the shared parent");
+  const busy = () => { const e = new Error("busy"); e.code = "EPERM"; throw e; };
+  assert.doesNotThrow(() => removeAgyTmp(b, root, busy, busy)); // a failed delete changes nothing and does not crash
+  assert.ok(fs.existsSync(b));
+  removeAgyTmp(b, root);
+  assert.ok(!fs.existsSync(root), "the empty parent is removed");
+});
+
+test("a failed delete does not change the editor's result", async () => {
+  const f = fakeAgy("good");
+  const realRm = fs.rmSync;
+  try {
+    fs.rmSync = (...a) => { const e = new Error("EPERM"); e.code = "EPERM"; throw e; };
+    assert.strictEqual(await f.editor({ worktree: f.wtDir, request: "x" }), "Changed the page.");
+    await new Promise((r) => setTimeout(r, 2300)); // the delayed cleanup runs and fails inside its timer; nothing crashes
+  } finally { fs.rmSync = realRm; f.cleanup(); }
 });
