@@ -53,7 +53,7 @@ function createCourses(dir) {
   const summary = (c) => ({
     id: c.id, name: c.name, created: c.created,
     files: c.files.length,
-    pages: c.files.reduce((a, f) => a + (f.status === "ready" ? f.pages || 0 : 0), 0),
+    pages: c.files.reduce((a, f) => a + (f.pages || 0), 0), // also the pages of a file still being read: they can be used already
     reading: c.files.filter((f) => f.status === "queued" || f.status === "reading").length,
   });
 
@@ -165,13 +165,14 @@ function createCourses(dir) {
     return readJson(filePath(id, fid, ".pages.json")) || [];
   }
 
-  // Every page of every READY file in a course that is ticked for use (file.use is not false), each with the file it came from.
+  // Every saved page of a course's files that are ticked for use (file.use is not false), each with the file it came from.
+  // A file still being read counts too: its pages are saved chunk by chunk, so a chat can use them before the read ends.
   function allPages(id) {
     const course = get(id);
     if (!course) return [];
     const out = [];
     for (const file of course.files) {
-      if (file.status !== "ready" || file.use === false) continue;
+      if (file.use === false) continue;
       for (const p of getPages(id, file.id)) out.push({ ...p, fileId: file.id, fileName: file.name });
     }
     return out;

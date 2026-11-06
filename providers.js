@@ -264,11 +264,13 @@ async function askAgyWithImage(model, question, imagePath) {
 // Gemini reading one course file (PDF, photo). Same idea as askAgyWithImage: the file is copied into a brand-new
 // EMPTY folder under a FIXED name (never the uploaded name), agy runs there, the folder is deleted afterwards.
 // A long PDF takes minutes (120 pages: 266 s in my test), so this has its own generous timeout.
-async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000 } = {}) {
+// content (optional): the bytes to use instead of the file itself, for a piece cut out of it (pdfcut.js).
+async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000, content = null } = {}) {
   checkModelName(model);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-file-"));
   try {
-    fs.copyFileSync(filePath, path.join(dir, "material" + path.extname(filePath)));
+    const copy = path.join(dir, "material" + path.extname(filePath));
+    if (content) fs.writeFileSync(copy, content); else fs.copyFileSync(filePath, copy);
     return await new Promise((resolve, reject) => {
       const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 5e7 }, (error, stdout, stderr) => {
         if (error) return reject(new Error(stderr || error.message));

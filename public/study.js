@@ -244,6 +244,22 @@
     if (list) fillUploads(list);
   }
 
+  // How far a long read has got, and that its pages can be used already. The time left comes from the real speed of this read.
+  function readingBar(f) {
+    const box = el("div", "read-bar");
+    const fill = box.appendChild(el("div", "read-fill"));
+    fill.style.width = Math.round((100 * f.pages) / f.pagesTotal) + "%";
+    box.setAttribute("role", "progressbar");
+    box.setAttribute("aria-valuenow", String(f.pages));
+    box.setAttribute("aria-valuemax", String(f.pagesTotal));
+    const wrap = el("div");
+    wrap.appendChild(box);
+    const done = f.pages - (f.readFromPages || 0);
+    const minutes = done > 0 && f.readStarted ? Math.ceil((((Date.now() - f.readStarted) / done) * (f.pagesTotal - f.pages)) / 60000) : 0;
+    if (f.pages > 0) wrap.appendChild(el("div", "sub", "Chats can use these pages already." + (minutes ? ` About ${minutes} min left.` : "")));
+    return wrap;
+  }
+
   // The files of a course. Each has a tick: unticked files are left out of the chats of this course (the file stays).
   // pages: true adds the "View text" panel (course screen only, the chat's small panel stays short).
   function sourcesList(course, { pages = false, after = refresh } = {}) {
@@ -264,9 +280,10 @@
       name.dir = "auto";
       const state = f.status === "ready" ? `ready, ${f.pages} page${f.pages === 1 ? "" : "s"}` : f.status === "failed" ? "could not read" : f.status === "reading" ? "reading... " + f.progress : "waiting";
       text.append(name, el("div", f.status === "failed" ? "sub err" : "sub", state));
+      if (f.status === "reading" && f.pagesTotal) text.appendChild(readingBar(f));
       if (f.error) text.appendChild(el("div", "sub err", f.error));
       const actions = el("div", "actions");
-      if (pages && f.status === "ready") actions.appendChild(button("View text", () => openFilePages(f.id, 1)));
+      if (pages && f.pages > 0) actions.appendChild(button("View text", () => openFilePages(f.id, 1)));
       const reread = (resume) => async () => { try { await post(`/api/courses/${course.id}/files/${f.id}/retry`, { resume }); await after(); } catch (error) { fail(error); } };
       const done = f.status === "failed" || f.status === "ready";
       if (done && f.resumeFrom > 1) actions.appendChild(button("Continue", reread(true))); // a long read that stopped half way keeps its pages

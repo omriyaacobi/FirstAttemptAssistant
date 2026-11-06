@@ -12,7 +12,7 @@ const path = require("node:path");
 const { sniffFile, cleanName } = require("./upload");
 const { terms, createIndex, search } = require("./search");
 const { createCourses } = require("./courses");
-const { parseTranscript, splitText, ingestFile, chunkTimeoutMs, CHUNK_PAGES } = require("./ingest");
+const { parseTranscript, splitText, ingestFile, chunkTimeoutMs, CHUNK_PAGES, CUT_CHUNK_PAGES, READERS_AT_ONCE } = require("./ingest");
 const { pickPages, buildPrompt, sourcesFor, askCourse, defang } = require("./study");
 const { createServer } = require("./server");
 const { createStore } = require("./store");
@@ -551,4 +551,130 @@ test("a chunk that fails as a whole is tried in halves, and the pages that work 
   assert.ok(calls.some(([a, b]) => a === 11 && b === 15)); // ... and 11-20 again into 11-15 and 16-20
   assert.strictEqual(file.pages, 15); // 5 pages (11-15) lost, 1-10 and 16-20 kept
   assert.match(file.error, /5 of 20 pages/);
+});
+
+// ---- ingest.js, a PDF that can be cut ----
+// A real small PDF of `count` pages. Each page's drawing holds its own marker, so a test can see which pages a cut file really contains.
+function realPdf(count) {
+  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", `<< /Type /Pages /Count ${count} /Kids [${Array.from({ length: count }, (_, i) => `${3 + 2 * i} 0 R`).join(" ")}] /MediaBox [0 0 9 9] >>`];
+  for (let n = 1; n <= count; n++) {
+    objects.push(`<< /Type /Page /Parent 2 0 R /Contents ${4 + 2 * (n - 1)} 0 R >>`);
+    const body = `[MARK${n}]`;
+    objects.push(`<< /Length ${body.length} >>\nstream\n${body}\nendstream`);
+  }
+  return Buffer.from("%PDF-1.3\n" + objects.map((o, i) => `${i + 1} 0 obj\n${o}\nendobj\n`).join("") + "trailer\n<< /Root 1 0 R >>\n%%EOF\n", "latin1");
+}
+// Reads the markers out of the piece it is given and answers the way a model would, counting pages from 1 in that piece.
+const cutFakeReader = ({ calls = [], onCall = async () => {} } = {}) => async (model, prompt, file, options) => {
+  assert.ok(options.content, "the model must get the cut piece, not the whole file");
+  const marks = [...options.content.toString("latin1").matchAll(/\[MARK(\d+)\]/g)].map((m) => Number(m[1])).sort((a, b) => a - b);
+  calls.push(marks);
+  await onCall(marks);
+  return marks.map((real, i) => `=== PAGE ${i + 1} ===\nKEYWORDS: k\ntext of page ${real}`).join("\n");
+};
+function cutCourse(count) {
+  const courses = createCourses(tmp());
+  const course = courses.create("C");
+  const file = courses.addFile(course.id, { bytes: realPdf(count), kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  return { courses, course, file };
+}
+
+test("a PDF that can be cut: each call gets only its own pages, and the real page numbers come back", async () => {
+  const { courses, course, file } = cutCourse(23);
+  const calls = [];
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ calls }) });
+  const f = courses.getFile(course.id, file.id);
+  assert.strictEqual(f.status, "ready");
+  assert.strictEqual(f.pages, 23);
+  assert.strictEqual(f.error, "");
+  assert.strictEqual(calls.length, Math.ceil(23 / CUT_CHUNK_PAGES));
+  assert.ok(calls.every((marks) => marks.length <= CUT_CHUNK_PAGES));
+  const pages = courses.getPages(course.id, file.id);
+  assert.deepStrictEqual(pages.map((p) => p.page), Array.from({ length: 23 }, (_, i) => i + 1));
+  assert.ok(pages.every((p) => p.text === `text of page ${p.page}`));
+});
+
+test("several chunks run at once, never more than the limit, and each is saved as soon as it is done", async () => {
+  const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 7);
+  let running = 0, most = 0, savedAtSomePoint = 0;
+  const onCall = async () => {
+    most = Math.max(most, ++running);
+    await new Promise((r) => setTimeout(r, 5));
+    const now = courses.getFile(course.id, file.id);
+    if (now.status === "reading" && now.pages > 0 && courses.allPages(course.id).length === now.pages) savedAtSomePoint++;
+    running--;
+  };
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ onCall }) });
+  assert.strictEqual(most, READERS_AT_ONCE);
+  assert.ok(savedAtSomePoint > 0, "pages can be used while the rest is still being read");
+  assert.strictEqual(courses.getFile(course.id, file.id).pagesTotal, CUT_CHUNK_PAGES * 7);
+});
+
+test("a chunk that fails keeps the rest, and Continue reads only what is still missing", async () => {
+  const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 6);
+  const broken = CUT_CHUNK_PAGES + 1; // the second chunk fails on every model
+  const first = cutFakeReader({ onCall: async (marks) => { if (marks[0] === broken) throw new Error("this chunk fails"); } });
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: first });
+  const f = courses.getFile(course.id, file.id);
+  assert.strictEqual(f.status, "ready");
+  assert.strictEqual(f.resumeFrom, broken);
+  assert.match(f.error, new RegExp(`stopped at page ${broken} of ${CUT_CHUNK_PAGES * 6}`));
+  const kept = f.pages;
+  assert.ok(kept >= CUT_CHUNK_PAGES);
+  const calls = [];
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ calls }) });
+  const after = courses.getFile(course.id, file.id);
+  assert.strictEqual(after.pages, CUT_CHUNK_PAGES * 6);
+  assert.ok(!after.resumeFrom);
+  assert.strictEqual(after.error, "");
+  assert.strictEqual(calls.flat().length, CUT_CHUNK_PAGES * 6 - kept, "pages already read are not read again");
+});
+
+test("a page number the model invents outside its piece is dropped, never saved as another page", async () => {
+  const { courses, course, file } = cutCourse(3);
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: async () => "=== PAGE 1 ===\nreal\n=== PAGE 9 ===\ninvented" });
+  assert.deepStrictEqual(courses.getPages(course.id, file.id).map((p) => p.page), [1]);
+  assert.match(courses.getFile(course.id, file.id).error, /2 of 3 pages/);
+});
+
+test("a file deleted during a cut read ends quietly", async () => {
+  const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 2);
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ onCall: async () => { courses.removeFile(course.id, file.id); } }) });
+  assert.strictEqual(courses.getFile(course.id, file.id), null);
+});
+
+test("a PDF that cannot be cut is still read whole, as before", async () => {
+  const calls = [];
+  const { file } = await readWith(fakeReader(7, { calls }));
+  assert.strictEqual(file.pages, 7);
+  assert.strictEqual(calls.length, 1);
+});
+
+// ---- using pages while a file is still being read ----
+test("a chat can use the pages of a file that is still being read, and says so", async () => {
+  const courses = createCourses(tmp());
+  const course = courses.create("Calculus");
+  const file = courses.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  courses.savePages(course.id, file.id, [{ page: 1, text: "אינטגרל מסוים ומשפט יסודי" }]);
+  courses.setFile(course.id, file.id, { status: "reading", pages: 1, pagesTotal: 87 });
+  let prompt = "";
+  const askChain = async (chain, text) => { prompt = text; return { answer: "ok [S1]", used: { model: "m" } }; };
+  const r = await askCourse({ course: courses.get(course.id), pages: courses.allPages(course.id), question: "אינטגרל", askChain });
+  assert.match(prompt, /still being read: 1 of 87 pages/);
+  assert.strictEqual(r.sources.length, 1);
+  assert.deepStrictEqual(r.reading, [{ file: "notes.pdf", pages: 1, total: 87 }]);
+  assert.strictEqual(courses.list()[0].pages, 1);
+});
+
+test("before the first pages arrive, a chat says Bot is still reading, and a finished file is not called unfinished", async () => {
+  const courses = createCourses(tmp());
+  const course = courses.create("C");
+  const file = courses.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "n.pdf" });
+  courses.setFile(course.id, file.id, { status: "reading", pages: 0, pagesTotal: 87 });
+  const askChain = async () => { throw new Error("no model should be asked"); };
+  assert.match((await askCourse({ course: courses.get(course.id), pages: [], question: "x", askChain })).answer, /still reading the first pages/);
+  courses.savePages(course.id, file.id, [{ page: 1, text: "word" }]);
+  courses.setFile(course.id, file.id, { status: "ready", pages: 1, pagesTotal: 1 });
+  const done = await askCourse({ course: courses.get(course.id), pages: courses.allPages(course.id), question: "word", askChain: async () => ({ answer: "a", used: { model: "m" } }) });
+  assert.deepStrictEqual(done.reading, []);
 });

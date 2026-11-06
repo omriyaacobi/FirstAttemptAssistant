@@ -89,6 +89,8 @@
   .src .actions button { padding: 2px 10px; font-size: .8rem; }
   .src .pages-panel { margin-top: 8px; }
   .chat-item .when { flex: none; color: var(--muted); font-size: .75rem; padding-right: 2px; }
+  .read-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 4px; }
+  .read-fill { height: 100%; background: var(--accent, #4a90d9); transition: width .4s; }
   .pages-panel { margin-top: 10px; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 8px; }
   .sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
   button.chip { padding: 2px 10px; font-size: .8rem; }
@@ -800,6 +802,7 @@
         card.appendChild(src);
       }
       if (result.searched !== undefined) card.appendChild(el("div", "sub", `Searched ${result.searched} pages of this course only`));
+      (result.reading || []).forEach((r) => card.appendChild(el("div", "sub", `Still reading ${r.file}: this answer used the ${r.pages} of ${r.total} pages read so far.`)));
       wrap.appendChild(card);
     } else if (result.mode === "split") {
       result.steps.forEach((s) => {
