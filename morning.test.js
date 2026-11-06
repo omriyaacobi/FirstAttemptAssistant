@@ -50,12 +50,22 @@ test("on: sent once a day, not before its time, and again the next day", async (
 });
 
 test("catch-up: a late start still sends it within 4 hours, but not in the evening", async () => {
-  const late = setup({ time: "11:30" });
+  const late = setup({ time: "07:00" });
   late.morning.update({ on: true, time: "08:00" });
+  late.clock.now = at("11:30");
   assert.strictEqual(await late.morning.tick(), true);
-  const evening = setup({ time: "19:00" });
+  const evening = setup({ time: "07:00" });
   evening.morning.update({ on: true, time: "08:00" });
+  evening.clock.now = at("19:00");
   assert.strictEqual(await evening.morning.tick(), false);
+});
+
+test("turning it on after today's time starts tomorrow, not with a brief right away", async () => {
+  const s = setup({ time: "10:50" });
+  s.morning.update({ on: true, time: "08:00" });
+  assert.strictEqual(await s.morning.tick(), false);
+  s.clock.now += 24 * 3600 * 1000 - 2 * 3600 * 1000; // 08:50 the next day
+  assert.strictEqual(await s.morning.tick(), true);
 });
 
 test("the brief lists today's events and reminders; the push only counts them", async () => {
@@ -96,7 +106,7 @@ test("settings are checked", () => {
   assert.throws(() => s.morning.update({ on: "yes" }), /true or false/);
   assert.deepStrictEqual(s.morning.update({ on: true, time: "07:30", lastDay: "2099-01-01", extra: 1 }), { on: true, time: "07:30" });
   assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(s.dir, "morning.json"), "utf8"))).sort(), ["lastDay", "on", "time"]);
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(s.dir, "morning.json"), "utf8")).lastDay, ""); // lastDay cannot be set from outside
+  assert.notStrictEqual(JSON.parse(fs.readFileSync(path.join(s.dir, "morning.json"), "utf8")).lastDay, "2099-01-01"); // lastDay cannot be set from outside
 });
 
 async function withServer(options, run) {
@@ -109,13 +119,14 @@ async function withServer(options, run) {
 const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 test("web: the routes turn it on, send one now without using up today's, and need JSON", async () => {
-  const s = setup();
+  const s = setup({ time: "07:00" });
   await withServer({ morning: s.morning, store: s.store, reminders: s.reminders, memory: createMemory({ file: path.join(s.dir, "memory.json") }) }, async (base) => {
     assert.deepStrictEqual(await (await fetch(`${base}/api/morning`)).json(), { on: false, time: "08:00", devices: 1 });
     assert.strictEqual((await post(`${base}/api/morning`, { time: "nonsense" })).status, 400);
     assert.deepStrictEqual(await (await post(`${base}/api/morning`, { on: true })).json(), { on: true, time: "08:00" });
     const now = await (await post(`${base}/api/morning/now`, {})).json();
     assert.ok(s.store.get(now.conversationId));
+    s.clock.now = at("08:30");
     assert.strictEqual(await s.morning.tick(), true); // the real one still goes out today
     assert.strictEqual((await fetch(`${base}/api/morning`, { method: "POST", body: "{\"on\":false}" })).status, 415);
     assert.strictEqual(s.morning.settings().on, true);

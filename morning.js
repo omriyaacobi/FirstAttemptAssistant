@@ -46,9 +46,14 @@ function createMorning({ file, store, reminders, push, calendar = readCalendar, 
     fs.renameSync(temp, file);
   }
 
+  // Today in the local time zone, like "2026-11-06", and the minutes since midnight.
+  const today = () => localIso(now(), timezone).slice(0, 10);
+  const minuteOfDay = () => minutes(localIso(now(), timezone).slice(11, 16));
+
   // Only the two settings a person chooses; each is checked. Anything else in the request is ignored.
   function update({ on, time }) {
     const settings = read();
+    const wasOn = settings.on;
     if (on !== undefined) {
       if (typeof on !== "boolean") throw new Error("on must be true or false");
       settings.on = on;
@@ -57,13 +62,11 @@ function createMorning({ file, store, reminders, push, calendar = readCalendar, 
       if (typeof time !== "string" || !TIME_PATTERN.test(time)) throw new Error("the time must look like 08:00");
       settings.time = time;
     }
+    // Turned on after today's time has passed: it starts tomorrow, instead of firing the moment you tap ("Show me one now" is for that).
+    if (on === true && !wasOn && minuteOfDay() >= minutes(settings.time)) settings.lastDay = today();
     write(settings);
     return { on: settings.on, time: settings.time };
   }
-
-  // Today in the local time zone, like "2026-11-06", and the minutes since midnight.
-  const today = () => localIso(now(), timezone).slice(0, 10);
-  const minuteOfDay = () => minutes(localIso(now(), timezone).slice(11, 16));
 
   // The text of today's brief. A calendar problem (the login expires every 7 days) is one line in it, never a failure.
   async function compose() {

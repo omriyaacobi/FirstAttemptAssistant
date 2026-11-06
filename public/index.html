@@ -162,6 +162,7 @@
   .reminder .when { color: var(--muted); font-size: .75rem; }
   .reminder button { background: transparent; color: var(--muted); padding: 0 6px; font-weight: 400; }
   .reminder button:hover { color: var(--bad); }
+  #memory { max-height: 240px; overflow-y: auto; } /* a full memory must not push the rest of the sidebar away */
   button.mic { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px 12px; }
   button.mic.listening { background: var(--bad); color: #fff; border-color: var(--bad); }
   .tools { display: flex; gap: 8px; align-items: center; }
@@ -562,6 +563,7 @@
   }
 
   function undoButton(id) {
+    loadMemory(); // the fact was saved just now
     const actions = el("div", "actions");
     const undo = el("button", "ghost", "Undo");
     undo.addEventListener("click", async () => {
@@ -1692,7 +1694,8 @@
         return;
       }
       box.className = "";
-      box.replaceChildren(...data.facts.map((f) => {
+      const shown = [...data.facts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.at - a.at); // pinned, then newest
+      box.replaceChildren(...shown.map((f) => {
         const row = el("div", "reminder");
         const what = el("div", "what");
         const text = el("div", "", f.text);
