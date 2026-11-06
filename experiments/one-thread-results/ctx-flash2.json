@@ -1,0 +1,83 @@
+[
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 150169,
+  "promptChars": 150329,
+  "needle": "early",
+  "seconds": 4.964,
+  "right": true,
+  "answer": "14 March"
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 150169,
+  "promptChars": 150333,
+  "needle": "middle",
+  "seconds": 4.898,
+  "right": true,
+  "answer": "218"
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 150169,
+  "promptChars": 150342,
+  "needle": "late",
+  "seconds": 14.132,
+  "right": true,
+  "answer": "orbit.db"
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 200263,
+  "promptChars": 200423,
+  "needle": "early",
+  "seconds": 6.519,
+  "right": false,
+  "answer": ""
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 200263,
+  "promptChars": 200427,
+  "needle": "middle",
+  "seconds": 6.55,
+  "right": false,
+  "answer": ""
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 200263,
+  "promptChars": 200436,
+  "needle": "late",
+  "seconds": 17.935,
+  "right": false,
+  "answer": ""
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 250022,
+  "promptChars": 250182,
+  "needle": "early",
+  "seconds": 38.608,
+  "right": false,
+  "answer": ""
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 250022,
+  "promptChars": 250186,
+  "needle": "middle",
+  "seconds": 6.794,
+  "right": false,
+  "answer": ""
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 250022,
+  "promptChars": 250195,
+  "needle": "late",
+  "seconds": 7.934,
+  "right": false,
+  "answer": ""
+ }
+]

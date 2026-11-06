@@ -1,0 +1,52 @@
+{
+ "0 slow call(s) running": {
+  "deskSeconds": [
+   2.6,
+   3.5,
+   3.7,
+   3.6,
+   4.3,
+   4
+  ],
+  "median": 3.667,
+  "max": 4.323,
+  "failed": 0,
+  "hedged": 0,
+  "slowSeconds": []
+ },
+ "1 slow call(s) running": {
+  "deskSeconds": [
+   3.3,
+   4.6,
+   3.4,
+   4.2,
+   4.8,
+   4.9
+  ],
+  "median": 4.602,
+  "max": 4.893,
+  "failed": 0,
+  "hedged": 3,
+  "slowSeconds": [
+   117.495
+  ]
+ },
+ "2 slow call(s) running": {
+  "deskSeconds": [
+   3,
+   3.6,
+   4.2,
+   5,
+   4.8,
+   5.9
+  ],
+  "median": 4.757,
+  "max": 5.897,
+  "failed": 0,
+  "hedged": 3,
+  "slowSeconds": [
+   101.747,
+   92.778
+  ]
+ }
+}

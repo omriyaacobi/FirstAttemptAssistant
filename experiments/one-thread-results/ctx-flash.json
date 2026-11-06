@@ -1,0 +1,146 @@
+[
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 3069,
+  "promptChars": 3229,
+  "needle": "early",
+  "seconds": 4.439,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 3069,
+  "promptChars": 3233,
+  "needle": "middle",
+  "seconds": 5.601,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 3069,
+  "promptChars": 3242,
+  "needle": "late",
+  "seconds": 5.025,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 12128,
+  "promptChars": 12288,
+  "needle": "early",
+  "seconds": 5.127,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 12128,
+  "promptChars": 12292,
+  "needle": "middle",
+  "seconds": 5.146,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 12128,
+  "promptChars": 12301,
+  "needle": "late",
+  "seconds": 4.311,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 39979,
+  "promptChars": 40139,
+  "needle": "early",
+  "seconds": 4.724,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 39979,
+  "promptChars": 40143,
+  "needle": "middle",
+  "seconds": 5.115,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 39979,
+  "promptChars": 40152,
+  "needle": "late",
+  "seconds": 4.867,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 100193,
+  "promptChars": 100353,
+  "needle": "early",
+  "seconds": 14.148,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 100193,
+  "promptChars": 100357,
+  "needle": "middle",
+  "seconds": 4.945,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 100193,
+  "promptChars": 100366,
+  "needle": "late",
+  "seconds": 5.121,
+  "right": true
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 250223,
+  "promptChars": 250383,
+  "needle": "early",
+  "seconds": 7.407,
+  "right": false
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 250223,
+  "promptChars": 250387,
+  "needle": "middle",
+  "seconds": 9.062,
+  "right": false
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 250223,
+  "promptChars": 250396,
+  "needle": "late",
+  "seconds": 16.19,
+  "right": false
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 500436,
+  "promptChars": 500596,
+  "needle": "early",
+  "seconds": 15.145,
+  "right": false
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 500436,
+  "promptChars": 500600,
+  "needle": "middle",
+  "seconds": 8.935,
+  "right": false
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "historyChars": 500436,
+  "promptChars": 500609,
+  "needle": "late",
+  "seconds": 6.985,
+  "right": false
+ }
+]

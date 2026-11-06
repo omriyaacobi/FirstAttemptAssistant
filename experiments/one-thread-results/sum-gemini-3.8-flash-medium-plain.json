@@ -1,0 +1,178 @@
+[
+ {
+  "model": "gemini-3.8-flash-medium",
+  "style": "plain",
+  "round": 1,
+  "promptChars": 3736,
+  "seconds": 22.751,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 0,
+   "badQuotes": 0,
+   "counts": [
+    2,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user reviewed several study topics and managed their schedule throughout the day. In calculus, they finished lecture 6 and resolved their confusion with integration by parts after working through an exercise. In systems programming, they grasped const pointers but continue to struggle with pointers to pointers. They tracked tasks including an algorithms assignment, buying a USB-C cable, emailing a lab TA, and an upcoming C project milestone. Finally, the user clarified their calculus exam date is December 5th and contemplated dropping their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango."
+    },
+    {
+     "text": "The user prefers learning through exercises rather than through lectures."
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit homework in algorithms by Sunday."
+    },
+    {
+     "text": "Buy a USB-C cable today."
+    },
+    {
+     "text": "Send an email to the lab teaching assistant regarding the grade by Wednesday."
+    },
+    {
+     "text": "Complete the first milestone of the C project by November 20."
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus: finished lecture 6 and understood selecting u and dv for integration by parts, but initially struggled with two exercises."
+    },
+    {
+     "text": "Systems programming: understood const char *p, but pointer to pointer is still completely confusing."
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether to drop the physics course."
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "style": "plain",
+  "round": 2,
+  "promptChars": 3736,
+  "seconds": 30.684,
+  "score": {
+   "found": 8,
+   "mustTotal": 9,
+   "lost": [
+    "date: exam on 5 December (corrected)"
+   ],
+   "invented": [],
+   "quotes": 0,
+   "badQuotes": 0,
+   "counts": [
+    2,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user engaged in study sessions for calculus and systems programming while organizing upcoming academic and personal responsibilities. In calculus, they practiced integration by parts until the choice of u and dv finally clicked. In systems programming, they grasped const pointers but continued to struggle with pointer-to-pointer concepts. The user tracked several tasks with deadlines, including an algorithms homework due Sunday, emailing a lab teaching assistant by Wednesday, a C project milestone due November 20, and buying a USB-C cable today. Additionally, they shared personal preferences such as liking hands-on exercises over lectures, mentioned owning a cat named Mango, and expressed uncertainty about dropping their physics course.",
+   "facts": [
+    {
+     "text": "Has a cat named Mango"
+    },
+    {
+     "text": "Prefers learning through exercises rather than lectures"
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework by Sunday"
+    },
+    {
+     "text": "Buy a USB-C cable today"
+    },
+    {
+     "text": "Send an email to the lab teaching assistant regarding the grade by Wednesday"
+    },
+    {
+     "text": "Complete the first milestone of the C project by November 20"
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus: Integration by parts; understood how to choose u and dv, but initially struggled with mixing them up and needs speed"
+    },
+    {
+     "text": "Systems Programming: Pointers; understood const char *p, but pointer to pointer remains completely confusing"
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether to drop the physics course"
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "style": "plain",
+  "round": 3,
+  "promptChars": 3736,
+  "seconds": 30.96,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 0,
+   "badQuotes": 0,
+   "counts": [
+    2,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user checked in with Bot throughout the day to manage academic tasks, study concepts, and organize reminders. In calculus, they practiced integration by parts until the choice of u and dv clicked, while in systems programming, they understood const char pointers but struggled with pointer-to-pointer. Their active tasks include submitting algorithms homework by Sunday, buying a USB-C cable today, emailing the lab teaching assistant by Wednesday, and completing the first milestone of a C project due on November 20. They confirmed their calculus exam date is December 5 after correcting an earlier date, and they remained undecided about dropping their physics course. The user also shared personal details, mentioning they own a cat named Mango and prefer learning through practical exercises rather than lectures.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango."
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures."
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework by Sunday."
+    },
+    {
+     "text": "Buy a USB-C cable today."
+    },
+    {
+     "text": "Send an email to the lab teaching assistant regarding the grade by Wednesday."
+    },
+    {
+     "text": "Complete the first milestone of the C project by November 20."
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus: Integration by parts; understood how to choose u and dv, but speed remains a weak spot."
+    },
+    {
+     "text": "Systems Programming: Pointers; understood const char *p, but pointer to pointer remains confusing."
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether to drop the physics course."
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,166 @@
+[
+ {
+  "model": "gemini-3.8-flash-medium",
+  "style": "quoted",
+  "round": 1,
+  "promptChars": 3813,
+  "seconds": 120.051,
+  "error": "gemini-3.8-flash-medium timed out after 120 s"
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "style": "quoted",
+  "round": 2,
+  "promptChars": 3813,
+  "seconds": 35.58,
+  "score": {
+   "found": 8,
+   "mustTotal": 9,
+   "lost": [
+    "date: exam on 5 December (corrected)"
+   ],
+   "invented": [],
+   "quotes": 9,
+   "badQuotes": 0,
+   "counts": [
+    2,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user checked in throughout the day to track deadlines and work through academic material. In calculus, they practiced integration by parts, and in systems programming, they reviewed pointer concepts. Several academic and personal reminders were scheduled, including homework submissions, an email to a lab teaching assistant, and purchasing a cable. The user also shared personal details, such as owning a cat named Mango and preferring exercise-based learning over lectures. Additionally, they contemplated whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango.",
+     "quote": "יש לי חתול בשם מנגו",
+     "msg": 3
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures.",
+     "quote": "אני אוהב ללמוד דרך תרגילים יותר מאשר דרך הרצאות",
+     "msg": 31
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit algorithms homework by Sunday.",
+     "quote": "אני צריך להגיש את תרגיל הבית באלגוריתמים עד יום ראשון",
+     "msg": 1
+    },
+    {
+     "text": "Buy a USB-C cable today.",
+     "quote": "I need to buy a USB-C cable today",
+     "msg": 17
+    },
+    {
+     "text": "Send an email to the lab teaching assistant about the grade by Wednesday.",
+     "quote": "תזכיר לי לשלוח מייל לעוזר ההוראה של המעבדה לגבי הציון עד יום רביעי",
+     "msg": 25
+    },
+    {
+     "text": "Complete the first milestone of the C project by November 20.",
+     "quote": "the first milestone of the C project is due on November 20",
+     "msg": 27
+    }
+   ],
+   "progress": [
+    {
+     "text": "In Calculus (integration by parts): understood how to choose u and dv, which finally clicked after practice, having previously mixed them up.",
+     "quote": "ok that finally clicked",
+     "msg": 11
+    },
+    {
+     "text": "In Systems Programming (pointers): understands const char *p, but pointer to pointer is still completely confusing.",
+     "quote": "in systems programming I finally understand const char *p after your explanation. but pointer to pointer still confuses me completely",
+     "msg": 19
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop their physics course.",
+     "quote": "maybe I'll drop the physics course, not sure yet",
+     "msg": 21
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-3.8-flash-medium",
+  "style": "quoted",
+  "round": 3,
+  "promptChars": 3813,
+  "seconds": 25.789,
+  "score": {
+   "found": 8,
+   "mustTotal": 9,
+   "lost": [
+    "date: exam on 5 December (corrected)"
+   ],
+   "invented": [],
+   "quotes": 9,
+   "badQuotes": 0,
+   "counts": [
+    2,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user spent the day studying Calculus integration by parts and reviewing pointer concepts in Systems Programming. They tracked deadlines and set reminders for submitting an Algorithms assignment, emailing a lab teaching assistant, and working on a C project milestone. They also noted daily errands like buying a USB-C cable while confirming their dentist appointment was completed. Finally, they shared personal background about their cat and study preferences, while pondering whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user owns a cat named Mango.",
+     "quote": "יש לי חתול בשם מנגו",
+     "msg": 3
+    },
+    {
+     "text": "The user learns better through practice exercises than lectures.",
+     "quote": "אני אוהב ללמוד דרך תרגילים יותר מאשר דרך הרצאות",
+     "msg": 31
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the Algorithms homework by Sunday.",
+     "quote": "אני צריך להגיש את תרגיל הבית באלגוריתמים עד יום ראשון",
+     "msg": 1
+    },
+    {
+     "text": "Buy a USB-C cable today.",
+     "quote": "I need to buy a USB-C cable today",
+     "msg": 17
+    },
+    {
+     "text": "Send an email to the lab teaching assistant about the grade by Wednesday.",
+     "quote": "תזכיר לי לשלוח מייל לעוזר ההוראה של המעבדה לגבי הציון עד יום רביעי",
+     "msg": 25
+    },
+    {
+     "text": "Complete the first milestone of the C project due on November 20.",
+     "quote": "the first milestone of the C project is due on November 20, I haven't started",
+     "msg": 27
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus: Finished lecture 6 and practiced integration by parts; understood how to select u and dv, though previously mixed them up.",
+     "quote": "I keep mixing up u and dv",
+     "msg": 5
+    },
+    {
+     "text": "Systems Programming: Understood const char *p, but pointer to pointer remains completely confusing.",
+     "quote": "pointer to pointer still confuses me completely",
+     "msg": 19
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course.",
+     "quote": "maybe I'll drop the physics course, not sure yet",
+     "msg": 21
+    }
+   ]
+  }
+ }
+]

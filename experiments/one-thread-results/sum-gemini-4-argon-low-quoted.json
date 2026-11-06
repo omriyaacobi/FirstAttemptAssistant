@@ -1,0 +1,262 @@
+[
+ {
+  "model": "gemini-4-argon-low",
+  "style": "quoted",
+  "round": 1,
+  "promptChars": 3813,
+  "seconds": 13.355,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [
+    "exam on 3 December (the corrected, wrong date)"
+   ],
+   "quotes": 12,
+   "badQuotes": 0,
+   "counts": [
+    4,
+    5,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user logged several upcoming academic deadlines and errands, including an algorithms homework due Sunday, a calculus exam on December 5, a lab TA email due by Wednesday, a C project milestone due November 20, and buying a USB-C cable today. In calculus, the user finished lecture 6 and practiced integration by parts, resolving their initial confusion between choosing u and dv. In systems programming, the user now understands const pointers (`const char *p`) but remains confused by pointers to pointers. The user also shared personal facts and study preferences, and mentioned they are undecided about whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango.",
+     "quote": "יש לי חתול בשם מנגו",
+     "msg": 3
+    },
+    {
+     "text": "The user's calculus exam is on December 5 (corrected from December 3).",
+     "quote": "המבחן ב-5 בדצמבר. לא ב-3",
+     "msg": 15
+    },
+    {
+     "text": "The user does not have a car.",
+     "quote": "if I had a car I would drive to Eilat",
+     "msg": 23
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures.",
+     "quote": "אני אוהב ללמוד דרך תרגילים יותר מאשר דרך הרצאות",
+     "msg": 31
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework (due by Sunday; reminder requested for Saturday evening).",
+     "quote": "אני צריך להגיש את תרגיל הבית באלגוריתמים עד יום ראשון",
+     "msg": 1
+    },
+    {
+     "text": "Prepare for the calculus exam (on December 5).",
+     "quote": "המבחן ב-5 בדצמבר",
+     "msg": 15
+    },
+    {
+     "text": "Buy a USB-C cable (due today).",
+     "quote": "I need to buy a USB-C cable today.",
+     "msg": 17
+    },
+    {
+     "text": "Send an email to the lab teaching assistant regarding the grade (due by Wednesday).",
+     "quote": "תזכיר לי לשלוח מייל לעוזר ההוראה של המעבדה לגבי הציון עד יום רביעי",
+     "msg": 25
+    },
+    {
+     "text": "Complete the first milestone of the C project (due November 20; not started yet).",
+     "quote": "the first milestone of the C project is due on November 20, I haven't started",
+     "msg": 27
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus - Integration by parts (Lecture 6): Completed 4 of 6 exercises; initially mixed up u and dv, but after practicing x ln x dx, choosing u and dv finally clicked.",
+     "quote": "got it: x^2/2 ln x - x^2/4 + C. ok that finally clicked",
+     "msg": 11
+    },
+    {
+     "text": "Systems programming - Pointers: Now understands const char *p, but pointer to pointer is still completely confusing.",
+     "quote": "in systems programming I finally understand const char *p after your explanation. but pointer to pointer still confuses me completely",
+     "msg": 19
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course.",
+     "quote": "maybe I'll drop the physics course, not sure yet",
+     "msg": 21
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-4-argon-low",
+  "style": "quoted",
+  "round": 2,
+  "promptChars": 3813,
+  "seconds": 11.225,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 10,
+   "badQuotes": 0,
+   "counts": [
+    2,
+    5,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user organized several upcoming academic deadlines, including an algorithms homework due Sunday, a lab TA email by Wednesday, a C project milestone on November 20, and a calculus exam on December 5. They practiced integration by parts after finishing calculus lecture 6 and resolved their confusion about choosing u and dv. In systems programming, the user now understands const char *p but still struggles with pointers to pointers. They also noted a personal errand to buy a USB-C cable today, shared that they have a cat named Mango, and mentioned a preference for learning through exercises. Finally, the user is considering whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango.",
+     "quote": "יש לי חתול בשם מנגו",
+     "msg": 3
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures.",
+     "quote": "אני אוהב ללמוד דרך תרגילים יותר מאשר דרך הרצאות",
+     "msg": 31
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework by Sunday (reminder requested for Saturday evening).",
+     "quote": "אני צריך להגיש את תרגיל הבית באלגוריתמים עד יום ראשון",
+     "msg": 1
+    },
+    {
+     "text": "Prepare for the calculus exam on December 5.",
+     "quote": "סליחה, טעיתי, המבחן ב-5 בדצמבר. לא ב-3",
+     "msg": 15
+    },
+    {
+     "text": "Buy a USB-C cable today.",
+     "quote": "I need to buy a USB-C cable today.",
+     "msg": 17
+    },
+    {
+     "text": "Send an email to the lab teaching assistant about the grade by Wednesday.",
+     "quote": "תזכיר לי לשלוח מייל לעוזר ההוראה של המעבדה לגבי הציון עד יום רביעי",
+     "msg": 25
+    },
+    {
+     "text": "Complete the first milestone of the C project, due on November 20 (not started yet).",
+     "quote": "the first milestone of the C project is due on November 20, I haven't started",
+     "msg": 27
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus: Finished lecture 6 and completed 4 of 6 exercises on integration by parts; initially mixed up u and dv, then practiced on the integral of x ln x dx until choosing u and dv clicked.",
+     "quote": "got it: x^2/2 ln x - x^2/4 + C. ok that finally clicked",
+     "msg": 11
+    },
+    {
+     "text": "Systems programming: Understands const char *p, but pointer-to-pointer is still completely confusing.",
+     "quote": "in systems programming I finally understand const char *p after your explanation. but pointer to pointer still confuses me completely",
+     "msg": 19
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course.",
+     "quote": "maybe I'll drop the physics course, not sure yet",
+     "msg": 21
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-4-argon-low",
+  "style": "quoted",
+  "round": 3,
+  "promptChars": 3813,
+  "seconds": 13.35,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 11,
+   "badQuotes": 0,
+   "counts": [
+    4,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user scheduled several academic and personal tasks, including an algorithms homework deadline on Sunday, emailing a lab TA by Wednesday, and starting a C project milestone due November 20. They also clarified that their calculus exam is on December 5 and noted needing to buy a USB-C cable while confirming their dentist appointment is already booked. In their studies, the user practiced integration by parts in calculus until the choice of u and dv clicked, and reported understanding const pointers in systems programming while still struggling with pointers to pointers. Finally, the user shared personal details such as owning a cat named Mango, not having a car, preferring to learn through exercises rather than lectures, and considering whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango.",
+     "quote": "יש לי חתול בשם מנגו",
+     "msg": 3
+    },
+    {
+     "text": "The user's calculus exam is on December 5.",
+     "quote": "המבחן ב-5 בדצמבר. לא ב-3",
+     "msg": 15
+    },
+    {
+     "text": "The user does not have a car.",
+     "quote": "if I had a car I would drive to Eilat",
+     "msg": 23
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures.",
+     "quote": "אני אוהב ללמוד דרך תרגילים יותר מאשר דרך הרצאות",
+     "msg": 31
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework by Sunday (reminder requested for Saturday evening).",
+     "quote": "אני צריך להגיש את תרגיל הבית באלגוריתמים עד יום ראשון",
+     "msg": 1
+    },
+    {
+     "text": "Buy a USB-C cable today.",
+     "quote": "I need to buy a USB-C cable today.",
+     "msg": 17
+    },
+    {
+     "text": "Send an email to the lab TA regarding the grade by Wednesday.",
+     "quote": "תזכיר לי לשלוח מייל לעוזר ההוראה של המעבדה לגבי הציון עד יום רביעי",
+     "msg": 25
+    },
+    {
+     "text": "Complete the first milestone of the C project, due on November 20 (not started yet).",
+     "quote": "the first milestone of the C project is due on November 20, I haven't started",
+     "msg": 27
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus (integration by parts): finished lecture 6 and did 4 of 6 exercises (getting 2 wrong initially by mixing up u and dv), then practiced choosing u and dv on x ln x dx until the concept clicked; still has 2 remaining exercises from the set.",
+     "quote": "got it: x^2/2 ln x - x^2/4 + C. ok that finally clicked",
+     "msg": 11
+    },
+    {
+     "text": "Systems programming (pointers): now understands const char *p, but is still completely confused by pointer to pointer.",
+     "quote": "in systems programming I finally understand const char *p after your explanation. but pointer to pointer still confuses me completely",
+     "msg": 19
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course.",
+     "quote": "maybe I'll drop the physics course, not sure yet",
+     "msg": 21
+    }
+   ]
+  }
+ }
+]

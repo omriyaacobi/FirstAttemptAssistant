@@ -1,0 +1,212 @@
+[
+ {
+  "model": "gemini-4-argon-low",
+  "style": "plain",
+  "round": 1,
+  "promptChars": 3736,
+  "seconds": 9.776,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 0,
+   "badQuotes": 0,
+   "counts": [
+    4,
+    4,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user organized several upcoming academic deadlines and personal errands, including an algorithms homework due Sunday, a lab TA email due Wednesday, and a C project milestone due November 20. They confirmed their calculus exam is on December 5 and requested reminders for their tasks. In calculus, the user completed lecture 6 and practiced integration by parts, resolving their initial confusion about choosing u and dv. In systems programming, they mastered const char *p but noted ongoing confusion with pointers to pointers. The user also shared personal facts about their cat named Mango and their preference for learning through exercises, while remaining undecided about dropping physics.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango."
+    },
+    {
+     "text": "The user does not own a car."
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures."
+    },
+    {
+     "text": "The user's calculus exam is on December 5."
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework (due Sunday; reminder set for Saturday evening)."
+    },
+    {
+     "text": "Buy a USB-C cable (due today)."
+    },
+    {
+     "text": "Send an email to the lab teaching assistant regarding the grade (due Wednesday)."
+    },
+    {
+     "text": "Complete the first milestone of the C project (due November 20, not started yet)."
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus - Integration by parts (Lecture 6): Completed 4 of 6 initial exercises (2 wrong due to mixing up u and dv), then practiced choosing u and dv (e.g., integral of x ln x dx) until the concept clicked."
+    },
+    {
+     "text": "Systems programming - Pointers: Understands const char *p, but pointer-to-pointer is still completely confusing."
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course."
+    },
+    {
+     "text": "Whether the user wants to do the second practice exercise on integration by parts or review pointer-to-pointer with a drawing next time."
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-4-argon-low",
+  "style": "plain",
+  "round": 2,
+  "promptChars": 3736,
+  "seconds": 10.14,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 0,
+   "badQuotes": 0,
+   "counts": [
+    5,
+    5,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user studied calculus (integration by parts) and reviewed their progress in systems programming (pointers). They noted several upcoming deadlines and tasks, including an algorithms homework due Sunday, a lab TA email by Wednesday, the first milestone of a C project due November 20, and a calculus exam on December 5. They also need to buy a USB-C cable today, while their dentist appointment has already been booked. Additionally, the user shared that they have a cat named Mango, do not own a car, prefer learning through exercises over lectures, and are unsure whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango."
+    },
+    {
+     "text": "The user does not have a car."
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures."
+    },
+    {
+     "text": "The user's calculus exam is on December 5."
+    },
+    {
+     "text": "Course office hours are on Tuesday at 14:00."
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework by Sunday (reminder requested for Saturday evening)."
+    },
+    {
+     "text": "Buy a USB-C cable today."
+    },
+    {
+     "text": "Send an email to the lab teaching assistant about the grade by Wednesday."
+    },
+    {
+     "text": "Complete the first milestone of the C project, due November 20 (not started yet)."
+    },
+    {
+     "text": "Prepare for the calculus exam on December 5."
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus - Integration by parts (Lecture 6): Finished Lecture 6 and completed 4 of 6 exercises initially (getting 2 wrong due to mixing up u and dv), then practiced choosing u and dv (solving the integral of x ln x dx) until the concept clicked."
+    },
+    {
+     "text": "Systems programming - Pointers: Understands const char *p, but is still completely confused by pointer-to-pointer."
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course."
+    },
+    {
+     "text": "When to complete the second requested practice exercise on integration by parts and cover pointer-to-pointer concepts."
+    }
+   ]
+  }
+ },
+ {
+  "model": "gemini-4-argon-low",
+  "style": "plain",
+  "round": 3,
+  "promptChars": 3736,
+  "seconds": 11.097,
+  "score": {
+   "found": 9,
+   "mustTotal": 9,
+   "lost": [],
+   "invented": [],
+   "quotes": 0,
+   "badQuotes": 0,
+   "counts": [
+    4,
+    5,
+    2
+   ]
+  },
+  "out": {
+   "summary": "The user scheduled several academic and personal reminders, including submitting an algorithms homework assignment by Sunday, emailing a lab TA by Wednesday, and preparing for the first C project milestone due November 20. They also noted a task to buy a USB-C cable today and confirmed their calculus exam is on December 5. In calculus, the user practiced integration by parts and resolved their confusion about choosing u and dv. In systems programming, they understood const char *p but noted they still struggle with pointers to pointers. Additionally, the user shared that they have a cat named Mango, prefer learning through exercises rather than lectures, and are undecided about whether to drop their physics course.",
+   "facts": [
+    {
+     "text": "The user has a cat named Mango."
+    },
+    {
+     "text": "The user prefers learning through exercises rather than lectures."
+    },
+    {
+     "text": "The user's calculus exam is on December 5."
+    },
+    {
+     "text": "Course office hours are on Tuesday at 14:00."
+    }
+   ],
+   "tasks": [
+    {
+     "text": "Submit the algorithms homework assignment by Sunday (reminder set for Saturday evening)."
+    },
+    {
+     "text": "Buy a USB-C cable today."
+    },
+    {
+     "text": "Send an email to the lab teaching assistant regarding the grade by Wednesday."
+    },
+    {
+     "text": "Complete the first milestone of the C project by November 20 (not started yet)."
+    },
+    {
+     "text": "Study for the calculus exam on December 5."
+    }
+   ],
+   "progress": [
+    {
+     "text": "Calculus - Integration by parts: Finished lecture 6 and solved 4 of 6 initial exercises (getting 2 wrong due to mixing up u and dv), then practiced choosing u and dv with an exercise on the integral of x ln x dx until the concept clicked."
+    },
+    {
+     "text": "Systems programming - Pointers: Now understands const char *p, but pointer-to-pointer (double pointers) is still completely confusing."
+    }
+   ],
+   "open_questions": [
+    {
+     "text": "Whether the user will drop the physics course."
+    },
+    {
+     "text": "When to cover pointer-to-pointer in systems programming and whether to complete the second practice exercise on integration by parts."
+    }
+   ]
+  }
+ }
+]
