@@ -40,6 +40,11 @@ function findInChats(store, query, { limit = MAX_FOUND } = {}) {
     const conversation = store.get(c.id);
     return conversation ? exchanges(conversation) : [];
   });
+  return rank(pages, query, limit);
+}
+
+// The best pages for a query, best first. A chat appears at most twice, so one long chat cannot fill the list.
+function rank(pages, query, limit) {
   if (!pages.length) return [];
   const hits = search(createIndex(pages.map((p) => ({ text: `${p.title} ${p.question} ${p.answer}` }))), withTopics(query), pages.length);
   const perChat = new Map();
@@ -73,4 +78,51 @@ function recallPrompt(question, found) {
   ].join("\n");
 }
 
-module.exports = { findInChats, listFound, recallPrompt, exchanges, MAX_FOUND };
+
+// ---- the thread (BOT_THREAD=on) ----
+// In one thread a fast answer can arrive before a slow one, so "the next message" is NOT the answer. An answer is paired with its
+// question by replyTo. A message without replyTo (an old one) is paired with the user message right before it, as before.
+// Course turns are included now (they are part of the one conversation). Calendar replies and morning briefs stay out, as always.
+const MAX_THREAD_PAIRS = 3000; // the newest pairs; a longer history is still on disk, just not searched in one go
+
+function threadExchanges(thread) {
+  const byId = new Map();
+  const list = [];
+  for (const m of thread.all()) { byId.set(m.id, m); list.push(m); }
+  const out = [];
+  let previous = null;
+  for (const m of list) {
+    const before = previous;
+    previous = m;
+    if (m.role !== "assistant" || m.error) continue;
+    if (m.result && PRIVATE_RULES.has(m.result.rule)) continue;
+    const q = (m.replyTo && byId.get(m.replyTo)) || (before && before.role === "user" ? before : null);
+    if (!q || q.role !== "user") continue;
+    const imported = m.imported || q.imported || null;
+    const day = new Intl.DateTimeFormat("en-CA").format(new Date(q.at));
+    out.push({
+      conversationId: imported ? imported.conversationId : `thread:${day}`,
+      title: imported && imported.title ? imported.title : `the conversation, ${day}`,
+      at: Number(q.at) || 0,
+      question: cut(q.text, MAX_EXCERPT_CHARS),
+      answer: cut(m.text, MAX_EXCERPT_CHARS),
+      topic: m.topic || "general",
+    });
+  }
+  return out.slice(-MAX_THREAD_PAIRS);
+}
+
+// Like findInChats, but over the thread, and (oldChats, a store.js store) over old chats that were never copied into it.
+function findInThread(thread, query, { oldChats = null, limit = MAX_FOUND } = {}) {
+  let pages = threadExchanges(thread);
+  if (oldChats) {
+    const copied = new Set(thread.importedFrom().map((e) => e.conversationId));
+    for (const c of oldChats.list().filter((c) => !c.courseId && !copied.has(c.id)).slice(0, MAX_CHATS)) {
+      const conversation = oldChats.get(c.id);
+      if (conversation) pages = pages.concat(exchanges(conversation));
+    }
+  }
+  return rank(pages, query, limit);
+}
+
+module.exports = { findInThread, threadExchanges, findInChats, listFound, recallPrompt, exchanges, MAX_FOUND };

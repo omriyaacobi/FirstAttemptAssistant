@@ -18,6 +18,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { resultText } = require("./core");
+const { buildHistory } = require("./thread-context");
 
 // Job ids are random and checked everywhere. 32 hex characters = 128 random bits, so they
 // cannot be guessed.
@@ -27,6 +28,8 @@ const MAX_FINISHED = 50;
 const MAX_PARTIAL_CHARS = 20000; // the growing answer sent to the page while a job runs
 const MAX_LOG_LINES = 200; // kept per job in memory
 const SAVED_LOG_LINES = 40; // saved into the conversation
+const THREAD_ID = "thread"; // every job of the one conversation carries this as its conversationId, so ?watching=thread works
+const MAX_THREAD_JOBS = 20; // messages being worked on at the same time in the thread
 const WATCH_FRESH_MS = 8000; // a page that asked this recently counts as "looking at it"
 
 // Turns the raw log lines ("[frontdesk] asking ...", "[planner] step 2 ...") into one plain sentence
@@ -54,6 +57,9 @@ function describeProgress(lines) {
     else if ((m = line.match(/^\[planner\] step (\d+) (?:FAILED|done)/))) finished.add(m[1]);
     else if (/^\[planner\] all steps finished/.test(line)) text = "All steps finished";
     else if (/^\[reminder\]/.test(line)) text = "Setting your reminder";
+    else if (/^\[queue\] waiting for a free slot/.test(line)) text = "Waiting for a free slot: Bot is busy with other tasks";
+    else if (/^\[queue\] waiting for an earlier question/.test(line)) text = "Waiting for your earlier question about the same course to finish";
+    else if (/^\[queue\] started/.test(line)) text = "Starting";
     if (m && /^\[planner\] step/.test(line)) {
       const n = total || started.size;
       const done = finished.size;
@@ -69,7 +75,10 @@ function describeProgress(lines) {
 
 // handleCourse(task, { courseId, history, deeper, onPartial, log }) answers a message in a course chat
 // (a conversation with a courseId); it is only given when the study notebooks are on.
-function createJobs({ handle, handleCourse = null, cardNote = null, store, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
+// thread (optional, BOT_THREAD=on): the thread store (thread-store.js); with it, startThread() works. courses() gives the real course list
+// [{ id, name }], studyState() one line per course written by code (the study tracker), courseName(id) the name for a label. All three
+// are safe to leave out. With no thread, nothing below changes: start() is exactly what it was.
+function createJobs({ handle, handleCourse = null, cardNote = null, store, thread = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
   const jobs = new Map(); // id -> job
   let runningCount = 0;
 
@@ -107,6 +116,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, maxRu
       now: now(),
       step: job.status === "running" ? describeProgress(job.log) : job.status === "done" ? "Done" : "Failed",
     };
+    if (job.messageId) { out.messageId = job.messageId; out.waiting = job.waiting === true; } // the thread: which question this job answers
     if (job.status === "running" && job.partial) out.partial = job.partial; // the answer so far (streaming); gone once the job ends
     if (job.status === "error") out.error = job.error;
     if (withLog) out.log = job.log;
@@ -191,6 +201,147 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, maxRu
     return view(job);
   }
 
+  // ---------------------------------------------------------------------------------------------------------------------------
+  // THE THREAD (BOT_THREAD=on): one conversation, and every message is its own job.
+  //
+  // What changes compared with start() above:
+  //   - there is no chat: the question and its answer are appended to the thread (thread-store.js). The answer carries replyTo, the id
+  //     of its question, so a fast answer can arrive before a slow one and still sit under the right question.
+  //   - a second message is never refused because a first one is still running (only 20 at once, so a runaway page cannot pile up work).
+  //   - TWO LANES. The front desk reads every message at once (it takes about 4 seconds, with no limit). When it then picks SLOW work
+  //     (a model answer, a plan, a course answer, a photo), core.js calls gate() and the job waits for one of `maxRunning` slow slots.
+  //     Fast actions (reply, clarify, calendar, reminder, memory, recall, add-event card) never take a slot.
+  //   - SAME-COURSE ORDER: a question that goes to a course waits for an EARLIER question to the same course that is still running,
+  //     so "and the next one?" sees the earlier answer. Questions to different courses never wait for each other.
+  //   - the context is built by code from the thread (thread-context.js), small and capped.
+  // Jobs live in memory only, like before; the thread is the permanent record.
+  // ---------------------------------------------------------------------------------------------------------------------------
+  let sequence = 0;
+  let slotsUsed = 0;
+
+  const threadJobs = () => [...jobs.values()].filter((j) => j.conversationId === THREAD_ID);
+
+  // Hands out slow slots, oldest waiting job first. A job that has to wait for an earlier question of its course does not block
+  // the ones behind it (they may take the free slot).
+  function pump() {
+    for (const job of threadJobs().filter((j) => j.waiting).sort((a, b) => a.seq - b.seq)) {
+      if (slotsUsed >= maxRunning) return;
+      const earlier = threadJobs().some((o) => o !== job && o.status === "running" && o.course && o.course === job.course && o.seq < job.seq && (o.holding || o.waiting));
+      if (job.course && earlier) continue;
+      job.waiting = false;
+      job.holding = true;
+      slotsUsed++;
+      job.log.push("[queue] started");
+      job.wake();
+    }
+  }
+
+  function release(job) {
+    if (!job.holding) return;
+    job.holding = false;
+    slotsUsed--;
+    pump();
+  }
+
+  // The gate core.js calls before slow work: resolves when this job may start.
+  function makeGate(job) {
+    return (info = {}) => new Promise((resolve) => {
+      job.course = typeof info.course === "string" ? info.course : null;
+      job.waiting = true;
+      job.wake = resolve;
+      const before = slotsUsed;
+      pump();
+      if (job.waiting) job.log.push(slotsUsed >= maxRunning && before >= maxRunning ? "[queue] waiting for a free slot" : "[queue] waiting for an earlier question about the same course");
+    });
+  }
+
+  // The topic word code writes on an answer: where it belongs in the thread (never decided by a model).
+  function topicOf(result) {
+    if (result && result.mode === "course" && typeof result.courseId === "string") return `course:${result.courseId}`;
+    if (result && (result.calendarAdd || /calendar/i.test(String(result.rule || "")))) return "calendar";
+    if (result && result.topic === "study") return "study";
+    return "general";
+  }
+
+  function startThread({ task, noPlan = false, image = null, deeper = false }) {
+    if (!thread) throw Object.assign(new Error("the thread is off"), { status: 404 });
+    if (threadJobs().filter((j) => j.status === "running").length >= MAX_THREAD_JOBS) {
+      throw Object.assign(new Error("too many messages are being worked on at once, wait a little"), { status: 429 });
+    }
+    const running = threadJobs().filter((j) => j.status === "running");
+    // The memory for this message: built BEFORE its own question is saved, from finished messages only. Questions still being
+    // answered become one "still working on" line each.
+    const history = buildHistory(thread, {
+      entryOf: historyEntry,
+      courseName,
+      busy: running.map((j) => j.messageId),
+      pending: running.map((j) => j.task),
+    });
+    const startedAt = now();
+    const question = thread.append({ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt, topic: "general" });
+
+    const job = {
+      id: crypto.randomBytes(16).toString("hex"),
+      conversationId: THREAD_ID,
+      messageId: question.id,
+      task,
+      status: "running",
+      startedAt,
+      finishedAt: null,
+      log: [],
+      partial: "",
+      lastWatched: 0,
+      seq: ++sequence,
+      course: null,
+      waiting: false,
+      holding: false,
+    };
+    jobs.set(job.id, job);
+
+    (async () => {
+      let message;
+      let topic = "general";
+      try {
+        const common = {
+          history,
+          onPartial: (text) => { job.partial = String(text).slice(-MAX_PARTIAL_CHARS); },
+          log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
+        };
+        const list = courses();
+        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job) });
+        const text = result.mode === "course" ? result.answer : resultText(result);
+        // An empty answer is a failure, not a reply: the page must never show a blank bubble.
+        if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");
+        topic = topicOf(result);
+        message = { role: "assistant", text, replyTo: question.id, topic, result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
+        job.status = "done";
+      } catch (error) {
+        const text = String(error && error.message).slice(0, 500);
+        message = { role: "assistant", text: "Something went wrong: " + text, replyTo: question.id, topic: "general", error: true, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
+        job.status = "error";
+        job.error = text;
+      }
+      try {
+        thread.append(message);
+      } catch (error) {
+        job.status = "error";
+        job.error = "the answer could not be saved: " + String(error.message).slice(0, 200);
+      }
+      if (image) fs.rmSync(image.path, { force: true }); // the photo is private: it is not kept after the answer
+      job.finishedAt = now();
+      job.waiting = false;
+      release(job);
+      prune();
+      try {
+        // The lock screen shows the push text, so it never carries the message or the answer: only a generic word for the topic.
+        const word = { calendar: "your calendar", study: "your studies", course: "your studies" }[topic.split(":")[0]] || "your message";
+        onFinish({ job: view(job), title: job.status === "done" ? `An answer about ${word} is ready` : "Bot could not finish", watched: now() - job.lastWatched < WATCH_FRESH_MS });
+      } catch (error) { /* a notification problem must never break a job */ }
+    })();
+
+    return view(job);
+  }
+
   function get(id, { watching = false } = {}) {
     if (typeof id !== "string" || !JOB_ID_PATTERN.test(id)) return null;
     const job = jobs.get(id);
@@ -207,7 +358,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, maxRu
     return all.sort((a, b) => b.startedAt - a.startedAt).map((j) => view(j, { withLog: j.status === "running" }));
   }
 
-  return { start, get, list, running: () => runningCount };
+  return { start, startThread, get, list, running: () => runningCount + threadJobs().filter((j) => j.status === "running").length };
 }
 
-module.exports = { createJobs, describeProgress, JOB_ID_PATTERN, KEEP_FINISHED_MS };
+module.exports = { createJobs, describeProgress, JOB_ID_PATTERN, KEEP_FINISHED_MS, THREAD_ID, MAX_THREAD_JOBS };

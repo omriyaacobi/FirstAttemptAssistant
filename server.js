@@ -8,6 +8,8 @@
 //   POST   /api/ask                -> start a task (inside a conversation) as a BACKGROUND JOB; answers at once with its id
 //   GET    /api/jobs               -> running jobs and recently finished ones (progress, plain-words step)
 //   GET    /api/jobs/:id           -> one job (see jobs.js: the answer is saved into the conversation by the server)
+//   GET    /api/thread?before=<ms>&limit=<n> -> ONE conversation (only when BOT_THREAD=on): the newest messages, older ones by "before"
+//   DELETE /api/thread/:id         -> move one thread message to the 30-day trash; POST /api/thread/:id/restore brings it back
 //   GET    /api/conversations      -> the list of saved conversations
 //   GET    /api/conversations/:id  -> one conversation with all its messages
 //   DELETE /api/conversations/:id  -> delete a conversation
@@ -62,6 +64,7 @@ const { getReminders } = require("./reminders");
 const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
+const { createThreadStore, loadThreadFlag, ID_PATTERN: THREAD_ID_PATTERN } = require("./thread-store");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
 const { createCourses, validId: validCourseId } = require("./courses");
@@ -179,17 +182,26 @@ function createServer({
   uploadDir = path.join(__dirname, "data", "uploads"), // a photo waits here only while its task runs (data/ is git-ignored)
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
+  thread = null, // the ONE conversation (thread-store.js); off unless given (BOT_THREAD=on), so with it off every route is exactly as before
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
   backup = null, // the data/ backup (backup.js); off unless given, so tests never read data/
   morning = null, // the morning brief (morning.js); off unless given, so tests never touch data/morning.json
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
+  threadDeps = null, // (thread) extra fakes or helpers for core.js, for example the thread search for "recall"; tests pass their own
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
 } = {}) {
   // Tasks run as background jobs (see jobs.js), so they survive the page being closed or reloaded.
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
+  // Thread jobs (BOT_THREAD=on) pass the real course list; only then is the course action possible, and the answer comes from the notebook.
+  const threadHandle = (task, options = {}) => (options.courses && courseRoutes
+    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), ...(threadDeps ? threadDeps() : {}) } })
+    : handle(task, options));
   const jobs = createJobs({
-    handle,
+    handle: threadHandle,
+    thread,
+    courses: () => (courseRoutes ? courseRoutes.list() : []),
+    courseName: courseRoutes ? (id) => courseRoutes.name(id) : null,
     cardNote: (add, options) => calendarCards.note(add, options), // the chat history tells the next message what the calendar cards held and what happened to them
     handleCourse: courseRoutes ? (task, opts) => courseRoutes.answer(opts.courseId, task, opts) : null, // chats inside a course
     store,
@@ -245,6 +257,7 @@ function createServer({
         phoneAccess: auth.enabled,
         loggedIn: remote ? auth.isLoggedIn(req) : true,
         images: true, // this Bot can receive a photo with a message
+        thread: !!thread, // one conversation (BOT_THREAD=on): the page shows the thread instead of the chat list
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
         adminPin: remote && auth.adminEnabled && auth.isLoggedIn(req),
         adminUnlocked: remote && auth.isLoggedIn(req) && auth.isUnlocked(req),
@@ -383,6 +396,26 @@ function createServer({
     // Study notebooks: courses, their files and chats. All checks above (host, origin, phone login) have already run.
     if (courseRoutes && (await courseRoutes.handle(req, res, url, { sendJson, readJsonBody }))) return;
 
+    // The ONE conversation (only when BOT_THREAD=on; with it off these routes do not exist).
+    const threadRoute = url.pathname.match(/^\/api\/thread(?:\/([^/]+?)(\/restore)?)?$/);
+    if (threadRoute) {
+      if (!thread) return sendJson(res, 404, { error: "the thread is off (BOT_THREAD in .env)" });
+      const [, id, restore] = threadRoute;
+      if (!id && req.method === "GET") {
+        // before = a time in ms (only older messages), limit = how many (1 to 200, default 50). Both are checked here; nothing else is read.
+        const beforeText = url.searchParams.get("before");
+        const limitText = url.searchParams.get("limit");
+        const before = beforeText === null ? null : /^\d{1,15}$/.test(beforeText) ? Number(beforeText) : NaN;
+        const limit = limitText === null ? 50 : /^\d{1,4}$/.test(limitText) ? Number(limitText) : NaN;
+        if (Number.isNaN(before) || Number.isNaN(limit)) return sendJson(res, 400, { error: "before and limit must be numbers" });
+        return sendJson(res, 200, { ...thread.page({ before, limit }), courses: courseRoutes ? courseRoutes.list() : [] });
+      }
+      if (id && !THREAD_ID_PATTERN.test(id)) return sendJson(res, 404, { error: "message not found" });
+      if (id && !restore && req.method === "DELETE") return thread.trash(id) ? sendJson(res, 200, { ok: true, keptDays: 30 }) : sendJson(res, 404, { error: "message not found" });
+      if (id && restore && req.method === "POST") return thread.restore(id) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "message not found in the trash" });
+      return sendJson(res, 404, { error: "not found" });
+    }
+
     // Saved conversations
     if (req.method === "GET" && url.pathname === "/api/conversations") {
       return sendJson(res, 200, { conversations: store.list() });
@@ -518,6 +551,17 @@ function createServer({
         }
       }
 
+      // The thread: there is no chat, so no chat id and no course id is read. Every message is its own job (jobs.js startThread).
+      if (thread) {
+        try {
+          const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true });
+          return sendJson(res, 202, { job });
+        } catch (error) {
+          if (image) fs.rmSync(image.path, { force: true });
+          return sendJson(res, error.status || 500, { error: error.message });
+        }
+      }
+
       // A new chat inside a course: the course must exist (an id from the page is never trusted).
       let courseId = null;
       if (input.courseId !== undefined && input.conversationId == null) {
@@ -575,7 +619,18 @@ if (require.main === module) {
   });
   const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, log: console.log });
   const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup });
+  // BOT_THREAD=on in .env turns the one-conversation thread on (default off: Bot is then exactly what it was).
+  const thread = loadThreadFlag(path.join(__dirname, ".env")) ? createThreadStore(path.join(__dirname, "data", "thread")) : null;
+  let threadDeps = null;
+  if (thread) {
+    const { findInThread } = require("./recall");
+    threadDeps = () => ({ searchChats: (query) => findInThread(thread, query, { oldChats: store }) });
+    console.log("BOT_THREAD is on: one conversation (data/thread).");
+    const purge = () => { try { const n = thread.purgeTrash(); if (n) console.log(`Thread trash: removed ${n} message(s) older than 30 days.`); } catch (error) { console.error("Thread trash:", error.message); } };
+    purge();
+    setInterval(purge, 6 * 3600 * 1000).unref();
+  }
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;

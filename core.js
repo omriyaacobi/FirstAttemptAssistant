@@ -138,8 +138,12 @@ async function handleTask(task, options = {}) {
 
 // courses (thread only): the real course list [{ id, name }] and studyState (one line per course, written by code). With a list, the front
 // desk may choose the action "course"; without it (BOT_THREAD off) that action does not exist and nothing below changes.
-async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false } = {}) {
+async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false, gate = null } = {}) {
   const d = { ...defaultDeps, ...deps };
+  // gate (thread only, given by jobs.js): called ONCE, right before slow work starts (a model answer, a plan, a course answer, a photo).
+  // It resolves when a slow slot is free (and an earlier question about the same course is done). Fast actions never call it.
+  let slotTaken = false;
+  const slow = async (info = {}) => { if (!gate || slotTaken) return; slotTaken = true; await gate(info); };
   try { d.prewarmAnswer(); } catch (error) { /* a missing spare only means the answer starts agy itself */ }
   const started = Date.now();
   const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
@@ -195,6 +199,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
 
   // One job: run a chain with fallbacks and return the answer.
   async function runSingle(info) {
+    await slow();
     const low = await getLow();
     if (info.rule !== "forced") info = { ...info, chain: quotaChain(info.chain, low) };
     log(`[router] ${info.rule}: ${info.reason}`);
@@ -372,6 +377,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
       log(timingLine());
       return { mode: "single", rule: "asked you a question", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: `Which course is this about? Your courses: ${names}.`, seconds: seconds(), timing, topic: "study" };
     }
+    await slow({ course: decision.course.id }); // thread: waits for a slot, and for an earlier question about the same course
     log(`[course] ${decision.course.name} (${decision.studyIntent})`);
     const result = await d.courseAnswer(decision.course.id, task, { history, deeper: deeper === true, onPartial: onPartial || undefined, log });
     log(timingLine());
@@ -380,6 +386,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
 
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
+    await slow();
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
       run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne, onFail: noteLimit }), // web steps get no profile
@@ -398,6 +405,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
 
   // A photo: ask Gemini directly, with the photo in a private empty folder (see providers.js).
   if (image) {
+    await slow(); // thread: a photo task is slow work too
     const low = await getLow();
     const addToCalendar = wantsCalendarAdd(task);
     const chain = quotaChain(addToCalendar ? PHOTO_CALENDAR_CHAIN : PHOTO_CHAIN, low);
@@ -529,6 +537,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   if (decision.action === "course") return courseAnswer(decision);
 
   if (decision.action === "delegate") {
+    await slow(); // thread: a slow task waits for a free slot (see jobs.js), before the speculative answer is adopted
     const info = { chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason };
     if (spec && decision.destination === "gemini-flash") {
       const adopted = await adoptSpeculative(info);

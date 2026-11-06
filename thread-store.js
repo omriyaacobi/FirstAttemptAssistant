@@ -256,4 +256,13 @@ function createThreadStore(dir, { now = Date.now } = {}) {
   return { append, appendMany, days, find, page, all, recent, trash, trashList, restore, purgeTrash, importedFrom, setImportedFrom, rebuildIndex: () => rebuildIndex(), readDay };
 }
 
-module.exports = { createThreadStore, dayOf, newId, ID_PATTERN, DAY_PATTERN, TOPIC_PATTERN, TRASH_KEEP_MS, DEFAULT_PAGE };
+// BOT_THREAD in the environment or in .env: "on", "1", "true" or "yes" turns the thread on; anything else (or nothing) is off.
+function loadThreadFlag(envFile, env = process.env) {
+  let value = env.BOT_THREAD;
+  if (value === undefined) {
+    try { value = require("./auth").parseEnv(fs.readFileSync(envFile, "utf8")).BOT_THREAD; } catch (error) { /* no .env */ }
+  }
+  return /^(on|1|true|yes)$/i.test(String(value || "").trim());
+}
+
+module.exports = { loadThreadFlag, createThreadStore, dayOf, newId, ID_PATTERN, DAY_PATTERN, TOPIC_PATTERN, TRASH_KEEP_MS, DEFAULT_PAGE };

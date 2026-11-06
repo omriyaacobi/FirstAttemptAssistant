@@ -187,7 +187,8 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     return sendJson(res, 404, { error: "not found" }), true;
   }
 
-  return { handle, answer, exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  // list(): the real courses as [{ id, name }]. The front desk may only choose from these (thread; see frontdesk.js).
+  return { handle, answer, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };
