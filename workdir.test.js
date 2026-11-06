@@ -24,14 +24,21 @@ function withBrokenDelete(fn) {
 }
 
 test("a good answer survives a work folder Windows refuses to delete (file and photo)", async () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "wd-")), "m.pdf");
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "wd-"));
+  const file = path.join(base, "m.pdf");
   fs.writeFileSync(file, "x");
-  await withBrokenDelete(async (attempts) => {
-    assert.strictEqual(await askAgyWithFile("gemini-3.8-flash-medium", "real answer", file), "real answer");
-    assert.strictEqual(await askAgyWithImage("gemini-3.8-flash-medium", "real photo answer", file), "real photo answer");
-    assert.ok(attempts() >= 2); // it did try to delete
-  });
-  for (const d of fs.readdirSync(os.tmpdir()).filter((n) => /^bot-(file|photo)-/.test(n) && fs.statSync(path.join(os.tmpdir(), n)).mtimeMs > Date.now() - 60000)) fs.rmSync(path.join(os.tmpdir(), d), { recursive: true, force: true });
+  const realTmp = os.tmpdir;
+  os.tmpdir = () => base; // a private folder: the real Temp folder may hold work folders that a running Bot is using
+  try {
+    await withBrokenDelete(async (attempts) => {
+      assert.strictEqual(await askAgyWithFile("gemini-3.8-flash-medium", "real answer", file), "real answer");
+      assert.strictEqual(await askAgyWithImage("gemini-3.8-flash-medium", "real photo answer", file), "real photo answer");
+      assert.ok(attempts() >= 2); // it did try to delete
+    });
+  } finally {
+    os.tmpdir = realTmp;
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test("cleanWorkDir never throws and says what it could not delete", async () => {
