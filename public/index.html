@@ -105,6 +105,11 @@
   .answer h1, .answer h2 { font-size: 1.3em; } .answer h3 { font-size: 1.15em; }
   .answer > :first-child { margin-top: 0; }
   .answer ul, .answer ol { margin: 0 0 8px; padding-inline-start: 24px; list-style: revert; }
+  .math { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; unicode-bidi: isolate; }
+  .math-block { margin: 10px 0; padding-bottom: 6px; max-width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; unicode-bidi: isolate; }
+  math { font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", "Noto Sans Math", math, serif; font-size: 1.1em; }
+  math .tex-bf, math.tex-bf { font-weight: bold; font-style: normal; }
+  math mtd { padding: 0.1em 0.4em; }
   .answer hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
   .answer :not(pre) > code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
   /* A bit bigger on the PC only; the phone layout (max-width: 760px) keeps the 16px text. */
@@ -487,20 +492,208 @@
     return node;
   }
 
+  // ---- TeX math -> MathML. Small on purpose: Calculus-level formulas; Chrome draws MathML itself, so no library is needed.
+  // Only createElementNS / textContent and fixed attribute values are used (never innerHTML). Anything unknown, too long
+  // or too deeply nested throws inside, and texToMath then returns null so the caller shows the original text instead.
+  const MATHNS = "http://www.w3.org/1998/Math/MathML";
+  const mel = (tag, text, attrs, kids) => {
+    const n = document.createElementNS(MATHNS, tag);
+    if (text) n.textContent = text;
+    if (attrs) for (const k of Object.keys(attrs)) n.setAttribute(k, attrs[k]);
+    if (kids) for (const k of kids) n.appendChild(k);
+    return n;
+  };
+  const mrow = (kids) => (kids.length === 1 ? kids[0] : mel("mrow", "", null, kids));
+  const dict = (o) => Object.assign(Object.create(null), o); // no inherited names like "constructor"
+  const table = (names, chars) => { const o = dict({}); names.split(" ").forEach((n, i) => { o[n] = chars.split(" ")[i]; }); return o; };
+  const TEX_MI = dict(Object.assign({},
+    table("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi rho sigma tau upsilon phi chi psi omega", "α β γ δ ϵ ζ η θ ι κ λ μ ν ξ π ρ σ τ υ φ χ ψ ω"),
+    table("varepsilon vartheta varphi varrho varsigma Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega", "ε ϑ ϕ ϱ ς Γ Δ Θ Λ Ξ Π Σ Υ Φ Ψ Ω"),
+    table("infty partial nabla ell hbar emptyset varnothing", "∞ ∂ ∇ ℓ ℏ ∅ ∅")));
+  const TEX_MO = table(
+    "to rightarrow leftarrow Rightarrow Leftarrow leftrightarrow Leftrightarrow implies iff mapsto uparrow downarrow leq le geq ge neq ne approx equiv sim simeq cong propto ll gg pm mp times cdot div ast star circ bullet oplus otimes in notin ni subset subseteq supset supseteq cup cap setminus forall exists neg land lor wedge vee ldots dots cdots vdots ddots angle perp parallel mid vert Vert prime degree langle rangle lfloor rfloor lceil rceil lbrace rbrace lbrack rbrack lvert rvert lVert rVert backslash dagger therefore because",
+    "→ → ← ⇒ ⇐ ↔ ⇔ ⟹ ⟺ ↦ ↑ ↓ ≤ ≤ ≥ ≥ ≠ ≠ ≈ ≡ ∼ ≃ ≅ ∝ ≪ ≫ ± ∓ × ⋅ ÷ ∗ ⋆ ∘ ∙ ⊕ ⊗ ∈ ∉ ∋ ⊂ ⊆ ⊃ ⊇ ∪ ∩ ∖ ∀ ∃ ¬ ∧ ∨ ∧ ∨ … … ⋯ ⋮ ⋱ ∠ ⊥ ∥ ∣ | ‖ ′ ° ⟨ ⟩ ⌊ ⌋ ⌈ ⌉ { } [ ] | | ‖ ‖ \\ † ∴ ∵");
+  const TEX_FENCE = new Set("( ) [ ] { } | ‖ ⟨ ⟩ ⌊ ⌋ ⌈ ⌉".split(" ")); // drawn at normal size unless they come after \left / \right
+  const TEX_BIG = table("sum prod coprod bigcup bigcap int iint iiint oint", "∑ ∏ ∐ ⋃ ⋂ ∫ ∬ ∭ ∮"); // sum..bigcap put their bounds above and below
+  const TEX_STACKED = new Set(["sum", "prod", "coprod", "bigcup", "bigcap"]);
+  const TEX_NAMES = new Set("sin cos tan cot sec csc arcsin arccos arctan sinh cosh tanh coth ln log exp det gcd dim ker arg deg Pr hom lim limsup liminf max min sup inf".split(" "));
+  const TEX_LIMITS = new Set("lim limsup liminf max min sup inf".split(" "));
+  const TEX_SPACE = dict({ ",": "0.17em", ";": "0.28em", ":": "0.22em", " ": "0.28em", "!": "0", quad: "1em", qquad: "2em" });
+  const TEX_BB = dict({ R: "ℝ", N: "ℕ", Z: "ℤ", Q: "ℚ", C: "ℂ", P: "ℙ", H: "ℍ" });
+  const TEX_ACCENT = dict({ hat: "^", widehat: "^", bar: "¯", overline: "‾", vec: "→", dot: "˙", ddot: "¨", tilde: "~", widetilde: "~" });
+  const TEX_ENV = dict({ matrix: ["", ""], pmatrix: ["(", ")"], bmatrix: ["[", "]"], Bmatrix: ["{", "}"], vmatrix: ["|", "|"], Vmatrix: ["‖", "‖"], cases: ["{", ""], aligned: ["", ""], align: ["", ""], "align*": ["", ""], gathered: ["", ""], split: ["", ""] });
+
+  function texToMath(src, display) {
+    if (!src.trim() || src.length > 3000) return null;
+    let p = 0, budget = 3000; // budget: at most this many pieces, so a huge formula cannot freeze the page
+    const limits = new Set(); // elements whose bounds go above and below (sum, lim ...)
+    const fail = () => { throw new Error("bad tex"); };
+    const space = () => { while (p < src.length && /\s/.test(src[p])) p++; };
+    const read = (re) => { re.lastIndex = p; const m = re.exec(src); if (m) p += m[0].length; return m && m[0]; };
+    const expect = (s) => { space(); if (!src.startsWith(s, p)) fail(); p += s.length; };
+    const atStop = (stops) => stops.some((s) => src.startsWith(s, p) && !(s[0] === "\\" && /[A-Za-z]/.test(s[s.length - 1]) && /[A-Za-z]/.test(src[p + s.length] || "")));
+    const mo = (c, stretchy) => mel("mo", c, TEX_FENCE.has(c) ? { stretchy: stretchy ? "true" : "false" } : null);
+    const raw = () => { // the text of a {...} group, not parsed
+      space();
+      if (src[p] !== "{") fail();
+      let depth = 0, start = p + 1;
+      for (; p < src.length; p++) {
+        if (src[p] === "{") depth++;
+        else if (src[p] === "}" && --depth === 0) { p++; return src.slice(start, p - 1); }
+      }
+      return fail();
+    };
+    const arg = (depth) => { space(); if (/\d/.test(src[p])) return mel("mn", src[p++]); return atom(depth + 1); };
+    const delim = (stretchy) => { // after \left or \right
+      space();
+      let c = src[p];
+      if (c === ".") { p++; return mel("mrow"); }
+      if (c === "\\") { p++; const name = read(/[A-Za-z]+|[\s\S]/y); c = TEX_MO[name] || ({ "{": "{", "}": "}", "|": "‖" })[name]; } else p++;
+      if (!c || !TEX_FENCE.has(c)) fail();
+      return mo(c, stretchy);
+    };
+
+    function seq(stops, depth) {
+      const out = [];
+      for (;;) {
+        space();
+        if (p >= src.length || atStop(stops)) return out;
+        out.push(scripts(/[\^_']/.test(src[p]) ? mel("mrow") : atom(depth), depth));
+      }
+    }
+
+    function scripts(base, depth) {
+      let sub = null, sup = null;
+      for (;;) {
+        space();
+        const c = src[p];
+        if (c === "_" && !sub) { p++; sub = arg(depth); }
+        else if (c === "^" && !sup) { p++; sup = arg(depth); }
+        else if (c === "'" && !sup) { let n = 0; while (src[p] === "'") { p++; n++; } sup = mel("mo", "′".repeat(n)); }
+        else break;
+      }
+      if (!sub && !sup) return base;
+      const under = limits.has(base);
+      if (sub && sup) return mel(under ? "munderover" : "msubsup", "", null, [base, sub, sup]);
+      return sub ? mel(under ? "munder" : "msub", "", null, [base, sub]) : mel(under ? "mover" : "msup", "", null, [base, sup]);
+    }
+
+    function atom(depth) {
+      if (depth > 30 || --budget < 0 || p >= src.length) fail();
+      const c = src[p];
+      if (c === "{") { p++; const kids = seq(["}"], depth + 1); expect("}"); return mrow(kids); }
+      if (c === "\\") { p++; return command(depth); }
+      let t;
+      if ((t = read(/\d+(?:\.\d+)?(?:,\d{3}(?!\d))*/y))) return mel("mn", t);
+      if (/[A-Za-z]/.test(c)) { p++; return mel("mi", c); }
+      if ((t = read(/\p{L}+/uy))) return mel("mtext", t); // Hebrew and other letters outside \text
+      if ("+-=<>/*()[]|!,;:.?@".includes(c)) { p++; return mo(c === "-" ? "−" : c === "*" ? "∗" : c); }
+      if (c === "~") { p++; return mel("mspace", "", { width: "0.28em" }); }
+      if (c.charCodeAt(0) > 127) { p++; return mo(c); }
+      return fail();
+    }
+
+    function command(depth) {
+      const name = read(/[A-Za-z]+|[\s\S]/y);
+      if (name === undefined || name === null) fail();
+      if (TEX_MI[name]) return mel("mi", TEX_MI[name]);
+      if (TEX_MO[name]) return mo(TEX_MO[name]);
+      if (name in TEX_SPACE) return mel("mspace", "", { width: TEX_SPACE[name] });
+      if (TEX_BIG[name]) { const n = mel("mo", TEX_BIG[name]); if (TEX_STACKED.has(name)) limits.add(n); return n; }
+      if (TEX_NAMES.has(name)) { const n = mel("mi", name); if (TEX_LIMITS.has(name)) limits.add(n); return n; }
+      if (TEX_ACCENT[name]) return mel("mover", "", { accent: "true" }, [arg(depth), mel("mo", TEX_ACCENT[name])]);
+      switch (name) {
+        case "{": case "}": case "%": case "&": case "#": case "_": case "$": return mel("mo", name);
+        case "|": return mo("‖");
+        case "\\": return mel("mspace", "", { width: "0.5em" });
+        case "frac": case "dfrac": case "tfrac": return mel("mfrac", "", null, [arg(depth), arg(depth)]);
+        case "binom": return mel("mrow", "", null, [mo("(", true), mel("mfrac", "", { linethickness: "0" }, [arg(depth), arg(depth)]), mo(")", true)]);
+        case "sqrt": {
+          space();
+          if (src[p] !== "[") return mel("msqrt", "", null, [arg(depth)]);
+          p++;
+          const index = mrow(seq(["]"], depth + 1));
+          expect("]");
+          return mel("mroot", "", null, [arg(depth), index]);
+        }
+        case "text": case "textbf": case "textit": case "mbox": {
+          const t = raw().replace(/^ /, " ").replace(/ $/, " "); // MathML trims plain edge spaces
+          return mel("mtext", t);
+        }
+        case "mathrm": case "operatorname": case "mathit": return mel("mi", raw());
+        case "mathbf": case "boldsymbol": case "bm": return mel("mi", raw(), { class: "tex-bf" });
+        case "mathbb": return mel("mi", raw().replace(/[A-Z]/g, (ch) => TEX_BB[ch] || ch));
+        case "mathcal": case "mathscr": case "mathfrak": return mel("mi", raw());
+        case "underline": return mel("munder", "", null, [arg(depth), mo("_")]);
+        case "displaystyle": case "textstyle": case "limits": case "nolimits": return mel("mrow");
+        case "left": {
+          const open = delim(true), body = seq(["\\right"], depth + 1);
+          expect("\\right");
+          return mel("mrow", "", null, [open, ...body, delim(true)]);
+        }
+        case "begin": return environment(raw(), depth);
+        default: return fail();
+      }
+    }
+
+    function environment(name, depth) {
+      const fences = TEX_ENV[name];
+      if (!fences) fail();
+      let rows = [], row = [];
+      for (;;) {
+        row.push(seq(["&", "\\\\", "\\end"], depth + 1));
+        space();
+        if (src.startsWith("&", p)) { p++; continue; }
+        if (src.startsWith("\\\\", p)) { p += 2; rows.push(row); row = []; continue; }
+        expect("\\end");
+        if (raw() !== name) fail();
+        rows.push(row);
+        break;
+      }
+      rows = rows.filter((r) => r.some((cell) => cell.length));
+      const attrs = name === "cases" ? { columnalign: "left" } : /^(aligned|align|split)/.test(name) ? { columnalign: "right left", columnspacing: "0" } : null;
+      const body = mel("mtable", "", attrs, rows.map((r) => mel("mtr", "", null, r.map((cell) => mel("mtd", "", null, [mrow(cell)])))));
+      return mel("mrow", "", null, [fences[0] ? mo(fences[0], true) : null, body, fences[1] ? mo(fences[1], true) : null].filter(Boolean));
+    }
+
+    try {
+      const kids = seq([], 0);
+      if (p < src.length) fail();
+      return mel("math", "", display ? { display: "block" } : null, kids);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // The element for a formula, or null when it cannot be drawn (the caller then shows the original text).
+  function mathNode(tex, display) {
+    const m = texToMath(tex, display);
+    if (!m) return null;
+    const box = el(display ? "div" : "span", display ? "math-block" : "math");
+    box.dir = "ltr"; // formulas read left to right even inside Hebrew text
+    box.appendChild(m);
+    return box;
+  }
+
   // Shows an answer as formatted text: headings, bold, italics, lists, rules and ``` code blocks.
   // Built only with createElement / textContent, so HTML in an answer stays plain text. While words stream in
   // it runs again on the whole text at every poll, so an unfinished **bold or ``` block still looks right.
   // ** may be unfinished (words still streaming); a single * needs a real closing *. A * touching a letter or digit (5*3, 2**10, int *p) stays a plain star.
-  const INLINE = /(?<![\p{L}\p{N}*])\*\*(?=\S)(.*?\S)(?:\*\*|$)|(?<![\p{L}\p{N}*])\*(?![\s*])(.*?[^\s*])\*(?![\p{L}\p{N}*])|`([^`]+)(?:`|$)/u;
+  // Math is found first: \(..\), \[..\], $$..$$ and $..$. A single $ only opens math when no space follows it, only closes it
+  // when no space comes before it, and never next to a letter or digit, so "$5 and $10", "US$" and $HOME stay plain text.
+  const INLINE = /\\\((.+?)\\\)|\\\[(.+?)\\\]|(?<!\\)\$\$(.+?)\$\$|(?<![A-Za-z0-9\\$])\$(?![\s$])([^$]*?[^\s$])\$(?![A-Za-z0-9$])|(?<![\p{L}\p{N}*])\*\*(?=\S)(.*?\S)(?:\*\*|$)|(?<![\p{L}\p{N}*])\*(?![\s*])(.*?[^\s*])\*(?![\p{L}\p{N}*])|`([^`]+)(?:`|$)/u;
   function addInline(parent, text) {
     text = text.replace(/\*\*$/, ""); // a lone ** at the end (more words are on their way)
+    if (text.length > 20000) { parent.appendChild(document.createTextNode(text)); return; } // keep a huge line from being scanned slowly
     const re = new RegExp(INLINE.source, "gu"); // its own copy: a nested call must not move this one's position
     let last = 0, m;
     while ((m = re.exec(text))) {
       if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
-      if (m[1] !== undefined) addInline(parent.appendChild(el("strong")), m[1]);
-      else if (m[2] !== undefined) addInline(parent.appendChild(el("em")), m[2]);
-      else parent.appendChild(el("code", "", m[3]));
+      const tex = m[1] ?? m[2] ?? m[3] ?? m[4];
+      if (tex !== undefined) parent.appendChild(mathNode(tex, m[3] !== undefined) || document.createTextNode(m[0]));
+      else if (m[5] !== undefined) addInline(parent.appendChild(el("strong")), m[5]);
+      else if (m[6] !== undefined) addInline(parent.appendChild(el("em")), m[6]);
+      else parent.appendChild(el("code", "", m[7]));
       last = re.lastIndex;
     }
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
@@ -509,13 +702,30 @@
   function fillMarkdown(box, text) {
     box.replaceChildren();
     let para = null, list = null, listTag = "", code = null;
-    for (const line of text.replace(/\r/g, "").split("\n")) {
+    const lines = text.replace(/\r/g, "").split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       if (code) {
         if (/^\s*```/.test(line)) code = null;
         else code.textContent += (code.textContent ? "\n" : "") + line;
         continue;
       }
       let m;
+      const open = /^\s*(\$\$|\\\[)/.exec(line); // display math starts a line and may run over several lines
+      if (open) {
+        const rest = lines.slice(i).join("\n"), from = rest.indexOf(open[1]) + 2;
+        const end = rest.indexOf(open[1] === "$$" ? "$$" : "\\]", from);
+        if (end > from) { // an unfinished one stays plain text until its end arrives
+          para = list = null;
+          const whole = rest.slice(0, end + 2);
+          const node = mathNode(rest.slice(from, end), true);
+          if (node) box.appendChild(node);
+          else { const fallback = box.appendChild(el("p", "", whole)); fallback.dir = "auto"; }
+          lines.splice(i, whole.split("\n").length, rest.slice(end + 2).split("\n")[0]); // what follows the closing mark on its line
+          i--;
+          continue;
+        }
+      }
       if (/^\s*```/.test(line)) {
         para = list = null;
         const pre = box.appendChild(el("pre"));
