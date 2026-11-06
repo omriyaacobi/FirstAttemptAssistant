@@ -27,7 +27,7 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, "Segoe UI", sans-serif; }
 
   /* Layout: sidebar on the left, chat on the right. On narrow screens the sidebar slides in. */
-  .app { display: grid; grid-template-columns: 280px 1fr; height: 100%; }
+  .app { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: minmax(0, 1fr); height: 100%; } /* the row must not grow with the sidebar, or the message box slides off screen */
   .side { background: var(--side-bg); border-right: 1px solid var(--line); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
   .chat { display: flex; flex-direction: column; min-width: 0; height: 100%; }
   .topbar { display: none; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
@@ -99,7 +99,16 @@
   .bot + .bot { margin-top: 8px; }
   .step-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-weight: 600; }
   .badge { font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--code); color: var(--muted); }
-  .answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .answer { overflow-wrap: anywhere; }
+  .answer p { margin: 0 0 8px; white-space: pre-wrap; }
+  .answer h1, .answer h2, .answer h3, .answer h4, .answer h5, .answer h6 { margin: 14px 0 8px; line-height: 1.3; font-size: 1em; }
+  .answer h1, .answer h2 { font-size: 1.3em; } .answer h3 { font-size: 1.15em; }
+  .answer > :first-child { margin-top: 0; }
+  .answer ul, .answer ol { margin: 0 0 8px; padding-inline-start: 24px; list-style: revert; }
+  .answer hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .answer :not(pre) > code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  /* A bit bigger on the PC only; the phone layout (max-width: 760px) keeps the 16px text. */
+  @media (min-width: 761px) { html { font-size: 18px; } body { font-size: 18px; } }
   pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; white-space: pre; }
   code { font-family: ui-monospace, Consolas, monospace; font-size: .9rem; }
   .err { color: var(--bad); }
@@ -186,6 +195,7 @@
   .reminder .when { color: var(--muted); font-size: .75rem; }
   .reminder button { background: transparent; color: var(--muted); padding: 0 6px; font-weight: 400; }
   .reminder button:hover { color: var(--bad); }
+  #memory { max-height: 240px; overflow-y: auto; } /* a full memory must not push the rest of the sidebar away */
   button.mic { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px 12px; }
   button.mic.listening { background: var(--bad); color: #fff; border-color: var(--bad); }
   .tools { display: flex; gap: 8px; align-items: center; }
@@ -329,6 +339,18 @@
       <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
       <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
     </section>
+    <section aria-label="Morning brief" id="morningBox" hidden>
+      <div class="row" style="margin-top:0">
+        <strong>Morning brief</strong>
+        <label class="sub"><input type="checkbox" id="morningOn"> On</label>
+        <input type="time" id="morningTime" aria-label="Time of the morning brief">
+      </div>
+      <div class="sub">Today's calendar and reminders, in a new chat each morning. No model reads them.</div>
+      <div class="row">
+        <button class="ghost" id="morningNow">Show me one now</button>
+        <span class="sub" id="morningNote"></span>
+      </div>
+    </section>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -465,20 +487,74 @@
     return node;
   }
 
-  // Shows text with ``` code blocks as boxes. Plain text stays plain.
+  // Shows an answer as formatted text: headings, bold, italics, lists, rules and ``` code blocks.
+  // Built only with createElement / textContent, so HTML in an answer stays plain text. While words stream in
+  // it runs again on the whole text at every poll, so an unfinished **bold or ``` block still looks right.
+  // ** may be unfinished (words still streaming); a single * needs a real closing *. A * touching a letter or digit (5*3, 2**10, int *p) stays a plain star.
+  const INLINE = /(?<![\p{L}\p{N}*])\*\*(?=\S)(.*?\S)(?:\*\*|$)|(?<![\p{L}\p{N}*])\*(?![\s*])(.*?[^\s*])\*(?![\p{L}\p{N}*])|`([^`]+)(?:`|$)/u;
+  function addInline(parent, text) {
+    text = text.replace(/\*\*$/, ""); // a lone ** at the end (more words are on their way)
+    const re = new RegExp(INLINE.source, "gu"); // its own copy: a nested call must not move this one's position
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1] !== undefined) addInline(parent.appendChild(el("strong")), m[1]);
+      else if (m[2] !== undefined) addInline(parent.appendChild(el("em")), m[2]);
+      else parent.appendChild(el("code", "", m[3]));
+      last = re.lastIndex;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function fillMarkdown(box, text) {
+    box.replaceChildren();
+    let para = null, list = null, listTag = "", code = null;
+    for (const line of text.replace(/\r/g, "").split("\n")) {
+      if (code) {
+        if (/^\s*```/.test(line)) code = null;
+        else code.textContent += (code.textContent ? "\n" : "") + line;
+        continue;
+      }
+      let m;
+      if (/^\s*```/.test(line)) {
+        para = list = null;
+        const pre = box.appendChild(el("pre"));
+        pre.dir = "ltr"; // code always reads left to right
+        code = pre.appendChild(el("code")); // the language word after ``` is dropped
+      } else if (!line.trim()) {
+        para = list = null;
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        para = list = null;
+        box.appendChild(el("hr"));
+      } else if ((m = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line))) {
+        para = list = null;
+        const h = box.appendChild(el("h" + m[1].length));
+        h.dir = "auto"; // right-to-left text (Hebrew) lines up correctly
+        addInline(h, m[2]);
+      } else if ((m = /^\s*(?:([-*+•])|(\d+)[.)])\s+(.*)$/.exec(line))) {
+        para = null;
+        const tag = m[1] ? "ul" : "ol";
+        if (!list || listTag !== tag) {
+          list = box.appendChild(el(tag));
+          list.dir = "auto";
+          listTag = tag;
+          if (m[2]) list.start = Number(m[2]);
+        }
+        const li = list.appendChild(el("li"));
+        li.dir = "auto";
+        addInline(li, m[3]);
+      } else {
+        list = null;
+        if (!para) { para = box.appendChild(el("p")); para.dir = "auto"; }
+        else para.appendChild(document.createTextNode("\n"));
+        addInline(para, line.trim());
+      }
+    }
+  }
+
   function renderText(text) {
     const box = el("div", "answer");
-    box.dir = "auto"; // right-to-left text (Hebrew) lines up correctly
-    text.split("```").forEach((part, i) => {
-      if (i % 2 === 0) {
-        if (part) box.appendChild(document.createTextNode(part));
-      } else {
-        const pre = el("pre");
-        pre.dir = "ltr"; // code always reads left to right
-        pre.appendChild(el("code", "", part.replace(/^[^\n]*\n/, ""))); // drop the language word after ```
-        box.appendChild(pre);
-      }
-    });
+    fillMarkdown(box, text);
     return box;
   }
 
@@ -516,6 +592,10 @@
       // Bot only PROPOSED a fact. Nothing is stored until you press Save.
       if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact, result.remember.replaces && result.remember.replaces.id));
       if (result.forget && result.forget.id) card.appendChild(rememberButtons(null, result.forget.id));
+      // You said "remember that ..." yourself, so it is already saved. One tap takes it back.
+      if (result.remembered && result.remembered.id) card.appendChild(undoButton(result.remembered.id));
+      // A question about an earlier chat: buttons that open the chats the answer came from.
+      if (Array.isArray(result.chats) && result.chats.length) card.appendChild(chatButtons(result.chats));
       wrap.appendChild(card);
     } else if (result.mode === "course") {
       // An answer from a course chat. The sources were built by the server from the pages it really sent, never from what the model claims.
@@ -570,6 +650,31 @@
       }
     });
     actions.append(save, skip, note);
+    return actions;
+  }
+
+  function undoButton(id) {
+    loadMemory(); // the fact was saved just now
+    const actions = el("div", "actions");
+    const undo = el("button", "ghost", "Undo");
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      const res = await fetch("/api/memory/" + id, { method: "DELETE" }).catch(() => null);
+      actions.replaceChildren(el("span", "sub", res && res.ok ? "Forgotten." : "It was already gone."));
+      loadMemory();
+    });
+    actions.appendChild(undo);
+    return actions;
+  }
+
+  function chatButtons(chats) {
+    const actions = el("div", "actions");
+    for (const chat of chats) {
+      const open = el("button", "ghost", "Open: " + chat.title);
+      open.dir = "auto";
+      open.addEventListener("click", () => openChat(chat.id));
+      actions.appendChild(open);
+    }
     return actions;
   }
 
@@ -838,10 +943,11 @@
     card.step.textContent = job.step + "...";
     // Streaming: the text written so far (untrusted, so textContent). It is replaced whole each poll, and disappears if a model fails.
     const text = job.partial || "";
-    if (card.partial.textContent !== text) {
+    if (card.partialText !== text) {
+      card.partialText = text;
       const th = $("thread");
       const atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 80; // do not drag the page down if you scrolled up to read
-      card.partial.textContent = text;
+      fillMarkdown(card.partial, text);
       if (text && atBottom) scrollDown();
     }
     card.partial.hidden = !text;
@@ -882,6 +988,7 @@
     loadQuota();
   }
 
+  const FAST_POLL_WINDOW_MS = 40000;
   async function pollJobs() {
     if (jobState.polling) return;
     jobState.polling = true;
@@ -904,8 +1011,11 @@
     } catch (error) { /* offline for a moment: the next poll will catch up */ } finally {
       jobState.polling = false;
       clearTimeout(jobState.timer);
-      // Often while something runs (fast while a model is writing, so the streamed text moves), rarely when idle, not at all while the page is hidden (it catches up when shown again).
-      jobState.timer = document.hidden ? null : setTimeout(pollJobs, [...jobState.active.values()].some((j) => j.partial || /^Asking /.test(j.step)) ? 600 : jobState.active.size ? 2000 : 10000);
+      // Often while something runs, rarely when idle, not at all while the page is hidden (it catches up when shown again).
+      // FAST (0.6 s) while a model is writing, and during the first 40 s of every task: the front desk answers greetings, reminders
+      // and calendar questions in about 3 s, and polling every 2 s made those show up about 1 s late on average.
+      const fast = (j) => j.partial || /^Asking /.test(j.step) || Date.now() + jobState.offset - j.startedAt < FAST_POLL_WINDOW_MS;
+      jobState.timer = document.hidden ? null : setTimeout(pollJobs, [...jobState.active.values()].some(fast) ? 600 : jobState.active.size ? 2000 : 10000);
     }
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });
@@ -1681,12 +1791,22 @@
         return;
       }
       box.className = "";
-      box.replaceChildren(...data.facts.map((f) => {
+      const shown = [...data.facts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.at - a.at); // pinned, then newest
+      box.replaceChildren(...shown.map((f) => {
         const row = el("div", "reminder");
         const what = el("div", "what");
         const text = el("div", "", f.text);
         text.dir = "auto";
         what.appendChild(text);
+        // A pinned fact goes to the models with every message; the others only when the message is about them.
+        const pin = el("button", "", f.pinned ? "★" : "☆");
+        pin.title = f.pinned ? "Always used. Tap to use it only when it fits" : "Used only when it fits. Tap to always use it";
+        pin.setAttribute("aria-label", (f.pinned ? "Stop always using: " : "Always use: ") + f.text);
+        pin.setAttribute("aria-pressed", String(!!f.pinned));
+        pin.addEventListener("click", async () => {
+          await fetch("/api/memory/" + f.id + "/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !f.pinned }) }).catch(() => {});
+          loadMemory();
+        });
         const forget = el("button", "", "✕");
         forget.title = "Forget this";
         forget.setAttribute("aria-label", "Forget: " + f.text);
@@ -1694,13 +1814,50 @@
           await fetch("/api/memory/" + f.id, { method: "DELETE" }).catch(() => {});
           loadMemory();
         });
-        row.append(what, forget);
+        row.append(what, pin, forget);
         return row;
       }));
     } catch (error) {
       $("memory").textContent = error.message;
     }
   }
+
+  // The morning brief (morning.js). The box stays hidden if this Bot has none (for example in the Improve Bot preview).
+  async function saveMorning(change) {
+    const res = await fetch("/api/morning", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
+    const data = await res.json();
+    $("morningNote").textContent = res.ok ? (data.on ? `On, every day at ${data.time}.` : "Off.") : data.error;
+    if (res.ok) showMorning(data);
+  }
+  function showMorning({ on, time }) {
+    $("morningOn").checked = on;
+    $("morningTime").value = time;
+  }
+  async function loadMorning() {
+    try {
+      const res = await fetch("/api/morning");
+      if (!res.ok) return;
+      const data = await res.json();
+      showMorning(data);
+      $("morningNote").textContent = data.on && !data.devices ? "Turn on notifications to get it on the phone too." : "";
+      $("morningBox").hidden = false;
+    } catch (error) { /* no morning brief here */ }
+  }
+  $("morningOn").addEventListener("change", (event) => saveMorning({ on: event.target.checked }).catch((error) => { $("morningNote").textContent = error.message; }));
+  $("morningTime").addEventListener("change", (event) => { if (event.target.value) saveMorning({ time: event.target.value }).catch((error) => { $("morningNote").textContent = error.message; }); });
+  $("morningNow").addEventListener("click", async () => {
+    $("morningNow").disabled = true;
+    try {
+      const res = await fetch("/api/morning/now", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not make the brief");
+      await loadChats();
+      await openChat(data.conversationId);
+    } catch (error) {
+      $("morningNote").textContent = error.message;
+    }
+    $("morningNow").disabled = false;
+  });
 
   // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
   // gives us a "subscription" (an address at Google's push service), and we hand it to Bot.
@@ -1825,6 +1982,7 @@
     setupNotifyButton();
     loadReminders();
     loadMemory();
+    loadMorning();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
     showEmpty();

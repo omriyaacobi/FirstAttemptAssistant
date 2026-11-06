@@ -133,6 +133,12 @@
 - **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
 - **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
 
+- Answer speed (2026-11-06, branch `claude/frontdesk-speed-01ec9f`, NOT pushed or merged). 406 tests pass (3 full runs). Report: `experiments/2026-11-06-answer-speed.md`.
+  - The answer step was NOT slower than before (Flash medium: 9-12 s in every saved chat); it is now about 80% of the wait. Where its 11.5 s go: agy start-up 2.6 s, thinking 6.0 s, writing 2.5 s.
+  - Built: a pre-warmed single-use agy for the gemini-flash model (`warmagy.askText`, started when a message arrives), a speculative answer (the gemini-flash model starts together with the front desk, kept only if the desk picks it, switch `SPECULATE_ANSWER` in `core.js`), the page polls every 0.6 s during the first 40 s (it was 2 s while the front desk worked, so short replies showed up about 0.5 s late).
+  - Numbers, 28 real messages per arm: median 12.6 to 9.0 s, slowest 29.5 to 21.2 s; gemini-flash answers 13.0 to 7.8 s, first words 11.6 to 5.7 s. Hedging the answer was rejected (no gain at any threshold).
+  - Cost: two waiting agy processes (about 0.6 GB RAM), and a wasted Flash-medium call on messages the desk sends elsewhere (47% in my mixed test set).
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.
@@ -341,3 +347,16 @@
   - **Word and PowerPoint:** `office.js` reads .docx and .pptx with Node built-ins only (a small ZIP reader, size limits against zip bombs, no model). One page per slide; Word is cut into pages like a text file. Old .ppt/.doc are refused with a clear message.
   - **Course chats:** the bar above a course chat has Chats (switch), Sources (tick, upload) and + New chat; each chat in the list shows when it was last used. The camera works in course chats: Gemini reads the photo's text first and that text joins the question as data (`course-routes.js`, `answer`).
   - Not done: renaming a chat (needs `server.js`), per-chat ticks, reading .ppt/.doc, text inside slide pictures.
+## Better memory and a more useful Bot (branch claude/assistant-memory-36ee6b, 2026-11-06, NOT pushed or merged)
+- Research and all numbers: `experiments/2026-11-06-assistant-memory.md`.
+- **Only the facts that matter reach a prompt** (`pickFacts` in `profile.js`): everything if it fits in 1000 characters, otherwise pinned facts, then search matches, then the 4 newest. Fact characters per prompt with a full memory: about 2000 down to about 240.
+- **"remember that ..." saves at once, with Undo**, only in a short one-line message of your own with no link, and only if most of the fact comes from your words. Plain statements and changes to a saved fact still need a tap. Text that reads like an order to Bot is refused.
+- **Recall** (`recall.js`, front desk action `recall`): searches earlier chats and answers from them, with buttons to open them. "What do you know about me?" is answered by code. Calendar replies and morning briefs are never searched, so no model reads event titles.
+- **Morning brief** (`morning.js`): OFF until you turn it on in the sidebar. Code writes today's calendar and reminders into a new chat; the phone push only gives the counts. Settings are in `data/morning.json`.
+- **Star in the sidebar:** a starred fact goes to the models with every message. Use it for preferences no keyword finds.
+- Try it: "remember that my bike is red", then "what do you know about me?", then "what did we decide about X?", then Morning brief > Show me one now.
+- `server.js` (a protected file) changed: added routes only, no check touched. If you change `router-brief.md`, keep `router-brief-haiku.md` in step.
+- Not checked yet: Claude Haiku on `recall` (Claude login does not work in a worktree), a real push, a real calendar in the brief.
+- Good to know: chats inside a course get only pinned facts and the 4 newest once memory is full, because `server.js` asks with no search words. `PROGRESS.md` holds two copies of itself (the second starts at the second "# Progress" line); worth cleaning up.
+- Follow-up calendar replies were already pasted into later models as chat history, so "no model reads an event" only holds for the first reply. A follow-up in a morning brief chat does the same.
+- Markdown in answers + bigger PC font (2026-11-06, branch `claude/markdown-font-6d2aa8`, NOT pushed or merged). Answers (regular and course chats, and the streaming text) are drawn by `fillMarkdown` in `public/index.html`: headings, bold, italics, `code`, bullet and numbered lists, rules, code blocks; only createElement / textContent, never innerHTML; every block is dir=auto so Hebrew works. Half-finished `**bold` or an open ``` block already look right while streaming. Font is 18px on PC (min-width 761px); the phone keeps 16px. Tests in `markdown.test.js` (fake DOM, including HTML staying inert). Not done: underscore italics, tables, links (shown as plain text).

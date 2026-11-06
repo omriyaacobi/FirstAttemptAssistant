@@ -132,7 +132,7 @@ test("Add material is on every course screen, and one picker outside the redrawn
   assert.match(html, /<button id="quotaBtn"/); // Quota is in the sidebar, which is the phone's menu too
   assert.match(html, /id="attach"[^>]*aria-label="Attach a photo"/); // the camera button stays in the chat
 });
-
+
 // ---- course chats: the typing bug and the chat screen ----
 
 // A tiny fake page, just enough to run public/study.js and count how often it rebuilds the screen.
@@ -226,4 +226,15 @@ test("the course screen has Sources beside Chats: drop zone, per-file status, ti
   assert.match(html, /\.course-cols \{[^}]*grid-template-columns/);
   assert.ok(!html.includes('$("attach").hidden = !!currentCourse'), "the camera button stays in course chats");
   assert.doesNotMatch(study, /\.innerHTML\s*=|insertAdjacentHTML|document\.write\(/);
+});
+
+test("the page polls fast (0.6 s) during the first 40 s of a task, so a front desk reply is not shown up to 2 s late", () => {
+  assert.match(html, /FAST_POLL_WINDOW_MS\s*=\s*40000/);
+  const poll = html.slice(html.indexOf("async function pollJobs"), html.indexOf("window.addEventListener(\"focus\", pollJobs)"));
+  assert.match(poll, /Date\.now\(\) \+ jobState\.offset - j\.startedAt < FAST_POLL_WINDOW_MS/); // the age of the job, by the server's clock
+  assert.match(poll, /\? 600 : jobState\.active\.size \? 2000 : 10000/); // fast, then slow while something long runs, then idle
+});
+
+test("the message box stays on screen: the page's row cannot grow with the sidebar or a long chat", () => {
+  assert.match(html, /\.app \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
 });

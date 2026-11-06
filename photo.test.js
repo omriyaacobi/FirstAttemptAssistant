@@ -202,7 +202,7 @@ test("a photo skips the front desk and only Gemini (through agy) is asked, with 
     log: (l) => logs.push(l),
     deps: {
       decide: async () => { throw new Error("the front desk must not run for a photo"); },
-      lowPools: async () => [], refreshQuota: () => {},
+      lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
       askImage: async (model, question, imagePath) => { asked.push({ model, question, imagePath }); return "Monday 9:00 Math"; },
     },
   });
@@ -221,7 +221,7 @@ test("if the first Gemini model fails on a photo, the next one is tried", async 
   const result = await handleTask("read this", {
     image: { path: "p.png", ext: ".png" },
     deps: {
-      lowPools: async () => [], refreshQuota: () => {},
+      lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
       askImage: async (model) => { tried.push(model); if (tried.length === 1) throw new Error("quota"); return "ok"; },
     },
   });

@@ -50,8 +50,11 @@ const BACKUP_TIMEOUT_MS = 25000;
 // "calendar" means: the user asks what is on their calendar. The model only extracts a start day and a
 // number of days; validateDecision checks them, then code reads the calendar and writes the reply
 // (calendar-chat.js). No model ever sees an event.
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar"];
+// "recall" means: the user asks about an earlier chat, or what Bot knows about them. The model only gives search words;
+// code searches the saved chats (recall.js) or lists the saved facts.
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar", "recall"];
 const MAX_ANSWER_CHARS = 8000;
+const MAX_RECALL_QUERY_CHARS = 200;
 
 // The shape we force the model's reply into. "none" is for the actions that need no destination.
 const SCHEMA = {
@@ -72,8 +75,10 @@ const SCHEMA = {
     // Only for the action "calendar": the first day (YYYY-MM-DD) and how many days (1-14); empty otherwise.
     calendarFrom: { type: "string" },
     calendarDays: { type: "string" },
+    // Only for the action "recall": a few search words, or "" when they ask what Bot knows about them.
+    recallQuery: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays", "recallQuery"],
 };
 
 // The shape for the backup desk (forced through claude's --json-schema): only "action" and "reason" are required, and
@@ -143,7 +148,7 @@ function validateDecision(raw, { now = Date.now() } = {}) {
     }
   }
 
-  // The number of a saved fact (see profile.js recentFacts). Only digits get through; core.js maps it to the real fact.
+  // The number of a saved fact (see profile.js pickFacts). Only digits get through; core.js maps it to the real fact.
   const replaces = /^\d{1,3}$/.test(String(raw.replaces || "").trim()) ? String(raw.replaces).trim() : "";
   if (raw.action === "forget") return { action: "forget", destination: null, answer: "", reason, replaces };
   if (raw.action === "remember") {
@@ -160,6 +165,11 @@ function validateDecision(raw, { now = Date.now() } = {}) {
     } catch (error) {
       return null;
     }
+  }
+
+  if (raw.action === "recall") {
+    const query = typeof raw.recallQuery === "string" ? raw.recallQuery.replace(/\s+/g, " ").trim().slice(0, MAX_RECALL_QUERY_CHARS) : "";
+    return { action: "recall", destination: null, answer: "", reason, query };
   }
 
   if (raw.action === "answer" || raw.action === "clarify" || raw.action === "improve") {

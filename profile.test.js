@@ -145,9 +145,11 @@ const fakes = (overrides = {}) => ({
   decide: async () => ({ action: "delegate", destination: "claude-sonnet", answer: "", reason: "test" }),
   chainForDestination: () => [used],
   chainForType: () => [used],
-  lowPools: async () => [], refreshQuota: () => {},
+  lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
   askChain: async () => ({ answer: "model answer", used }),
   about: () => "<about-the-user>\nSECRET-PROFILE\n</about-the-user>",
+  facts: () => [], // never the real memory in tests
+  addFact: () => { throw new Error("no save was expected"); },
   ...overrides,
 });
 
@@ -206,10 +208,10 @@ test("SECURITY: in a split, only the web steps are kept clear of the profile", a
   for (const s of sent) assert.strictEqual(s.prompt.includes("SECRET-PROFILE"), !s.web);
 });
 
-test("remember: the model's proposal is shown, never saved by handleTask", async () => {
+test("remember: a plain statement is only shown as a proposal, never saved by handleTask", async () => {
   const deps = fakes({ decide: async () => ({ action: "remember", destination: null, answer: "", reason: "t", fact: "Omri is vegetarian" }) });
   const dir = tmp();
-  const result = await handleTask("remember that I am vegetarian", { deps });
+  const result = await handleTask("I am vegetarian", { deps });
   assert.deepStrictEqual(result.remember, { fact: "Omri is vegetarian" });
   assert.match(result.answer, /vegetarian/);
   assert.deepStrictEqual(createMemory({ file: path.join(dir, "memory.json") }).list(), []); // handleTask has no way to save

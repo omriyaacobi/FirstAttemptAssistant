@@ -27,6 +27,8 @@
 //   GET    /api/memory             -> the facts Bot remembers about you (and whether data/profile.md is loaded)
 //   POST   /api/memory             -> save ONE fact you approved with the Save button, or change one ({ text, replaces: id }); checked again in code, see profile.js
 //   DELETE /api/memory/:id         -> forget one fact
+//   POST   /api/memory/:id/pin     -> always send this fact to the models, or stop ({ pinned: true | false })
+//   GET    /api/morning            -> the morning brief settings; POST to change them; POST /api/morning/now for one right now (see morning.js)
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
 //   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
 //   POST   /api/login | /api/logout -> the phone login (see auth.js)
@@ -65,6 +67,7 @@ const { createCourseRoutes } = require("./course-routes");
 const { askCourse } = require("./study");
 const { ingestFile } = require("./ingest");
 const { askChain, askAgyWithFile } = require("./providers");
+const { createMorning } = require("./morning");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -171,6 +174,7 @@ function createServer({
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
+  morning = null, // the morning brief (morning.js); off unless given, so tests never touch data/morning.json
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
@@ -342,6 +346,16 @@ function createServer({
     if (memoryRoute && req.method === "DELETE") {
       return memory.remove(memoryRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "fact not found" });
     }
+
+    const pinRoute = url.pathname.match(/^\/api\/memory\/([^/]+)\/pin$/);
+    if (pinRoute && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      return memory.pin(pinRoute[1], input.pinned === true) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "fact not found" });
+    }
+
+    // The morning brief settings. Only the page can reach these; all the checks above have already run.
+    if (morning && (await morning.handle(req, res, url, { sendJson, readJsonBody }))) return;
 
     // Quota panel
     if (req.method === "GET" && url.pathname === "/api/usage") {
@@ -527,7 +541,8 @@ if (require.main === module) {
     about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
     log: console.log,
   });
-  const server = createServer({ push, auth, courseRoutes, store });
+  const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, log: console.log });
+  const server = createServer({ push, auth, courseRoutes, store, morning });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
@@ -546,6 +561,7 @@ if (require.main === module) {
     console.log(auth.enabled ? `Phone access ON for https://${auth.host} (login required)` : `Phone access off: ${auth.reason}`);
     try { require("./providers").removeStaleWorkDirs(); } catch (error) { /* only housekeeping */ } // old bot-file-* / bot-photo-* folders from earlier runs
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
+    morning.start(); // does nothing until you turn the morning brief on in the page
     try { require("./frontdesk").warmUpDesk(); } catch (error) { console.error("Could not prepare the front desk:", error.message); } // only makes the first message slower
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });
