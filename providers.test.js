@@ -68,3 +68,11 @@ test("askChain: times every attempt, and reports the failed ones too", async () 
   ]);
   assert.strictEqual(fails[0].seconds, 4);
 });
+
+test("Claude reading a course file may only use Read: nothing else, no prompts, no skipped permissions", () => {
+  const { claudeFileCommand } = require("./providers");
+  const command = claudeFileCommand("sonnet");
+  assert.match(command, /--restricted --tools "Read" --permission-prompts none --no-session-persistence/);
+  assert.doesNotMatch(command, /dangerously|Bash|Edit|Write/);
+  assert.throws(() => claudeFileCommand("sonnet; del x"), /Suspicious/);
+});

@@ -53,7 +53,7 @@ function createCourses(dir) {
   const summary = (c) => ({
     id: c.id, name: c.name, created: c.created,
     files: c.files.length,
-    pages: c.files.reduce((a, f) => a + (f.status === "ready" ? f.pages || 0 : 0), 0),
+    pages: c.files.reduce((a, f) => a + (f.pages || 0), 0), // also the pages of a file still being read: they can be used already
     reading: c.files.filter((f) => f.status === "queued" || f.status === "reading").length,
   });
 
@@ -94,13 +94,27 @@ function createCourses(dir) {
   // ---- files ----
   const filePath = (id, fid, ext) => path.join(courseDir(id), "files", fid + ext);
 
+  // The fingerprint of a file's bytes. Files saved before fingerprints existed get theirs here, from disk, once.
+  const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  function fingerprint(course, file) {
+    if (!file.sha256) {
+      try { file.sha256 = sha256(fs.readFileSync(filePath(course.id, file.id, file.ext))); } catch (error) { return null; }
+      setFile(course.id, file.id, { sha256: file.sha256 });
+    }
+    return file.sha256;
+  }
+
   // Saves the bytes under a random name and lists the file as "queued" (waiting to be read).
+  // The same bytes twice in one course are refused: a second copy would cost a whole second read and teach nothing new.
   function addFile(id, { bytes, kind, ext, name }) {
     const course = get(id);
     if (!course) throw fail(404, "course not found");
     if (course.files.length >= MAX_FILES_PER_COURSE) throw fail(400, `at most ${MAX_FILES_PER_COURSE} files per course`);
     if (bytesOf(course) + bytes.length > MAX_COURSE_BYTES) throw fail(413, "this course is full (400 MB of files)");
-    const file = { id: newId(), name: cleanName(name), kind, ext, bytes: bytes.length, status: "queued", pages: 0, progress: "", error: "", added: Date.now() };
+    const hash = sha256(bytes);
+    const same = course.files.find((f) => f.bytes === bytes.length && fingerprint(course, f) === hash);
+    if (same) throw fail(409, `this file is already in the course, as "${same.name}"`);
+    const file = { id: newId(), name: cleanName(name), kind, ext, bytes: bytes.length, sha256: hash, status: "queued", pages: 0, progress: "", error: "", added: Date.now() };
     fs.writeFileSync(filePath(id, file.id, ext), bytes, { flag: "wx" });
     course.files.push(file);
     save(course);
@@ -151,13 +165,14 @@ function createCourses(dir) {
     return readJson(filePath(id, fid, ".pages.json")) || [];
   }
 
-  // Every page of every READY file in a course that is ticked for use (file.use is not false), each with the file it came from.
+  // Every saved page of a course's files that are ticked for use (file.use is not false), each with the file it came from.
+  // A file still being read counts too: its pages are saved chunk by chunk, so a chat can use them before the read ends.
   function allPages(id) {
     const course = get(id);
     if (!course) return [];
     const out = [];
     for (const file of course.files) {
-      if (file.status !== "ready" || file.use === false) continue;
+      if (file.use === false) continue;
       for (const p of getPages(id, file.id)) out.push({ ...p, fileId: file.id, fileName: file.name });
     }
     return out;

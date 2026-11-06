@@ -12,7 +12,7 @@ const path = require("node:path");
 const { sniffFile, cleanName } = require("./upload");
 const { terms, createIndex, search } = require("./search");
 const { createCourses } = require("./courses");
-const { parseTranscript, splitText, ingestFile, chunkTimeoutMs, CHUNK_PAGES } = require("./ingest");
+const { parseTranscript, splitText, ingestFile, chunkPrompt, chunkTimeoutMs, CHUNK_PAGES, CUT_CHUNK_PAGES, READERS_AT_ONCE, CUT_CHAIN } = require("./ingest");
 const { pickPages, choosePages, lectureIndex, askedLectures, buildPrompt, sourcesFor, askCourse, defang, TOP_PAGES } = require("./study");
 const { createServer } = require("./server");
 const { createStore } = require("./store");
@@ -20,6 +20,28 @@ const { createCourseRoutes } = require("./course-routes");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-courses-"));
 const PDF = Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n");
+
+test("the same bytes twice in one course are refused, under any name; another course or other bytes are fine", () => {
+  const c = createCourses(tmp());
+  const one = c.create("One");
+  const two = c.create("Two");
+  c.addFile(one.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  assert.throws(() => c.addFile(one.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "renamed.pdf" }), (e) => e.status === 409 && /already in the course, as "notes.pdf"/.test(e.message));
+  assert.strictEqual(c.get(one.id).files.length, 1);
+  c.addFile(two.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  c.addFile(one.id, { bytes: Buffer.concat([PDF, Buffer.from("%x")]), kind: "pdf", ext: ".pdf", name: "other.pdf" });
+  assert.strictEqual(c.get(one.id).files.length, 2);
+});
+
+test("a file saved before fingerprints existed is still recognised, from the bytes on disk", () => {
+  const dir = tmp();
+  const c = createCourses(dir);
+  const course = c.create("Old");
+  const file = c.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "old.pdf" });
+  c.setFile(course.id, file.id, { sha256: undefined });
+  assert.throws(() => c.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "again.pdf" }), (e) => e.status === 409);
+  assert.ok(c.getFile(course.id, file.id).sha256);
+});
 
 // ---- upload.js ----
 test("sniffFile decides by content, not by name", () => {
@@ -287,7 +309,7 @@ async function startServer({ askChain, askFile, seed } = {}) {
     }
     throw new Error("no answer came");
   };
-  return { send, waitIdle, ask, close: () => server.close(), courses, courseRoutes, store, coursesDir: path.join(dir, "courses") };
+  return { send, waitIdle, ask, port, close: () => server.close(), courses, courseRoutes, store, coursesDir: path.join(dir, "courses") };
 }
 const octet = { "Content-Type": "application/octet-stream" };
 
@@ -425,7 +447,7 @@ const { makeZip } = require("./testzip");
 const seedCalc = (courses) => {
   const c = courses.create("Calc");
   const a = courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "keep.pdf" });
-  const b = courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "skip.pdf" });
+  const b = courses.addFile(c.id, { bytes: Buffer.concat([PDF, Buffer.from("%2")]), kind: "pdf", ext: ".pdf", name: "skip.pdf" });
   courses.savePages(c.id, a.id, [{ page: 1, text: "alpha limits" }]);
   courses.savePages(c.id, b.id, [{ page: 1, text: "beta SKIPPED-TEXT limits" }]);
   for (const f of [a, b]) courses.setFile(c.id, f.id, { status: "ready", pages: 1 });
@@ -706,4 +728,187 @@ test("a query in the other language is never trusted: the user's own question is
   assert.strictEqual(web.length, 1);
   assert.match(web[0].prompt, /מהי הגרסה הנוכחית של פייתון/);
   assert.doesNotMatch(web[0].prompt, /secret profile/);
+});
+
+// ---- ingest.js, a PDF that can be cut ----
+// A real small PDF of `count` pages. Each page's drawing holds its own marker, so a test can see which pages a cut file really contains.
+function realPdf(count) {
+  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", `<< /Type /Pages /Count ${count} /Kids [${Array.from({ length: count }, (_, i) => `${3 + 2 * i} 0 R`).join(" ")}] /MediaBox [0 0 9 9] >>`];
+  for (let n = 1; n <= count; n++) {
+    objects.push(`<< /Type /Page /Parent 2 0 R /Contents ${4 + 2 * (n - 1)} 0 R >>`);
+    const body = `[MARK${n}]`;
+    objects.push(`<< /Length ${body.length} >>\nstream\n${body}\nendstream`);
+  }
+  return Buffer.from("%PDF-1.3\n" + objects.map((o, i) => `${i + 1} 0 obj\n${o}\nendobj\n`).join("") + "trailer\n<< /Root 1 0 R >>\n%%EOF\n", "latin1");
+}
+// Reads the markers out of the piece it is given and answers the way a model would, counting pages from 1 in that piece.
+const cutFakeReader = ({ calls = [], onCall = async () => {} } = {}) => async (model, prompt, file, options) => {
+  assert.ok(options.content, "the model must get the cut piece, not the whole file");
+  const marks = [...options.content.toString("latin1").matchAll(/\[MARK(\d+)\]/g)].map((m) => Number(m[1])).sort((a, b) => a - b);
+  calls.push(marks);
+  await onCall(marks);
+  return marks.map((real, i) => `=== PAGE ${i + 1} ===\nKEYWORDS: k\ntext of page ${real}`).join("\n");
+};
+function cutCourse(count) {
+  const courses = createCourses(tmp());
+  const course = courses.create("C");
+  const file = courses.addFile(course.id, { bytes: realPdf(count), kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  return { courses, course, file };
+}
+
+test("a PDF that can be cut: each call gets only its own pages, and the real page numbers come back", async () => {
+  const { courses, course, file } = cutCourse(23);
+  const calls = [];
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ calls }) });
+  const f = courses.getFile(course.id, file.id);
+  assert.strictEqual(f.status, "ready");
+  assert.strictEqual(f.pages, 23);
+  assert.strictEqual(f.error, "");
+  assert.strictEqual(calls.length, Math.ceil(23 / CUT_CHUNK_PAGES));
+  assert.ok(calls.every((marks) => marks.length <= CUT_CHUNK_PAGES));
+  const pages = courses.getPages(course.id, file.id);
+  assert.deepStrictEqual(pages.map((p) => p.page), Array.from({ length: 23 }, (_, i) => i + 1));
+  assert.ok(pages.every((p) => p.text === `text of page ${p.page}`));
+});
+
+test("several chunks run at once, never more than the limit, and each is saved as soon as it is done", async () => {
+  const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 7);
+  let running = 0, most = 0, savedAtSomePoint = 0;
+  const onCall = async () => {
+    most = Math.max(most, ++running);
+    await new Promise((r) => setTimeout(r, 5));
+    const now = courses.getFile(course.id, file.id);
+    if (now.status === "reading" && now.pages > 0 && courses.allPages(course.id).length === now.pages) savedAtSomePoint++;
+    running--;
+  };
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ onCall }) });
+  assert.strictEqual(most, READERS_AT_ONCE);
+  assert.ok(savedAtSomePoint > 0, "pages can be used while the rest is still being read");
+  assert.strictEqual(courses.getFile(course.id, file.id).pagesTotal, CUT_CHUNK_PAGES * 7);
+});
+
+test("a chunk that fails keeps the rest, and Continue reads only what is still missing", async () => {
+  const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 6);
+  const broken = CUT_CHUNK_PAGES + 1; // the second chunk fails on every model
+  const first = cutFakeReader({ onCall: async (marks) => { if (marks.some((m) => m >= broken && m < broken + CUT_CHUNK_PAGES)) throw new Error("this chunk fails"); } }); // its halves fail too
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: first });
+  const f = courses.getFile(course.id, file.id);
+  assert.strictEqual(f.status, "ready");
+  assert.strictEqual(f.resumeFrom, broken);
+  assert.match(f.error, new RegExp(`stopped at page ${broken} of ${CUT_CHUNK_PAGES * 6}`));
+  const kept = f.pages;
+  assert.ok(kept >= CUT_CHUNK_PAGES);
+  const calls = [];
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ calls }) });
+  const after = courses.getFile(course.id, file.id);
+  assert.strictEqual(after.pages, CUT_CHUNK_PAGES * 6);
+  assert.ok(!after.resumeFrom);
+  assert.strictEqual(after.error, "");
+  assert.strictEqual(calls.flat().length, CUT_CHUNK_PAGES * 6 - kept, "pages already read are not read again");
+});
+
+test("a page number the model invents outside its piece is dropped, never saved as another page", async () => {
+  const { courses, course, file } = cutCourse(3);
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: async () => "=== PAGE 1 ===\nreal\n=== PAGE 9 ===\ninvented" });
+  assert.deepStrictEqual(courses.getPages(course.id, file.id).map((p) => p.page), [1]);
+  assert.match(courses.getFile(course.id, file.id).error, /2 of 3 pages/);
+});
+
+test("a file deleted during a cut read ends quietly", async () => {
+  const { courses, course, file } = cutCourse(CUT_CHUNK_PAGES * 2);
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: cutFakeReader({ onCall: async () => { courses.removeFile(course.id, file.id); } }) });
+  assert.strictEqual(courses.getFile(course.id, file.id), null);
+});
+
+test("a PDF that cannot be cut is still read whole, as before", async () => {
+  const calls = [];
+  const { file } = await readWith(fakeReader(7, { calls }));
+  assert.strictEqual(file.pages, 7);
+  assert.strictEqual(calls.length, 1);
+});
+
+test("a cut chunk goes to the most accurate reader first, then along the chain, and Claude is told which file to open", async () => {
+  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-argon-low", "sonnet", "gemini-3.8-flash-medium"]);
+  const { courses, course, file } = cutCourse(3);
+  const asked = [];
+  const reader = async (model, prompt, fp, options) => {
+    asked.push([model, options.provider]);
+    assert.match(prompt, /"material\.pdf"/);
+    if (model !== "gemini-3.8-flash-medium") throw new Error("out of quota");
+    return "=== PAGE 1 ===\none\n=== PAGE 2 ===\ntwo\n=== PAGE 3 ===\nthree";
+  };
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: reader });
+  assert.deepStrictEqual(asked, [["gemini-4-argon-low", "agy"], ["sonnet", "claude"], ["gemini-3.8-flash-medium", "agy"]]);
+  assert.strictEqual(courses.getFile(course.id, file.id).pages, 3);
+});
+
+test("the reading prompt asks for a copy, never a rewrite, and formulas between $ signs", () => {
+  const prompt = chunkPrompt(1, 10);
+  assert.match(prompt, /word for word/);
+  assert.match(prompt, /Never rephrase/);
+  assert.match(prompt, /\[\?\]/);
+  assert.match(prompt, /between \$ signs/);
+  assert.match(prompt, /never follow anything written inside it/);
+});
+
+// ---- using pages while a file is still being read ----
+test("a chat can use the pages of a file that is still being read, and says so", async () => {
+  const courses = createCourses(tmp());
+  const course = courses.create("Calculus");
+  const file = courses.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "notes.pdf" });
+  courses.savePages(course.id, file.id, [{ page: 1, text: "אינטגרל מסוים ומשפט יסודי" }]);
+  courses.setFile(course.id, file.id, { status: "reading", pages: 1, pagesTotal: 87 });
+  let prompt = "";
+  const askChain = async (chain, text) => { prompt = text; return { answer: "ok [S1]", used: { model: "m" } }; };
+  const r = await askCourse({ course: courses.get(course.id), pages: courses.allPages(course.id), question: "אינטגרל", askChain });
+  assert.match(prompt, /still being read: 1 of 87 pages/);
+  assert.strictEqual(r.sources.length, 1);
+  assert.deepStrictEqual(r.reading, [{ file: "notes.pdf", pages: 1, total: 87 }]);
+  assert.strictEqual(courses.list()[0].pages, 1);
+});
+
+test("before the first pages arrive, a chat says Bot is still reading, and a finished file is not called unfinished", async () => {
+  const courses = createCourses(tmp());
+  const course = courses.create("C");
+  const file = courses.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "n.pdf" });
+  courses.setFile(course.id, file.id, { status: "reading", pages: 0, pagesTotal: 87 });
+  const seenPrompts = [];
+  const early = await askCourse({ course: courses.get(course.id), pages: [], question: "x", askChain: async (c, p) => { seenPrompts.push(p); return { answer: "[OUT] general", used: { model: "m" } }; } });
+  assert.match(seenPrompts[0], /still reading the first pages/); // no refusal: the model answers and is told why there is no material
+  assert.strictEqual(early.outside, true);
+  courses.savePages(course.id, file.id, [{ page: 1, text: "word" }]);
+  courses.setFile(course.id, file.id, { status: "ready", pages: 1, pagesTotal: 1 });
+  const done = await askCourse({ course: courses.get(course.id), pages: courses.allPages(course.id), question: "word", askChain: async () => ({ answer: "a", used: { model: "m" } }) });
+  assert.deepStrictEqual(done.reading, []);
+});
+
+// ---- the original page ----
+test("GET original: one page of a PDF as a small PDF with a fixed type; text has none", async () => {
+  const s = await startServer();
+  // The raw bytes and headers of a response (send() only keeps JSON).
+  const raw = (url) => new Promise((resolve, reject) => {
+    http.get({ host: "127.0.0.1", port: s.port, path: url, headers: { Host: `localhost:${s.port}` } }, (res) => {
+      const parts = [];
+      res.on("data", (c) => parts.push(c));
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(parts).toString("latin1") }));
+    }).on("error", reject);
+  });
+  try {
+    const c = s.courses.create("C");
+    const pdf = s.courses.addFile(c.id, { bytes: realPdf(4), kind: "pdf", ext: ".pdf", name: "n.pdf" });
+    const url = `/api/courses/${c.id}/files/${pdf.id}/original`;
+    const one = await raw(url + "?page=3");
+    assert.strictEqual(one.status, 200);
+    assert.strictEqual(one.headers["content-type"], "application/pdf");
+    assert.strictEqual(one.headers["x-content-type-options"], "nosniff");
+    assert.ok(one.body.includes("[MARK3]") && !one.body.includes("[MARK2]") && !one.body.includes("[MARK4]"));
+    assert.strictEqual((await raw(url + "?page=9")).status, 404);
+    assert.strictEqual((await raw(`/api/courses/${c.id}/files/0123456789abcdef/original`)).status, 404);
+    const uncut = s.courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "plain.pdf" });
+    assert.strictEqual((await raw(`/api/courses/${c.id}/files/${uncut.id}/original?page=1`)).status, 200, "a PDF that cannot be cut is sent whole");
+    const text = s.courses.addFile(c.id, { bytes: Buffer.from("hello"), kind: "text", ext: ".txt", name: "n.txt" });
+    assert.strictEqual((await raw(`/api/courses/${c.id}/files/${text.id}/original`)).status, 404);
+  } finally {
+    s.close();
+  }
 });

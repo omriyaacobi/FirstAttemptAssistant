@@ -264,17 +264,50 @@ async function askAgyWithImage(model, question, imagePath) {
 // Gemini reading one course file (PDF, photo). Same idea as askAgyWithImage: the file is copied into a brand-new
 // EMPTY folder under a FIXED name (never the uploaded name), agy runs there, the folder is deleted afterwards.
 // A long PDF takes minutes (120 pages: 266 s in my test), so this has its own generous timeout.
-async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000 } = {}) {
+// content (optional): the bytes to use instead of the file itself, for a piece cut out of it (pdfcut.js).
+// provider "claude" sends the same request to Claude (askClaudeWithFile), so a reading chain can mix both.
+async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000, content = null, provider = "agy" } = {}) {
+  if (provider === "claude") return askClaudeWithFile(model, question, filePath, { timeoutMs, content });
   checkModelName(model);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-file-"));
   try {
-    fs.copyFileSync(filePath, path.join(dir, "material" + path.extname(filePath)));
+    const copy = path.join(dir, "material" + path.extname(filePath));
+    if (content) fs.writeFileSync(copy, content); else fs.copyFileSync(filePath, copy);
     return await new Promise((resolve, reject) => {
       const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 5e7 }, (error, stdout, stderr) => {
         if (error) return reject(new Error(stderr || error.message));
         resolve(stdout.trim());
       });
       withTimeout(child, timeoutMs, reject, model);
+    });
+  } finally {
+    cleanWorkDir(dir);
+  }
+}
+
+// Claude reading one course file. Same rules as above: a brand-new EMPTY folder holding one file under a fixed name, deleted afterwards.
+// Claude may only use its Read tool: --restricted with --tools "Read", no prompts (anything else is refused, never asked), no session saved.
+// A page of the file is data for it to look at; it has no shell, no edit tool and no web, so what a page says cannot make it do anything.
+function claudeFileCommand(model) {
+  checkModelName(model);
+  return `${CLAUDE_CMD} -p --model ${model} --restricted --tools "Read" --permission-prompts none --no-session-persistence --output-format json`;
+}
+async function askClaudeWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 1000, content = null } = {}) {
+  const command = claudeFileCommand(model);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-file-"));
+  try {
+    const copy = path.join(dir, "material" + path.extname(filePath));
+    if (content) fs.writeFileSync(copy, content); else fs.copyFileSync(filePath, copy);
+    return await new Promise((resolve, reject) => {
+      const child = exec(command, { cwd: dir, env: claudeEnv(), maxBuffer: 5e7 }, (error, stdout, stderr) => {
+        let envelope = null;
+        try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: handled below */ }
+        if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message) || "claude gave no output").trim().slice(0, 200)));
+        if (envelope.is_error) return reject(new Error(String(envelope.result || "claude reported an error").slice(0, 200)));
+        resolve(String(envelope.result || "").trim());
+      });
+      withTimeout(child, timeoutMs, reject, model);
+      child.stdin.end(question);
     });
   } finally {
     cleanWorkDir(dir);
@@ -364,5 +397,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
