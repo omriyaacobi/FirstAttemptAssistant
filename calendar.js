@@ -209,12 +209,26 @@ function checkEventInput({ summary, start, end, location, repeatUntil }) {
   return checked;
 }
 
-// "RRULE:FREQ=WEEKLY;UNTIL=20270201T235959Z" from a checked YYYY-MM-DD. UNTIL is a UTC moment; we use the END OF THE DAY AFTER
-// the chosen day so the last class is included whatever the time zone. The next weekly date is 7 days later, so nothing extra is added.
-function weeklyRule(repeatUntil) {
-  const after = new Date(`${repeatUntil}T00:00:00Z`);
-  after.setUTCDate(after.getUTCDate() + 1);
-  return `RRULE:FREQ=WEEKLY;UNTIL=${after.toISOString().slice(0, 10).replace(/-/g, "")}T235959Z`;
+// The UTC moment at which the wall clock in `timeZone` reads YYYY-MM-DD 23:59:59 (handles daylight saving: the offset is looked up
+// for that very day). Two passes are enough because the offset only changes by whole hours at a transition.
+function endOfLocalDay(day, timeZone) {
+  const [y, m, d] = day.split("-").map(Number);
+  const wall = Date.UTC(y, m - 1, d, 23, 59, 59);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
+  const offsetAt = (t) => {
+    const p = Object.fromEntries(parts.formatToParts(new Date(t)).map((x) => [x.type, Number(x.value)]));
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(t / 1000) * 1000;
+  };
+  let t = wall - offsetAt(wall);
+  t = wall - offsetAt(t);
+  return new Date(t);
+}
+
+// "RRULE:FREQ=WEEKLY;UNTIL=20270131T215959Z" from a checked YYYY-MM-DD. UNTIL is a UTC moment: the very end of the chosen day
+// in the calendar's time zone (23:59:59 local, converted to UTC). A class on the chosen day is included; a class on the day after
+// is not (the series' weekday may well be the day after the end date).
+function weeklyRule(repeatUntil, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
+  return `RRULE:FREQ=WEEKLY;UNTIL=${endOfLocalDay(repeatUntil, timeZone).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`;
 }
 
 async function createEvent(input, deps) {
@@ -222,7 +236,7 @@ async function createEvent(input, deps) {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const body = { summary, start: { dateTime: `${start}:00`, timeZone }, end: { dateTime: `${end}:00`, timeZone } };
   if (location) body.location = location;
-  if (repeatUntil) body.recurrence = [weeklyRule(repeatUntil)];
+  if (repeatUntil) body.recurrence = [weeklyRule(repeatUntil, timeZone)];
   const created = await api("POST", "/calendar/v3/calendars/primary/events", body, deps);
   return { id: created.id, summary: created.summary, start: created.start && created.start.dateTime, end: created.end && created.end.dateTime, link: created.htmlLink };
 }

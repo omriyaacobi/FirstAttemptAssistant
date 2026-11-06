@@ -44,10 +44,45 @@ test("createEvent sends a weekly rule that CODE built, and no rule for a single 
   const request = async (options, body) => { bodies.push(JSON.parse(body)); return { status: 200, body: { id: "e1", summary: "Class", start: {}, end: {} } }; };
   await cal.createEvent({ summary: "Class", start: "2026-11-08T10:00", end: "2026-11-08T11:00", location: "Room 5", repeatUntil: "2027-01-31" }, { credentials: {}, request, file });
   await cal.createEvent({ summary: "Once", start: "2026-11-08T10:00", end: "2026-11-08T11:00" }, { credentials: {}, request, file });
-  assert.deepStrictEqual(bodies[0].recurrence, ["RRULE:FREQ=WEEKLY;UNTIL=20270201T235959Z"]);
+  assert.deepStrictEqual(bodies[0].recurrence, [cal.weeklyRule("2027-01-31")]);
   assert.strictEqual(bodies[0].location, "Room 5");
   assert.strictEqual(bodies[1].recurrence, undefined);
-  assert.strictEqual(cal.weeklyRule("2027-01-31"), "RRULE:FREQ=WEEKLY;UNTIL=20270201T235959Z");
+  assert.strictEqual(cal.weeklyRule("2027-01-31", "Asia/Jerusalem"), "RRULE:FREQ=WEEKLY;UNTIL=20270131T215959Z");
+});
+
+test("weeklyRule: UNTIL is the end of the chosen day in the calendar's zone: the end day's class is in, the next day's is out", () => {
+  const until = (rule) => { const m = /UNTIL=(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/.exec(rule); return Date.UTC(m[1], m[2] - 1, m[3], m[4], m[5], m[6]); };
+  // [zone, end day, the offset from UTC in hours on that day, expected UNTIL]
+  const cases = [
+    ["Asia/Jerusalem", "2027-01-31", "20270131T215959Z"], // winter, UTC+2
+    ["Asia/Jerusalem", "2027-03-25", "20270325T215959Z"], // the day before summer time starts: UTC+2
+    ["Asia/Jerusalem", "2027-03-26", "20270326T205959Z"], // summer time starts that Friday: end of the day is UTC+3
+    ["Asia/Jerusalem", "2027-10-30", "20271030T205959Z"], // summer, UTC+3
+    ["Asia/Jerusalem", "2027-10-31", "20271031T215959Z"], // the day summer time ends: end of day is UTC+2
+    ["America/Los_Angeles", "2027-01-31", "20270201T075959Z"],
+    ["America/Los_Angeles", "2027-03-14", "20270315T065959Z"], // DST starts that day: end of day is UTC-7
+    ["America/Los_Angeles", "2027-11-07", "20271108T075959Z"], // DST ends that day: end of day is UTC-8
+    ["UTC", "2027-01-31", "20270131T235959Z"],
+  ];
+  for (const [zone, day, expected] of cases) assert.strictEqual(cal.weeklyRule(day, zone), "RRULE:FREQ=WEEKLY;UNTIL=" + expected, zone + " " + day);
+  // A Monday class at 12:00 on 2027-02-01 (the day AFTER the end day) is out, a class on the end day at 23:00 is in.
+  const wall = (zone, day, hh) => { // the UTC moment of a wall-clock time, found by the same offset trick
+    const guess = Date.parse(day + "T" + hh + ":00:00Z");
+    const f = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric" });
+    const off = (t) => { const p = Object.fromEntries(f.formatToParts(new Date(t)).map((x) => [x.type, Number(x.value)])); return Date.UTC(p.year, p.month - 1, p.day, p.hour) - Math.floor(t / 3600000) * 3600000; };
+    return guess - off(guess - off(guess));
+  };
+  for (const zone of ["Asia/Jerusalem", "America/Los_Angeles", "Pacific/Auckland", "UTC"]) {
+    const rule = cal.weeklyRule("2027-01-31", zone);
+    assert.ok(wall(zone, "2027-01-31", "23") <= until(rule), zone + ": a class on the end day is included");
+    assert.ok(wall(zone, "2027-02-01", "00") > until(rule), zone + ": a class the next day is not");
+    assert.ok(wall(zone, "2027-02-01", "12") > until(rule), zone + ": Monday noon the next day is not");
+  }
+  // And in this computer's own zone, whatever it is:
+  const local = until(cal.weeklyRule("2027-01-31"));
+  assert.strictEqual(local, new Date(2027, 0, 31, 23, 59, 59).getTime());
+  assert.strictEqual(until(cal.weeklyRule("2027-03-28")), new Date(2027, 2, 28, 23, 59, 59).getTime());
+  assert.strictEqual(until(cal.weeklyRule("2027-10-31")), new Date(2027, 9, 31, 23, 59, 59).getTime());
 });
 
 // ---- validation of proposals ----
@@ -110,7 +145,7 @@ test("UNTRUSTED photo text: instructions are only ever data, extra fields are dr
   assert.doesNotMatch(events[0].summary, /[\n‮]/);
   assert.strictEqual(events[0].location, "x");
   // the RRULE sent to Google is built from the checked date only
-  assert.strictEqual(cal.weeklyRule(events[0].repeatUntil), "RRULE:FREQ=WEEKLY;UNTIL=20270201T235959Z");
+  assert.strictEqual(cal.weeklyRule(events[0].repeatUntil, "Asia/Jerusalem"), "RRULE:FREQ=WEEKLY;UNTIL=20270131T215959Z");
 });
 
 test("the user's words decide the photo note: Hebrew and English, and an ordinary photo question stays ordinary", () => {
