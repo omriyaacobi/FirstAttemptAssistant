@@ -21,7 +21,7 @@ const { ask, askChain, askAgyWithImage, timeoutFor } = require("./providers");
 const { createWarmAgy } = require("./warmagy");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
-const { getLowPools, refreshQuota, prioritize } = require("./quota");
+const { getLowPools, refreshQuota, noteFailure, prioritize, describeLow } = require("./quota");
 const { getReminders, formatWhen } = require("./reminders");
 const { aboutBlock, personalize, pickFacts, bestMatches, explicitRemember, createMemory } = require("./profile");
 const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
@@ -49,7 +49,7 @@ function askOneWarm(provider, model, question, onText) {
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
 // refreshQuota updates that flag in the background AFTER each answer, for the next message.
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, prewarmAnswer, askOne: askOneWarm,
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, noteFailure, prewarmAnswer, askOne: askOneWarm,
   // The answer model started alongside the front desk (null = off). It uses the pre-warmed pool, so it is killed with its signal.
   speculate: SPECULATE_ANSWER ? (question, { signal, onText }) => answerPool.askText(question, SPECULATIVE_MODEL.model, onText, { signal, timeoutMs: timeoutFor(SPECULATIVE_MODEL.model) }) : null, readCalendar: readCalendarEvents,
   searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
@@ -146,14 +146,19 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
 
   // Moves models from a low pool to the end of the chain and says so in the log.
   // `low` must already be loaded (await getLow() first).
+  // What quota did to this task's routes, for the log and for the page (result.quota).
+  const quotaNotes = [];
   const quotaChain = (chain, low) => {
-    const { chain: reordered, moved } = prioritize(chain, low);
-    if (moved.length) {
-      const why = low.map((p) => `${p.pool} ${p.remaining}% left`).join(", ");
-      log(`[quota] low: ${why}. Moved to the end: ${moved.map(label).join(", ")}`);
-    }
+    const { chain: reordered, moved, allLow } = prioritize(chain, low);
+    const note = (text) => { quotaNotes.push(text); log(`[quota] ${text}`); };
+    if (moved.length) note(`low: ${describeLow(low)}. Moved to the end: ${moved.map(label).join(", ")}, so ${label(reordered[0])} goes first`);
+    else if (allLow) note(`every model in this chain is low (${describeLow(low)}). Using the best available, the one with the most room: ${label(reordered[0])}`);
     return reordered;
   };
+  const quotaField = (low = []) => (quotaNotes.length ? { quota: { low, notes: [...new Set(quotaNotes)] } } : {});
+  // A model failed. If the error says a limit was hit, quota.js marks its pool low until the reset time in the message,
+  // even when the usage lookup cannot see that pool. Never throws.
+  const noteLimit = (m) => { try { d.noteFailure({ provider: m.provider, model: m.model }, m.message); } catch (error) { /* quota can never break a task */ } };
 
   // One line with the real cost of this message, e.g.
   // "[timing] quota 0 s, front desk 8.4 s, gemini-4-argon-low 41.2 s (failed), sonnet 6 s, total 56.1 s"
@@ -168,20 +173,21 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
 
   // One job: run a chain with fallbacks and return the answer.
   async function runSingle(info) {
-    if (info.rule !== "forced") info = { ...info, chain: quotaChain(info.chain, await getLow()) };
+    const low = await getLow();
+    if (info.rule !== "forced") info = { ...info, chain: quotaChain(info.chain, low) };
     log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
     const { answer, used, attempts } = await d.askChain(info.chain, personalize(info.chain, prompt, about), {
       askOne: d.askOne,
       onTry: (m) => log(`[router] trying ${label(m)}`),
-      onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
+      onFail: (m) => { log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`); noteLimit(m); },
       onText: onPartial, // lets the page show the answer while it is written (agy only)
     });
     timing.attempts = attempts || [];
     const last = timing.attempts[timing.attempts.length - 1];
     log(`[router] answered by ${label(used)}${last ? ` in ${last.seconds} s` : ""}`);
     log(timingLine());
-    return { mode: "single", rule: info.rule, reason: info.reason, chain: info.chain, used, answer, seconds: seconds(), timing };
+    return { mode: "single", rule: info.rule, reason: info.reason, chain: info.chain, used, answer, seconds: seconds(), timing, ...quotaField(low) };
   }
 
   // The front desk replied itself (an answer, a question for you, or a pointer to "Improve Bot").
@@ -302,7 +308,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
       const { answer, used } = await d.askChain(chain, recallPrompt(task, found), {
         askOne: d.askOne,
         onTry: (m) => log(`[router] trying ${label(m)}`),
-        onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
+        onFail: (m) => { log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`); noteLimit(m); },
         onText: onPartial,
       });
       log(`[router] answered by ${label(used)}`);
@@ -317,7 +323,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
-      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne }), // web steps get no profile
+      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne, onFail: noteLimit }), // web steps get no profile
       chainFor: (type) => quotaChain(d.chainForType(type), low),
       onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
       onDone: ({ subtask, result }) =>
@@ -326,24 +332,25 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     log("[planner] all steps finished");
     timing.attempts = steps.flatMap((s) => (s.attempts || []).map((a) => ({ ...a, step: s.id }))); // steps run in parallel, so these do not add up to the total
     log(timingLine());
-    return { mode: "split", plannedBy, steps, seconds: seconds(), timing };
+    return { mode: "split", plannedBy, steps, seconds: seconds(), timing, ...quotaField(low) };
   }
 
   const fallback = (reason) => runSingle({ chain: DEFAULT_CHAIN, rule: "fallback", reason });
 
   // A photo: ask Gemini directly, with the photo in a private empty folder (see providers.js).
   if (image) {
-    const chain = quotaChain(PHOTO_CHAIN, await getLow());
+    const low = await getLow();
+    const chain = quotaChain(PHOTO_CHAIN, low);
     log("[router] photo: a photo is attached, so only Gemini (through agy) can look at it");
     log(`[router] plan: ${chainText(chain)}`);
     const question = `${personalize(chain, prompt, about)}\n\n${photoNote("photo" + path.extname(image.path))}`;
     const { answer, used } = await d.askChain(chain, question, {
       askOne: (provider, model, q) => d.askImage(model, q, image.path),
       onTry: (m) => log(`[router] trying ${label(m)}`),
-      onFail: (m) => log(`[router] ${label(m)} failed: ${m.message}`),
+      onFail: (m) => { log(`[router] ${label(m)} failed: ${m.message}`); noteLimit(m); },
     });
     log(`[router] answered by ${label(used)}`);
-    return { mode: "single", rule: "photo", reason: "a photo is attached", chain, used, answer, seconds: seconds() };
+    return { mode: "single", rule: "photo", reason: "a photo is attached", chain, used, answer, seconds: seconds(), ...quotaField(low) };
   }
 
   // Forced: skip the front desk completely.
@@ -381,7 +388,8 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   // The front desk chose gemini-flash: use the answer that is already being written, if it is for the same model the chain starts with.
   // Returns the result, or null when the normal path has to run (the plan changed, or the speculative call failed).
   async function adoptSpeculative(info) {
-    const chain = quotaChain(info.chain, await getLow());
+    const low = await getLow();
+    const chain = quotaChain(info.chain, low);
     const first = chain[0];
     if (!first || first.provider !== SPECULATIVE_MODEL.provider || first.model !== SPECULATIVE_MODEL.model) return null;
     log(`[router] ${info.rule}: ${info.reason}`);
@@ -396,13 +404,14 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     } catch (error) {
       if (onPartial) onPartial("");
       log(`[router] ${label(first)} failed after ${secondsSince(spec.startedAt)} s: ${String(error.message).trim().slice(0, 200)}`);
+      noteLimit({ provider: first.provider, model: first.model, message: String(error.message) });
       return null;
     }
     const took = secondsSince(spec.startedAt);
     timing.attempts = [{ provider: first.provider, model: first.model, seconds: took, ok: true, speculative: true }];
     log(`[router] answered by ${label(first)} in ${took} s`);
     log(timingLine());
-    return { mode: "single", rule: info.rule, reason: info.reason, chain, used: first, answer, seconds: seconds(), timing };
+    return { mode: "single", rule: info.rule, reason: info.reason, chain, used: first, answer, seconds: seconds(), timing, ...quotaField(low) };
   }
 
   // 1. Ask the front desk.

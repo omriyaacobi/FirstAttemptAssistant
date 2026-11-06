@@ -245,3 +245,9 @@ test("a course answer shows when it is not only from the files, and web sources 
   assert.match(html, /"sub web-sources", "Web: " \+ result\.web\.sources\.join/);
   assert.match(html, /result\.web\.failed/);
 });
+
+test("the page shows the quota note under an answer when quota changed the route", () => {
+  assert.match(html, /function quotaNote\(parent, result\)/);
+  assert.match(html, /quotaNote\(card, result\)/);
+  assert.match(html, /quotaNote\(wrap, result\)/);
+});

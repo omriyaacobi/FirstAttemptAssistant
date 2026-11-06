@@ -438,3 +438,73 @@ test("SECURITY: web prompts allow only search_web and treat pages as untrusted",
   assert.match(webPrompt("deep", "x"), /at least five/);
   assert.doesNotMatch(webPrompt("quick", "x"), /at least five/);
 });
+
+// ---- Claude plan quota (fake usage data; no real models) ----
+const { chainForDestination: realChain, MODELS: REAL } = require("./router");
+const claudeLow = async () => [{ pool: "Claude plan", remaining: 4 }];
+const keepChain = (log) => async (c) => { log.push(c); return { answer: "ok", used: c[0] }; };
+
+test("quota: a CODE question goes to the next good model when the Claude plan is low, and the log and the result say why", async () => {
+  const seen = [], logs = [];
+  const deps = fakes({ lowPools: claudeLow, chainForDestination: realChain, askChain: keepChain(seen) });
+  const result = await handleTask("fix my code", { deps, log: (l) => logs.push(l) }); // the fake front desk picks claude-sonnet
+  assert.deepStrictEqual(seen[0].map((m) => m.model), ["gemini-4-argon-medium", "claude-sonnet-5-5-medium", "sonnet"]); // Gemini first, Claude last
+  assert.ok(logs.some((l) => /^\[quota\] low: Claude plan 4% left\. Moved to the end: claude\/sonnet, so agy\/gemini-4-argon-medium goes first/.test(l)));
+  assert.strictEqual(result.used.model, "gemini-4-argon-medium");
+  assert.deepStrictEqual(result.quota.low, [{ pool: "Claude plan", remaining: 4 }]);
+  assert.match(result.quota.notes[0], /Moved to the end: claude\/sonnet/);
+});
+
+test("quota: when nothing is low there is no quota note on the result", async () => {
+  const result = await handleTask("x", { deps: fakes({ chainForDestination: realChain }) });
+  assert.strictEqual(result.quota, undefined);
+});
+
+test("quota: when EVERY model is low the best available still answers, and Bot says so", async () => {
+  const seen = [], logs = [];
+  const everything = async () => [{ pool: "Claude plan", remaining: 2 }, { pool: "Gemini 4 Argon", remaining: 9 }, { pool: "Claude and GPT models", remaining: 1 }];
+  const deps = fakes({ lowPools: everything, chainForDestination: realChain, askChain: keepChain(seen) });
+  const result = await handleTask("fix my code", { deps, log: (l) => logs.push(l) });
+  assert.strictEqual(seen[0][0].model, "gemini-4-argon-medium"); // most room left
+  assert.ok(logs.some((l) => /^\[quota\] every model in this chain is low .* Using the best available, the one with the most room: agy\/gemini-4-argon-medium/.test(l)));
+  assert.strictEqual(result.answer, "ok"); // it still answered
+  assert.match(result.quota.notes[0], /every model in this chain is low/);
+});
+
+test("quota: a limit error from a model is passed to quota.js with the model that failed", async () => {
+  const noted = [];
+  const deps = fakes({
+    chainForDestination: () => [REAL.claudeSonnet, REAL.argonMedium],
+    noteFailure: (m, message) => noted.push([m, message]),
+    askChain: async (c, q, opts) => { opts.onFail({ ...c[0], message: "You've hit your limit", seconds: 1 }); return { answer: "ok", used: c[1] }; },
+  });
+  await handleTask("x", { deps });
+  assert.deepStrictEqual(noted, [[{ provider: "claude", model: "sonnet" }, "You've hit your limit"]]);
+});
+
+test("quota: noteFailure throwing never breaks the task", async () => {
+  const deps = fakes({
+    noteFailure: () => { throw new Error("boom"); },
+    askChain: async (c, q, opts) => { opts.onFail({ ...c[0], message: "quota", seconds: 1 }); return { answer: "ok", used: c[0] }; },
+  });
+  assert.strictEqual((await handleTask("x", { deps })).answer, "ok");
+});
+
+test("quota: a forced model stays forced even when its pool is low (and no quota note is made)", async () => {
+  const seen = [];
+  const deps = fakes({ lowPools: claudeLow, askChain: keepChain(seen) });
+  const result = await handleTask("x", { forced: "claude:sonnet,agy:gemini-4-argon-medium", deps });
+  assert.deepStrictEqual(seen[0].map((m) => m.model), ["sonnet", "gemini-4-argon-medium"]);
+  assert.strictEqual(result.quota, undefined);
+});
+
+test("quota: the front desk is not slowed: a never-ending usage lookup does not delay it (it only reads the in-memory flag)", async () => {
+  let deskCalledAt = null;
+  const started = Date.now();
+  const deps = fakes({
+    refreshQuota: () => new Promise(() => {}), // a lookup that never finishes
+    decide: async () => { deskCalledAt = Date.now() - started; return { action: "answer", destination: null, answer: "hi", reason: "t" }; },
+  });
+  await handleTask("hi", { deps });
+  assert.ok(deskCalledAt < 200, `the front desk waited ${deskCalledAt} ms`);
+});

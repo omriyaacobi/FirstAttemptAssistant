@@ -846,6 +846,7 @@
       if (result.web && result.web.failed) card.appendChild(el("div", "sub err", "The web check failed, so this is from general knowledge."));
       if (result.searched !== undefined) card.appendChild(el("div", "sub", `Searched ${result.searched} pages of this course only`));
       (result.reading || []).forEach((r) => card.appendChild(el("div", "sub", `Still reading ${r.file}: this answer used the ${r.pages} of ${r.total} pages read so far.`)));
+      quotaNote(card, result);
       wrap.appendChild(card);
     } else if (result.mode === "split") {
       result.steps.forEach((s) => {
@@ -854,8 +855,15 @@
         wrap.appendChild(botCard(head, s.error ? el("div", "err", "Failed: " + s.error) : renderText(s.answer)));
       });
       wrap.appendChild(el("p", "sub", `Finished in ${result.seconds}s, planned by ${result.plannedBy}.`));
+      quotaNote(wrap, result);
     }
     return wrap;
+  }
+
+  // When quota changed the route (a pool was low, so Bot used another model), say so under the answer.
+  function quotaNote(parent, result) {
+    if (!result.quota || !Array.isArray(result.quota.notes) || !result.quota.notes.length) return;
+    parent.appendChild(el("p", "sub", "Quota: " + result.quota.notes.join(" | ")));
   }
 
   // fact + no id = add; fact + id = change that saved fact; no fact + id = forget it. Nothing happens until a tap.

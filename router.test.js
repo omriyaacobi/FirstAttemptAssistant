@@ -40,10 +40,24 @@ test("chainForType maps planner types to chains and falls back to the default", 
   assert.strictEqual(chainForType("nonsense"), DEFAULT_CHAIN);
 });
 
-test("every model says which quota pool it draws from (null for the Claude CLI)", () => {
+test("every model says which quota pool(s) it draws from; the Claude CLI models draw from the Claude plan", () => {
+  const { poolsOf, CLAUDE_PLAN } = require("./router");
   for (const [name, m] of Object.entries(MODELS)) {
-    assert.ok(m.pool === null || typeof m.pool === "string", `${name} has no pool field`);
-    assert.strictEqual(m.pool === null, m.provider === "claude", `${name}: only the claude CLI has no pool`);
+    assert.ok(poolsOf(m).length > 0, `${name} has no pool`);
+    assert.strictEqual(poolsOf(m).includes(CLAUDE_PLAN), m.provider === "claude", `${name}: only the claude CLI draws from the Claude plan`);
+  }
+});
+
+test("poolsForModel finds a model's pools by provider and name; unknown models have none", () => {
+  const { poolsForModel, CLAUDE_PLAN, CLAUDE_OPUS_WEEK } = require("./router");
+  assert.deepStrictEqual(poolsForModel("claude", "opus"), [CLAUDE_PLAN, CLAUDE_OPUS_WEEK]);
+  assert.deepStrictEqual(poolsForModel("agy", "gemini-4-argon-low"), ["Gemini 4 Argon"]);
+  assert.deepStrictEqual(poolsForModel("agy", "nothing"), []);
+});
+
+test("every destination ends with a Claude model (a Claude pool or Claude inside agy), so there is always a last resort", () => {
+  for (const [name, chain] of Object.entries(DESTINATIONS)) {
+    assert.match(chain[chain.length - 1].model, /claude|sonnet|opus/, name);
   }
 });
 

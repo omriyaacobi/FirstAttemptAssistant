@@ -229,3 +229,34 @@ test("the compact schema only requires action and reason, and a reply without th
   assert.strictEqual(validateDecision({ action: "delegate", destination: "web-search", reason: "weather" }).destination, "web-search");
   assert.strictEqual(validateDecision({ action: "forget", replaces: "3", reason: "r" }).replaces, "3");
 });
+
+test("quota: when the Claude plan is low, the prompt warns about the Claude destinations (including Opus' own pool)", () => {
+  const { quotaLine } = require("./frontdesk");
+  const line = quotaLine([{ pool: "Claude plan", remaining: 3 }]);
+  assert.match(line, /Claude plan \(3% left\)/);
+  assert.match(line, /claude-sonnet/);
+  assert.match(line, /claude-opus/);
+  assert.doesNotMatch(line, /gemini-flash/);
+  const opusOnly = quotaLine([{ pool: "Claude plan (Opus)", remaining: 3 }]);
+  assert.match(opusOnly, /claude-opus/);
+  assert.doesNotMatch(opusOnly, /claude-sonnet/);
+});
+
+test("quota: with Gemini failing and the Claude plan low, the Haiku backup desk is NOT used (it would spend the plan)", async () => {
+  const logs = [];
+  let haikuCalled = false;
+  const geminiDown = async () => { throw new Error("agy is down"); };
+  await assert.rejects(
+    decide("x", { askStructured: geminiDown, askBackup: async () => { haikuCalled = true; return {}; }, brief: "B", low: [{ pool: "Claude plan", remaining: 3 }], log: (l) => logs.push(l) }),
+    /skipped because the Claude plan is low/
+  );
+  assert.strictEqual(haikuCalled, false);
+  assert.match(logs[0], /Haiku backup desk is not used/);
+});
+
+test("quota: a low Gemini pool alone does not stop the Haiku backup desk", async () => {
+  const geminiDown = async () => { throw new Error("agy is down"); };
+  const haiku = async () => ({ action: "answer", answer: "hello", reason: "r" });
+  const d = await decide("x", { askStructured: geminiDown, askBackup: haiku, brief: "B", low: [{ pool: "Gemini Models", remaining: 3 }] });
+  assert.strictEqual(d.via, "haiku");
+});
