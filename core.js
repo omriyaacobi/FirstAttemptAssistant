@@ -104,6 +104,9 @@ function resultText(result) {
 
 // Only Gemini (through agy) can look at a photo here, so a message with a photo skips the front desk.
 const PHOTO_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
+// A timetable photo with "add to my calendar" is a JSON task with possibly several changes. Measured (experiments/2026-11-06-photo-calendar-timing.md):
+// Flash MEDIUM thought for 135 s and answered nothing (414 s in the real chat), Flash LOW needed 12 s and Argon low 24 s, so low goes first.
+const PHOTO_CALENDAR_CHAIN = [MODELS.flashLow, MODELS.argonLow, MODELS.flashMedium];
 const photoNote = (name) =>
   `The user attached a photo. It is the file "${name}" in your current folder. Open and look at that one file to answer; do not read or change anything else. ` +
   "If the photo shows a schedule or events, list each one clearly (date, start and end time, title). You cannot add anything to a calendar yourself; if the user asks for that, Bot handles it with a card.";
@@ -363,12 +366,12 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   // A photo: ask Gemini directly, with the photo in a private empty folder (see providers.js).
   if (image) {
     const low = await getLow();
-    const chain = quotaChain(PHOTO_CHAIN, low);
+    const addToCalendar = wantsCalendarAdd(task);
+    const chain = quotaChain(addToCalendar ? PHOTO_CALENDAR_CHAIN : PHOTO_CHAIN, low);
     log("[router] photo: a photo is attached, so only Gemini (through agy) can look at it");
     log(`[router] plan: ${chainText(chain)}`);
     // When the user's own words ask to add the photo to the calendar, the model must answer with strict JSON only; code checks it
     // below and builds a Confirm card. Any other photo message works as before.
-    const addToCalendar = wantsCalendarAdd(task);
     const fileName = "photo" + path.extname(image.path);
     const question = `${personalize(chain, prompt, about)}\n\n${addToCalendar ? photoCalendarNote(fileName) : photoNote(fileName)}`;
     const { answer, used } = await d.askChain(chain, question, {

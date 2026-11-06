@@ -271,16 +271,21 @@ function removeStaleWorkDirs({ dir = os.tmpdir(), maxAgeMs = 60 * 60 * 1000, now
 // Gemini looking at a photo. agy is an agent that reads files in its working folder, so the photo is
 // copied into a brand-new EMPTY folder that holds only that one file, agy runs there, and the folder
 // is deleted afterwards. The agent therefore has nothing else of yours to see.
-async function askAgyWithImage(model, question, imagePath) {
+// A photo question may not run forever (a real one took 414 s on Flash and Argon never got a turn). The limit comes from real timings
+// (experiments/2026-11-06-photo-calendar-timing.md): a good answer needs 12-35 s, Flash medium stuck for 135 s. So 90 s for Flash, 150 s for Argon;
+// after that the process tree is killed and askChain tries the next model.
+const imageTimeoutFor = (model) => Math.min(timeoutFor(model), /argon/.test(model) ? 150 * 1000 : 90 * 1000);
+async function askAgyWithImage(model, question, imagePath, { timeoutMs = imageTimeoutFor(model) } = {}) {
   checkModelName(model);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
   try {
     fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
     return await new Promise((resolve, reject) => {
-      execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 1e7 }, (error, stdout, stderr) => {
         if (error) return reject(new Error(stderr || error.message));
         resolve(stdout.trim());
       });
+      withTimeout(child, timeoutMs, reject, model);
     });
   } finally {
     cleanWorkDir(dir);
@@ -423,5 +428,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
