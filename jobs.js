@@ -44,7 +44,7 @@ function describeProgress(lines) {
     if ((m = line.match(/^\[frontdesk\] asking (.+)$/))) text = "The front desk is reading your message and deciding what to do";
     else if (/^\[frontdesk\] failed/.test(line)) text = "The front desk failed, so Claude Sonnet takes over";
     else if ((m = line.match(/^\[frontdesk\] decision: (\w+)/))) {
-      text = { answer: "The front desk is answering", clarify: "The front desk has a question for you", delegate: "Choosing the right model", split: "Splitting your message into steps", remind: "Setting your reminder", improve: "Preparing a pointer to Improve Bot" }[m[1]] || "The front desk decided";
+      text = { answer: "The front desk is answering", clarify: "The front desk has a question for you", delegate: "Choosing the right model", split: "Splitting your message into steps", remind: "Setting your reminder", improve: "Preparing a pointer to Improve Bot", remember: "Noting that down", forget: "Looking for that fact", calendar: "Reading your calendar", recall: "Looking through your earlier chats" }[m[1]] || "The front desk decided";
     } else if ((m = line.match(/^\[router\] trying (.+)$/))) text = `Asking ${short(m[1])}`;
     else if ((m = line.match(/^\[router\] (\S+) failed/))) text = `${short(m[1])} did not answer, trying the next model`;
     else if ((m = line.match(/^\[router\] answered by /))) text = "Got the answer";

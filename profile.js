@@ -248,6 +248,6 @@ function personalize(chain, prompt, about) {
 }
 
 module.exports = {
-  pickFacts, bestMatches, explicitRemember, checkFact, loadProfile, createMemory, aboutBlock, personalize, isWebChain,
+  pickFacts, bestMatches, withTopics, explicitRemember, checkFact, loadProfile, createMemory, aboutBlock, personalize, isWebChain,
   PROFILE_FILE, MEMORY_FILE, MAX_PROFILE_CHARS, MAX_MEMORY_PROMPT_CHARS, MAX_FACT_CHARS, MAX_FACTS,
 };

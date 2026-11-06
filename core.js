@@ -9,7 +9,9 @@
 //        answer   -> it replies itself            clarify -> it asks you a question
 //        delegate -> one model from the menu      split   -> the planner splits it into steps
 //        remind   -> the time is checked and saved (reminders.js)
-//        remember -> a fact is PROPOSED; the page asks you to Save it (profile.js, never saved by itself)
+//        remember -> a fact is PROPOSED; the page asks you to Save it (profile.js). Saved at once only when your own
+//                    short message says "remember that ..." (explicitRemember), and then the page offers Undo
+//        recall   -> code searches your earlier chats (recall.js), or lists what Bot knows about you
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
 
@@ -22,6 +24,8 @@ const { getLowPools, refreshQuota, prioritize } = require("./quota");
 const { getReminders, formatWhen } = require("./reminders");
 const { aboutBlock, personalize, pickFacts, bestMatches, explicitRemember, createMemory } = require("./profile");
 const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
+const { createStore } = require("./store");
+const { findInChats, listFound, recallPrompt } = require("./recall");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
@@ -30,6 +34,7 @@ const chainText = (chain) => chain.map(label).join("  ->  ");
 // lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
 // refreshQuota updates that flag in the background AFTER each answer, for the next message.
 const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, readCalendar: readCalendarEvents,
+  searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -248,6 +253,43 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     return { mode: "single", rule: "calendar (read-only)", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
   }
 
+  // "What do you know about me?" is answered by code from the saved facts. A question about an earlier chat: code searches
+  // the chats, and a cheap model answers from what was found, with no web and no tools; if it fails, the excerpts themselves
+  // are the reply. Either way the reply lists the chats, so the page can open them.
+  async function recall(decision) {
+    const reply = (answer, extra = {}) => {
+      log(timingLine());
+      return { mode: "single", rule: "recall", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing, ...extra };
+    };
+    if (!decision.query) {
+      if (!allFacts.length) return reply("You have no saved facts yet. Tell me to remember something, like \"remember that I prefer short answers\". Your profile file data/profile.md is separate.");
+      const lines = [...allFacts].sort((a, b) => b.at - a.at).map((f) => "- " + f.text);
+      return reply(`I have ${lines.length} saved ${lines.length === 1 ? "fact" : "facts"} about you (you can change or forget them in the sidebar, or just tell me):\n${lines.join("\n")}`);
+    }
+    let found = [];
+    try {
+      found = d.searchChats(decision.query);
+    } catch (error) {
+      log(`[recall] could not search: ${error.message}`);
+    }
+    log(`[recall] found ${found.length} place(s)`);
+    if (!found.length) return reply("I could not find that in your earlier chats. (Chats inside a course and calendar replies are not searched.)");
+    const chats = [...new Map(found.map((f) => [f.conversationId, { id: f.conversationId, title: f.title }])).values()];
+    const chain = quotaChain(d.chainForDestination("gemini-flash"), await getLow());
+    try {
+      const { answer, used } = await d.askChain(chain, recallPrompt(task, found), {
+        onTry: (m) => log(`[router] trying ${label(m)}`),
+        onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
+        onText: onPartial,
+      });
+      log(`[router] answered by ${label(used)}`);
+      return reply(answer, { chain, used, chats });
+    } catch (error) {
+      log(`[recall] no model answered: ${error.message}`);
+      return reply(listFound(found), { chats });
+    }
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
@@ -322,6 +364,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   if (decision.action === "remind") return setReminder(decision);
   if (decision.action === "remember" || decision.action === "forget") return proposeFact(decision);
   if (decision.action === "calendar") return readCalendar(decision);
+  if (decision.action === "recall") return recall(decision);
 
   if (decision.action === "delegate") {
     return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });
