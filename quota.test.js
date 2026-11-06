@@ -4,7 +4,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { parseUsage, parseClaudeStream, rowFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota, LOW_THRESHOLD } = require("./quota");
+const { parseUsage, parseClaudeStream, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota, LOW_THRESHOLD } = require("./quota");
 
 const row = (pool, remaining, window = "Five Hour Limit Remaining") => ({ pool, window, remaining, resets: "x" });
 const A = { provider: "agy", model: "a", pool: "Pool A" };
@@ -99,9 +99,16 @@ test("createQuota: no new lookup starts while one is running", async () => {
 const NOW = Date.UTC(2026, 10, 6, 12, 0, 0);
 const inHours = (h) => Math.floor((NOW + h * 3600000) / 1000); // resetsAt is in SECONDS
 const event = (info) => JSON.stringify({ type: "rate_limit_event", rate_limit_info: info, uuid: "u", session_id: "s" });
+// A REAL rate_limit_info (ids removed, copied from a real Haiku call; the numbers are made up): the numbers live in
+// unifiedWindows, there is NO top-level utilization, and there is no seven_day_opus window.
+const REAL_INFO = {
+  status: "allowed", resetsAt: inHours(1), rateLimitType: "five_hour", overageStatus: "rejected", overageDisabledReason: "org_level_disabled", isUsingOverage: false,
+  unifiedWindows: { five_hour: { utilization: 0.33, resetsAt: inHours(1), status: "allowed" }, seven_day: { utilization: 0.57, resetsAt: inHours(40), status: "allowed" } },
+};
+const win = (utilization, hours, status = "allowed") => ({ utilization, resetsAt: inHours(hours), status });
 const HIT = "You've hit your limit · resets 3pm (Asia/Jerusalem)";
 
-test("rowFromRateLimitInfo: utilization is the share USED (0..1), so 0.93 used means 7% left", () => {
+test("rowFromRateLimitInfo (the top-level fallback shape): utilization is the share USED (0..1), so 0.93 used means 7% left", () => {
   const r = rowFromRateLimitInfo({ status: "allowed_warning", rateLimitType: "five_hour", utilization: 0.93, resetsAt: inHours(2) }, NOW);
   assert.deepStrictEqual(r, { pool: "Claude plan", window: "Five Hour Limit Remaining", remaining: 7, resets: new Date(NOW + 2 * 3600000).toISOString(), source: "claude" });
 });
@@ -129,12 +136,11 @@ test("parseClaudeStream: reads rate_limit_event lines, skips junk, and returns a
   const text = [
     "not json", "{broken",
     JSON.stringify({ type: "system", subtype: "init" }),
-    event({ status: "allowed", rateLimitType: "five_hour", utilization: 0.4, resetsAt: inHours(3) }),
+    event(REAL_INFO),
     JSON.stringify({ type: "result", is_error: true, result: HIT }),
   ].join("\n");
   const out = parseClaudeStream(text, NOW);
-  assert.strictEqual(out.rows.length, 1);
-  assert.strictEqual(out.rows[0].remaining, 60);
+  assert.deepStrictEqual(out.rows.map((r) => [r.window, r.remaining]), [["Five Hour Limit Remaining", 67], ["Weekly Limit Remaining", 43]]);
   assert.match(out.errorText, /hit your limit/);
   assert.deepStrictEqual(parseClaudeStream("", NOW), { rows: [], errorText: "" });
 });
@@ -189,7 +195,7 @@ test("describeLow writes the pools and what is left", () => {
 
 // ---- createQuota with Claude ----
 const claudeStream = (info) => async () => parseClaudeStream(event(info), NOW);
-const nearlyFull = { status: "allowed_warning", rateLimitType: "five_hour", utilization: 0.95, resetsAt: inHours(2) };
+const nearlyFull = { status: "allowed_warning", rateLimitType: "five_hour", resetsAt: inHours(2), unifiedWindows: { five_hour: win(0.95, 2, "allowed_warning"), seven_day: win(0.3, 50) } };
 
 test("createQuota: the Claude probe makes 'Claude plan' low, for the next message", async () => {
   const q = createQuota({ fetchRows: async () => [], fetchClaude: claudeStream(nearlyFull), now: () => NOW });
@@ -252,7 +258,7 @@ test("createQuota: a probe that hit the limit marks the plan used up until the r
 
 test("createQuota: an old low reading disappears after its reset time", async () => {
   let time = NOW;
-  const q = createQuota({ fetchRows: async () => [], fetchClaude: claudeStream({ ...nearlyFull, resetsAt: inHours(1) }), now: () => time });
+  const q = createQuota({ fetchRows: async () => [], fetchClaude: claudeStream({ ...nearlyFull, unifiedWindows: { five_hour: win(0.95, 1, "allowed_warning") } }), now: () => time });
   await q.refresh();
   assert.strictEqual((await q.get()).length, 1);
   time = NOW + 2 * 3600000;
@@ -280,5 +286,72 @@ test("createQuota.noteFailure: other errors are ignored; an Opus-only limit mark
 test("createQuota.noteFailure: a model Bot does not know has no pool, so nothing is marked", async () => {
   const q = createQuota({ fetchRows: async () => [], fetchClaude: noClaude, now: () => NOW });
   assert.strictEqual(q.noteFailure({ provider: "agy", model: "mystery" }, "quota exceeded"), false);
+  assert.deepStrictEqual(await q.get(), []);
+});
+
+// ---- the REAL event shape ----
+test("rowsFromRateLimitInfo: the real event gives one row per window in unifiedWindows (there is no top-level utilization)", () => {
+  const rows = rowsFromRateLimitInfo(REAL_INFO, NOW);
+  assert.deepStrictEqual(rows.map((r) => [r.pool, r.window, r.remaining]), [
+    ["Claude plan", "Five Hour Limit Remaining", 67],
+    ["Claude plan", "Weekly Limit Remaining", 43],
+  ]);
+  assert.strictEqual(rows[0].resets, new Date((NOW / 1000 + 3600) * 1000).toISOString());
+});
+
+test("rowsFromRateLimitInfo: a missing seven_day_opus window makes no row, and nothing is low for Opus", () => {
+  const rows = rowsFromRateLimitInfo(REAL_INFO, NOW);
+  assert.ok(!rows.some((r) => r.pool === "Claude plan (Opus)"));
+  assert.deepStrictEqual(lowPools(rows, LOW_THRESHOLD, NOW), []);
+});
+
+test("rowsFromRateLimitInfo: an Opus window, when present, is its own pool; unknown windows (overage) are ignored", () => {
+  const rows = rowsFromRateLimitInfo({ ...REAL_INFO, unifiedWindows: { ...REAL_INFO.unifiedWindows, seven_day_opus: win(0.97, 30, "allowed_warning"), seven_day_overage_included: win(0.99, 30) } }, NOW);
+  assert.deepStrictEqual(lowPools(rows, LOW_THRESHOLD, NOW), [{ pool: "Claude plan (Opus)", remaining: 3 }]);
+  assert.strictEqual(rows.length, 3);
+});
+
+test("rowsFromRateLimitInfo: a window that is nearly full makes the plan low, from the real shape", () => {
+  const rows = rowsFromRateLimitInfo({ ...REAL_INFO, status: "allowed_warning", unifiedWindows: { five_hour: win(0.33, 1), seven_day: win(0.93, 40, "allowed_warning") } }, NOW);
+  assert.deepStrictEqual(lowPools(rows, LOW_THRESHOLD, NOW), [{ pool: "Claude plan", remaining: 7 }]);
+});
+
+test("rowsFromRateLimitInfo: a top-level 'rejected' always counts, even if the windows look fine", () => {
+  const rows = rowsFromRateLimitInfo({ ...REAL_INFO, status: "rejected" }, NOW);
+  assert.deepStrictEqual(lowPools(rows, LOW_THRESHOLD, NOW), [{ pool: "Claude plan", remaining: 0 }]);
+});
+
+test("rowsFromRateLimitInfo: the old top-level shape still works as a fallback; junk gives no rows", () => {
+  const rows = rowsFromRateLimitInfo({ status: "allowed_warning", rateLimitType: "five_hour", utilization: 0.9, resetsAt: inHours(1) }, NOW);
+  assert.deepStrictEqual(rows.map((r) => r.remaining), [10]);
+  assert.deepStrictEqual(rowsFromRateLimitInfo(null, NOW), []);
+  assert.deepStrictEqual(rowsFromRateLimitInfo({ unifiedWindows: { five_hour: "nope", seven_day: null } }, NOW), []);
+  assert.deepStrictEqual(rowsFromRateLimitInfo({ status: "allowed", rateLimitType: "five_hour", unifiedWindows: { five_hour: { utilization: "lots" } } }, NOW).map((r) => r.remaining), [100]);
+});
+
+// ---- real answers show the numbers for free, so the extra probe is rare ----
+test("createQuota.noteClaudeInfo: numbers from a REAL answer are used and no probe is needed for the next 10 minutes", async () => {
+  let probes = 0, time = NOW;
+  const q = createQuota({ fetchRows: async () => [], fetchClaude: async () => { probes++; return { rows: [], errorText: "" }; }, now: () => time });
+  q.noteClaudeInfo(nearlyFull);
+  assert.deepStrictEqual(await q.get(), [{ pool: "Claude plan", remaining: 5 }]); // visible at once, for the very next message
+  time += 9 * 60000; await q.refresh();
+  assert.strictEqual(probes, 0);
+  time += 61000; await q.refresh();
+  assert.strictEqual(probes, 1); // 10 minutes without any real answer: one probe
+});
+
+test("createQuota: the probe is at most once in 10 minutes by default", async () => {
+  let probes = 0, time = NOW;
+  const q = createQuota({ fetchRows: async () => [], fetchClaude: async () => { probes++; return { rows: [], errorText: "" }; }, now: () => time });
+  await q.refresh(); time += 5 * 60000; await q.refresh(); time += 4 * 60000; await q.refresh();
+  assert.strictEqual(probes, 1);
+  time += 60000; await q.refresh();
+  assert.strictEqual(probes, 2);
+});
+
+test("createQuota.noteClaudeInfo: junk is ignored and never throws", async () => {
+  const q = createQuota({ fetchRows: async () => [], fetchClaude: noClaude, now: () => NOW });
+  q.noteClaudeInfo(null); q.noteClaudeInfo("x"); q.noteClaudeInfo({ unifiedWindows: 5 });
   assert.deepStrictEqual(await q.get(), []);
 });
