@@ -140,8 +140,9 @@ async function makeQuestions({ askChain, courseName, topic, material, wanted, n 
   return { questions: out, model: got.model };
 }
 
-const CLAIM = /^(?:i\s+)?(?:do\s+)?(?:know(?:\s+it)?|understand(?:\s+it)?|understood|got\s+it|yes|yeah|yep|ok(?:ay)?|sure|fine|easy|obviously|הבנתי|ברור|כן|יודע|אני\s+יודע|אני\s+מבין|מבין)(?:\s+(?:this|that|it|already|well|everything))?\W*$/iu;
-const isClaim = (text) => { const t = String(text).trim(); return t.length < 2 || CLAIM.test(t); };
+// A short message made ONLY of claim words ("I understand it all", "yes", "ברור") is not an attempt. Anything with a number, a symbol or any other word is.
+const CLAIM_WORDS = new Set("i do know understand understood got it yes yeah yep ok okay sure fine easy obviously all this that already well everything am me thanks thank you great cool הבנתי ברור כן יודע אני מבין הכל את זה בסדר אוקיי סבבה".split(" "));
+const isClaim = (text) => { const t = String(text).trim(); const words = t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []; return t.length < 2 || (words.length <= 6 && words.every((w) => CLAIM_WORDS.has(w))); };
 const SHOW = /\b(?:show\s+(?:me\s+)?the\s+answer|give\s+(?:me\s+)?the\s+answer|reveal|i\s+give\s+up|just\s+tell\s+me)\b|תראה\s+(?:לי\s+)?(?:את\s+)?(?:ה)?תשובה|תן\s+(?:לי\s+)?(?:את\s+)?(?:ה)?תשובה|אני\s+מוותר/i;
 const HINT = /\b(?:hint|stuck|clue|help\s+me\s+start)\b|רמז|תקוע|לא\s+מצליח/i;
 
@@ -279,7 +280,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   const topic = (lec && lec.topic) || "";
   if (!(lec && lec.material.length) && !topic) return finish({ answer: `I have nothing about the lecture of ${plan.niceDate(pick.slot.date)} yet. What was it about, or can you send the slides? With only a topic I can still teach it from general knowledge, and I will say so.`, needs: "material", target: { type: "lecture", date: pick.slot.date } });
   const mat = materialFor(pages, lec ? lec.material : []);
-  const label = topic || `the lecture of ${plan.niceDate(pick.slot.date)}`;
+  const label = topic || `lecture ${pick.slot.n}`;
   try {
     if (intent === "teach") {
       const t = await teachText({ askChain, courseName, topic: label, material: mat, message, log });
