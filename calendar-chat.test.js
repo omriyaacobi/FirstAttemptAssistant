@@ -9,7 +9,7 @@ const { handleTask } = require("./core");
 
 const used = { provider: "agy", model: "fake" };
 const fakeDesk = (extra) => async () => ({ action: "calendar", destination: null, answer: "", reason: "test", calendar: { from: "2026-11-06", days: 1 }, ...extra });
-const baseDeps = (over = {}) => ({ decide: fakeDesk(), lowPools: async () => [], refreshQuota: () => {}, askChain: async () => { throw new Error("no model may run"); }, ...over });
+const baseDeps = (over = {}) => ({ decide: fakeDesk(), lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null, askChain: async () => { throw new Error("no model may run"); }, ...over });
 
 test("checkRequest accepts real days and 1-14 days, rejects the rest", () => {
   assert.deepStrictEqual(checkRequest({ from: "2026-11-06", days: "7" }), { from: "2026-11-06", days: 7 });

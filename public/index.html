@@ -917,6 +917,7 @@
     loadQuota();
   }
 
+  const FAST_POLL_WINDOW_MS = 40000;
   async function pollJobs() {
     if (jobState.polling) return;
     jobState.polling = true;
@@ -939,8 +940,11 @@
     } catch (error) { /* offline for a moment: the next poll will catch up */ } finally {
       jobState.polling = false;
       clearTimeout(jobState.timer);
-      // Often while something runs (fast while a model is writing, so the streamed text moves), rarely when idle, not at all while the page is hidden (it catches up when shown again).
-      jobState.timer = document.hidden ? null : setTimeout(pollJobs, [...jobState.active.values()].some((j) => j.partial || /^Asking /.test(j.step)) ? 600 : jobState.active.size ? 2000 : 10000);
+      // Often while something runs, rarely when idle, not at all while the page is hidden (it catches up when shown again).
+      // FAST (0.6 s) while a model is writing, and during the first 40 s of every task: the front desk answers greetings, reminders
+      // and calendar questions in about 3 s, and polling every 2 s made those show up about 1 s late on average.
+      const fast = (j) => j.partial || /^Asking /.test(j.step) || Date.now() + jobState.offset - j.startedAt < FAST_POLL_WINDOW_MS;
+      jobState.timer = document.hidden ? null : setTimeout(pollJobs, [...jobState.active.values()].some(fast) ? 600 : jobState.active.size ? 2000 : 10000);
     }
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });
