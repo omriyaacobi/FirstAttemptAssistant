@@ -60,7 +60,7 @@ const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
-const { createCourses } = require("./courses");
+const { createCourses, validId: validCourseId } = require("./courses");
 const { createCourseRoutes } = require("./course-routes");
 const { askCourse } = require("./study");
 const { ingestFile } = require("./ingest");
@@ -179,6 +179,7 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   const jobs = createJobs({
     handle,
+    handleCourse: courseRoutes ? (task, opts) => courseRoutes.answer(opts.courseId, task, opts) : null, // chats inside a course
     store,
     maxRunning: MAX_RUNNING,
     onFinish: ({ job, title, watched }) => {
@@ -361,7 +362,8 @@ function createServer({
     const conversationRoute = url.pathname.match(/^\/api\/conversations\/([^/]+)$/);
     if (conversationRoute && req.method === "GET") {
       const conversation = store.get(conversationRoute[1]);
-      return conversation ? sendJson(res, 200, conversation) : sendJson(res, 404, { error: "conversation not found" });
+      // A course chat also carries its course name, for the title bar.
+      return conversation ? sendJson(res, 200, conversation.courseId && courseRoutes ? { ...conversation, courseName: courseRoutes.name(conversation.courseId) } : conversation) : sendJson(res, 404, { error: "conversation not found" });
     }
     if (conversationRoute && req.method === "DELETE") {
       return store.remove(conversationRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "conversation not found" });
@@ -472,10 +474,20 @@ function createServer({
         }
       }
 
+      // A new chat inside a course: the course must exist (an id from the page is never trusted).
+      let courseId = null;
+      if (input.courseId !== undefined && input.conversationId == null) {
+        if (typeof input.courseId !== "string" || !validCourseId(input.courseId) || !courseRoutes || !courseRoutes.exists(input.courseId)) {
+          if (image) fs.rmSync(image.path, { force: true });
+          return sendJson(res, 404, { error: "course not found" });
+        }
+        courseId = input.courseId;
+      }
+
       try {
         // Also checks the conversation id, that this chat has no job running already (409),
         // and the cap on simultaneous tasks (429).
-        const job = jobs.start({ task, noPlan: input.noPlan === true, conversationId: input.conversationId, image });
+        const job = jobs.start({ task, noPlan: input.noPlan === true, conversationId: input.conversationId, image, courseId, deeper: input.deeper === true });
         return sendJson(res, 202, { job });
       } catch (error) {
         if (image) fs.rmSync(image.path, { force: true }); // the job never started, so nothing else will delete the photo
@@ -507,13 +519,15 @@ module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNI
 if (require.main === module) {
   const push = createPush({ dir: path.join(__dirname, "data"), log: console.log });
   const auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) });
+  const store = createStore(path.join(__dirname, "data", "conversations")); // the course chats live here too
   const courseRoutes = createCourseRoutes({
+    store,
     courses: createCourses(path.join(__dirname, "data", "courses")),
     askCourse, ingestFile, askChain, askFile: askAgyWithFile,
     about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
     log: console.log,
   });
-  const server = createServer({ push, auth, courseRoutes });
+  const server = createServer({ push, auth, courseRoutes, store });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;

@@ -132,6 +132,87 @@ test("Add material is on every course screen, and one picker outside the redrawn
   assert.match(html, /<button id="quotaBtn"/); // Quota is in the sidebar, which is the phone's menu too
   assert.match(html, /id="attach"[^>]*aria-label="Attach a photo"/); // the camera button stays in the chat
 });
+
+// ---- course chats: the typing bug and the chat screen ----
+
+// A tiny fake page, just enough to run public/study.js and count how often it rebuilds the screen.
+function fakeStudyPage({ course }) {
+  const vm = require("node:vm");
+  const counts = { redraws: 0 };
+  const timers = [];
+  const make = (tag) => ({
+    tag, tagName: tag.toUpperCase(), children: [], className: "", textContent: "", style: {}, hidden: false, listeners: {},
+    appendChild(c) { this.children.push(c); return c; },
+    append(...cs) { cs.forEach((c) => this.children.push(c)); },
+    prepend(c) { this.children.unshift(c); },
+    replaceChildren() { if (this === body) counts.redraws++; this.children = []; },
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    setAttribute() {}, click() {}, remove() {},
+    contains(n) { return n === this || this.children.some((c) => c.contains && c.contains(n)); },
+  });
+  const byId = { studyView: make("section"), studyBody: make("div"), studyTitle: make("h1"), studyStatus: make("span"), studyBtn: make("button"), menu3: make("button") };
+  const body = byId.studyBody;
+  const document = { activeElement: null, createTextNode: (t) => ({ text: t }) };
+  const state = { course: JSON.parse(JSON.stringify(course)) };
+  const sandbox = {
+    document, window: {}, console, JSON, Promise, Map, Set, Error, RegExp, Math, String, Number, Array, Object,
+    $: (id) => byId[id], el: (tag, cls, text) => { const e = make(tag); e.className = cls || ""; if (text !== undefined) e.textContent = text; return e; },
+    renderText: (t) => ({ text: t }), navGo() {}, showView() {}, openSide() {}, newChat() {}, openChat() {}, chatMarker: () => null,
+    currentId: null, courseNames: new Map(), jobState: { active: new Map() }, confirm: () => true, prompt: () => null,
+    XMLHttpRequest: function () {},
+    setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1] = null; },
+    fetch: async (url) => ({ ok: true, status: 200, json: async () => (url.endsWith("/api/courses") ? { courses: [] } : { course: state.course, chats: [] }) }),
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "public", "study.js"), "utf8"), sandbox);
+  const firePoll = async () => { const t = timers.filter(Boolean).pop(); timers.length = 0; if (t) await t(); await new Promise((r) => setImmediate(r)); return !!t; };
+  return { sandbox, body, document, counts, state, firePoll, pending: () => timers.filter(Boolean).length, make };
+}
+
+test("the course screen is never redrawn while you type, or when nothing changed (the old box lost its cursor every poll)", async () => {
+  const reading = { id: "0123456789abcdef", name: "Calc", files: [{ id: "fedcba9876543210", name: "a.pdf", status: "reading", pages: 0, progress: "page 3" }] };
+  const page = fakeStudyPage({ course: reading });
+  page.sandbox.window.studyShow(reading.id);
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(page.counts.redraws, 1);
+  assert.strictEqual(page.pending(), 1, "a file is being read, so the screen keeps checking");
+
+  assert.ok(await page.firePoll());
+  assert.strictEqual(page.counts.redraws, 1, "nothing changed: the screen must not be rebuilt");
+
+  const box = page.make("input"); // you are typing in a box on this screen while the file finishes
+  page.body.appendChild(box);
+  page.document.activeElement = box;
+  page.state.course.files[0].status = "ready";
+  await page.firePoll();
+  assert.strictEqual(page.counts.redraws, 1, "something changed, but you are typing: the box must keep its cursor");
+
+  page.document.activeElement = null; // you stopped typing: now the news is drawn
+  page.state.course.files[0].pages = 7;
+  assert.strictEqual(page.pending(), 1);
+  await page.firePoll();
+  assert.strictEqual(page.counts.redraws, 2);
+  assert.strictEqual(page.pending(), 0, "nothing is being read any more, so the checking stops");
+});
+
+test("a course chat is the regular chat screen: same box, same messages, plus a way back to the course", () => {
+  assert.ok(!/<textarea/.test(study) && !study.includes('"studyQ"'), "the course screen has no question box of its own any more");
+  assert.match(html, /id="courseBar"[^>]*hidden/); // only shown inside a course chat
+  assert.match(html, /\.coursebar\[hidden\] \{ display: none; \}/);
+  assert.ok(html.includes("courseId: currentCourse.id")); // a new chat in a course says which course
+  assert.ok(html.includes("if (c.courseId) return;")); // course chats are listed in their course, not in the sidebar
+  assert.match(html, /result\.mode === "course"/); // the answer shows the file and page chips
+  assert.match(html, /studyOpenSource\(result\.courseId, s\.fileId, s\.page\)/);
+  assert.match(study, /id = "newCourseChat"|start\.id = "newCourseChat"/);
+  assert.match(study, /Delete the chat/);
+  // model and file text only ever through textContent
+  assert.doesNotMatch(study, /\.innerHTML\s*=|insertAdjacentHTML|document\.write\(/);
+});
+
+test("the phone's Back button works inside a course: a course opened or left is a history step", () => {
+  assert.ok(html.includes('showView("study", s.course)')); // Back to a study entry reopens that course
+  assert.ok(html.includes("sameCourse(target.course, here.course)"));
+  assert.match(study, /navGo\(\{ view: "study", id: currentId, course: id \}\)/);
+});
 
 test("the page polls fast (0.6 s) during the first 40 s of a task, so a front desk reply is not shown up to 2 s late", () => {
   assert.match(html, /FAST_POLL_WINDOW_MS\s*=\s*40000/);
