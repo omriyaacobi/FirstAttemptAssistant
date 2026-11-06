@@ -15,6 +15,7 @@
 const crypto = require("node:crypto");
 const { MODELS, chainForDestination } = require("./router");
 const { createIndex, search } = require("./search");
+const { needsTranslation } = require("./crosslang");
 
 const TOP_PAGES = 12;
 const MAX_MATERIAL_CHARS = 30000; // all pages together, for a normal search
@@ -141,7 +142,9 @@ function fit(pages, maxChars) {
 
 // What to send for this message, and why (for the log). A follow-up like "another question" names no lecture, so the user's
 // last messages count too: the lecture stays the same until they name another one.
-function choosePages(pages, question, history = []) {
+// extraWords (optional): search words in the other language (crosslang.js). They are used ONLY by the search branch below, so a named
+// lecture and "the whole course" are decided exactly as before.
+function choosePages(pages, question, history = [], extraWords = "") {
   const lastAsked = [...history].reverse().filter((m) => m.role === "user").slice(0, 3).map((m) => String(m.text));
   const index = lectureIndex(pages);
   const findable = (wanted) => index.filter((l) => wanted.includes(l.lecture));
@@ -157,7 +160,7 @@ function choosePages(pages, question, history = []) {
     const chosen = found.flatMap((l) => l.pages).filter((p) => { const key = `${p.fileId}:${p.page}`; if (seen.has(key)) return false; seen.add(key); return true; });
     return { picked: fit(chosen, MAX_FOCUSED_CHARS), why: `lecture ${found.map((l) => l.lecture).join(", ")}`, index };
   }
-  return { picked: pickPages(pages, [question, lastAsked[0]].filter(Boolean).join(" ")), why: "search", index };
+  return { picked: pickPages(pages, [question, lastAsked[0], extraWords].filter(Boolean).join(" ")), why: extraWords ? "search + translated words" : "search", index };
 }
 
 // web (optional): { text, sources } from a web lookup, or { failed: true }. Always fenced and defanged: a web page can contain anything.
@@ -261,11 +264,21 @@ function labelOutside(answer, question) {
 //   web: null, or { sources, seconds } when a web lookup was used, or { failed: true }. Web sources are never mixed into `sources`.
 // onText always goes to askChain: it sends the prompt through agy's input stream, because a command line on Windows holds only
 // about 32,000 characters and a whole lecture is more than that.
-async function askCourse({ course, pages, question, history = [], deeper = false, about = "", askChain, log = () => {}, onText = () => {} }) {
+// expand (optional): async (text) => { words, seconds, why } from crosslang.expandQuery, which never throws. It is called only when the
+// question is a plain search (no named lecture, not the whole course) and in the other language than the notes. Its words go
+// to the page search only: never into the prompt and never into safeWebQuery.
+async function askCourse({ course, pages, question, history = [], deeper = false, about = "", askChain, expand = null, log = () => {}, onText = () => {} }) {
   const readyFiles = course.files.filter((f) => hasPages(f) && f.use !== false); // unticked files are left out; a file still being read counts with the pages it has
   const emptyNote = course.files.some(hasPages) ? "(none: the user switched every file off)"
     : course.files.some((f) => f.status === "reading" || f.status === "queued") ? "(none usable yet: Bot is still reading the first pages of the files, so say that if it matters)" : "(none ready yet)";
-  const { picked, why, index } = readyFiles.length ? choosePages(pages, question, history) : { picked: [], why: "no material", index: [] };
+  let chosen = readyFiles.length ? choosePages(pages, question, history) : { picked: [], why: "no material", index: [] };
+  if (expand && chosen.why === "search" && needsTranslation(question, pages)) {
+    const lastUser = [...history].reverse().find((m) => m.role === "user");
+    const r = await expand([question, lastUser && lastUser.text].filter(Boolean).join(" | "));
+    log(r.words ? `[course] search words in the other language (${r.seconds} s): ${r.words}` : `[course] no translated search words (${r.why || "none"}, ${r.seconds} s): plain search`);
+    if (r.words) chosen = choosePages(pages, question, history, r.words);
+  }
+  const { picked, why, index } = chosen;
   log(`[course] ${course.name}: ${picked.length} of ${pages.length} pages sent (${why})`);
   const t0 = Date.now();
   let web = null;
