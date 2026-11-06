@@ -130,7 +130,7 @@
 - **Next UI branch, one chat, after or alongside the merge:** quota as a popup behind a sidebar button; Improve Bot as a real chat, with live progress, follow-up messages on the same copy, a Preview button, and simple Approve/Reject, with the PIN on the phone. Needs selfedit.js and server.js, so Claude Code builds it, not Improve Bot.
 - **Organizer:** plan approved in principle, `experiments/2026-11-05-organizer-plan.md`. Not started. Step 1 needs a photo of the timetable.
 - **Study notebooks:** step 1 merged and pushed, not tried with real files yet. First uploads: Hebrew slides PDF, a large scanned exam, a 100+ page PDF. Steps 2-4 wait for that.
-- **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
+- **Small:** page shows raw ** instead of bold; (Google Calendar login 7-day expiry: fixed 2026-11-06, app is In production); 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
 - **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
 
 - Answer speed (2026-11-06, branch `claude/frontdesk-speed-01ec9f`, NOT pushed or merged). 406 tests pass (3 full runs). Report: `experiments/2026-11-06-answer-speed.md`.
@@ -312,7 +312,7 @@
 - **Next UI branch, one chat, after or alongside the merge:** quota as a popup behind a sidebar button; Improve Bot as a real chat, with live progress, follow-up messages on the same copy, a Preview button, and simple Approve/Reject, with the PIN on the phone. Needs selfedit.js and server.js, so Claude Code builds it, not Improve Bot.
 - **Organizer:** plan approved in principle, `experiments/2026-11-05-organizer-plan.md`. Not started. Step 1 needs a photo of the timetable.
 - **Study notebooks:** step 1 merged and pushed, not tried with real files yet. First uploads: Hebrew slides PDF, a large scanned exam, a 100+ page PDF. Steps 2-4 wait for that.
-- **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
+- **Small:** page shows raw ** instead of bold; (Google Calendar login 7-day expiry: fixed 2026-11-06, app is In production); 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
 - **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
 
 ## Next
@@ -427,7 +427,13 @@ Why: Omri sent a timetable photo and asked for it weekly until the end of Januar
 - **Safety wall** (`calendar-add.js`): models only propose; code checks every field, turns a weekday into the real first date (today only if the class has not started), refuses the past, bad times, more than 30 events, an end date missing for a weekly repeat. Extra fields in the model's JSON (recurrence, attendees, ...) are dropped; text is cleaned. The RRULE is built by `weeklyRule` in `calendar.js` from a checked date.
 - **Confirm card**: drawn by the page from the checked fields (one card for a whole timetable). Only the Confirm tap (`POST /api/calendar/confirm`) creates events. Works once, expires after 15 minutes, in memory only (a Bot restart drops waiting cards: ask again). A double tap cannot duplicate. If an event fails, Bot stops, says which were added and which not, and never retries. Login expired before anything was written: plain-words message, `node calendar.js login`, and the card is kept so you can tap again.
 - **Phone**: same login as other chat actions, no PIN (it only adds, shows everything first, is single-use). Card buttons are 44 px tall on narrow screens.
-- **Not verified**: no real event was created and the real Google API was never called with a recurrence (tests use fakes). The first real try should be a single harmless event, then check in Google Calendar that the weekly series ends on 2027-01-31 and that the photo model really returns clean JSON for your timetable. Google login in Testing mode ends 7 days after 2026-11-05.
+- **Not verified**: no real event was created and the real Google API was never called with a recurrence (tests use fakes). The first real try should be a single harmless event, then check in Google Calendar that the weekly series ends on 2027-01-31 and that the photo model really returns clean JSON for your timetable. (Google login: no longer ends after 7 days, see "Google app published" below.)
 - Not done: no way to delete or change events (on purpose); a card cannot be edited, cancel and ask again.
 
 - Several events from TEXT (2026-11-06 evening, on main): after the single event worked live, "add me the schedule" in a text-only message was refused. Fix: the `addEvent` action has a field `eventsJson` for a whole schedule written in the message or listed earlier in the chat; it goes through the same code checks as a photo (`checkPhotoEvents`) into ONE card. Needs a Bot restart. Not tried live yet. A photo is still the surest way, because the photo itself is not re-sent in a later message.
+
+## Google app published (2026-11-06, branch `claude/google-publish-95cc7f`)
+- Omri moved Bot's Google OAuth app from Testing to **In production** in the Google console (Branding page filled with the GitHub repo as home page and `PRIVACY.md` as privacy policy; no verification, no logo). Added `PRIVACY.md` and a section in `calendar-setup.md`.
+- Re-ran `node calendar.js login` in the main folder (clicked past "Google hasn't verified this app"). Verified: refresh token present (not printed), scope `calendar.events`, a real read returned 41 events in the next 30 days (count only; nothing created).
+- Remember: **merge and push this branch** so the privacy link works. The old 2026-11-12 expiry no longer applies. If the login ever says `invalid_grant`: you revoked access, ~6 months passed without use, or the Google password changed; run `node calendar.js login` again.
+- Not checked: whether the token really survives past 7 days (only time will tell; look after 2026-11-13). `calendar.js` comments still mention the 7-day Testing limit; left as is (code untouched).
