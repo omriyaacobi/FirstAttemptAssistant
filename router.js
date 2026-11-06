@@ -14,8 +14,10 @@
 //   "claude" = Claude Code CLI (Claude plan), "agy" = Antigravity CLI (Google AI Pro plan),
 //   "web" and "research" = agy with its search_web tool, for a quick look-up or for real research.
 // "pool" is the quota bucket the model draws from, spelled exactly as `agy -p "/usage"` names it
-// (quota.js compares these). null = no numbers available (the Claude CLI plan), so it is never
-// treated as low.
+// (quota.js compares these). A model can draw from SEVERAL pools (an array): Claude Opus has its own weekly limit
+// on top of the Claude plan's two limits. The Claude CLI is not in `agy /usage`; its numbers come from quota.js
+// (the "rate_limit_event" messages that `claude --output-format stream-json` prints, or a limit error when a call fails).
+const CLAUDE_PLAN = "Claude plan", CLAUDE_OPUS_WEEK = "Claude plan (Opus)";
 const GEMINI = "Gemini Models", ARGON = "Gemini 4 Argon", CLAUDE_AGY = "Claude and GPT models"; // the pool names
 const MODELS = {
   flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
@@ -23,8 +25,9 @@ const MODELS = {
   flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the planner
   argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" },
   argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: "Gemini 4 Argon" },
-  claudeSonnet: { provider: "claude", model: "sonnet", pool: null },
-  claudeOpus: { provider: "claude", model: "opus", pool: null },
+  claudeSonnet: { provider: "claude", model: "sonnet", pool: CLAUDE_PLAN },
+  claudeOpus: { provider: "claude", model: "opus", pool: [CLAUDE_PLAN, CLAUDE_OPUS_WEEK] },
+  claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the backup front desk (frontdesk.js)
   claudeInAgy: { provider: "agy", model: "claude-sonnet-5-5-medium", pool: "Claude and GPT models" }, // smallest quota: last resort only
   webFlash: { provider: "web", model: "gemini-3.8-flash-medium", pool: GEMINI },
   webFlashHigh: { provider: "web", model: "gemini-3.8-flash-high", pool: GEMINI },
@@ -39,7 +42,7 @@ const MODELS = {
 const DESTINATIONS = {
   "gemini-flash": [MODELS.flashMedium, MODELS.argonLow, MODELS.claudeSonnet],
   "gemini-argon-low": [MODELS.argonLow, MODELS.flashMedium, MODELS.claudeSonnet],
-  "gemini-argon-medium": [MODELS.argonMedium, MODELS.claudeOpus, MODELS.claudeInAgy],
+  "gemini-argon-medium": [MODELS.argonMedium, MODELS.claudeOpus, MODELS.claudeInAgy, MODELS.claudeSonnet], // Claude (the plan) is the last resort
   "claude-sonnet": [MODELS.claudeSonnet, MODELS.argonMedium, MODELS.claudeInAgy],
   "claude-opus": [MODELS.claudeOpus, MODELS.argonMedium, MODELS.claudeSonnet],
   // Only models that can search: a model without the web would just guess.
@@ -61,6 +64,15 @@ const TYPE_TO_DESTINATION = {
   research: "web-research",
 };
 
+// The pools a model draws from, as a list (a model may have one pool, several, or none).
+const poolsOf = (m) => [].concat((m && m.pool) || []);
+
+// Which pools a model (as named in a log or an error) draws from; [] when it is not one of ours.
+function poolsForModel(provider, model) {
+  const known = Object.values(MODELS).find((m) => m.provider === provider && m.model === model);
+  return poolsOf(known);
+}
+
 function chainForDestination(name) {
   return Object.hasOwn(DESTINATIONS, name) ? DESTINATIONS[name] : null;
 }
@@ -69,4 +81,4 @@ function chainForType(type) {
   return chainForDestination(TYPE_TO_DESTINATION[type]) || DEFAULT_CHAIN;
 }
 
-module.exports = { MODELS, DESTINATIONS, DEFAULT_CHAIN, chainForDestination, chainForType };
+module.exports = { CLAUDE_PLAN, CLAUDE_OPUS_WEEK, poolsOf, poolsForModel, MODELS, DESTINATIONS, DEFAULT_CHAIN, chainForDestination, chainForType };
