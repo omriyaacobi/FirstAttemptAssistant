@@ -50,6 +50,8 @@ Read this with care. The old way's 0 is built into the test, which makes the nee
 | Failed | 0 | 0 |
 | Profile and facts block | 4602 chars | about 3330 chars |
 
+After merging main's faster answers (which changed `warmagy.js`), a shorter run of 30 calls gave median 3.46 s, 9 in 10 under 7.3 s, slowest 11.1 s, 0 failed. This calls the front desk alone, so it does not include the speculative answer that now runs beside it.
+
 Not slower, and that is all this shows. The tail is random per call, so 60 calls cannot prove a speed-up, and the slowest call got worse. It also measures a FULL memory. With today's empty memory the prompt grows slightly (the `recall` line and one key). Picking the facts takes about 1.2 ms for 100 facts.
 
 **Front desk decisions.** Real Gemini desk, 19 messages twice, English and Hebrew: 38 of 38 right, including the 6 new `recall` questions and "my bike is red" correctly changing a saved fact.
