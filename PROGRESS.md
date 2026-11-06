@@ -465,3 +465,29 @@ Why: `data/` (chats, course files, memory, Google login) exists only on this PC 
 - Re-ran `node calendar.js login` in the main folder (clicked past "Google hasn't verified this app"). Verified: refresh token present (not printed), scope `calendar.events`, a real read returned 41 events in the next 30 days (count only; nothing created).
 - Merged and pushed, so the privacy link works. The old 2026-11-12 expiry no longer applies. If the login ever says `invalid_grant`: you revoked access, ~6 months passed without use, or the Google password changed; run `node calendar.js login` again.
 - Not checked: whether the token really survives past 7 days (only time will tell; look after 2026-11-13). `calendar.js` comments still mention the 7-day Testing limit; left as is (code untouched).
+
+## Study coach (night of 2026-11-07, branch `claude/night-study-coach-4018fc`, NOT connected yet)
+
+Why: you want to keep up with the semester, and to be taught or pushed without a Courses tab. Everything below is new files; with nothing connected, Bot behaves exactly as before (the whole old suite still passes). Decisions made while you slept: `experiments/2026-11-07-night-decisions-study.md`.
+
+**Plain English, the parts**
+- `study-plan.js`: the weekly timetable and the maths. "Where you should be" = lectures whose end time has passed since 18 Oct, minus dates you cancelled. Bot cannot know about cancelled classes or holidays, so you tell it in chat ("no Systems Programming lecture this week"); the lecture numbers after it move up. No holidays are built in (none fall in this semester).
+- `study-tracker.js` (data in `data/study/`, git-ignored): per course, where you said you are, which lecture has material (by DATE, because numbers can shift), assignments, topic boxes, and the running tutor session. Only code writes it.
+- `tutor.js`: teach / quiz / get-me-started. Argon only (never Flash low, never Claude). One question at a time, hints in 3 steps, the answer only after 3 real attempts or on request. A model grades, but code accepts only a valid verdict and the tracker only counts it.
+- `study-nudges.js`: one code-written line in the morning brief.
+- `study-coach.js`: the one door (below).
+
+**"Understood" is only set by code**: at least 3 different questions in one check, 70% or more (a revealed answer = wrong; after 2 hints a right answer counts as partly). Teaching, chatting, "I understand" or being asked about a topic never counts. "Taught" is stored separately and is not progress.
+
+**Dynamic by design**: no fixed syllabus. A lecture slot can have no material; Bot then asks ONCE per slot (never in quiet hours 22:00 to 08:00, never during a class), or you send slides: with a date it proposes that slot, without one it proposes the most recent past slot with no material, and nothing is attached until you confirm. Calculus 2 (all lectures uploaded) is lined up with the classes by number, marked as an assumption. An assignment (message or file text) becomes a confirm proposal: title, due date, the knowledge it needs; the model proposes, code checks the date. "Get me started" asks about each needed piece, finds the gaps, then only gives hints; it never writes the solution (prompt rule, 900-character cap, one step at a time).
+
+**Interfaces for the other chats** (all in `study-coach.js`; `createStudyCoach({ dir: "data/study", courses, askChain, now, log })`):
+- `coach.studyLine()` returns a short string for the front desk prompt (`Study (from the tracker, today ...): Calculus 2: 6 lectures held, 0 checked as understood, 5 behind, ...`) or `""`. Never throws. Add it as one line of context before the desk call.
+- `await coach.answerStudy({ studyIntent, text, courseId?, courseName? })` returns `{ mode: "study", answer, sources, outside, model, seconds, study?, proposal? }`. `studyIntent` is one of `teach, start, quiz, answer, progress, plan, update, assignment, motivate, pause, resume, confirm, cancel` (an unknown value is treated as `progress`, which only shows numbers). `answer` = the student's reply to an open question (also use it for any message while a quiz is open); `update` = cancellations, "my last lecture was Thursday"; `confirm`/`cancel` = "yes"/"no" to the latest card. With no course named and none implied, it asks which.
+- `await coach.onUpload({ courseId, files: [{ fileId, fileName, pages }], text?, dateText? })` returns `{ answer, proposal? }`. `proposal` is `{ id, kind: "assignment"|"material", course, expiresAt, ... }` for the page to draw as a Confirm card; `coach.confirmProposal(id)` / `coach.cancelProposal(id)` act on it (single use, expires after 12 h, in memory only).
+- `coach.morningBlock()` for `createMorning({ ..., study: coach })` (hook already added in `morning.js`; it needs only `.morningBlock()`).
+- Hooks NOT done (other chats own those files): `frontdesk.js` / `router-brief.md` / its Haiku twin need the `studyIntent` field and a bullet; `jobs.js` / `server.js` must call `answerStudy` for the `course`-with-study case, `onUpload` after a course file is read, create the coach once (`path.join(DATA_DIR, "study")`), and give `courses`/`askChain`.
+
+**Tests**: `study-tracker.test.js`, `tutor.test.js`, `study-nudges.test.js`, `study-coach.test.js` (fake models, temp folders). Whole suite: 731 pass.
+
+**Not done / limits**: nothing is connected, so none of it has run against the real Argon or the real courses. The page has no cards yet. The timetable is a default in code (copied to `data/study/timetable.json`); Google Calendar is not read for it. Proposals vanish if Bot restarts. The model could still write a hint that is too generous: only the leak check (a hint containing the reference answer is replaced) and the length cap guard that. Grading quality was only tested with fakes: try it on 5 real questions first.
