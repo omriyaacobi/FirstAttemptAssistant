@@ -35,13 +35,14 @@ test("the limits come from the measured timings: 90 s for Flash, 150 s for Argon
 const timetableJson = JSON.stringify({ events: [{ title: "Calculus", weekday: "Sunday", start: "10:00", end: "11:30" }], repeat: "weekly", until: "2027-01-31", skipped: [] });
 const deps = (over) => ({ lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null, addCalendarCard: (p) => ({ id: "a".repeat(32), events: p.events, skipped: [], unclear: [] }), ...over });
 
-test("a calendar photo asks Flash LOW first (Flash medium thought for 135 s in the real test); when it times out Argon takes over", async () => {
+test("a calendar photo asks ARGON low first (accuracy first; Flash medium thought for 135 s in the real test); when it times out Flash medium takes over", async () => {
   const tried = [];
   const result = await handleTask("תוסיף את זה לקלנדר כל שבוע עד סוף ינואר", {
     image: { path: "p.png", ext: ".png" },
     deps: deps({ askImage: async (model) => { tried.push(model); if (tried.length === 1) throw new Error(model + " timed out after 90 s"); return timetableJson; } }),
   });
-  assert.deepStrictEqual(tried, ["gemini-3.8-flash-low", "gemini-4-argon-low"]);
+  assert.deepStrictEqual(tried, ["gemini-4-argon-low", "gemini-3.8-flash-medium"]);
+  assert.ok(!tried.includes("gemini-3.8-flash-low"), "Flash low stays the front desk only");
   assert.strictEqual(result.calendarAdd.events.length, 1);
 });
 

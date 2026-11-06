@@ -244,14 +244,16 @@ function createCards({ create, now = Date.now, ttlMs = CARD_TTL_MS } = {}) {
     if (now() > c.expiresAt) return "expired: nothing was added";
     return "WAITING for the user's Confirm: nothing is added yet";
   }
-  const note = (add) => cardNote(add, status(add.id));
+  const note = (add, { short = false } = {}) => cardNote(add, status(add.id), short);
 
   return { add, confirm, cancel, status, note, _size: () => cards.size };
 }
 
 // The text the next message sees in the chat history for a card, written by CODE from the checked fields (never model prose), in the
 // same JSON shape the front desk writes for eventsJson, so a correction can copy every unchanged event.
-function cardNote(add, status) {
+// `short`: only the status (for older cards, so the history keeps room for the newest card in full).
+function cardNote(add, status, short = false) {
+  if (short) return `[An older calendar card. Status: ${status}. Its events are not repeated here.]`;
   const repeating = add.events.find((e) => e.repeatUntil);
   const json = {
     events: add.events.map((e) => ({ title: e.summary, ...(repeating ? { weekday: e.weekday } : { date: e.date }), start: e.start, end: e.end, ...(e.location ? { location: e.location } : {}) })),

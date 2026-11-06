@@ -14,6 +14,6 @@ Test (harmless fake timetable, 10 Hebrew rows, rendered with headless Edge; same
 
 Cause: not tools or the image. Flash with more thinking (medium, high) is slow on a task that mixes reading a table with several edits, and medium sometimes ends with no answer at all. Low effort did the harder request in 12 s.
 
-Changes: calendar photos ask Flash low first, then Argon low, then Flash medium (`PHOTO_CALENDAR_CHAIN` in core.js). Every photo call now has a limit, 90 s for Flash and 150 s for Argon (a good answer needs 12-35 s), after which the process tree is killed and the next model is tried (`imageTimeoutFor` in providers.js).
+Changes: calendar photos ask Argon low first, then Flash medium (`PHOTO_CALENDAR_CHAIN` in core.js). Flash low was 12 s in this one run, but it is NOT used: accuracy comes first, Flash low is kept for the front desk only (CLAUDE.md), and Flash has made real reading errors before. One 12 s run is not enough to change that rule, so the numbers above are evidence only. Every photo call now has a limit, 90 s for Flash and 150 s for Argon (a good answer needs 12-35 s), after which the process tree is killed and the next model is tried (`imageTimeoutFor` in providers.js).
 
 Not verified: one run per cell, so the numbers are samples, not averages. The original photo is gone, and a handwritten or photographed (not rendered) timetable may take longer.

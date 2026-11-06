@@ -79,10 +79,11 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, maxRu
   function historyEntry(m) {
     const add = m.result && m.result.calendarAdd;
     if (!cardNote || !add || !Array.isArray(add.events)) return { role: m.role, text: m.text };
-    let note = "";
-    try { note = cardNote(add); } catch (error) { /* the card note is only a help */ }
-    return { role: m.role, text: note ? `${m.text}
-${note}` : m.text, cardId: typeof add.id === "string" ? add.id : undefined };
+    // The note travels in its own fields, NOT inside text: historyBlock (core.js) cuts every text to a few thousand characters, and a note cut
+    // in the middle of its JSON would silently lose the last classes. `note` is the full one, `noteShort` is for older cards.
+    const entry = { role: m.role, text: m.text, cardId: typeof add.id === "string" ? add.id : undefined };
+    try { entry.note = cardNote(add); entry.noteShort = cardNote(add, { short: true }); } catch (error) { /* the card note is only a help */ }
+    return entry;
   }
 
   function prune() {

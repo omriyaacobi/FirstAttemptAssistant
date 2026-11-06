@@ -371,16 +371,17 @@ test("MEMORY: the next message sees the card's checked events and its status, bu
   const second = jobs.start({ task: "תעביר את החמישי", conversationId: chat.id });
   await wait(second);
   const seen = histories[1][1];
-  assert.match(seen.text, /Status: WAITING/);
-  assert.match(seen.text, /תכנות מערכות - שיעור/);
-  assert.match(seen.text, /"weekday":"Thursday","start":"12:00","end":"14:00","location":"בניין 28"/);
-  assert.match(seen.text, /"until":"2027-01-31"/);
+  assert.match(seen.note, /Status: WAITING/);
+  assert.match(seen.note, /תכנות מערכות - שיעור/);
+  assert.match(seen.note, /"weekday":"Thursday","start":"12:00","end":"14:00","location":"בניין 28"/);
+  assert.match(seen.note, /"until":"2027-01-31"/);
+  assert.doesNotMatch(seen.text, /Calendar card/); // the note is a separate field, so the text cut in historyBlock cannot damage it
   assert.strictEqual(seen.cardId, cardId);
   assert.doesNotMatch(store.get(chat.id).messages[1].text, /Calendar card/); // nothing extra is stored or shown as the message
   await cards.confirm(cardId); // after Confirm the next message hears that it was added
   const third = jobs.start({ task: "ok", conversationId: chat.id });
   await wait(third);
-  assert.match(histories[2][1].text, /Status: CONFIRMED: all events were added/);
+  assert.match(histories[2][1].note, /Status: CONFIRMED: all events were added/);
 });
 
 test("status words: cancelled, replaced, expired, partly added, and unknown after a restart", async () => {
@@ -463,6 +464,62 @@ test("the card reads 'Every Sunday ... from 8 Nov until 31 Jan 2027' with a head
   assert.match(html, /", from " \+ fmt\(e\.date\) \+ " until " \+ fmt\(e\.repeatUntil, true\)/);
   assert.match(html, /weekly repeating/);
   assert.match(html, /Bot was not sure about/);
+});
+
+// ---- a long card note must reach the front desk in full ----
+const bigTimetable = () => JSON.stringify({
+  events: Array.from({ length: add.MAX_EVENTS }, (_, i) => ({ title: `קורס מספר ${i + 1} - שיעור מורחב עם שם ארוך מאוד כדי לבדוק חיתוך`, weekday: add.DAYS[i % 7], start: `${String(8 + (i % 10)).padStart(2, "0")}:00`, end: `${String(9 + (i % 10)).padStart(2, "0")}:00`, location: `בניין ${i + 1}, כיתה ${100 + i}` })),
+  repeat: "weekly", until: "2027-01-31", skipped: [],
+});
+
+test("30 EVENTS: the full card note (more than 3000 characters) reaches the front desk prompt, not cut in the middle of the JSON", async () => {
+  const { createJobs } = require("./jobs");
+  const { buildPrompt } = require("./frontdesk");
+  const store = createStore(fs.mkdtempSync(path.join(os.tmpdir(), "caladd-big-")));
+  const { cards } = fakeCards();
+  let history = null, step = 0;
+  const jobs = createJobs({
+    store, cardNote: (card, options) => cards.note(card, options),
+    handle: async (task, opts) => {
+      history = opts.history;
+      if (step++ === 0) return { mode: "single", answer: "Add these to your calendar?", used, calendarAdd: cards.add(add.checkPhotoEvents(bigTimetable(), { now: NOW })) };
+      return { mode: "single", answer: "ok", used };
+    },
+  });
+  const wait = async (job) => { while (jobs.get(job.id).status === "running") await new Promise((r) => setTimeout(r, 5)); };
+  const first = jobs.start({ task: "תוסיף ליומן" });
+  await wait(first);
+  await wait(jobs.start({ task: "תעביר את הראשון", conversationId: first.conversationId }));
+  // what core gives the front desk, and what the front desk puts in its prompt
+  const { historyBlock } = require("./core");
+  const block = historyBlock(history);
+  const prompt = buildPrompt("תעביר את הראשון", { history: block, brief: "B", now: NOW });
+  const note = history[1].note;
+  assert.ok(note.length > 3000, "the note is longer than a single message may be (" + note.length + ")");
+  assert.ok(prompt.includes(note), "the whole note is in the front desk prompt");
+  const json = JSON.parse(note.slice(note.indexOf('{"events"'), note.length - 1)); // the note ends with the JSON and a closing ]
+  assert.strictEqual(json.events.length, add.MAX_EVENTS);
+  assert.strictEqual(json.events[add.MAX_EVENTS - 1].location, `בניין ${add.MAX_EVENTS}, כיתה ${100 + add.MAX_EVENTS - 1}`);
+});
+
+test("history: only the NEWEST card keeps its full note; older cards keep a short status; a note that cannot fit makes the model ask", () => {
+  const { historyBlock } = require("./core");
+  const full = (name) => `[Calendar card. Status: x. events: ${name}]`;
+  const history = [
+    { role: "assistant", text: "card one", note: full("OLD-EVENTS"), noteShort: "[An older calendar card. Status: CONFIRMED.]", cardId: "a" },
+    { role: "user", text: "fix" },
+    { role: "assistant", text: "card two", note: full("NEW-EVENTS"), noteShort: "[short]", cardId: "b" },
+  ];
+  const block = historyBlock(history);
+  assert.ok(block.includes("NEW-EVENTS"));
+  assert.ok(!block.includes("OLD-EVENTS"));
+  assert.ok(block.includes("An older calendar card. Status: CONFIRMED."));
+  const huge = historyBlock([{ role: "assistant", text: "card", note: "[" + "x".repeat(13000) + "]", noteShort: "[s]" }]);
+  assert.match(huge, /too long to repeat/);
+  assert.match(huge, /ask the user which events to change/);
+  assert.ok(!huge.includes("xxxxxxxxxx"));
+  // an ordinary long message is still cut as before
+  assert.ok(historyBlock([{ role: "user", text: "y".repeat(5000) }]).length < 3200);
 });
 
 // ---- the server routes ----

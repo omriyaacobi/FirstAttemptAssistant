@@ -67,12 +67,23 @@ const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemo
 const MAX_HISTORY_CHARS = 12000; // total size of the pasted history
 const MAX_MESSAGE_CHARS = 3000; // a single long message is cut to this
 
+// A calendar card note (see jobs.js) is never cut: the NEWEST card keeps its full note, because a correction must copy every event, and cutting
+// the JSON would silently lose the last classes. Older cards only keep a short status line. If even the full note cannot fit, the model is told
+// to ask the user instead of guessing.
+const CARD_TOO_LONG = "[A calendar card was shown here, but its event list is too long to repeat. For a correction, ask the user which events to change; do not guess.]";
+
 function historyBlock(history = []) {
   const lines = [];
   let total = 0;
+  let newestCard = true;
   for (let i = history.length - 1; i >= 0; i--) { // walk from newest to oldest, so the newest survive
     const message = history[i];
-    const line = `${message.role === "user" ? "User" : "Assistant"}: ${String(message.text).slice(0, MAX_MESSAGE_CHARS)}`;
+    let line = `${message.role === "user" ? "User" : "Assistant"}: ${String(message.text).slice(0, MAX_MESSAGE_CHARS)}`;
+    if (message.note) {
+      const full = "\n" + message.note;
+      line += newestCard ? (total + line.length + full.length <= MAX_HISTORY_CHARS ? full : "\n" + CARD_TOO_LONG) : "\n" + (message.noteShort || "");
+      newestCard = false;
+    }
     if (total + line.length > MAX_HISTORY_CHARS) break;
     lines.unshift(line);
     total += line.length;
@@ -105,8 +116,9 @@ function resultText(result) {
 // Only Gemini (through agy) can look at a photo here, so a message with a photo skips the front desk.
 const PHOTO_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
 // A timetable photo with "add to my calendar" is a JSON task with possibly several changes. Measured (experiments/2026-11-06-photo-calendar-timing.md):
-// Flash MEDIUM thought for 135 s and answered nothing (414 s in the real chat), Flash LOW needed 12 s and Argon low 24 s, so low goes first.
-const PHOTO_CALENDAR_CHAIN = [MODELS.flashLow, MODELS.argonLow, MODELS.flashMedium];
+// Flash MEDIUM thought for 135 s and answered nothing (414 s in the real chat); Argon low needed 24 s. Accuracy comes first (Flash made real reading
+// errors before, and Flash low is kept for the front desk only), so Argon low goes first and Flash medium is the fallback, under the photo time limit.
+const PHOTO_CALENDAR_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
 const photoNote = (name) =>
   `The user attached a photo. It is the file "${name}" in your current folder. Open and look at that one file to answer; do not read or change anything else. ` +
   "If the photo shows a schedule or events, list each one clearly (date, start and end time, title). You cannot add anything to a calendar yourself; if the user asks for that, Bot handles it with a card.";
