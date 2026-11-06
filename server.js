@@ -257,7 +257,7 @@ function createServer({
         phoneAccess: auth.enabled,
         loggedIn: remote ? auth.isLoggedIn(req) : true,
         images: true, // this Bot can receive a photo with a message
-        thread: !!thread, // one conversation (BOT_THREAD=on): the page shows the thread instead of the chat list
+        ...(thread ? { thread: true } : {}), // one conversation (BOT_THREAD=on): the page shows the thread; with it off the answer has no such key, as before
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
         adminPin: remote && auth.adminEnabled && auth.isLoggedIn(req),
         adminUnlocked: remote && auth.isLoggedIn(req) && auth.isUnlocked(req),

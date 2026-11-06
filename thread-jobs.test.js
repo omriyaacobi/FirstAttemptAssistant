@@ -335,7 +335,7 @@ test("SERVER (thread on): /api/ask needs no chat id, /api/thread pages, and a ba
 test("SERVER (thread OFF): the old routes work exactly as before, and the thread routes do not exist", async () => {
   const s = await startServer({ thread: null });
   try {
-    assert.strictEqual((await s.request("GET", "/api/session")).json.thread, false);
+    assert.strictEqual("thread" in (await s.request("GET", "/api/session")).json, false); // the session answer is what it was
     assert.strictEqual((await s.request("GET", "/api/thread")).status, 404);
     assert.strictEqual((await s.request("DELETE", "/api/thread/m_abcdef012345")).status, 404);
     const ask = await s.request("POST", "/api/ask", { body: { task: "old style question" } });
