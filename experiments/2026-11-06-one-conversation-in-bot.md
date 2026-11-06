@@ -13,9 +13,9 @@ What the measurements say:
 | Can today's front desk handle a one-thread world? | **No.** Today's briefing got 30 of 53 test messages right (57%), and **0 of the 22 course messages** (it has no idea courses exist; it sends them to Argon or Sonnet or asks a question). |
 | Can it, with a small change? | **Yes.** Adding one action (`course`), the course list and 4 lines of study state to the briefing: **105 of 106** (99%) on the 53-message set (run twice; the one miss was a 60 s timeout, not a wrong choice), **45 of 52 strict / 50 of 52 lenient** on a second, harder set written afterwards. |
 | Is it slower? | No. Median 3.2 s (one-thread briefing) against 3.4 s (today's), 90% under 5 s. The prompt is about 1.6 KB longer. |
-| How much history can one message carry? | Flash medium answered correctly up to about **150,000 characters** of history, at normal speed. At **200,000 characters it returned an empty answer** every time (9 of 9 calls, both Flash and Argon failed at 250,000). So the limit is a cliff, not a slow slope. |
+| How much history can one message carry? | Flash medium answered correctly up to about **150,000 characters** of history, at normal speed. At **200,000 characters and above it returned an empty answer** every time (all 18 calls, Flash and Argon). So the limit is a cliff, not a slow slope. |
 | How fast does Omri's history grow? | The whole of Omri's real chat history so far is **38,000 characters** over 4 active days; the busiest single day is **24,000**. At that rate one full-history prompt would hit the cliff in a few weeks, and Bot's current 12,000-character window already cuts a busy day. So windowing is needed from day one. |
-| Daily summary: Flash or Argon? | **Argon low** (10 to 13 s on a made-up day, 20 s on the busiest real day), **checked by code**. Flash low is as fast (6 to 9 s) but lost a date in about 1 run in 4; Flash medium is the worst (23 to 77 s, one timeout, lost the date in 3 of 5 runs). **All models invented one thing**: "the user has no car", from a hypothetical sentence. A "strict" rule in the prompt cut that from 7 of 17 runs to 2 of 8, not to zero. So summaries must never write facts straight into memory. |
+| Daily summary: Flash or Argon? | **Argon low** (10 to 13 s on a made-up day, 20 s on the busiest real day), **checked by code**. Flash low is as fast (6 to 9 s) but lost a date in 3 of 10 runs; Flash medium is the worst (23 to 77 s, one timeout, lost the date in 3 of 5 runs). **All models invented one thing**: "the user has no car", from a hypothetical sentence. A "strict" rule in the prompt cut that from 7 of 17 runs to 2 of 8, not to zero. So summaries must never write facts straight into memory. |
 | Slow answers | A fast reply can come while a slow one runs. Measured: front desk 3.7 s alone, 4.6 s with one slow call running, 4.8 s with two. The blocker is not the models; it is `jobs.js`, which refuses a second message in the same chat. |
 | Undo | Easy if the old files are never touched. Old chats and course notebooks stay as they are; the thread lives in its own folder; one switch turns it off. |
 
@@ -52,7 +52,7 @@ Everything below is "a conversation is the unit". I listed the places in the ord
 | Reminders, profile, memory (`reminders.js`, `profile.js`) | Global, not tied to chats | No change. Summary-derived facts go through the existing `remember` proposal card. |
 | Tests | `jobs.test.js`, `store.test.js`, `recall.test.js`, `courses.test.js`, `core.test.js`, `frontdesk.test.js`, `page.test.js`, `phone*.test.js` | About 8 test files change; the briefing drift test gets one more action. |
 
-**Evidence from the real chats that this is what Omri already wants.** In the real history, Omri asked the general chat to "open the course chat" and to "use the Calculus course", and the general chat could not. The same C-pointer question was asked in a course chat and then again in a general chat a minute later. Photos of the timetable were re-sent across three chats because each chat started blind. Only a few chats were long; most are 1 to 3 questions. A thread loses nothing here.
+**Evidence from the real chats that this is what Omri already wants.** In the real history, Omri asked the general chat to "open the course chat" and to "use the Calculus course", and the general chat could not. The same C-pointer question was asked in a course chat and then again in a general chat a minute later. The timetable photo was sent again several times because a new chat started blind. Only a few chats were long; most are 1 to 3 questions. A thread loses nothing here.
 
 ## 4. Routing from one thread (question 2)
 
@@ -80,7 +80,7 @@ Everything below is "a conversation is the unit". I listed the places in the ord
 
 **Set B misses (7 strict, 2 not even lenient):**
 - "plan my week" went to `course` both times (I expected `clarify`). Honestly this one is defensible; a week plan across courses is a study plan.
-- "quiz me" / "תבחן אותי" with no course: once `clarify` instead of picking the course with the most recent study (acceptable, but then Bot asks a question it could have answered from the study state).
+- "quiz me" / "תבחן אותי" with no course: twice `clarify` instead of picking the course with the most recent study (acceptable, but then Bot asks a question it could have answered from the study state).
 - "I am so stressed about the exam" went to the Calculus course twice. That is the **risk**: an emotional message becoming a tutoring session. Fix with one line in the briefing ("feelings: answer, then offer to study").
 - "and how would that look in Rust?" after a pointers answer went to the course once and to Sonnet once. Needs the rule "code in another language: `claude-sonnet`".
 
@@ -145,9 +145,9 @@ Reading it: up to about 150,000 characters the answer is right and the speed bar
 | Argon low, with quotes (3) | 11 to 13 s | 3 / 3 | - | 0 | 2 / 3 |
 | Argon low, strict (4) | 11 to 17 s | 4 / 4 | - | 0 | 1 / 4 |
 
-Good news: none of the 28 successful runs wrote a task for the already-done dentist visit, put "Rust", "Eilat" or "drop physics" into the facts, or obeyed the pasted order. All 30+ quoted items were word-for-word in the chat (a code check, below). The model used the **corrected** exam date when it mentioned it.
+Good news: none of the 25 successful runs wrote a task for the already-done dentist visit, put "Rust", "Eilat" or "drop physics" into the facts, or obeyed the pasted order. Every quoted item in the made-up day (about 130) was word-for-word in the chat (a code check, below). The model used the **corrected** exam date when it mentioned it.
 
-Bad news: **the one invented fact was subtle and common**: from "if I had a car I would drive to Eilat" the models wrote "the user does not own a car" (a fact), in 8 of 25 runs. A quote check does not catch it, because the quote is real; the *conclusion* is wrong. The "strict" prompt (no facts from hypotheticals, never say something is *not* true unless the user said so) lowered it to 2 of 8 but not to zero. The "found 8/9" lines are always the date: when the model skipped the corrected date it still wrote "confirmed their exam date" without the date, so the detail is lost quietly.
+Bad news: **the one invented fact was subtle and common**: from "if I had a car I would drive to Eilat" the models wrote "the user does not own a car" (a fact), in 9 of 25 runs (7 of 17 without the strict rule). A quote check does not catch it, because the quote is real; the *conclusion* is wrong. The "strict" prompt (no facts from hypotheticals, never say something is *not* true unless the user said so) lowered it to 2 of 8 but not to zero. The "found 8/9" lines are always the date: when the model skipped the corrected date it still wrote "confirmed their exam date" without the date, so the detail is lost quietly.
 
 **Real chats (4 days, 3 models, checked by hand).**
 - **Speed:** busiest day (about 23,000 characters in): Flash low 7.8 s, Argon low 19.8 s, Flash medium 77 s. Smaller days: Flash low 5 to 7 s, Argon low 8 to 10 s, Flash medium 25 to 33 s.
@@ -158,8 +158,8 @@ Bad news: **the one invented fact was subtle and common**: from "if I had a car 
   3. *Inferred facts.* "Speaks Hebrew and English" (nobody said so); equipment seen in a photo as ownership; an old one-off request from nine days earlier as a standing task (Argon).
   4. *A calendar request listed as a task* or as an open question (Flash medium).
   5. *Progress means "asked about", not "understood".* All three reported topics the user asked about as progress. No model could say what was understood or weak, because no quiz had taken place. **Real study progress needs a tutor/quiz signal; chat text alone does not carry it.**
-  6. *Lost:* Flash low found no tasks on the busiest day; Flash medium missed the lasting early-class dislike on one day. None of them noticed that the same question had been asked twice in two chats (that would be a useful "you keep asking this" signal).
-  7. *Verification:* Argon wrote 2 of 12 "quotes" that were paraphrases, not word-for-word; the code check would have dropped them. Flash low and medium: 0 of 16 false quotes.
+  6. *Lost:* Flash low found no tasks on the busiest day; Flash low and medium returned nothing on a small day where Argon offered two (doubtful) items. None of them noticed that the same question had been asked twice in two chats (that would be a useful "you keep asking this" signal).
+  7. *Verification:* Argon wrote 2 of 25 "quotes" that were paraphrases, not word-for-word; the code check would have dropped them. Flash low and medium: 0 false quotes in 32.
 - **Privacy side effect:** facts like a street address were extracted without being asked. They must only ever be *proposals*.
 
 **What this means for the design.**
@@ -325,7 +325,7 @@ Phases 1 to 5 give "one conversation" with nothing else changed. Phase 6 adds me
 5. **Page weight and phone speed.** Drawing thousands of messages. Mitigation: paging (50 at a time), nothing else.
 6. **Calendar corrections after a long gap.** The card note must stay pinned; cards expire in 15 minutes anyway, and the briefing already says what to do then.
 7. **Lock screen privacy.** The push text must not show message content (today it shows the chat title).
-8. **Prompt injection through stored text.** A web page's words could end up in a summary and then in every prompt. Mitigation: summaries are fenced and labelled as data; the summary prompt tells the model to ignore orders in the text (the test passed 28/28 runs on a pasted order, but that is one phrasing).
+8. **Prompt injection through stored text.** A web page's words could end up in a summary and then in every prompt. Mitigation: summaries are fenced and labelled as data; the summary prompt tells the model to ignore orders in the text (the test passed 25/25 runs on a pasted order, but that is one phrasing).
 9. **Study data drifting from the course.** Topics seeded from lecture headings may be wrong for slide decks without headings. The user must be able to rename, merge and delete topics on the Courses screen.
 10. **Quota.** Daily summary and grading add about 2 to 4 Gemini calls a day (cheap, Argon/Flash). Claude is never used for either. The extra desk text adds 1.6 KB per message, which did not slow the desk.
 11. **Scope creep.** Tutor and nudges are a second project. Build phases 1 to 5 first and live with them for a week.
