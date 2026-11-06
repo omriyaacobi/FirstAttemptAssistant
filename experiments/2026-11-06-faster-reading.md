@@ -70,6 +70,25 @@ Argon too swapped one word for a similar one on page 45. Argon sometimes describ
 So a file like this costs about 8 points of Argon's weekly pool: about 12 such files a week. Argon's pool is separate from the Flash pool the chats use.
 Each call took 91-135 s, the same as alone (98-120 s), so 3 at once really is 3 times as fast. A higher limit was not tried: 3 is already well under 6 minutes, and more only spends quota faster.
 
+## Argon or Flash, and should the notebook be read again?
+
+Yes, read it again with Argon, once this branch is merged. The saved pages in the real Bot are the old Flash read.
+
+| | Flash (the saved read) | Argon low |
+|---|---|---|
+| Time for 87 pages | about 40 min | 5 min 48 s |
+| Page 10 checklist | 13/22 | 22/22 |
+| Page 45 Hebrew word slips | 6 | 2 |
+| Page 73 maths errors | fifth roots for fourth roots, in every root on the page | none |
+| Formulas identical across all 87 pages, Flash vs Argon | 64% | 64% (same comparison) |
+| Quota for one read | not measured | 8 points of Argon's weekly pool |
+
+The wrong roots matter most: a student who trusts that page learns a wrong result. A student cannot see this kind of error in the answer, only by opening the original page.
+Formulas can differ in spelling and still mean the same, so the 64% is a warning sign, not an error rate.
+
+"Read again" in today's Bot would NOT help: it still uses Flash and the old prompt. It helps only after this branch is merged.
+While a read runs, the pages saved so far replace the old ones, so a chat sees fewer pages for those 6 minutes.
+
 ## Decisions
 
 Built: `pdfcut.js`; 10-page chunks; 3 at once; the strict prompt; chain Argon low, then Sonnet, then Flash, in order of accuracy.
@@ -84,5 +103,7 @@ Rejected, with the reason:
 
 Not built: a PDF with object streams (most LaTeX and Word exports) cannot be cut yet, so it stays on the old whole-file path with Flash first. It is logged. The fix would be about 25 lines in `pdfcut.js`, but no such real file was available to test it on.
 Not measured: the direct Gemini API. It needs a key Bot does not have. If it ever looks worth it, Omri would create a key in Google AI Studio and put it in `.env`.
+
+Maths in answers: this branch first drew formulas with its own code. Main gained its own display (MathML) meanwhile, so that code was dropped and main's is used.
 
 Scripts stayed in a scratch folder, since they hold paths to private files and the checklist quotes the notebook.
