@@ -277,6 +277,6 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
 const quota = createQuota();
 
 module.exports = {
-  parseUsage, parseClaudeStream, rowFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota,
+  parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota,
   getLowPools: quota.get, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
 };
