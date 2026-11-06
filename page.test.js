@@ -238,3 +238,9 @@ test("the page polls fast (0.6 s) during the first 40 s of a task, so a front de
 test("the message box stays on screen: the page's row cannot grow with the sidebar or a long chat", () => {
   assert.match(html, /\.app \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
 });
+
+test("the page shows the quota note under an answer when quota changed the route", () => {
+  assert.match(html, /function quotaNote\(parent, result\)/);
+  assert.match(html, /quotaNote\(card, result\)/);
+  assert.match(html, /quotaNote\(wrap, result\)/);
+});

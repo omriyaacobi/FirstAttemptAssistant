@@ -14,7 +14,7 @@ const path = require("node:path");
 const { createWarmAgy } = require("./warmagy");
 const { askClaudeStructured } = require("./providers");
 const { race } = require("./deskrace");
-const { MODELS, DESTINATIONS } = require("./router");
+const { MODELS, DESTINATIONS, CLAUDE_PLAN, poolsOf } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
 const { checkRequest } = require("./calendar-chat");
@@ -103,7 +103,7 @@ const readBrief = () => fs.readFileSync(BRIEF_FILE, "utf8");
 function quotaLine(low = []) {
   if (!low.length) return "";
   const names = new Set(low.map((p) => p.pool));
-  const affected = Object.entries(DESTINATIONS).filter(([, chain]) => names.has(chain[0].pool)).map(([name]) => name);
+  const affected = Object.entries(DESTINATIONS).filter(([, chain]) => poolsOf(chain[0]).some((p) => names.has(p))).map(([name]) => name);
   const pools = low.map((p) => `${p.pool} (${p.remaining}% left)`).join(", ");
   return `Low quota right now: ${pools}.` + (affected.length ? ` Avoid these destinations unless nothing else fits: ${affected.join(", ")}.` : "");
 }
@@ -196,6 +196,11 @@ async function decide(task, { history = "", allowSplit = true, askStructured = w
     const { result, started } = await race(starts, { accept: (raw) => validateDecision(raw, { now }), hedgeAfterMs, deadlineMs });
     return { ...result, hedged: started > 1, via: "gemini" };
   } catch (geminiError) {
+    // Haiku uses the Claude plan. When that is low, do not spend it here: core.js falls back to the next good model instead.
+    if (low.some((p) => p.pool === CLAUDE_PLAN)) {
+      log(`[frontdesk] the Gemini desk failed (${String(geminiError.message).slice(0, 120)}); the Claude plan is low, so the Haiku backup desk is not used`);
+      throw new Error(`${geminiError.message}; backup (Claude Haiku) skipped because the Claude plan is low`);
+    }
     log(`[frontdesk] the Gemini desk failed (${String(geminiError.message).slice(0, 120)}); Claude Haiku decides instead`);
     const message = buildPrompt(task, { history, allowSplit, brief: "", low, about, now, timezone }); // the briefing is the system file
     try {
