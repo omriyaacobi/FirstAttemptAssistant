@@ -669,3 +669,10 @@ test("what counts as asking for the web (English and Hebrew), and a mere mention
   assert.strictEqual(webRequest("Here is the answer. NEED_WEB: x"), null);
   assert.strictEqual(webRequest("NEED_WEB: a\nlong answer after"), null);
 });
+test("file chips: none when the answer cites nothing and says it is general knowledge; kept when it cites the files too", async () => {
+  const only = await askCourse({ course: calcCourse, pages: calcPages, question: "limits", askChain: fakeChain({ main: () => "[OUT] general only" }) });
+  assert.deepStrictEqual(only.sources, []);
+  const mixed = await askCourse({ course: calcCourse, pages: calcPages, question: "limits", askChain: fakeChain({ main: () => "Notes say so [S1].\n\n[OUT] And in general..." }) });
+  assert.strictEqual(mixed.sources.length, 1);
+  assert.strictEqual(mixed.outside, true);
+});

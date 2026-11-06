@@ -264,7 +264,7 @@ async function askCourse({ course, pages, question, history = [], deeper = false
   const raw = String(result.answer);
   return {
     answer: labelOutside(raw, question),
-    sources: /[OUT]/.test(raw) && !/[[^]]{0,30}Sd/.test(raw) ? [] : sourcesFor(raw, picked), // nothing cited and the answer says it is not from the files: no file chips
+    sources: /\[OUT\]/.test(raw) && !/\[[^\]]{0,30}\bS\d/.test(raw) ? [] : sourcesFor(raw, picked), // nothing cited and the answer says it is not from the files: no file chips
     outside: /\[OUT\]/.test(raw) || picked.length === 0 || (!!web && !web.failed),
     web: web ? (web.failed ? { failed: true } : { sources: web.sources, seconds: web.seconds }) : null,
     model: result.used.model,
