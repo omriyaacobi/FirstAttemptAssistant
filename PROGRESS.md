@@ -375,3 +375,10 @@
 - Open branches, not merged: `claude/study-faster-fe7506` (faster reading, better studying), `claude/math-render` (show math instead of raw LaTeX).
 - Next: decide on those two branches. Not tried live yet: real photo, Word and PowerPoint files in a course.
 - Math in answers (2026-11-06, branch `claude/math-render`, NOT pushed or merged). `$..$`, `$$..$$`, `\(..\)` and `\[..\]` become MathML (drawn by Chrome itself, no library) through `texToMath` in `public/index.html`: fractions, roots, powers, subscripts, integrals, sums, products, limits with bounds, Greek, arrows, comparisons, `\left \right`, `\text`, `\mathbb`, cases, matrices. Unknown or broken TeX, or very long/deep input, shows the original text. Money, `$HOME`, code and backticks stay literal. Formulas are left-to-right inside Hebrew text and scroll inside their own box on a phone. Unfinished `$$...` stays plain text while streaming. Tests: `math.test.js` (with `pagesandbox.js`). Not checked: a real Galaxy S23 (Android font for math). Not covered: `\underbrace`, `\overset`, `\substack`, `\color`, `\tag`, tables of aligned equations without `\begin`.
+
+## To do after the quota reset
+
+- Quota-aware routing: after every prompt Bot should check how close each quota is to its limit, and stop sending tasks to a nearly empty one. Omri's example: a code question went to Claude Sonnet while Claude was almost out. `quota.js` reads only the Gemini pools today, so the Claude plan limits need a source first.
+- Check on the S23 that math shows as real formulas in course chats (Ctrl+F5 fixed nothing yet to confirm).
+- Resume the faster reading chat: finish its merge, compare Argon vs Flash accuracy; Flash wrote fifth roots for fourth roots on page 73.
+- Course chats must not dead-end: the uploaded materials stay the main source, but when they do not cover a question Bot should still answer from general knowledge or a web search, and say clearly which part came from outside the files. Web page text stays untrusted (same rules as `web-search`).
