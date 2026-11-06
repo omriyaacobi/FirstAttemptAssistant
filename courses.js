@@ -151,13 +151,13 @@ function createCourses(dir) {
     return readJson(filePath(id, fid, ".pages.json")) || [];
   }
 
-  // Every page of every READY file in a course, each with the file it came from.
+  // Every page of every READY file in a course that is ticked for use (file.use is not false), each with the file it came from.
   function allPages(id) {
     const course = get(id);
     if (!course) return [];
     const out = [];
     for (const file of course.files) {
-      if (file.status !== "ready") continue;
+      if (file.status !== "ready" || file.use === false) continue;
       for (const p of getPages(id, file.id)) out.push({ ...p, fileId: file.id, fileName: file.name });
     }
     return out;

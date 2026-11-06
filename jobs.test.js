@@ -211,12 +211,12 @@ test("server: job routes list running jobs, reject bad ids, and a same-chat seco
   await s.close();
 });
 
-test("a message in a course chat goes to the course handler (not the front desk), the chat remembers its course, and photos are refused", async () => {
+test("a message in a course chat goes to the course handler (not the front desk), the chat remembers its course, and a photo goes along (and is deleted afterwards)", async () => {
   const store = tempStore();
   const calls = [];
   const jobs = createJobs({
     handle: async () => { throw new Error("the regular handler must not answer a course chat"); },
-    handleCourse: async (task, o) => { calls.push({ task, courseId: o.courseId, deeper: o.deeper, history: o.history }); o.onPartial("so far"); return { mode: "course", courseId: o.courseId, answer: "from the course", sources: [] }; },
+    handleCourse: async (task, o) => { calls.push({ task, courseId: o.courseId, deeper: o.deeper, history: o.history, image: o.image }); o.onPartial("so far"); return { mode: "course", courseId: o.courseId, answer: "from the course", sources: [] }; },
     store,
   });
   const course = "0123456789abcdef";
@@ -230,6 +230,11 @@ test("a message in a course chat goes to the course handler (not the front desk)
   await tick(30);
   assert.deepStrictEqual(calls.map((c) => [c.task, c.courseId, c.deeper]), [["hello", course, true], ["next", course, false]]);
   assert.deepStrictEqual(calls[1].history.map((m) => m.text), ["hello", "from the course"]);
-  assert.throws(() => jobs.start({ task: "x", courseId: course, image: { path: "p", ext: ".png" } }), (e) => e.status === 400);
+  const photoFile = require("node:path").join(require("node:os").tmpdir(), "course-photo-" + process.pid + ".png");
+  require("node:fs").writeFileSync(photoFile, "x");
+  jobs.start({ task: "what is this", conversationId: chat.id, image: { path: photoFile, ext: ".png" } });
+  await tick(30);
+  assert.strictEqual(calls[2].image.path, photoFile); // the course handler gets the photo...
+  assert.ok(!require("node:fs").existsSync(photoFile)); // ...and the job deletes it afterwards, as in the regular chat
   assert.throws(() => createJobs({ handle: async () => answer, store }).start({ task: "x", courseId: course }), (e) => e.status === 404); // notebooks are off
 });

@@ -89,7 +89,10 @@ function sourcesFor(answer, picked) {
 
 // course: { id, name, files }, pages: courses.allPages(id). Returns { answer, sources, model, seconds, searched }.
 async function askCourse({ course, pages, question, history = [], deeper = false, about = "", askChain, log = () => {} }) {
-  const readyFiles = course.files.filter((f) => f.status === "ready");
+  const readyFiles = course.files.filter((f) => f.status === "ready" && f.use !== false); // unticked files are left out
+  if (readyFiles.length === 0 && course.files.some((f) => f.status === "ready")) {
+    return { answer: "All the materials of this course are switched off. Tick at least one in the Sources list to use it.", sources: [], model: null, seconds: 0, searched: 0 };
+  }
   if (readyFiles.length === 0) {
     return { answer: "There are no materials ready in this course yet. Upload a file in the Materials tab and wait until it says \"ready\".", sources: [], model: null, seconds: 0, searched: 0 };
   }

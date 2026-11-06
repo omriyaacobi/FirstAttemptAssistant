@@ -115,7 +115,6 @@ function createJobs({ handle, handleCourse = null, store, maxRunning = 2, onFini
     if (runningCount >= maxRunning) throw Object.assign(new Error("busy, wait for the current tasks to finish"), { status: 429 });
     const inCourse = conversation ? conversation.courseId : courseId;
     if (inCourse && !handleCourse) throw Object.assign(new Error("the study notebooks are off"), { status: 404 });
-    if (inCourse && image) throw Object.assign(new Error("photos are not supported in course chats yet"), { status: 400 });
 
     // The earlier messages become the memory for this task (a failed answer is not memory).
     const history = conversation ? conversation.messages.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text })) : [];
@@ -148,7 +147,7 @@ function createJobs({ handle, handleCourse = null, store, maxRunning = 2, onFini
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
         };
         const result = inCourse
-          ? await handleCourse(task, { ...common, courseId: inCourse, deeper: deeper === true })
+          ? await handleCourse(task, { ...common, courseId: inCourse, deeper: deeper === true, image })
           : await handle(task, { ...common, noPlan: noPlan === true, image });
         message = { role: "assistant", text: result.mode === "course" ? result.answer : resultText(result), result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
         job.status = "done";

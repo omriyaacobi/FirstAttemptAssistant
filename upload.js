@@ -6,6 +6,7 @@
 // bytes (no base64, which would add a third) and has its own limit.
 
 const { sniffImage } = require("./photo");
+const { sniffOffice } = require("./office");
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024; // one file
 const MAX_TEXT_BYTES = 2 * 1024 * 1024; // a plain-text file is read directly, so it can be smaller
@@ -13,19 +14,21 @@ const MAX_NAME_CHARS = 120;
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
-// The kind of a file from its content: { kind: "pdf" | "image" | "text", ext } or throws a 415.
+// The kind of a file from its content: { kind: "pdf" | "image" | "office" | "text", ext } or throws a 415.
 function sniffFile(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw fail(400, "the file is empty");
   if (bytes.subarray(0, 5).toString("latin1") === "%PDF-") return { kind: "pdf", ext: ".pdf" };
   const image = sniffImage(bytes);
   if (image) return { kind: "image", ext: image };
+  const office = sniffOffice(bytes); // Word and PowerPoint files are ZIPs with known parts inside
+  if (office) return { kind: "office", ext: "." + office };
   if (bytes.length <= MAX_TEXT_BYTES && !bytes.includes(0)) {
     try {
       new TextDecoder("utf-8", { fatal: true }).decode(bytes); // throws on bytes that are not valid UTF-8
       return { kind: "text", ext: ".txt" };
     } catch (error) { /* not text */ }
   }
-  throw fail(415, "this file type is not supported: use a PDF, a JPEG/PNG/WebP photo or a plain text file (UTF-8, up to 2 MB). PowerPoint or Word: save it as PDF first");
+  throw fail(415, "this file type is not supported: use a PDF, a PowerPoint (.pptx) or Word (.docx) file, a JPEG/PNG/WebP photo or a plain text file (UTF-8, up to 2 MB). Older .ppt or .doc: save as .pptx / .docx or PDF first");
 }
 
 // The name shown in the list. It is only ever displayed as text and never used as a path.

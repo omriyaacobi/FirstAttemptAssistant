@@ -11,6 +11,7 @@
 
 const fs = require("node:fs");
 const { MODELS } = require("./router");
+const { readOffice } = require("./office");
 
 const CHUNK_PAGES = 40;
 const MAX_PAGES = 400; // a bigger PDF is read up to this page
@@ -79,6 +80,11 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
     let pages = [];
     if (file.kind === "text") {
       pages = splitText(fs.readFileSync(fp, "utf8"));
+    } else if (file.kind === "office") {
+      const doc = readOffice(fs.readFileSync(fp)); // no model: the text is read straight out of the file (office.js)
+      pages = doc.kind === "pptx"
+        ? doc.slides.map((text, i) => ({ page: i + 1, keywords: "", text })).filter((p) => p.text)
+        : splitText(doc.paragraphs.join("\n\n"));
     } else {
       let total = file.kind === "image" ? 1 : null;
       let from = 1;
