@@ -212,6 +212,36 @@ function askClaudeStructured(question, model, schema, { signal, timeoutMs, syste
   });
 }
 
+// Deletes a private work folder. On Windows the delete can fail (EPERM/EBUSY) for a moment while agy or a child of it still has the
+// folder open. That must NEVER replace the real result: a throw inside a "finally" would turn a good answer into this error. So it
+// retries a few times, never throws, and says what it could not delete (removeStaleWorkDirs, below, tries again at the next start).
+function cleanWorkDir(dir, log = console.error) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+  } catch (error) {
+    log(`[providers] could not delete ${dir}: ${String(error.message).slice(0, 120)} (it is removed at the next start)`);
+  }
+}
+
+// At start-up: removes work folders left behind by earlier runs (older than maxAgeMs, so a run in progress is never touched).
+function removeStaleWorkDirs({ dir = os.tmpdir(), maxAgeMs = 60 * 60 * 1000, now = Date.now(), log = console.error } = {}) {
+  let removed = 0;
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (error) { return 0; }
+  for (const name of names) {
+    if (!/^bot-(file|photo)-[A-Za-z0-9]{6}$/.test(name)) continue;
+    const full = path.join(dir, name);
+    try {
+      if (now - fs.statSync(full).mtimeMs < maxAgeMs) continue;
+      fs.rmSync(full, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+      removed++;
+    } catch (error) {
+      log(`[providers] could not delete old folder ${full}: ${String(error.message).slice(0, 100)}`);
+    }
+  }
+  return removed;
+}
+
 // Gemini looking at a photo. agy is an agent that reads files in its working folder, so the photo is
 // copied into a brand-new EMPTY folder that holds only that one file, agy runs there, and the folder
 // is deleted afterwards. The agent therefore has nothing else of yours to see.
@@ -227,7 +257,7 @@ async function askAgyWithImage(model, question, imagePath) {
       });
     });
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    cleanWorkDir(dir);
   }
 }
 
@@ -247,7 +277,7 @@ async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 
       withTimeout(child, timeoutMs, reject, model);
     });
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    cleanWorkDir(dir);
   }
 }
 
@@ -334,5 +364,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };

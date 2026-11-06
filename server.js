@@ -544,6 +544,7 @@ if (require.main === module) {
   server.listen(PORT, HOST, () => {
     console.log(`Bot web page: http://localhost:${PORT}  (only reachable from this computer)`);
     console.log(auth.enabled ? `Phone access ON for https://${auth.host} (login required)` : `Phone access off: ${auth.reason}`);
+    try { require("./providers").removeStaleWorkDirs(); } catch (error) { /* only housekeeping */ } // old bot-file-* / bot-photo-* folders from earlier runs
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     try { require("./frontdesk").warmUpDesk(); } catch (error) { console.error("Could not prepare the front desk:", error.message); } // only makes the first message slower
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
