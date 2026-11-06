@@ -26,7 +26,7 @@ const minutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5
 const clean = (text) => String(text).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-function createMorning({ file, store, reminders, push, calendar = readCalendar, now = () => Date.now(), timezone = localZone(), log = () => {} }) {
+function createMorning({ file, store, reminders, push, study = null, calendar = readCalendar, now = () => Date.now(), timezone = localZone(), log = () => {} }) {
   if (!file) throw new Error("createMorning needs a file");
   let timer = null;
 
@@ -84,7 +84,11 @@ function createMorning({ file, store, reminders, push, calendar = readCalendar, 
     if (pending.length) lines.push("Reminders today\n" + pending.map((r) => `  ${formatWhen(r.at, r.timezone).split(", ").pop()}  ${clean(r.text)}`).join("\n"));
     const missed = reminders.list().filter((r) => r.status === "fired");
     if (missed.length) lines.push("Reminders you have not seen yet\n" + missed.map((r) => `  ${clean(r.text)}`).join("\n"));
-    return { text: `Good morning. Here is your day.\n\n${lines.join("\n\n")}`, summary: `Today: ${plural(events, "event")}, ${plural(pending.length, "reminder")}.` };
+    // The study coach (study-nudges.js): at most one code-written line a day. The push gets a count only, never a name.
+    let studyBlock = null;
+    try { studyBlock = study ? study.morningBlock() : null; } catch (error) { log(`[morning] study line failed: ${error.message}`); }
+    if (studyBlock) lines.push(studyBlock.text);
+    return { text: `Good morning. Here is your day.\n\n${lines.join("\n\n")}`, summary: `Today: ${plural(events, "event")}, ${plural(pending.length, "reminder")}${studyBlock ? `, ${studyBlock.count} study item` : ""}.` };
   }
 
   // Writes today's brief into a new chat and tells the phones.

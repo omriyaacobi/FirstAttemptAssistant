@@ -1,0 +1,15 @@
+# Night decisions: study coach (2026-11-07)
+
+Omri was asleep, so every open question was settled here with the safest option. Each one is a question for the morning.
+
+1. **Timetable lives in code as a default, copied to `data/study/timetable.json` on first use.** Class times are not secret and the repo already says who Omri is, but the file in `data/` wins, so a new timetable never needs a code change. Question: edit it in chat, or keep it in Google Calendar only?
+2. **The Wednesday 08:00 Calculus lecture is in the timetable with `attends: false`.** It still counts as a lecture that exists (the notebook has it, so lecture numbers line up), but Bot never says "you missed it": it says "from the notebook". Question: right?
+3. **No Israeli holidays are built in.** Nothing official falls between 2026-10-18 and 2027-01-15 (Sukkot ended 2026-10-03; Hanukkah, 4 to 12 Dec 2026, is not a day off). Bot cannot know about cancelled classes, so the *only* way to remove a lecture is Omri saying so ("no lecture this week", "no classes 24 Dec"); that is stored as a skip. Question: any days off already known?
+4. **Lecture numbers follow the timetable.** The k-th held lecture (skips removed) is "lecture k". For Calculus 2, where all material is uploaded, notebook lecture k is *assumed* to be that k-th slot; Bot says so once and a correction moves it.
+5. **"Understood" is only ever set by code from graded answers**: at least 3 distinct questions in one check, weighted score >= 70%, a revealed answer counts as wrong. Teaching, chatting about a topic, or "I understand" never counts.
+6. **Models used: Argon only** (medium, then low) for reading, teaching, question writing and grading. Never Flash low, never Claude. If Argon fails, Bot says so and changes nothing.
+7. **Passed lecture slot with no material**: Bot asks at most once per slot, never in quiet hours (22:00 to 08:00) and never during a class. A slot that was asked about and ignored stays marked "asked"; Omri can always bring it up himself.
+8. **Material uploaded without a date** becomes a *proposal* ("is this the Thursday 5 Nov lecture?") pointing at the most recent past slot with no material. Nothing is attached until Omri confirms.
+9. **Nudges**: code-written, only in the morning brief, one a day at most, each tied to a real date (assignment due, held lecture), quiet after two ignored in a row (ignored = no study activity within 36 h), pause switch (until a date, or until resumed), push text is counts only.
+10. **Assignment text is saved in `data/study/` (git-ignored)** so "get me started" can check the knowledge it needs. Bot never writes a solution: the prompt forbids it, replies are length-capped, and hints are given one step at a time.
+11. **Not built, on purpose**: reading Google Calendar to build the timetable (the default plus chat corrections is enough for now), a Courses-tab replacement page (the page chat connects the interface), changes to `jobs.js`, `store.js`, `frontdesk.js`, `router-brief.md`, `recall.js`.
