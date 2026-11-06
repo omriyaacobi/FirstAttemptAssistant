@@ -17,7 +17,8 @@
 
 const { chainForDestination, chainForType, DEFAULT_CHAIN, MODELS } = require("./router");
 const path = require("node:path");
-const { askChain, askAgyWithImage } = require("./providers");
+const { ask, askChain, askAgyWithImage, timeoutFor } = require("./providers");
+const { createWarmAgy } = require("./warmagy");
 const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
 const { getLowPools, refreshQuota, prioritize } = require("./quota");
@@ -30,10 +31,27 @@ const { findInChats, listFound, recallPrompt } = require("./recall");
 const label = ({ provider, model }) => `${provider}/${model}`;
 const chainText = (chain) => chain.map(label).join("  ->  ");
 
+// ---- Pre-warmed answer process ----
+// Starting agy costs about 2.5 s before the answer model even sees the question. For the model most answers come from, one agy
+// process waits ready (warmagy.js: ONE process per message, the same flags as a normal call, a dead or old spare is replaced at once),
+// so the answer skips the start-up. It is started when a message arrives, while the front desk is still deciding, and again after
+// each answer. Waiting processes use no model quota (the model is only called when the question arrives).
+const SPECULATE_ANSWER = true; // the one-line switch for the speculative answer (see runTask)
+const SPECULATIVE_MODEL = MODELS.flashMedium; // the first model of the "gemini-flash" destination
+const WARM_ANSWER_MODELS = new Set([MODELS.flashMedium.model]);
+const answerPool = createWarmAgy({ keepReady: true });
+const prewarmAnswer = () => { for (const model of WARM_ANSWER_MODELS) answerPool.warmUp(model, null); };
+function askOneWarm(provider, model, question, onText) {
+  if (provider === "agy" && WARM_ANSWER_MODELS.has(model)) return answerPool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
+  return ask(provider, model, question, onText);
+}
+
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
 // refreshQuota updates that flag in the background AFTER each answer, for the next message.
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, readCalendar: readCalendarEvents,
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, prewarmAnswer, askOne: askOneWarm,
+  // The answer model started alongside the front desk (null = off). It uses the pre-warmed pool, so it is killed with its signal.
+  speculate: SPECULATE_ANSWER ? (question, { signal, onText }) => answerPool.askText(question, SPECULATIVE_MODEL.model, onText, { signal, timeoutMs: timeoutFor(SPECULATIVE_MODEL.model) }) : null, readCalendar: readCalendarEvents,
   searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
@@ -89,15 +107,18 @@ const photoNote = (name) =>
 
 // Runs one task. A message never waits for the quota lookup; the lookup runs after the answer is ready.
 async function handleTask(task, options = {}) {
+  const speculation = {}; // runTask puts a drop() in here when it started an answer alongside the front desk
   try {
-    return await runTask(task, options);
+    return await runTask(task, { ...options, speculation });
   } finally {
+    try { if (speculation.drop) speculation.drop(); } catch (error) { /* stopping a call nobody needs can never break a task */ }
     try { Promise.resolve((options.deps?.refreshQuota || defaultDeps.refreshQuota)()).catch(() => {}); } catch (error) { /* quota can never break a task */ }
   }
 }
 
-async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {} } = {}) {
+async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {} } = {}) {
   const d = { ...defaultDeps, ...deps };
+  try { d.prewarmAnswer(); } catch (error) { /* a missing spare only means the answer starts agy itself */ }
   const started = Date.now();
   const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
   const seconds = () => secondsSince(started);
@@ -140,7 +161,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const parts = [];
     if (timing.frontDeskSeconds !== null) parts.push(`front desk ${timing.frontDeskSeconds} s`);
     if (timing.plannerSeconds !== null) parts.push(`planner ${timing.plannerSeconds} s`);
-    for (const a of timing.attempts) parts.push(`${a.step ? `step ${a.step}: ` : ""}${a.model} ${a.seconds} s${a.ok ? "" : " (failed)"}`);
+    for (const a of timing.attempts) parts.push(`${a.step ? `step ${a.step}: ` : ""}${a.model} ${a.seconds} s${a.ok ? "" : " (failed)"}${a.speculative ? " (started together with the front desk, so the times overlap)" : ""}`);
     parts.push(`total ${seconds()} s`);
     return "[timing] " + parts.join(", ");
   };
@@ -151,6 +172,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     log(`[router] ${info.rule}: ${info.reason}`);
     log(`[router] plan: ${chainText(info.chain)}`);
     const { answer, used, attempts } = await d.askChain(info.chain, personalize(info.chain, prompt, about), {
+      askOne: d.askOne,
       onTry: (m) => log(`[router] trying ${label(m)}`),
       onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
       onText: onPartial, // lets the page show the answer while it is written (agy only)
@@ -278,6 +300,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const chain = quotaChain(d.chainForDestination("gemini-flash"), await getLow());
     try {
       const { answer, used } = await d.askChain(chain, recallPrompt(task, found), {
+        askOne: d.askOne,
         onTry: (m) => log(`[router] trying ${label(m)}`),
         onFail: (m) => log(`[router] ${label(m)} failed after ${m.seconds} s: ${m.message}`),
         onText: onPartial,
@@ -294,7 +317,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   async function runSplit(subtasks, plannedBy) {
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
-      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about)), // web steps get no profile
+      run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne }), // web steps get no profile
       chainFor: (type) => quotaChain(d.chainForType(type), low),
       onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
       onDone: ({ subtask, result }) =>
@@ -332,6 +355,56 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     return runSingle({ chain, rule: "forced", reason: "you picked it" });
   }
 
+  // A speculative answer. Most questions end up at "gemini-flash" (Flash medium), and its answer takes about 8 s once the front
+  // desk has decided. So that model is asked at the SAME moment as the front desk, with the very same prompt the real call would
+  // get. If the front desk then picks gemini-flash, that answer is used (about 4 s sooner); anything else, and the call is killed.
+  // Measured in experiments/2026-11-06-answer-speed.md. Skipped when the Gemini pool is nearly empty. Switch it off with
+  // SPECULATE_ANSWER = false at the top of this file.
+  let spec = null;
+  if (d.speculate && !planOnly) {
+    const low = await getLow();
+    if (!low.some((p) => p.pool === SPECULATIVE_MODEL.pool)) {
+      const controller = new AbortController();
+      speculation.drop = () => controller.abort();
+      const current = { startedAt: Date.now(), text: "", forward: null };
+      try {
+        current.promise = Promise.resolve(d.speculate(personalize([SPECULATIVE_MODEL], prompt, about), {
+          signal: controller.signal,
+          onText: (text) => { current.text = text; if (current.forward) current.forward(text); },
+        }));
+        current.promise.catch(() => {}); // a failure is handled when (and only if) the answer is wanted
+        spec = current;
+      } catch (error) { /* could not start: the normal path runs */ }
+    }
+  }
+
+  // The front desk chose gemini-flash: use the answer that is already being written, if it is for the same model the chain starts with.
+  // Returns the result, or null when the normal path has to run (the plan changed, or the speculative call failed).
+  async function adoptSpeculative(info) {
+    const chain = quotaChain(info.chain, await getLow());
+    const first = chain[0];
+    if (!first || first.provider !== SPECULATIVE_MODEL.provider || first.model !== SPECULATIVE_MODEL.model) return null;
+    log(`[router] ${info.rule}: ${info.reason}`);
+    log(`[router] plan: ${chainText(chain)}`);
+    log(`[router] trying ${label(first)}`);
+    spec.forward = onPartial;
+    if (onPartial && spec.text) onPartial(spec.text);
+    let answer;
+    try {
+      answer = await spec.promise;
+      if (!answer) throw new Error("empty answer");
+    } catch (error) {
+      if (onPartial) onPartial("");
+      log(`[router] ${label(first)} failed after ${secondsSince(spec.startedAt)} s: ${String(error.message).trim().slice(0, 200)}`);
+      return null;
+    }
+    const took = secondsSince(spec.startedAt);
+    timing.attempts = [{ provider: first.provider, model: first.model, seconds: took, ok: true, speculative: true }];
+    log(`[router] answered by ${label(first)} in ${took} s`);
+    log(timingLine());
+    return { mode: "single", rule: info.rule, reason: info.reason, chain, used: first, answer, seconds: seconds(), timing };
+  }
+
   // 1. Ask the front desk.
   log(`[frontdesk] asking ${label(FRONT_DESK_MODEL)}`);
   let decision;
@@ -367,7 +440,12 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   if (decision.action === "recall") return recall(decision);
 
   if (decision.action === "delegate") {
-    return runSingle({ chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason });
+    const info = { chain: d.chainForDestination(decision.destination), rule: decision.destination, reason: decision.reason };
+    if (spec && decision.destination === "gemini-flash") {
+      const adopted = await adoptSpeculative(info);
+      if (adopted) return adopted;
+    }
+    return runSingle(info);
   }
 
   // split: ask the planner for the steps

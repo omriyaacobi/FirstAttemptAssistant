@@ -145,7 +145,7 @@ const fakes = (overrides = {}) => ({
   decide: async () => ({ action: "delegate", destination: "claude-sonnet", answer: "", reason: "test" }),
   chainForDestination: () => [used],
   chainForType: () => [used],
-  lowPools: async () => [], refreshQuota: () => {},
+  lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
   askChain: async () => ({ answer: "model answer", used }),
   about: () => "<about-the-user>\nSECRET-PROFILE\n</about-the-user>",
   facts: () => [], // never the real memory in tests

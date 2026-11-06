@@ -133,6 +133,12 @@
 - **Small:** page shows raw ** instead of bold; Google Calendar login expires after 7 days unless the app is published; 80% battery cap in Lenovo Vantage; no backup of data/; the code walkthrough stopped at Part 1.
 - **Workflow:** this chat is the manager. Omri likes to test and give pointers; verify side chats' reports yourself before merging.
 
+- Answer speed (2026-11-06, branch `claude/frontdesk-speed-01ec9f`, NOT pushed or merged). 406 tests pass (3 full runs). Report: `experiments/2026-11-06-answer-speed.md`.
+  - The answer step was NOT slower than before (Flash medium: 9-12 s in every saved chat); it is now about 80% of the wait. Where its 11.5 s go: agy start-up 2.6 s, thinking 6.0 s, writing 2.5 s.
+  - Built: a pre-warmed single-use agy for the gemini-flash model (`warmagy.askText`, started when a message arrives), a speculative answer (the gemini-flash model starts together with the front desk, kept only if the desk picks it, switch `SPECULATE_ANSWER` in `core.js`), the page polls every 0.6 s during the first 40 s (it was 2 s while the front desk worked, so short replies showed up about 0.5 s late).
+  - Numbers, 28 real messages per arm: median 12.6 to 9.0 s, slowest 29.5 to 21.2 s; gemini-flash answers 13.0 to 7.8 s, first words 11.6 to 5.7 s. Hedging the answer was rejected (no gain at any threshold).
+  - Cost: two waiting agy processes (about 0.6 GB RAM), and a wasted Flash-medium call on messages the desk sends elsewhere (47% in my mixed test set).
+
 ## Next
 5. Fix the Calendar idea: check whether agy can actually read Google Calendar (MCP server / extension?). Right now the "google" rule only picks a Gemini model.
 6. Routing v3 ideas: (quota check done in step 11) tune the keyword rules from real use (e.g. "design" always means hard); maybe a small model as router; log each run (model, time) to a file to see where quota goes.

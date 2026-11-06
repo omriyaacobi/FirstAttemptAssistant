@@ -213,3 +213,10 @@ test("the phone's Back button works inside a course: a course opened or left is 
   assert.ok(html.includes("sameCourse(target.course, here.course)"));
   assert.match(study, /navGo\(\{ view: "study", id: currentId, course: id \}\)/);
 });
+
+test("the page polls fast (0.6 s) during the first 40 s of a task, so a front desk reply is not shown up to 2 s late", () => {
+  assert.match(html, /FAST_POLL_WINDOW_MS\s*=\s*40000/);
+  const poll = html.slice(html.indexOf("async function pollJobs"), html.indexOf("window.addEventListener(\"focus\", pollJobs)"));
+  assert.match(poll, /Date\.now\(\) \+ jobState\.offset - j\.startedAt < FAST_POLL_WINDOW_MS/); // the age of the job, by the server's clock
+  assert.match(poll, /\? 600 : jobState\.active\.size \? 2000 : 10000/); // fast, then slow while something long runs, then idle
+});

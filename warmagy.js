@@ -64,11 +64,20 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
       let event;
       try { event = JSON.parse(line); } catch (error) { continue; }
       if (event.event === "init") { isReady = true; onReady(); }
+      const u = event.step_update;
+      if (event.event === "step_update" && waiter && waiter.text !== undefined && u && u.step_type === "agent_response" && u.text_delta) {
+        // A TEXT call: collect the answer as it is written and tell onText what there is so far (same rules as providers.askAgyStream).
+        if (waiter.step !== null && u.step_index !== waiter.step) waiter.text += "\n\n"; // a second reply step starts a new paragraph
+        waiter.step = u.step_index;
+        waiter.text += u.text_delta;
+        if (waiter.onText) { try { waiter.onText(waiter.text); } catch (error) { /* showing the text must never break the answer */ } }
+      }
       if (event.event === "result" && waiter) {
         const w = waiter;
         waiter = null;
         const result = event.result || {};
         if (result.status && result.status !== "SUCCESS") return w.reject(new Error("agy status " + result.status));
+        if (w.text !== undefined) return w.resolve(String(result.response ?? w.text).trim()); // a text answer: the result is the authority
         try {
           w.resolve(result.structured_output ?? JSON.parse(String(result.response).match(/\{[\s\S]*\}/)[0]));
         } catch (error) {
@@ -84,11 +93,12 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
     get ready() { return isReady; },
     get age() { return clock() - born; },
     get used() { return used; },
-    run(prompt) {
+    // options.text: true for a plain text answer (not JSON); options.onText gets the text so far while it is written.
+    run(prompt, { text = false, onText = null } = {}) {
       used = true;
       return new Promise((resolve, reject) => {
         if (isDead) return reject(died(deathReason));
-        waiter = { resolve, reject };
+        waiter = text ? { resolve, reject, text: "", step: null, onText } : { resolve, reject };
         ready.then(() => {
           if (isDead) return;
           // The message format agy expects on stdin in stream-json mode: one JSON line per user turn.
@@ -115,6 +125,7 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
   const spares = new Map(); // "model|schema" -> a waiting process
   allSpares.add(spares);
 
+  // A text call and a structured call to the same model are the same kind of process, so they share spares.
   const keyOf = (model, schema) => model + "|" + (schema ? JSON.stringify(schema) : "");
   const fresh = (model, schema) => startProcess({ command, prefixArgs, model, schema, clock });
 
@@ -140,6 +151,16 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
   // Same shape as providers.askAgyStructured(question, model, schema, { signal, timeoutMs }).
   // Uses the waiting spare if there is a good one, otherwise a new process (a normal cold call).
   async function askStructured(question, model, schema, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+    return runOnSpare(question, model, schema, { signal, timeoutMs, runOptions: {} });
+  }
+
+  // A plain TEXT answer, written piece by piece: same shape as providers.askAgyStream(question, model, onText, { signal }).
+  // Same rules: one process per message, the same flags, a dead spare is replaced at once.
+  async function askText(question, model, onText, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+    return runOnSpare(question, model, null, { signal, timeoutMs, runOptions: { text: true, onText } });
+  }
+
+  async function runOnSpare(question, model, schema, { signal, timeoutMs, runOptions }) {
     checkModelName(model);
     const key = keyOf(model, schema);
     let proc = spares.get(key);
@@ -161,7 +182,7 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
     });
     try {
       try {
-        return await Promise.race([proc.run(question), stop]);
+        return await Promise.race([proc.run(question, runOptions), stop]);
       } catch (error) {
         // A waiting spare can die without anyone noticing (agy crashed, the network dropped, the PC slept). That must not cost
         // the user a failed message: go cold at once with a fresh process, with the same time limit.
@@ -169,7 +190,7 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
         proc.kill();
         proc = fresh(model, schema);
         warm = false;
-        return await Promise.race([proc.run(question), stop]);
+        return await Promise.race([proc.run(question, runOptions), stop]);
       }
     } finally {
       clearTimeout(timer);
@@ -184,7 +205,7 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
     spares.clear();
   }
 
-  return { askStructured, warmUp, closeAll, _spares: spares };
+  return { askStructured, askText, warmUp, closeAll, _spares: spares };
 }
 
 module.exports = { createWarmAgy, MAX_SPARE_AGE_MS };
