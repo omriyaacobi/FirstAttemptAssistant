@@ -375,3 +375,4 @@
 - Quota-aware routing: after every prompt Bot should check how close each quota is to its limit, and stop sending tasks to a nearly empty one. Omri's example: a code question went to Claude Sonnet while Claude was almost out. `quota.js` reads only the Gemini pools today, so the Claude plan limits need a source first.
 - Check on the S23 that math shows as real formulas in course chats (Ctrl+F5 fixed nothing yet to confirm).
 - Resume the faster reading chat: finish its merge, compare Argon vs Flash accuracy; Flash wrote fifth roots for fourth roots on page 73.
+- Course chats must not dead-end: the uploaded materials stay the main source, but when they do not cover a question Bot should still answer from general knowledge or a web search, and say clearly which part came from outside the files. Web page text stays untrusted (same rules as `web-search`).
