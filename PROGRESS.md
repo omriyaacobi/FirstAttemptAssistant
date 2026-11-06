@@ -405,3 +405,15 @@ Why: Bot sent a code question to Claude Sonnet while Claude was at its limit, be
 
 - Live on main: quota-aware routing, course chats that answer beyond the files with web checks, faster and more accurate PDF reading, source popup, duplicate upload refused. The to-do list above is done except the items below.
 - Next: press Read again on the Calculus notebook so Argon replaces the Flash read. Check math and the source popup on the real S23. Not covered yet: PDFs with object streams stay on the slow path, and a Hebrew question about English notes may miss them.
+
+## Calendar: adding events from the chat (branch claude/calendar-add-5116af, 2026-11-06, NOT pushed or merged)
+
+Why: Omri sent a timetable photo and asked for it weekly until the end of January without the 8:00 class; Bot only listed the events.
+
+- **Typed**: "add dentist Thursday at 4" is the new front desk action `addEvent` (title, start, optional end, optional weekly repeat end). Both briefings describe it (the drift test still passes). Default length 1 hour.
+- **Photo**: still goes to Gemini (only agy can see it). If the user's words ask to add it to the calendar (`wantsCalendarAdd`, English and Hebrew, decided in code), the model must reply with JSON only: events (title, weekday or date, start, end, location), `repeat`, `until`, `skipped`. Any other photo message works as before; the note no longer says adding is impossible.
+- **Safety wall** (`calendar-add.js`): models only propose; code checks every field, turns a weekday into the real first date (today only if the class has not started), refuses the past, bad times, more than 30 events, an end date missing for a weekly repeat. Extra fields in the model's JSON (recurrence, attendees, ...) are dropped; text is cleaned. The RRULE is built by `weeklyRule` in `calendar.js` from a checked date.
+- **Confirm card**: drawn by the page from the checked fields (one card for a whole timetable). Only the Confirm tap (`POST /api/calendar/confirm`) creates events. Works once, expires after 15 minutes, in memory only (a Bot restart drops waiting cards: ask again). A double tap cannot duplicate. If an event fails, Bot stops, says which were added and which not, and never retries. Login expired before anything was written: plain-words message, `node calendar.js login`, and the card is kept so you can tap again.
+- **Phone**: same login as other chat actions, no PIN (it only adds, shows everything first, is single-use). Card buttons are 44 px tall on narrow screens.
+- **Not verified**: no real event was created and the real Google API was never called with a recurrence (tests use fakes). The first real try should be a single harmless event, then check in Google Calendar that the weekly series ends on 2027-01-31 and that the photo model really returns clean JSON for your timetable. Google login in Testing mode ends 7 days after 2026-11-05.
+- Not done: no way to delete or change events (on purpose); a card cannot be edited, cancel and ask again.

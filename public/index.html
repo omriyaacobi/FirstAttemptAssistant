@@ -302,6 +302,10 @@
   @media (max-width: 760px) {
     [data-theme="midnight"] .me { max-width: 90%; }
   }
+  .calcard { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .callist { margin: 0; padding-left: 18px; }
+  .callist li { margin: 6px 0; }
+  @media (max-width: 600px) { .calcard .actions button { flex: 1 1 40%; min-height: 44px; } }
 </style>
 </head>
 <body>
@@ -820,6 +824,8 @@
       if (result.forget && result.forget.id) card.appendChild(rememberButtons(null, result.forget.id));
       // You said "remember that ..." yourself, so it is already saved. One tap takes it back.
       if (result.remembered && result.remembered.id) card.appendChild(undoButton(result.remembered.id));
+      // Bot only DRAFTED calendar events. The card is drawn from checked fields; nothing is added until you tap Confirm.
+      if (result.calendarAdd && Array.isArray(result.calendarAdd.events)) card.appendChild(calendarCard(result.calendarAdd));
       // A question about an earlier chat: buttons that open the chats the answer came from.
       if (Array.isArray(result.chats) && result.chats.length) card.appendChild(chatButtons(result.chats));
       wrap.appendChild(card);
@@ -890,6 +896,59 @@
     });
     actions.append(save, skip, note);
     return actions;
+  }
+
+  // The calendar Confirm card. Every line comes from fields that code checked (calendar-add.js), never from model prose.
+  function calendarCard(add) {
+    const box = el("div", "calcard");
+    const when = (e) => {
+      const day = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(e.date + "T00:00:00Z"));
+      const until = e.repeatUntil ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(e.repeatUntil + "T00:00:00Z")) : "";
+      return day + ", " + e.start + "-" + e.end + (until ? ", every " + e.weekday + " until " + until : "") + (e.location ? ", " + e.location : "");
+    };
+    const list = el("ul", "callist");
+    for (const e of add.events) {
+      const li = el("li");
+      li.append(el("strong", "", e.summary), el("div", "sub", when(e)));
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+    if (add.skipped && add.skipped.length) box.appendChild(el("p", "sub", "Left out as you asked: " + add.skipped.join("; ")));
+    const actions = el("div", "actions");
+    const confirmBtn = el("button", "", "Confirm");
+    const cancelBtn = el("button", "ghost", "Cancel");
+    const note = el("p", "sub");
+    const names = (items) => items.map((e) => (e.event || e).summary).join(", ");
+    cancelBtn.addEventListener("click", async () => {
+      confirmBtn.disabled = cancelBtn.disabled = true;
+      await fetch("/api/calendar/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: add.id }) }).catch(() => null);
+      actions.replaceChildren(el("span", "sub", "Cancelled. Nothing was added."));
+    });
+    confirmBtn.addEventListener("click", async () => {
+      confirmBtn.disabled = cancelBtn.disabled = true; // a double tap cannot send twice; the server also refuses a second run
+      note.textContent = "Adding to your calendar...";
+      try {
+        const res = await fetch("/api/calendar/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: add.id }) });
+        const data = await res.json();
+        if (!res.ok) {
+          note.textContent = data.error || "could not add";
+          if (data.loginProblem) confirmBtn.disabled = cancelBtn.disabled = false; // nothing was written: log in again, then tap again
+          else actions.replaceChildren();
+          return;
+        }
+        actions.replaceChildren();
+        const lines = [];
+        if (data.added.length) lines.push((data.again ? "Already added: " : "Added: ") + names(data.added) + ".");
+        if (data.notAdded.length) lines.push("NOT added: " + data.notAdded.map((n) => n.event.summary + " (" + n.why + ")").join("; ") + ". Bot did not retry. Check your calendar before adding these again.");
+        note.textContent = lines.join(" ");
+      } catch (error) {
+        actions.replaceChildren();
+        note.textContent = "Bot could not tell whether the events were added (" + error.message + "). Check your calendar before trying again.";
+      }
+    });
+    actions.append(confirmBtn, cancelBtn);
+    box.append(actions, note);
+    return box;
   }
 
   function undoButton(id) {
