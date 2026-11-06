@@ -6,21 +6,30 @@
 //
 // Both are pasted in front of the prompts as BACKGROUND DATA (see aboutBlock), inside clear markers.
 // Rules this file enforces in code, whatever a model says:
-//   - A model can only PROPOSE a fact. Nothing is saved until you press Save on the page (server.js).
+//   - A model can only PROPOSE a fact. Nothing is saved until you press Save on the page (server.js). The one exception is
+//     when YOUR OWN message says "remember that ..." (see explicitRemember): then it is saved at once, with an Undo button.
 //   - A fact that looks like a secret (password, card, ID number, token) is refused (checkFact).
 //   - The web routes never get this text (personalize), because a model could put it into a search query.
 //   - Size caps, so the profile cannot eat the prompt or slow Bot down.
+//   - Only the facts that matter for THIS message go into a prompt (pickFacts), so old facts are found when they matter
+//     and a memory of 100 facts costs no more than a small one.
 
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { createIndex, search, terms } = require("./search");
 
 const DATA_DIR = path.join(__dirname, "data");
 const PROFILE_FILE = path.join(DATA_DIR, "profile.md");
 const MEMORY_FILE = path.join(DATA_DIR, "memory.json");
 
 const MAX_PROFILE_CHARS = 4000; // the profile is cut to this
-const MAX_MEMORY_PROMPT_CHARS = 2000; // the saved facts that go into a prompt are cut to this (newest first)
+const MAX_MEMORY_PROMPT_CHARS = 1000; // the saved facts that go into one prompt are cut to this (see pickFacts)
+const NEWEST_EXTRA = 4; // when not everything fits: this many of the newest facts still go in, whatever the message is about
+const MATCH_FLOOR = 0.35; // a fact counts as a match only if it scores at least this share of the best match
+const MAX_QUERY_CHARS = 1000; // a long paste is not searched in full
+const MAX_EXPLICIT_CHARS = 300; // "remember that ..." saves at once only in a short message of one line
+const MIN_OVERLAP = 0.5; // ... and only if at least this share of the fact comes from the user's own words
 const MAX_FACT_CHARS = 200;
 const MIN_FACT_CHARS = 3;
 const MAX_FACTS = 100;
@@ -36,6 +45,13 @@ const SECRET_PATTERNS = [
   [/\b[A-Za-z0-9+/_-]{24,}\b/, "it contains a long random-looking string (could be a key or token)"],
 ];
 
+// A fact is about the user, never an order to Bot. Text that reads like an attempt to steer the models is refused.
+const INSTRUCTION_PATTERNS = [
+  /\b(ignore|disregard|forget|override|bypass)\b.{0,30}\b(rules?|instructions?|prompts?|checks?|briefing)\b/i,
+  /\bsystem prompt\b|--dangerously|\b(curl|wget|powershell)\s|<\/?\s*(script|message|about-the-user)\b/i,
+  /התעלם מ|תתעלם מ|הוראות המערכת/,
+];
+
 // Returns the clean fact text, or throws an Error whose message says why in plain words.
 function checkFact(text) {
   if (typeof text !== "string") throw new Error("a fact must be text");
@@ -45,7 +61,24 @@ function checkFact(text) {
   for (const [pattern, why] of SECRET_PATTERNS) {
     if (pattern.test(clean)) throw new Error(`Bot will not save this because ${why}. Secrets never go into Bot's memory.`);
   }
+  if (INSTRUCTION_PATTERNS.some((p) => p.test(clean))) throw new Error("Bot will not save this because it reads like an instruction to Bot, not a fact about you.");
   return clean;
+}
+
+// ---- "remember that ..." in the user's own words ----
+// Saving without a tap needs ALL of this, checked in code: the user's own message opens or closes with an explicit
+// "remember", it is one short line with no link (a pasted page is neither), and most of the fact comes from that message,
+// so a model cannot slip in something the user did not say. A plain statement ("I am vegetarian") still gets the Save card.
+const EXPLICIT_EN = /^(?:(?:hey|hi|ok|okay)[ ,]+)?(?:bot[ ,:]+)?(?:please[ ,]+)?(?:remember|don'?t forget|note)(?:\s+that\b|\s*:)|[,.;-]\s*(?:please\s+)?remember\s+(?:that|this|it)[.!]?$/i;
+const EXPLICIT_HE = /^(?:בוט[ ,:]+)?(?:בבקשה[ ,]+)?(?:תזכור|תזכרי|זכור|זכרי|אל תשכח|אל תשכחי)\s*(?:לך\s*)?(?:ש|:)|[,.;-]\s*(?:תזכור|תזכרי|זכור|זכרי)\s+את\s+זה[.!]?$/;
+
+function explicitRemember(message, fact) {
+  const text = String(message).trim();
+  if (text.length > MAX_EXPLICIT_CHARS || /[\r\n]/.test(text) || /https?:|www\./i.test(text)) return false;
+  if (!EXPLICIT_EN.test(text) && !EXPLICIT_HE.test(text)) return false;
+  const said = new Set(terms(text));
+  const claimed = terms(fact);
+  return claimed.length > 0 && claimed.filter((t) => said.has(t)).length / claimed.length >= MIN_OVERLAP;
 }
 
 // ---- The profile file ----
@@ -65,7 +98,7 @@ function createMemory({ file = MEMORY_FILE } = {}) {
     try {
       const data = JSON.parse(fs.readFileSync(file, "utf8"));
       return Array.isArray(data.facts)
-        ? data.facts.filter((f) => f && typeof f.text === "string" && FACT_ID_PATTERN.test(String(f.id))).map(({ id, text, at }) => ({ id, text, at: Number(at) || 0 }))
+        ? data.facts.filter((f) => f && typeof f.text === "string" && FACT_ID_PATTERN.test(String(f.id))).map(({ id, text, at, pinned }) => ({ id, text, at: Number(at) || 0, ...(pinned === true ? { pinned: true } : {}) }))
         : [];
     } catch (error) {
       return []; // missing or unreadable: start empty
@@ -91,7 +124,7 @@ function createMemory({ file = MEMORY_FILE } = {}) {
     if (replaces !== null) {
       const old = typeof replaces === "string" && FACT_ID_PATTERN.test(replaces) ? facts.find((f) => f.id === replaces) : null;
       if (!old) throw new Error("fact not found (it may have been changed or forgotten already)");
-      const changed = { id: old.id, text: clean, at: Date.now() };
+      const changed = { ...old, text: clean, at: Date.now() };
       write(facts.map((f) => (f.id === old.id ? changed : f)));
       return { fact: changed, already: false };
     }
@@ -112,7 +145,18 @@ function createMemory({ file = MEMORY_FILE } = {}) {
     return true;
   }
 
-  return { list, add, remove };
+  // A pinned fact goes into every prompt (for things no keyword finds, like "prefers short answers"). Only the page sets this.
+  function pin(id, pinned) {
+    if (typeof id !== "string" || !FACT_ID_PATTERN.test(id)) return false;
+    const facts = read();
+    const fact = facts.find((f) => f.id === id);
+    if (!fact) return false;
+    if (pinned === true) fact.pinned = true; else delete fact.pinned;
+    write(facts);
+    return true;
+  }
+
+  return { list, add, remove, pin };
 }
 
 // ---- What goes into the prompts ----
@@ -120,30 +164,68 @@ function createMemory({ file = MEMORY_FILE } = {}) {
 // itself, so a profile line cannot close the block early and pretend to be an instruction.
 const stripMarkers = (text) => text.replace(/<\/?\s*about-the-user[^>]*>/gi, " ");
 
-// The facts that fit in a prompt: newest first until the cap is reached, numbered from 1.
-// The front desk sees these numbers, so it can say WHICH saved fact the user wants changed or forgotten;
-// code turns the number back into the fact's id (a model is never trusted with ids or text).
-function recentFacts(facts) {
-  const out = [];
-  let total = 0;
-  for (const f of [...facts].sort((a, b) => b.at - a.at)) {
-    const line = "- " + stripMarkers(f.text);
-    if (total + line.length + 1 > MAX_MEMORY_PROMPT_CHARS) break;
-    out.push({ n: out.length + 1, id: f.id, text: f.text });
-    total += line.length + 1;
-  }
-  return out;
+// Keyword search misses "what should I cook?" -> "Noa is vegetarian", because they share no word. These small word families
+// close the most common gaps for a personal assistant: a message that touches one family also searches for the rest of it.
+const TOPICS = [
+  "food eat eating cook cooking dinner lunch breakfast recipe restaurant hungry meal vegetarian vegan allergic allergy kosher אוכל לאכול לבשל מתכון ארוחה מסעדה צמחוני צמחונית טבעוני אלרגי אלרגיה כשר",
+  "family mother mom father dad sister brother wife husband girlfriend boyfriend parents kids משפחה אמא אבא אחות אחי אישה בעל חברה הורים ילדים",
+  "health doctor sick medicine pain dentist sleep gym workout בריאות רופא חולה תרופה כאב שיניים שינה כושר",
+  "study studies course exam homework university degree semester lecture לימודים קורס מבחן בוחן שיעורי אוניברסיטה תואר סמסטר הרצאה",
+  "work job boss salary reserve army עבודה בוס משכורת מילואים צבא",
+  "travel trip flight hotel vacation abroad train bus car drive טיול טיסה מלון חופשה חול רכבת אוטובוס רכב נסיעה",
+  "money budget buy price spend bank כסף תקציב לקנות מחיר בנק",
+  "birthday anniversary gift present party יומולדת הולדת מתנה מסיבה",
+  "pet pets dog cat חיות כלב כלבה חתול חתולה",
+].map((line) => line.split(" "));
+
+// Everyday words say nothing about a message's topic, so they are not searched for.
+const STOPWORDS = new Set("the a an is are am was were be been to of in on at for and or but with it its this that these those my me i you your we our do does did what when where who how why can could should would will just about from have has had not no so if as by they them their some any all there here than then שלי של את על עם זה זאת מה מי איך למה אני אתה יש אין לא כן גם או אם כי הוא היא הם לי לך".split(" "));
+
+function withTopics(query) {
+  const words = String(query).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w && !STOPWORDS.has(w));
+  const touches = (family) => family.some((w) => words.some((q) => q === w || (w.length >= 4 && q.includes(w))));
+  return [...words, ...TOPICS.filter(touches).flat()].join(" ");
 }
 
-const factsText = (facts, numbered) => recentFacts(facts).map((f) => (numbered ? `[${f.n}] ` : "- ") + stripMarkers(f.text)).join("\n");
+// The facts that match a text, best first. Weak matches (a shared short word) are left out.
+function bestMatches(facts, query) {
+  const text = String(query).slice(0, MAX_QUERY_CHARS).trim();
+  if (!text || !facts.length) return [];
+  const hits = search(createIndex(facts), withTopics(text), facts.length);
+  return hits.filter((h) => h.score >= hits[0].score * MATCH_FLOOR).map((h) => facts[h.index]);
+}
+
+// Which saved facts go into the prompt for this message, numbered from 1.
+//   Everything, if it all fits. Otherwise: the facts you pinned, then the ones that match the message, then a few of the newest.
+// Matches first means an old fact is found when it matters, and the number of saved facts does not grow the prompt.
+// The front desk sees the numbers, so it can say WHICH saved fact the user wants changed or forgotten; code turns the number
+// back into the fact (a model is never trusted with ids or text). core.js keeps this one list for the whole message.
+function pickFacts(facts, query = "", { maxChars = MAX_MEMORY_PROMPT_CHARS } = {}) {
+  const newest = [...facts].sort((a, b) => b.at - a.at);
+  const size = (f) => stripMarkers(f.text).length + 3;
+  const number = (list) => list.map((f, i) => ({ n: i + 1, id: f.id, text: f.text }));
+  if (newest.reduce((sum, f) => sum + size(f), 0) <= maxChars) return number(newest);
+  const order = [...newest.filter((f) => f.pinned), ...bestMatches(newest, query), ...newest.slice(0, NEWEST_EXTRA)];
+  const out = new Map();
+  let total = 0;
+  for (const f of order) {
+    if (out.has(f.id) || total + size(f) > maxChars) continue;
+    out.set(f.id, f);
+    total += size(f);
+  }
+  return number([...out.values()]);
+}
+
+const factsText = (picked, numbered) => picked.map((f) => (numbered ? `[${f.n}] ` : "- ") + stripMarkers(f.text)).join("\n");
 
 // The block pasted in front of a prompt. "" when there is nothing to say (then nothing changes).
 // numbered: the front desk gets "[1] ..." lines so it can point at one saved fact.
-function aboutBlock({ profileFile = PROFILE_FILE, memory = createMemory(), numbered = false } = {}) {
+// picked: the facts already chosen for this message (pickFacts); without it they are chosen here, from `query`.
+function aboutBlock({ profileFile = PROFILE_FILE, memory = createMemory(), numbered = false, query = "", picked = null } = {}) {
   let profile = "";
   let facts = "";
   try { profile = stripMarkers(loadProfile(profileFile)); } catch (error) { /* never break a task */ }
-  try { facts = factsText(memory.list(), numbered); } catch (error) { /* never break a task */ }
+  try { facts = factsText(picked || pickFacts(memory.list(), query), numbered); } catch (error) { /* never break a task */ }
   if (!profile && !facts) return "";
   return [
     "## Background about the user (private)",
@@ -166,6 +248,6 @@ function personalize(chain, prompt, about) {
 }
 
 module.exports = {
-  recentFacts, checkFact, loadProfile, createMemory, aboutBlock, personalize, isWebChain,
+  pickFacts, bestMatches, explicitRemember, checkFact, loadProfile, createMemory, aboutBlock, personalize, isWebChain,
   PROFILE_FILE, MEMORY_FILE, MAX_PROFILE_CHARS, MAX_MEMORY_PROMPT_CHARS, MAX_FACT_CHARS, MAX_FACTS,
 };

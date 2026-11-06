@@ -20,7 +20,7 @@ const { decide, FRONT_DESK_MODEL } = require("./frontdesk");
 const { plan, runPlan } = require("./planner");
 const { getLowPools, refreshQuota, prioritize } = require("./quota");
 const { getReminders, formatWhen } = require("./reminders");
-const { aboutBlock, personalize, recentFacts, createMemory } = require("./profile");
+const { aboutBlock, personalize, pickFacts, bestMatches, explicitRemember, createMemory } = require("./profile");
 const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
 
 const label = ({ provider, model }) => `${provider}/${model}`;
@@ -29,7 +29,7 @@ const chainText = (chain) => chain.map(label).join("  ->  ");
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
 // refreshQuota updates that flag in the background AFTER each answer, for the next message.
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, readCalendar: readCalendarEvents,
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, readCalendar: readCalendarEvents,
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
@@ -52,6 +52,13 @@ function historyBlock(history = []) {
     total += line.length;
   }
   return lines.length ? "Conversation so far (oldest first), for context only:\n" + lines.join("\n\n") : "";
+}
+
+// What the saved facts are searched with: the new message, plus the user's message before it, so that a follow-up like
+// "and what about her?" still finds the fact it is about.
+function memoryQuery(task, history = []) {
+  const last = [...history].reverse().find((m) => m.role === "user");
+  return last ? `${task} ${String(last.text).slice(0, 300)}` : task;
 }
 
 // The text a model actually receives: the history (if any) followed by the new message.
@@ -98,7 +105,13 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   // the models, but personalize() keeps it away from the web routes. A problem here never breaks a task.
   let about = "";
   let deskAbout = ""; // the same, but with the saved facts numbered, so the front desk can point at one
-  try { about = d.about() || ""; deskAbout = d.about({ numbered: true }) || ""; } catch (error) { /* no profile, same as before */ }
+  let allFacts = [];
+  let picked = []; // only the facts that matter for this message; one list for the whole task, so a number always means the same fact
+  try {
+    allFacts = d.facts();
+    picked = pickFacts(allFacts, memoryQuery(task, history));
+  } catch (error) { /* no saved facts to look at */ }
+  try { about = d.about({ picked }) || ""; deskAbout = d.about({ picked, numbered: true }) || ""; } catch (error) { /* no profile, same as before */ }
 
   // Which quota pools are low right now. Asked at most once per task. If the lookup fails for any
   // reason we treat it as "nothing is low", so quota can never break a task.
@@ -180,10 +193,12 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   function proposeFact(decision) {
     let old = null;
     if (decision.replaces) {
-      try {
-        const hit = recentFacts(d.facts()).find((f) => String(f.n) === decision.replaces);
-        if (hit) old = { id: hit.id, text: hit.text };
-      } catch (error) { /* no saved facts to look at */ }
+      const hit = picked.find((f) => String(f.n) === decision.replaces);
+      if (hit) old = { id: hit.id, text: hit.text };
+    } else if (decision.action === "forget") {
+      // The front desk named no number: offer the closest saved fact. The card shows it, so a wrong guess changes nothing.
+      const [best] = bestMatches(allFacts, task);
+      if (best) old = { id: best.id, text: best.text };
     }
     const reply = (answer, extra = {}) => {
       log(timingLine());
@@ -203,6 +218,17 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     }
     log(`[memory] proposed a ${old ? "change" : "new fact"} (not saved)`);
     if (old) return reply(`Change this saved fact?\nBefore: "${old.text}"\nAfter: "${decision.fact}"`, { remember: { fact: decision.fact, replaces: old } });
+    // The user said "remember that ..." themselves, in a short message of their own: no need to ask again. The page offers Undo.
+    if (explicitRemember(task, decision.fact)) {
+      try {
+        const { fact, already } = d.addFact(decision.fact);
+        log(`[memory] ${already ? "already known" : "saved at the user's own request"}`);
+        return reply(already ? `Bot already knows this: "${fact.text}"` : `Saved: "${fact.text}"`, already ? {} : { remembered: { id: fact.id, text: fact.text } });
+      } catch (error) {
+        log(`[memory] could not save: ${error.message}`);
+        return reply(error.message);
+      }
+    }
     return reply(`Should Bot remember this? "${decision.fact}"`, { remember: { fact: decision.fact } });
   }
 

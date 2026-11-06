@@ -143,7 +143,7 @@ function validateDecision(raw, { now = Date.now() } = {}) {
     }
   }
 
-  // The number of a saved fact (see profile.js recentFacts). Only digits get through; core.js maps it to the real fact.
+  // The number of a saved fact (see profile.js pickFacts). Only digits get through; core.js maps it to the real fact.
   const replaces = /^\d{1,3}$/.test(String(raw.replaces || "").trim()) ? String(raw.replaces).trim() : "";
   if (raw.action === "forget") return { action: "forget", destination: null, answer: "", reason, replaces };
   if (raw.action === "remember") {

@@ -18,6 +18,8 @@ const fakes = (overrides = {}) => ({
   lowPools: async () => [], // never the real agy /usage in tests
   refreshQuota: () => {},
   about: () => "", // never the real data/profile.md in tests (profile.test.js covers the profile)
+  facts: () => [], // nor the real saved facts
+  addFact: () => { throw new Error("no save was expected"); },
   askChain: async () => ({ answer: "model answer", used }),
   plan: async () => ({ subtasks: [{ id: 1, task: "a", type: "quick", needs: [] }], plannedBy: "fake-planner" }),
   runPlan: async (subtasks) => subtasks.map((s) => ({ ...s, answer: "step answer", used })),
