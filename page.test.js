@@ -238,3 +238,9 @@ test("the page polls fast (0.6 s) during the first 40 s of a task, so a front de
 test("the message box stays on screen: the page's row cannot grow with the sidebar or a long chat", () => {
   assert.match(html, /\.app \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
 });
+
+test("a course answer shows when it is not only from the files, and web sources apart from the file chips (text only)", () => {
+  assert.match(html, /result\.outside/);
+  assert.match(html, /"sub web-sources", "Web: " \+ result\.web\.sources\.join/);
+  assert.match(html, /result\.web\.failed/);
+});

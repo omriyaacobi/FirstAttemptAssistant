@@ -824,6 +824,10 @@
         });
         card.appendChild(src);
       }
+      // Not everything comes from the files: say so, and list the web sources (plain text, never links) apart from the file chips.
+      if (result.outside) card.appendChild(el("div", "sub outside-note", result.sources && result.sources.length ? "Part of this answer is general knowledge or from the web, not from your files." : "This answer is general knowledge or from the web, not from your files."));
+      if (result.web && result.web.sources && result.web.sources.length) card.appendChild(el("div", "sub web-sources", "Web: " + result.web.sources.join("; ")));
+      if (result.web && result.web.failed) card.appendChild(el("div", "sub err", "The web check failed, so this is from general knowledge."));
       if (result.searched !== undefined) card.appendChild(el("div", "sub", `Searched ${result.searched} pages of this course only`));
       wrap.appendChild(card);
     } else if (result.mode === "split") {
