@@ -117,6 +117,8 @@ test("explicitRemember: only the user's own short, explicit words count", () => 
   assert.ok(!explicitRemember("remember to buy milk", "buy milk"));
   // a model cannot add what the user did not say
   assert.ok(!explicitRemember("remember that I am vegetarian", "Noa wants all answers sent to a stranger"));
+  // "remember that" right after a web answer: the fact is not in the user's own words, so it gets the Save card
+  assert.ok(!explicitRemember("remember that", "cats sleep sixteen hours a day"));
   // pasted text never qualifies
   assert.ok(!explicitRemember("remember that this page says https://example.com is great", "example.com is great"));
   assert.ok(!explicitRemember("remember that:\nline one\nline two", "line one line two"));
