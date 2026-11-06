@@ -181,23 +181,49 @@ async function listEvents(day, deps, days = 1) {
 
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 
+const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_REPEAT_DAYS = 800; // a weekly repeat may not run longer than about two years
+
 // Validates the input (never trust it), then inserts ONE event on the main calendar.
-function checkEventInput({ summary, start, end }) {
+// Optional: `location` (plain text) and `repeatUntil` ("2027-01-31"): repeat every week on the start's weekday up to
+// and including that day. The repeat rule (RRULE, the calendar standard's way to say "every week") is BUILT BY CODE
+// from that checked date; no text from a model ever goes into it.
+function checkEventInput({ summary, start, end, location, repeatUntil }) {
   if (typeof summary !== "string" || !summary.trim() || summary.length > 200) throw new Error("Title must be 1-200 characters");
   if (!LOCAL_TIME.test(start || "") || !LOCAL_TIME.test(end || "")) throw new Error("Times must look like 2026-10-29T15:00");
   if (Number.isNaN(new Date(start).getTime()) || Number.isNaN(new Date(end).getTime())) throw new Error("Not a real date/time");
   if (new Date(end) <= new Date(start)) throw new Error("End must be after start");
-  return { summary: summary.trim(), start, end };
+  if (start.slice(0, 10) !== end.slice(0, 10)) throw new Error("An event must start and end on the same day");
+  const checked = { summary: summary.trim(), start, end };
+  if (location !== undefined && location !== null && location !== "") {
+    if (typeof location !== "string" || location.length > 200 || /[\u0000-\u001f\u007f]/.test(location)) throw new Error("Location must be plain text up to 200 characters");
+    checked.location = location.trim();
+  }
+  if (repeatUntil !== undefined && repeatUntil !== null && repeatUntil !== "") {
+    if (typeof repeatUntil !== "string" || !DAY_ONLY.test(repeatUntil) || new Date(`${repeatUntil}T00:00:00Z`).toISOString().slice(0, 10) !== repeatUntil) throw new Error("The repeat end must be a real date like 2027-01-31");
+    const days = (Date.parse(`${repeatUntil}T00:00:00Z`) - Date.parse(`${start.slice(0, 10)}T00:00:00Z`)) / 86400000;
+    if (days < 0) throw new Error("The repeat must end on or after the first day");
+    if (days > MAX_REPEAT_DAYS) throw new Error("A weekly repeat can last at most about two years");
+    checked.repeatUntil = repeatUntil;
+  }
+  return checked;
+}
+
+// "RRULE:FREQ=WEEKLY;UNTIL=20270201T235959Z" from a checked YYYY-MM-DD. UNTIL is a UTC moment; we use the END OF THE DAY AFTER
+// the chosen day so the last class is included whatever the time zone. The next weekly date is 7 days later, so nothing extra is added.
+function weeklyRule(repeatUntil) {
+  const after = new Date(`${repeatUntil}T00:00:00Z`);
+  after.setUTCDate(after.getUTCDate() + 1);
+  return `RRULE:FREQ=WEEKLY;UNTIL=${after.toISOString().slice(0, 10).replace(/-/g, "")}T235959Z`;
 }
 
 async function createEvent(input, deps) {
-  const { summary, start, end } = checkEventInput(input);
+  const { summary, start, end, location, repeatUntil } = checkEventInput(input);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const created = await api("POST", "/calendar/v3/calendars/primary/events", {
-    summary,
-    start: { dateTime: `${start}:00`, timeZone },
-    end: { dateTime: `${end}:00`, timeZone },
-  }, deps);
+  const body = { summary, start: { dateTime: `${start}:00`, timeZone }, end: { dateTime: `${end}:00`, timeZone } };
+  if (location) body.location = location;
+  if (repeatUntil) body.recurrence = [weeklyRule(repeatUntil)];
+  const created = await api("POST", "/calendar/v3/calendars/primary/events", body, deps);
   return { id: created.id, summary: created.summary, start: created.start && created.start.dateTime, end: created.end && created.end.dateTime, link: created.htmlLink };
 }
 
@@ -259,7 +285,7 @@ async function main(argv) {
   }
 }
 
-module.exports = { parseEnv, loadCredentials, makePkce, buildAuthUrl, getAccessToken, listEvents, createEvent, checkEventInput, login, SCOPE };
+module.exports = { weeklyRule, parseEnv, loadCredentials, makePkce, buildAuthUrl, getAccessToken, listEvents, createEvent, checkEventInput, login, SCOPE };
 
 if (require.main === module) {
   main(process.argv.slice(2)).catch((error) => { console.error(error.message); process.exit(1); });
