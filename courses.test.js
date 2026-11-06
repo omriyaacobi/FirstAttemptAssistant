@@ -253,7 +253,7 @@ async function startServer({ askChain, askFile, seed } = {}) {
     }
     throw new Error("no answer came");
   };
-  return { send, waitIdle, ask, close: () => server.close(), courses, courseRoutes, store, coursesDir: path.join(dir, "courses") };
+  return { send, waitIdle, ask, port, close: () => server.close(), courses, courseRoutes, store, coursesDir: path.join(dir, "courses") };
 }
 const octet = { "Content-Type": "application/octet-stream" };
 
@@ -677,4 +677,35 @@ test("before the first pages arrive, a chat says Bot is still reading, and a fin
   courses.setFile(course.id, file.id, { status: "ready", pages: 1, pagesTotal: 1 });
   const done = await askCourse({ course: courses.get(course.id), pages: courses.allPages(course.id), question: "word", askChain: async () => ({ answer: "a", used: { model: "m" } }) });
   assert.deepStrictEqual(done.reading, []);
+});
+
+// ---- the original page ----
+test("GET original: one page of a PDF as a small PDF with a fixed type; text has none", async () => {
+  const s = await startServer();
+  // The raw bytes and headers of a response (send() only keeps JSON).
+  const raw = (url) => new Promise((resolve, reject) => {
+    http.get({ host: "127.0.0.1", port: s.port, path: url, headers: { Host: `localhost:${s.port}` } }, (res) => {
+      const parts = [];
+      res.on("data", (c) => parts.push(c));
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(parts).toString("latin1") }));
+    }).on("error", reject);
+  });
+  try {
+    const c = s.courses.create("C");
+    const pdf = s.courses.addFile(c.id, { bytes: realPdf(4), kind: "pdf", ext: ".pdf", name: "n.pdf" });
+    const url = `/api/courses/${c.id}/files/${pdf.id}/original`;
+    const one = await raw(url + "?page=3");
+    assert.strictEqual(one.status, 200);
+    assert.strictEqual(one.headers["content-type"], "application/pdf");
+    assert.strictEqual(one.headers["x-content-type-options"], "nosniff");
+    assert.ok(one.body.includes("[MARK3]") && !one.body.includes("[MARK2]") && !one.body.includes("[MARK4]"));
+    assert.strictEqual((await raw(url + "?page=9")).status, 404);
+    assert.strictEqual((await raw(`/api/courses/${c.id}/files/0123456789abcdef/original`)).status, 404);
+    const uncut = s.courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "plain.pdf" });
+    assert.strictEqual((await raw(`/api/courses/${c.id}/files/${uncut.id}/original?page=1`)).status, 200, "a PDF that cannot be cut is sent whole");
+    const text = s.courses.addFile(c.id, { bytes: Buffer.from("hello"), kind: "text", ext: ".txt", name: "n.txt" });
+    assert.strictEqual((await raw(`/api/courses/${c.id}/files/${text.id}/original`)).status, 404);
+  } finally {
+    s.close();
+  }
 });

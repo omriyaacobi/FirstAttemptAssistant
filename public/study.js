@@ -368,7 +368,15 @@
   function pagesPanel(file, data) {
     const box = el("div", "pages-panel");
     data.pages.forEach((p) => {
-      box.appendChild(el("div", "sub", `Page ${p.page}`));
+      const head = el("div", "sub", `Page ${p.page} `);
+      if (file.kind === "pdf" || file.kind === "image") {
+        const link = el("a", "", "open the original");
+        link.href = `/api/courses/${current.course.id}/files/${file.id}/original?page=${p.page}`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        head.appendChild(link);
+      }
+      box.appendChild(head);
       box.appendChild(renderText(p.text));
     });
     if (data.more && data.pages.length) box.appendChild(button("Next pages", () => openFilePages(file.id, data.pages[data.pages.length - 1].page + 1)));
@@ -393,6 +401,35 @@
       xhr.send(file);
     });
   }
+
+  // ---- a source under an answer: the page in a popup over the chat, so you never lose your place ----
+  async function showSource(courseId, fileId, fileName, page) {
+    const dialog = $("sourceDialog");
+    const box = $("sourceBody");
+    $("sourceTitle").textContent = `${fileName}, page ${page}`;
+    box.replaceChildren(el("p", "sub", "Loading..."));
+    const actions = $("sourceActions");
+    actions.replaceChildren();
+    if (!dialog.open) dialog.showModal();
+    try {
+      const data = await api(`/api/courses/${courseId}/files/${fileId}/pages?from=${Math.max(1, page - 1)}`);
+      const at = data.pages.findIndex((p) => p.page === page);
+      if (at < 0) return box.replaceChildren(el("p", "sub", "Bot has no saved text for this page."));
+      box.replaceChildren(renderText(data.pages[at].text));
+      const go = (p) => () => showSource(courseId, fileId, fileName, p.page);
+      if (at > 0) actions.appendChild(button("Previous page", go(data.pages[at - 1])));
+      if (data.pages[at + 1]) actions.appendChild(button("Next page", go(data.pages[at + 1])));
+      const link = el("a", "button-link", "Open the original page");
+      link.href = `/api/courses/${courseId}/files/${fileId}/original?page=${page}`;
+      link.target = "_blank";
+      link.rel = "noopener";
+      actions.appendChild(link);
+    } catch (error) {
+      box.replaceChildren(el("p", "sub err", error.message));
+    }
+  }
+  $("sourceClose").addEventListener("click", () => $("sourceDialog").close());
+  $("sourceDialog").addEventListener("click", (e) => { if (e.target === $("sourceDialog")) $("sourceDialog").close(); });
 
   // ---- the bar inside a course chat: Chats, Sources, + New chat ----
   // The panel below the bar shows one of the two lists. It keeps its own copy of the course (fetched when opened and
@@ -455,8 +492,8 @@
 
   // ---- hooks into the main page ----
   window.studyShow = (courseId, focus) => { (courseId ? openCourse(courseId, focus) : loadList()).catch(fail); };
-  // A source chip under an answer: open that page of that file in its course.
-  window.studyOpenSource = (courseId, fileId, page) => { navGo({ view: "study", id: currentId, course: courseId }); showView("study", courseId, { fileId, page }); };
+  // A source chip under an answer: that page of that file, in a popup over the chat.
+  window.studyOpenSource = showSource;
   window.studyHide = () => { clearTimeout(timer); };
   $("studyBtn").addEventListener("click", () => { navGo({ view: "study", id: currentId }); showView("study"); });
   $("menu3").addEventListener("click", openSide);

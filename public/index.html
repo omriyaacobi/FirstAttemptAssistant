@@ -148,6 +148,9 @@
   /* Pop-up window (the quota). A native <dialog>: Esc closes it and the page behind it is dimmed. */
   dialog.popup { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y: auto; margin: auto; padding: 16px;
                  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, .35); }
+  dialog.source-popup { width: min(720px, calc(100vw - 32px)); }
+  .popup-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  a.button-link { display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-text); text-decoration: none; font-size: .9rem; }
   dialog.popup::backdrop { background: rgba(20, 8, 32, .55); }
   dialog.popup .quota-row { font-size: .9rem; margin: 10px 0; }
   /* Quota panel */
@@ -331,6 +334,15 @@
     <div class="row"><span class="status" id="loginStatus" role="status"></span><button type="submit">Log in</button></div>
   </form>
 </div>
+<dialog class="popup source-popup" id="sourceDialog" aria-labelledby="sourceTitle">
+  <div class="popup-head">
+    <strong id="sourceTitle" dir="auto"></strong>
+    <button type="button" class="ghost" id="sourceClose" aria-label="Close">Close</button>
+  </div>
+  <div id="sourceBody"></div>
+  <div class="actions" id="sourceActions"></div>
+</dialog>
+
 <dialog class="popup" id="quotaDialog" aria-labelledby="quotaTitle">
   <div class="row" style="margin-top:0">
     <strong id="quotaTitle">Quota (agy)</strong>
@@ -796,7 +808,7 @@
         result.sources.forEach((s) => {
           const chip = el("button", "ghost chip", `${s.file}, p.${s.page}`);
           chip.type = "button";
-          chip.addEventListener("click", () => window.studyOpenSource && window.studyOpenSource(result.courseId, s.fileId, s.page));
+          chip.addEventListener("click", () => window.studyOpenSource && window.studyOpenSource(result.courseId, s.fileId, s.file, s.page));
           src.appendChild(chip);
         });
         card.appendChild(src);

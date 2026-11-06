@@ -20,7 +20,7 @@ const { readOffice } = require("./office");
 const { openPdf } = require("./pdfcut");
 
 const CHUNK_PAGES = 20; // a whole file that could not be cut
-const CUT_CHUNK_PAGES = 5; // a cut file
+const CUT_CHUNK_PAGES = 10; // a cut file: measured best of 1, 5, 10 and 20
 const READERS_AT_ONCE = 3;
 const MIN_SPLIT = 5; // a chunk that fails is cut in halves down to this many pages
 const MAX_PAGES = 400; // a bigger PDF is read up to this page

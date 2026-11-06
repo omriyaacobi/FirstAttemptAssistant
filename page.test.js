@@ -150,7 +150,7 @@ function fakeStudyPage({ course }) {
     setAttribute() {}, click() {}, remove() {},
     contains(n) { return n === this || this.children.some((c) => c.contains && c.contains(n)); },
   });
-  const byId = { studyView: make("section"), studyBody: make("div"), studyTitle: make("h1"), studyStatus: make("span"), studyBtn: make("button"), menu3: make("button"), courseChats: make("button"), courseSources: make("button"), courseNew: make("button"), coursePanel: make("div") };
+  const byId = { sourceDialog: make("dialog"), sourceClose: make("button"), studyView: make("section"), studyBody: make("div"), studyTitle: make("h1"), studyStatus: make("span"), studyBtn: make("button"), menu3: make("button"), courseChats: make("button"), courseSources: make("button"), courseNew: make("button"), coursePanel: make("div") };
   const body = byId.studyBody;
   const document = { activeElement: null, createTextNode: (t) => ({ text: t }), addEventListener() {} };
   const state = { course: JSON.parse(JSON.stringify(course)) };
@@ -201,7 +201,8 @@ test("a course chat is the regular chat screen: same box, same messages, plus a 
   assert.ok(html.includes("courseId: currentCourse.id")); // a new chat in a course says which course
   assert.ok(html.includes("if (c.courseId) return;")); // course chats are listed in their course, not in the sidebar
   assert.match(html, /result\.mode === "course"/); // the answer shows the file and page chips
-  assert.match(html, /studyOpenSource\(result\.courseId, s\.fileId, s\.page\)/);
+  assert.match(html, /studyOpenSource\(result\.courseId, s\.fileId, s\.file, s\.page\)/);
+  assert.match(html, /id="sourceDialog"/, "a source opens in a popup over the chat, so the chat stays where it is");
   assert.match(study, /id = "newCourseChat"|start\.id = "newCourseChat"/);
   assert.match(study, /Delete the chat/);
   // model and file text only ever through textContent
