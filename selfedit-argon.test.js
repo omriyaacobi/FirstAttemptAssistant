@@ -393,3 +393,15 @@ test("real Argon editor (fake agy): trying a shell command once is forgiven with
     assert.strictEqual(f.failures.length, 0); // a forgiven try is not a quota failure
   } finally { f.cleanup(); }
 });
+
+// ---- the page and the server know about the choice ----
+
+test("the Improve Bot window offers Argon next to Sonnet and Opus, and says which quota it uses", () => {
+  const html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
+  assert.match(html, /<option value="sonnet">/);
+  assert.match(html, /<option value="argon">Argon \(page only\)<\/option>/);
+  assert.match(html, /Uses your Gemini quota, NOT Claude/);
+  assert.match(html, /Uses your Claude plan\./);
+  const server = fs.readFileSync(path.join(__dirname, "server.js"), "utf8");
+  assert.ok(server.includes('["sonnet", "opus", "argon"].includes(model)'));
+});

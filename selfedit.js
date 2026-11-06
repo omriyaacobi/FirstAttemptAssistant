@@ -615,7 +615,7 @@ function createSelfEdit({
       request: request.trim(),
       model,
       status: "running",
-      note: "The editor is working in a private copy...",
+      note: model === "argon" ? "Argon (your Gemini quota, page only) is working in a private copy..." : "The editor is working in a private copy...",
       baseCommit: (await git(repoDir, ["rev-parse", "HEAD"])).trim(),
       createdAt: Date.now(),
       roundStartedAt: Date.now(),

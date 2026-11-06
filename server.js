@@ -392,7 +392,7 @@ function createServer({
       const input = await readJsonBody(req, res);
       if (!input) return;
       const model = input.model === undefined ? "sonnet" : input.model;
-      if (!["sonnet", "opus"].includes(model)) return sendJson(res, 400, { error: "model must be sonnet or opus" });
+      if (!["sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be sonnet, opus or argon" });
       try {
         const { record } = await selfEdit.start(input.request, { model });
         return sendJson(res, 202, { proposal: record });

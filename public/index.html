@@ -473,7 +473,7 @@
       <div class="composer" id="improveComposer"><div class="inner">
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
         <div class="row">
-          <label id="improveModelLabel">Editor <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select></label>
+          <label id="improveModelLabel">Editor <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option><option value="argon">Argon (page only)</option></select> <span class="sub" id="improveQuotaNote">Uses your Claude plan.</span></label>
           <span class="status" id="improveStatus" role="status"></span>
           <button id="improveStart">Send</button>
         </div>
@@ -1937,6 +1937,9 @@
   $("menu2").addEventListener("click", openSide);
   $("newImprove").addEventListener("click", newImprove);
   $("improveStart").addEventListener("click", sendImprove);
+  // Which quota the chosen editor spends, in plain words. Argon only changes the web page (the public folder).
+  const QUOTA_NOTES = { sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
+  $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });
   $("improveText").addEventListener("keydown", (e) => {
     // Like the main chat: Enter sends, Shift+Enter makes a new line (on the phone's keyboard Enter is a new line).
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); sendImprove(); }
