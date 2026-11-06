@@ -366,3 +366,11 @@
 - Good to know: chats inside a course get only pinned facts and the 4 newest once memory is full, because `server.js` asks with no search words. `PROGRESS.md` holds two copies of itself (the second starts at the second "# Progress" line); worth cleaning up.
 - Follow-up calendar replies were already pasted into later models as chat history, so "no model reads an event" only holds for the first reply. A follow-up in a morning brief chat does the same.
 - Markdown in answers + bigger PC font (2026-11-06, branch `claude/markdown-font-6d2aa8`, NOT pushed or merged). Answers (regular and course chats, and the streaming text) are drawn by `fillMarkdown` in `public/index.html`: headings, bold, italics, `code`, bullet and numbered lists, rules, code blocks; only createElement / textContent, never innerHTML; every block is dir=auto so Hebrew works. Half-finished `**bold` or an open ``` block already look right while streaming. Font is 18px on PC (min-width 761px); the phone keeps 16px. Tests in `markdown.test.js` (fake DOM, including HTML staying inert). Not done: underscore italics, tables, links (shown as plain text).
+
+## 2026-11-06: where things stand
+
+- The scheduled night runs did nothing: they ran in default permission mode and stopped at the first permission prompt, so the tasks were redone in the daytime as Auto side chats. Lesson: start an unattended task once by hand and watch its first steps.
+- Live on main: faster answers, Markdown answers, bigger PC font, assistant memory (recall, morning brief, off by default), study upgrade (Sources panel, ticks, Word and PowerPoint, course chat camera).
+- Big scanned PDFs: read in 20-page chunks with a time limit that grows, empty answers asked again, failed chunks retried in halves, Continue after a stop. The 87-page 46 MB Calculus notebook read fully in the real Bot in about 35 minutes.
+- Open branches, not merged: `claude/study-faster-fe7506` (faster reading, better studying), `claude/math-render` (show math instead of raw LaTeX).
+- Next: decide on those two branches. Not tried live yet: real photo, Word and PowerPoint files in a course.

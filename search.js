@@ -15,7 +15,7 @@ function terms(text) {
   const clean = String(text).toLowerCase().replace(NIQQUD, "").replace(/["'״׳]/g, "").replace(/[ךםןףץ]/g, (c) => FINALS[c]);
   const out = [];
   for (const word of clean.split(/[^\p{L}\p{N}]+/u)) {
-    if (word.length < 2) continue;
+    if (word.length < 2 && !/\d/.test(word)) continue; // a single digit counts ("theorem 5")
     if (word.length <= 3) out.push(word);
     else for (let i = 0; i + 3 <= word.length; i++) out.push(word.slice(i, i + 3));
   }
