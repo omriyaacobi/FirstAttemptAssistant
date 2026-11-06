@@ -25,6 +25,7 @@ const { getLowPools, refreshQuota, noteFailure, prioritize, describeLow } = requ
 const { getReminders, formatWhen } = require("./reminders");
 const { aboutBlock, personalize, pickFacts, bestMatches, explicitRemember, createMemory } = require("./profile");
 const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
+const { wantsCalendarAdd, photoCalendarNote, checkPhotoEvents, getCards } = require("./calendar-add");
 const { createStore } = require("./store");
 const { findInChats, listFound, recallPrompt } = require("./recall");
 
@@ -52,6 +53,8 @@ function askOneWarm(provider, model, question, onText) {
 const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, noteFailure, prewarmAnswer, askOne: askOneWarm,
   // The answer model started alongside the front desk (null = off). It uses the pre-warmed pool, so it is killed with its signal.
   speculate: SPECULATE_ANSWER ? (question, { signal, onText }) => answerPool.askText(question, SPECULATIVE_MODEL.model, onText, { signal, timeoutMs: timeoutFor(SPECULATIVE_MODEL.model) }) : null, readCalendar: readCalendarEvents,
+  // A Confirm card for checked events (calendar-add.js). Bot only DRAFTS here: creating events needs the Confirm tap in server.js.
+  addCalendarCard: (proposal) => getCards().add(proposal),
   searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
@@ -103,7 +106,7 @@ function resultText(result) {
 const PHOTO_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
 const photoNote = (name) =>
   `The user attached a photo. It is the file "${name}" in your current folder. Open and look at that one file to answer; do not read or change anything else. ` +
-  "You cannot add anything to a calendar yet: if the photo shows a schedule or events, list each one clearly (date, start and end time, title) so the user can add them.";
+  "If the photo shows a schedule or events, list each one clearly (date, start and end time, title). You cannot add anything to a calendar yourself; if the user asks for that, Bot handles it with a card.";
 
 // Runs one task. A message never waits for the quota lookup; the lookup runs after the answer is ready.
 async function handleTask(task, options = {}) {
@@ -281,6 +284,23 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     return { mode: "single", rule: "calendar (read-only)", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
   }
 
+  // The user asked to ADD an event. The front desk model only proposed fields and frontdesk.js checked them. Code makes the
+  // Confirm card; nothing is created until the user taps Confirm (server.js). The log never contains titles.
+  function addEvent(decision) {
+    let extra = {}, answer = decision.answer;
+    if (decision.calendarAdd) {
+      try {
+        extra = { calendarAdd: d.addCalendarCard(decision.calendarAdd) };
+        answer = "Add this to your calendar? Nothing is added until you tap Confirm.";
+        log(`[calendar] drafted ${decision.calendarAdd.events.length} event(s), waiting for Confirm`);
+      } catch (error) {
+        answer = `Bot could not prepare the card: ${error.message}`;
+      }
+    }
+    log(timingLine());
+    return { mode: "single", rule: "calendar (add, needs Confirm)", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing, ...extra };
+  }
+
   // "What do you know about me?" is answered by code from the saved facts. A question about an earlier chat: code searches
   // the chats, and a cheap model answers from what was found, with no web and no tools; if it fails, the excerpts themselves
   // are the reply. Either way the reply lists the chats, so the page can open them.
@@ -343,13 +363,32 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
     const chain = quotaChain(PHOTO_CHAIN, low);
     log("[router] photo: a photo is attached, so only Gemini (through agy) can look at it");
     log(`[router] plan: ${chainText(chain)}`);
-    const question = `${personalize(chain, prompt, about)}\n\n${photoNote("photo" + path.extname(image.path))}`;
+    // When the user's own words ask to add the photo to the calendar, the model must answer with strict JSON only; code checks it
+    // below and builds a Confirm card. Any other photo message works as before.
+    const addToCalendar = wantsCalendarAdd(task);
+    const fileName = "photo" + path.extname(image.path);
+    const question = `${personalize(chain, prompt, about)}\n\n${addToCalendar ? photoCalendarNote(fileName) : photoNote(fileName)}`;
     const { answer, used } = await d.askChain(chain, question, {
       askOne: (provider, model, q) => d.askImage(model, q, image.path),
       onTry: (m) => log(`[router] trying ${label(m)}`),
       onFail: (m) => { log(`[router] ${label(m)} failed: ${m.message}`); noteLimit(m); },
     });
     log(`[router] answered by ${label(used)}`);
+    if (addToCalendar) {
+      let proposal = null, text, extra = {};
+      try {
+        proposal = checkPhotoEvents(answer);
+        text = "Add these to your calendar? Nothing is added until you tap Confirm.";
+        log(`[calendar] drafted ${proposal.events.length} event(s) from the photo, waiting for Confirm`);
+      } catch (error) {
+        text = `Bot could not turn the photo into calendar events: ${error.message}. Nothing was added. You can describe the events in words, or send the photo again.`;
+        log(`[calendar] the photo answer was refused: ${error.message}`);
+      }
+      if (proposal) {
+        try { extra = { calendarAdd: d.addCalendarCard(proposal) }; } catch (error) { text = `Bot could not prepare the card: ${error.message}`; }
+      }
+      return { mode: "single", rule: "photo (calendar add, needs Confirm)", reason: "a photo is attached and you asked to add it to the calendar", chain, used, answer: text, seconds: seconds(), ...extra, ...quotaField(low) };
+    }
     return { mode: "single", rule: "photo", reason: "a photo is attached", chain, used, answer, seconds: seconds(), ...quotaField(low) };
   }
 
@@ -446,6 +485,7 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   if (decision.action === "remind") return setReminder(decision);
   if (decision.action === "remember" || decision.action === "forget") return proposeFact(decision);
   if (decision.action === "calendar") return readCalendar(decision);
+  if (decision.action === "addEvent") return addEvent(decision);
   if (decision.action === "recall") return recall(decision);
 
   if (decision.action === "delegate") {

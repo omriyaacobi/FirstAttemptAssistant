@@ -18,6 +18,7 @@
 //   POST   /api/selfedit/:id/message  -> a follow-up message: the editor continues in the SAME private copy
 //   GET    /api/selfedit/:id/preview  -> the changed page, sandboxed, with sample data (see preview.js)
 //   (see selfedit.js: nothing changes in your project until you approve, and nothing is pushed)
+//   POST   /api/calendar/confirm | /cancel -> the Confirm / Cancel tap on a calendar card ({ id }); the only way an event is ever created (see calendar-add.js)
 //   POST   /api/restart            -> restart Bot to load new code (only when started by start-web.cmd)
 //   GET    /api/git                -> which commits are on this computer but not on GitHub yet
 //   POST   /api/git/push           -> push them (the page asks you to confirm first; see gitops.js)
@@ -68,6 +69,8 @@ const { askCourse } = require("./study");
 const { ingestFile } = require("./ingest");
 const { askChain, askAgyWithFile } = require("./providers");
 const { createMorning } = require("./morning");
+const { getCards } = require("./calendar-add");
+const { friendlyError } = require("./calendar-chat");
 
 const HOST = "127.0.0.1"; // listen on this computer only; other devices on your network can't connect
 const PORT = Number(process.env.PORT) || 3000;
@@ -168,6 +171,7 @@ function createServer({
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
   reminders = getReminders(),
+  calendarCards = getCards(), // the calendar cards waiting for a tap (calendar-add.js); tests pass cards with a fake calendar
   memory = createMemory(),
   profileFile = PROFILE_FILE,
   uploadDir = path.join(__dirname, "data", "uploads"), // a photo waits here only while its task runs (data/ is git-ignored)
@@ -433,6 +437,22 @@ function createServer({
         } catch (error) {
           return sendJson(res, selfEditStatus(error), { error: error.message });
         }
+      }
+    }
+
+    // The Confirm / Cancel tap on a calendar card. Only a tap here ever creates events (no model can). The same phone login as the
+    // other chat actions is enough: the card shows every event in full, only adds (Bot cannot delete or change events), works once
+    // and expires after 15 minutes, so a PIN would add friction without adding protection.
+    const calendarRoute = url.pathname.match(/^\/api\/calendar\/(confirm|cancel)$/);
+    if (calendarRoute && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      if (calendarRoute[1] === "cancel") return sendJson(res, 200, { cancelled: calendarCards.cancel(input.id) });
+      try {
+        return sendJson(res, 200, await calendarCards.confirm(input.id));
+      } catch (error) {
+        const message = error.loginProblem ? friendlyError(error) + " The card is kept: log in, then tap Confirm again." : error.message;
+        return sendJson(res, error.status || 500, { error: message, loginProblem: !!error.loginProblem });
       }
     }
 

@@ -18,6 +18,7 @@ const { MODELS, DESTINATIONS, CLAUDE_PLAN, poolsOf } = require("./router");
 const { parseWhen, cleanText, localIso } = require("./reminders");
 const { checkFact } = require("./profile");
 const { checkRequest } = require("./calendar-chat");
+const { checkTextEvent, checkPhotoEvents } = require("./calendar-add");
 
 // Flash LOW: with the short briefing it made the same decisions as medium on 49 messages (0 wrong, 0 invalid) in about half
 // the time, and in about 3.5 s when its process is pre-warmed (experiments/2026-11-05-frontdesk-speed.md).
@@ -50,9 +51,12 @@ const BACKUP_TIMEOUT_MS = 25000;
 // "calendar" means: the user asks what is on their calendar. The model only extracts a start day and a
 // number of days; validateDecision checks them, then code reads the calendar and writes the reply
 // (calendar-chat.js). No model ever sees an event.
+// "addEvent" means: the user asks to ADD an event to the calendar. The model only proposes a title, a start, an end and an
+// optional repeat end; validateDecision checks them (calendar-add.js), and core.js turns them into a Confirm card. Nothing
+// reaches the calendar until the user taps Confirm. No model can create an event.
 // "recall" means: the user asks about an earlier chat, or what Bot knows about them. The model only gives search words;
 // code searches the saved chats (recall.js) or lists the saved facts.
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar", "recall"];
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar", "addEvent", "recall"];
 const MAX_ANSWER_CHARS = 8000;
 const MAX_RECALL_QUERY_CHARS = 200;
 
@@ -75,10 +79,17 @@ const SCHEMA = {
     // Only for the action "calendar": the first day (YYYY-MM-DD) and how many days (1-14); empty otherwise.
     calendarFrom: { type: "string" },
     calendarDays: { type: "string" },
+    // Only for the action "addEvent": title, start (YYYY-MM-DDTHH:MM), end (same form, or "" for one hour), repeat end (YYYY-MM-DD, or "" for no repeat).
+    eventTitle: { type: "string" },
+    eventStart: { type: "string" },
+    eventEnd: { type: "string" },
+    eventRepeatUntil: { type: "string" },
+    // Only for addEvent with SEVERAL events (a schedule): one JSON text {events:[{title,weekday|date,start,end,location}],repeat,until,skipped}, checked in code by checkPhotoEvents.
+    eventsJson: { type: "string" },
     // Only for the action "recall": a few search words, or "" when they ask what Bot knows about them.
     recallQuery: { type: "string" },
   },
-  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays", "recallQuery"],
+  required: ["action", "destination", "answer", "reason", "reminderText", "remindAt", "timezone", "fact", "replaces", "calendarFrom", "calendarDays", "eventTitle", "eventStart", "eventEnd", "eventRepeatUntil", "eventsJson", "recallQuery"],
 };
 
 // The shape for the backup desk (forced through claude's --json-schema): only "action" and "reason" are required, and
@@ -164,6 +175,17 @@ function validateDecision(raw, { now = Date.now() } = {}) {
       return { action: "calendar", destination: null, answer: "", reason, calendar: checkRequest({ from: raw.calendarFrom, days: raw.calendarDays }) };
     } catch (error) {
       return null;
+    }
+  }
+
+  if (raw.action === "addEvent") {
+    // Code decides whether the proposed event is usable. A refused one becomes a plain reply saying why (nothing is created).
+    try {
+      const several = typeof raw.eventsJson === "string" && raw.eventsJson.trim();
+      const proposal = several ? checkPhotoEvents(raw.eventsJson, { now }) : checkTextEvent({ title: raw.eventTitle, start: raw.eventStart, end: raw.eventEnd, repeatUntil: raw.eventRepeatUntil }, { now });
+      return { action: "addEvent", destination: null, answer: "", reason, calendarAdd: { events: proposal.events, skipped: proposal.skipped } };
+    } catch (error) {
+      return { action: "addEvent", destination: null, answer: `Bot did not add anything: ${error.message}.`, reason, calendarAdd: null };
     }
   }
 
