@@ -405,3 +405,15 @@ Why: Bot sent a code question to Claude Sonnet while Claude was at its limit, be
 
 - Live on main: quota-aware routing, course chats that answer beyond the files with web checks, faster and more accurate PDF reading, source popup, duplicate upload refused. The to-do list above is done except the items below.
 - Next: press Read again on the Calculus notebook so Argon replaces the Flash read. Check math and the source popup on the real S23. Not covered yet: PDFs with object streams stay on the slow path, and a Hebrew question about English notes may miss them.
+
+## Improve Bot can use Argon for page changes (2026-11-06, branch `claude/improve-argon-c2ef07`, NOT pushed or merged)
+
+Why: UI changes through the Claude editor spend your Claude plan, the scarce quota. Argon (through `agy`) has its own pool.
+
+- **What you get:** in the Improve Bot window the Editor choice now has **Argon (page only)** next to Sonnet and Opus, with a line saying which quota it uses ("Uses your Gemini quota, NOT Claude. Changes the web page only."). Everything else is the same: private copy, tests, Preview, Approve, fast-forward merge, never a push.
+- **Concept, in plain English:** an "audit" means code watches every tool call the editor reports and stops it if it does something it may not. Argon may only use three tools (read a file, edit a file, write a file), only on paths inside the private copy, and only write under `public/`. After the run, a second layer checks the result: the diff may only contain files under `public/`, and nothing in your real project, `.env` or the other private copies may have changed. A third layer is agy itself: in `--mode accept-edits` it refuses shell commands, and because Bot starts it with `TEMP`/`TMP` pointing at an empty private folder it also refuses to touch anything but the private copy. Any layer failing stops the proposal.
+- **No silent fallback:** if Argon fails or its pool is under 15%, Bot says so and starts nothing; you pick Sonnet yourself.
+- **Test results:** `experiments/2026-11-06-improve-argon.md` (7 real tasks and one follow-up, all correct, all tests passing, 1 task needed a retry; about 25-60 s of Argon time per small change plus about 150 s per test run; Argon quota about 1% of the weekly limit per task).
+- **Files:** `selfedit.js` (`makeArgonEditor`, `auditAgyStep`, `outsideSnapshot`, `publicOnly` in `checkProposal`), `server.js` (accepts `argon`, one line), `public/index.html` (the option and the quota line), tests in `selfedit-argon.test.js` (fake editors and a fake agy; none calls a model).
+- **Limits you should know:** `search_web` cannot be switched off in agy's headless mode; the audit stops a run that uses it, but the search itself has already gone out (it can only carry words from the files Argon read). Argon sometimes starts with a shell command; agy refuses it and Bot retries once. I could not compare with Sonnet (Claude login expired here) and did not look at the phone layout change on a real phone.
+- **Next:** check Argon on the real Bot once (try a colour change), and look at the result in Preview on your phone.

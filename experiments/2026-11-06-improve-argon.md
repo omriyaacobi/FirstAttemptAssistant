@@ -30,3 +30,36 @@ The gate asked: cannot run shell commands and cannot write outside its folder, O
 - The diff of the proposal may only contain files under `public/` (new, deleted and renamed files included; symbolic links and submodules refused).
 
 Result: **gate passed**, with the limits listed in "What could not be verified".
+
+## Part 2: quality (real tasks through the real `selfedit.js` flow, on throwaway clones)
+
+Run with `experiments/argon-run.js` (one clone per task; clone, private copy, tests, retries, all as in Bot). Model: `gemini-4-argon-low`. The test suite is 605 tests and takes about 150 s each time it runs (before the edit and after each try), so times below include that. "Argon time" is what Argon itself took (from the first "reading the code" line to "checking which files changed").
+
+| # | Task | Did what was asked | Tests | Attempts | Argon time | Total | Files changed |
+|---|---|---|---|---|---|---|---|
+| 1 | Light accent colour purple -> teal #0d9488, keep dark readable | Yes: light `--accent`, a lighter teal for dark mode, and the phone status-bar colour | 605/605 | 2 (try 1 failed an existing page test, the retry fixed it) | 125 s + 148 s | 766 s | `public/index.html` |
+| 2 | 4 px more space between sidebar chats | Yes (`#chats { display:flex; flex-direction:column; gap:4px }`) | 605/605 | 1 | 38 s | 356 s | `public/index.html` |
+| 3 | Move the Quota button above "+ New chat" | Yes (the button moved, same id and attributes) | 605/605 | 1 | 40 s | 410 s | `public/index.html` |
+| 4 | Add a muted line "Bot runs on this computer." at the bottom of the sidebar | Yes (`<p class="sub">`, reuses the muted style) | 605/605 | 1 | 24 s | 331 s | `public/index.html` |
+| 4b | Follow-up on the SAME copy: "make that line italic and centered" | Yes (inline style on that line) | 605/605 | 1 | about 25 s | 175 s | `public/index.html` |
+| 5 | Phone (<= 560 px): Send button full width under the message box | Plausible: a rule inside the existing 560 px media block. **Not looked at on a real phone or in a browser.** | 605/605 | 1 | 36 s | 344 s | `public/index.html` |
+| 6 | Hebrew request: small grey line "נבנה עם עמרי" at the bottom of the sidebar | Yes (`<div class="sub" dir="auto">`, and it answered in Hebrew) | 605/605 | 1 | 59 s | 369 s | `public/index.html` |
+| M1 | Same as 1 with `gemini-4-argon-medium` | Yes | 605/605 | 2 | 136 s + 75 s | 701 s | `public/index.html` |
+
+- The runs of tasks 2 to 6 were all correct on the first try and touched only `public/index.html`. In every run the "only files under `public/`" check had nothing to refuse.
+- Task 2's first run stopped before editing because the project's own tests failed in the baseline run ("The project's own tests fail before any change"). That was the existing test suite being flaky (the same suite passed 605/605 right after, and the later rerun of task 2 passed). It is not an Argon problem. Two suites running at the same time make this more likely (two parallel runs both hit the 240 s test limit), so run one proposal at a time (Bot already does).
+- Effort: **low**. Medium found the same answer, also needed 2 tries on the colour task, and was not faster. Low is the default (`ARGON_MODEL` in `selfedit.js`).
+- Without the file list in the prompt, Argon often began with a shell command like `Get-ChildItem -Recurse`; agy refuses it and the whole turn ends empty. So the prompt now lists the files (made by code from the private copy), says there is no shell, and a single stop like that is retried once with a reminder.
+- Claude Sonnet comparison: **could not be done.** The Claude login in this environment is expired ("OAuth session expired and could not be refreshed"), the run stopped at once and spent no Claude quota. So there is no Sonnet-vs-Argon timing here.
+
+## Quota check
+
+`agy /usage` (`experiments/agy-usage.js`), before the 8 real runs of Part 2 (after the Part 1 probes) and after them:
+
+| Pool | Before | After |
+|---|---|---|
+| Gemini 4 Argon, weekly | 67% | 56% |
+| Gemini Models (Flash), weekly / five hour | 76% / 97% | 76% / 100% (window reset) |
+| Claude and GPT models, weekly / five hour | 97% / 100% | 97% / 100% |
+
+So the cost landed in the **Argon pool only** (about 1.2 percentage points of the weekly Argon limit per real task, because the model reads the 124 KB page several times; the 12 short Part 1 probes before that cost more than that too). Claude and GPT, and Flash, did not move. The `claude` plan was not used at all.
