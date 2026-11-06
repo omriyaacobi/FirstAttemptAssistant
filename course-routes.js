@@ -148,9 +148,12 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
         return sendJson(res, 200, { file: courses.setFile(id, fid, { use: input.use }) }), true;
       }
       if (action === "retry" && req.method === "POST") {
-        if (!(await readJsonBody(req, res))) return true;
+        const input = await readJsonBody(req, res);
+        if (!input) return true;
         if (file.status !== "failed" && file.status !== "ready") return sendJson(res, 409, { error: "this file is already being read" }), true;
-        courses.setFile(id, fid, { status: "queued", error: "", progress: "" });
+        // {resume: true} continues a read that stopped half way (file.resumeFrom); without it the whole file is read again.
+        const resume = input.resume === true && file.resumeFrom > 1;
+        courses.setFile(id, fid, { status: "queued", error: "", progress: "", ...(resume ? {} : { resumeFrom: 0 }) });
         enqueue(id, fid);
         return sendJson(res, 200, { ok: true }), true;
       }

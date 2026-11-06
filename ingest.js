@@ -1,7 +1,10 @@
 // ingest.js
 // Reads a course file ONCE and saves its text page by page (so later questions never re-read the file).
-//   - PDF: Gemini (through agy) reads it in chunks of CHUNK_PAGES pages. In my tests a 120-page PDF in one
-//     call took 266 s, and 40 pages 74 s, so chunks keep each call short enough to time out and retry safely.
+//   - PDF: Gemini (through agy) reads it in chunks of CHUNK_PAGES pages, so each call is short enough to time out and retry safely.
+//     Timing is NOT just per page. A normal 120-page PDF took 266 s in one call, but a 46 MB scanned notebook (87 pages) needed about
+//     200 s just to be opened by agy, plus 12-25 s per page (1 page: 205 s, 5 pages: 273 s, 15 pages: 389 s), so a 40-page chunk
+//     ran past the old 6-minute limit. agy also sometimes returns an EMPTY answer after ~35 s with no error: that is asked again.
+//     A read that stops half way keeps its pages and remembers where to continue (file.resumeFrom, the "Continue" button).
 //   - Photo: one Gemini call, one page.
 //   - Text file: no model at all, it is cut into pages here.
 // The model's output is untrusted text: parseTranscript only accepts lines in the expected shape, and the
@@ -13,10 +16,15 @@ const fs = require("node:fs");
 const { MODELS } = require("./router");
 const { readOffice } = require("./office");
 
-const CHUNK_PAGES = 40;
+const CHUNK_PAGES = 20;
 const MAX_PAGES = 400; // a bigger PDF is read up to this page
 const TEXT_PAGE_CHARS = 2000; // a text file is cut into pieces about this long
 const READ_CHAIN = [MODELS.flashMedium, MODELS.argonLow]; // Flash first; Argon only if Flash fails
+
+// How long one agy call may take for a chunk: at least 6 minutes, more for many pages and for a big file (measured, see the top).
+function chunkTimeoutMs(pages, bytes) {
+  return Math.max(6 * 60, 4 * 60 + Math.ceil(bytes / 1048576) * 5 + pages * 20) * 1000;
+}
 
 function chunkPrompt(from, to) {
   return `The user attached a file. It is the file "material" in your current folder. Open and look at that one file with your file-viewing tool (never run shell commands); do not read or change anything else.
@@ -78,6 +86,8 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
   try {
     set({ status: "reading", error: "", progress: "starting" });
     let pages = [];
+    const resumeFrom = file.kind === "pdf" && file.resumeFrom > 1 ? file.resumeFrom : 0; // a read that stopped half way continues here
+    if (resumeFrom) pages = courses.getPages(courseId, fileId);
     if (file.kind === "text") {
       pages = splitText(fs.readFileSync(fp, "utf8"));
     } else if (file.kind === "office") {
@@ -87,15 +97,17 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
         : splitText(doc.paragraphs.join("\n\n"));
     } else {
       let total = file.kind === "image" ? 1 : null;
-      let from = 1;
+      let from = pages.length ? resumeFrom : 1;
+      let stoppedAt = 0; // the first page of the chunk that failed, if one did
       while (total === null || from <= Math.min(total, MAX_PAGES)) {
         const to = file.kind === "image" ? 1 : from + CHUNK_PAGES - 1;
         set({ progress: total ? `pages ${from}-${Math.min(to, total)} of ${total}` : `reading the first pages` });
         let parsed;
         try {
-          parsed = await askChunk(askFile, fp, from, to, log);
+          parsed = await askChunk(askFile, fp, from, to, log, chunkTimeoutMs(to - from + 1, file.bytes || 0));
         } catch (error) {
           if (pages.length === 0) throw error;
+          stoppedAt = from;
           break; // keep the pages read so far; the note below says which are missing
         }
         if (gone()) return;
@@ -104,6 +116,10 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
         pages.push(...inRange);
         if (file.kind === "image") break;
         from = to + 1;
+        if (pages.length && from <= Math.min(total, MAX_PAGES)) { // more to come: keep what is read so far, in case something stops us
+          courses.savePages(courseId, fileId, pages.slice().sort((a, b) => a.page - b.page));
+          set({ resumeFrom: from });
+        }
       }
       total = Math.min(total, MAX_PAGES);
       const seen = new Set(pages.map((p) => p.page));
@@ -112,32 +128,39 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
       pages.sort((a, b) => a.page - b.page);
       if (pages.length === 0) throw new Error("no text could be read from this file");
       courses.savePages(courseId, fileId, pages);
-      set({ status: "ready", pages: pages.length, progress: "", error: missing.length ? `${missing.length} of ${total} pages had no text (for example page ${missing[0]})` : "" });
+      const note = stoppedAt ? `reading stopped at page ${stoppedAt} of ${total}: press Continue to read the rest` : missing.length ? `${missing.length} of ${total} pages had no text (for example page ${missing[0]})` : "";
+      set({ status: "ready", pages: pages.length, progress: "", error: note, resumeFrom: stoppedAt });
       return;
     }
     if (pages.length === 0) throw new Error("the file has no text");
     courses.savePages(courseId, fileId, pages);
-    set({ status: "ready", pages: pages.length, progress: "", error: "" });
+    set({ status: "ready", pages: pages.length, progress: "", error: "", resumeFrom: 0 });
   } catch (error) {
     set({ status: "failed", progress: "", error: String(error.message).slice(0, 200) });
   }
 }
 
-// One chunk, Flash first; if it fails or returns no pages, the same chunk once more with Argon.
-async function askChunk(askFile, fp, from, to, log) {
+// One chunk, Flash first; if it fails or returns no pages, the same chunk once more with Argon. An EMPTY answer (agy sometimes
+// returns nothing, quickly, with no error) is asked again with the same model first; a wrong-shaped answer or an error is not.
+async function askChunk(askFile, fp, from, to, log, timeoutMs) {
   let lastError = null;
   for (const { model } of READ_CHAIN) {
-    try {
-      const output = await askFile(model, chunkPrompt(from, to), fp);
-      const parsed = parseTranscript(output);
-      if (parsed.pages.length > 0) return parsed;
-      lastError = new Error("the model returned no pages");
-    } catch (error) {
-      lastError = error;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      let again = false;
+      try {
+        const output = await askFile(model, chunkPrompt(from, to), fp, { timeoutMs });
+        const parsed = parseTranscript(output);
+        if (parsed.pages.length > 0) return parsed;
+        again = !String(output || "").trim();
+        lastError = new Error(again ? "the model returned nothing" : "the model returned no pages");
+      } catch (error) {
+        lastError = error;
+      }
+      log(`[ingest] ${model} failed on pages ${from}-${to}: ${String(lastError.message).slice(0, 100)}`);
+      if (!again) break;
     }
-    log(`[ingest] ${model} failed on pages ${from}-${to}: ${String(lastError.message).slice(0, 100)}`);
   }
   throw lastError;
 }
 
-module.exports = { ingestFile, parseTranscript, splitText, chunkPrompt, CHUNK_PAGES, MAX_PAGES };
+module.exports = { ingestFile, parseTranscript, splitText, chunkPrompt, chunkTimeoutMs, CHUNK_PAGES, MAX_PAGES };

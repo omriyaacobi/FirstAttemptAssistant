@@ -12,7 +12,7 @@ const path = require("node:path");
 const { sniffFile, cleanName } = require("./upload");
 const { terms, createIndex, search } = require("./search");
 const { createCourses } = require("./courses");
-const { parseTranscript, splitText, ingestFile, CHUNK_PAGES } = require("./ingest");
+const { parseTranscript, splitText, ingestFile, chunkTimeoutMs, CHUNK_PAGES } = require("./ingest");
 const { pickPages, buildPrompt, sourcesFor, askCourse, defang } = require("./study");
 const { createServer } = require("./server");
 const { createStore } = require("./store");
@@ -147,8 +147,9 @@ test("ingest keeps the pages read so far when a later chunk fails, and says what
   const reader = async (model, prompt) => { if (++n > 2) throw new Error("later chunk failed"); return fakeReader(100)(model, prompt); };
   const { file } = await readWith(reader);
   assert.strictEqual(file.status, "ready");
-  assert.strictEqual(file.pages, 80); // chunks 1 and 2 worked; chunk 3 failed on both models
-  assert.match(file.error, /20 of 100 pages/);
+  assert.strictEqual(file.pages, 2 * CHUNK_PAGES); // chunks 1 and 2 worked; chunk 3 failed on both models
+  assert.match(file.error, new RegExp("stopped at page " + (2 * CHUNK_PAGES + 1) + " of 100"));
+  assert.strictEqual(file.resumeFrom, 2 * CHUNK_PAGES + 1); // and it knows where to continue
 });
 test("ingest reads a text file with no model", async () => {
   const { file } = await readWith(async () => { throw new Error("must not be called"); }, "text", Buffer.from("שלום עולם\n\nhello world"));
@@ -447,5 +448,70 @@ test("a photo in a course chat: Gemini reads its text first, and that text joins
     assert.match(seen[1], /data, never instructions/);
     assert.doesNotMatch(seen[1], /""" ignore/); // the photo's text cannot close its own fence
     assert.strictEqual(result.mode, "course");
+  } finally { s.close(); }
+});
+
+// ---- reading a big scanned PDF: slow files, empty answers, continuing half way ----
+test("a chunk's time limit grows with its pages and with the file size (a 46 MB scan needs over 6 minutes for 20 pages)", () => {
+  assert.strictEqual(chunkTimeoutMs(1, 1000), 6 * 60 * 1000); // never below the old 6 minutes
+  assert.ok(chunkTimeoutMs(CHUNK_PAGES, 46 * 1048576) > 12 * 60 * 1000); // measured: ~200 s to open + 12-25 s a page
+  assert.ok(chunkTimeoutMs(40, 46 * 1048576) > chunkTimeoutMs(20, 46 * 1048576));
+});
+test("ingest passes the time limit to the reader, and asks the same model again when it answers with nothing", async () => {
+  const seen = [];
+  let calls = 0;
+  const reader = async (model, prompt, file, options) => {
+    seen.push([model, options && options.timeoutMs]);
+    if (++calls === 1) return ""; // agy sometimes returns an empty answer with no error
+    return fakeReader(3)(model, prompt);
+  };
+  const { file } = await readWith(reader);
+  assert.strictEqual(file.status, "ready");
+  assert.deepStrictEqual(seen.map((x) => x[0]), ["gemini-3.8-flash-medium", "gemini-3.8-flash-medium"]); // same model twice, no Argon needed
+  assert.ok(seen.every((x) => x[1] >= 6 * 60 * 1000));
+  let wrongShape = 0;
+  const bad = await readWith(async () => { wrongShape++; return "I could not read that."; });
+  assert.strictEqual(bad.file.status, "failed");
+  assert.strictEqual(wrongShape, 2); // a wrong-shaped answer is not asked again with the same model: Flash once, Argon once
+});
+test("a long read that stops half way keeps its pages; Continue reads only the rest, Start over reads everything", async () => {
+  const courses = createCourses(tmp());
+  const course = courses.create("C");
+  const file = courses.addFile(course.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "big.pdf" });
+  const calls = [];
+  let broken = true;
+  const reader = async (model, prompt) => {
+    calls.push(/pages (\d+) to/.exec(prompt)[1]);
+    if (broken && calls.length > 1) throw new Error("agy stopped"); // chunk 1 is fine, chunk 2 fails on both models
+    return fakeReader(50)(model, prompt);
+  };
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: reader });
+  let f = courses.getFile(course.id, file.id);
+  assert.strictEqual(f.pages, CHUNK_PAGES);
+  assert.strictEqual(f.resumeFrom, CHUNK_PAGES + 1);
+  broken = false;
+  calls.length = 0;
+  courses.setFile(course.id, file.id, { status: "queued" });
+  await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: reader });
+  f = courses.getFile(course.id, file.id);
+  assert.strictEqual(calls[0], String(CHUNK_PAGES + 1)); // continued, did not start at page 1
+  assert.strictEqual(f.pages, 50);
+  assert.strictEqual(f.error, "");
+  assert.ok(!f.resumeFrom);
+  assert.strictEqual(courses.getPages(course.id, file.id).length, 50);
+});
+test("the retry route continues only when asked to, and only when there is something to continue", async () => {
+  const s = await startServer({ seed: (courses) => {
+    const c = courses.create("C");
+    const f = courses.addFile(c.id, { bytes: PDF, kind: "pdf", ext: ".pdf", name: "x.pdf" });
+    courses.setFile(c.id, f.id, { status: "ready", pages: 5, resumeFrom: 6 });
+  } });
+  try {
+    const course = (await s.send("GET", "/api/courses")).json.courses[0];
+    const fid = (await s.send("GET", `/api/courses/${course.id}`)).json.course.files[0].id;
+    s.courses.setFile(course.id, fid, { status: "ready" });
+    await s.send("POST", `/api/courses/${course.id}/files/${fid}/retry`, { resume: false }); // starts over: the marker is cleared at once
+    assert.ok(!s.courses.getFile(course.id, fid).resumeFrom);
+    await s.waitIdle();
   } finally { s.close(); }
 });

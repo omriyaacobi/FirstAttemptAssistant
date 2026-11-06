@@ -267,7 +267,10 @@
       if (f.error) text.appendChild(el("div", "sub err", f.error));
       const actions = el("div", "actions");
       if (pages && f.status === "ready") actions.appendChild(button("View text", () => openFilePages(f.id, 1)));
-      if (f.status === "failed" || f.status === "ready") actions.appendChild(button(f.status === "ready" ? "Read again" : "Retry", async () => { try { await post(`/api/courses/${course.id}/files/${f.id}/retry`); await after(); } catch (error) { fail(error); } }));
+      const reread = (resume) => async () => { try { await post(`/api/courses/${course.id}/files/${f.id}/retry`, { resume }); await after(); } catch (error) { fail(error); } };
+      const done = f.status === "failed" || f.status === "ready";
+      if (done && f.resumeFrom > 1) actions.appendChild(button("Continue", reread(true))); // a long read that stopped half way keeps its pages
+      if (done) actions.appendChild(button(f.status === "ready" ? "Read again" : f.resumeFrom > 1 ? "Start over" : "Retry", reread(false)));
       actions.appendChild(button("Delete", async () => {
         if (!confirm(`Delete "${f.name}" from this course?`)) return;
         try { await api(`/api/courses/${course.id}/files/${f.id}`, { method: "DELETE" }); await after(); } catch (error) { fail(error); }
