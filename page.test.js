@@ -150,9 +150,9 @@ function fakeStudyPage({ course }) {
     setAttribute() {}, click() {}, remove() {},
     contains(n) { return n === this || this.children.some((c) => c.contains && c.contains(n)); },
   });
-  const byId = { studyView: make("section"), studyBody: make("div"), studyTitle: make("h1"), studyStatus: make("span"), studyBtn: make("button"), menu3: make("button") };
+  const byId = { studyView: make("section"), studyBody: make("div"), studyTitle: make("h1"), studyStatus: make("span"), studyBtn: make("button"), menu3: make("button"), courseChats: make("button"), courseSources: make("button"), courseNew: make("button"), coursePanel: make("div") };
   const body = byId.studyBody;
-  const document = { activeElement: null, createTextNode: (t) => ({ text: t }) };
+  const document = { activeElement: null, createTextNode: (t) => ({ text: t }), addEventListener() {} };
   const state = { course: JSON.parse(JSON.stringify(course)) };
   const sandbox = {
     document, window: {}, console, JSON, Promise, Map, Set, Error, RegExp, Math, String, Number, Array, Object,
@@ -212,4 +212,18 @@ test("the phone's Back button works inside a course: a course opened or left is 
   assert.ok(html.includes('showView("study", s.course)')); // Back to a study entry reopens that course
   assert.ok(html.includes("sameCourse(target.course, here.course)"));
   assert.match(study, /navGo\(\{ view: "study", id: currentId, course: id \}\)/);
+});
+
+test("the course screen has Sources beside Chats: drop zone, per-file status, tick boxes; the chat bar has Chats, Sources and + New chat", () => {
+  assert.match(study, /dropzone/);
+  assert.match(study, /document\.addEventListener\("drop"/); // drag and drop
+  assert.match(study, /picker\.multiple = true/); // several files at once
+  assert.match(study, /\/use`, \{ use: tick\.checked \}/); // the tick
+  assert.match(study, /Use in chats: /); // the tick has an accessible name
+  assert.match(html, /id="courseNew"/);
+  assert.match(html, /id="courseChats"/);
+  assert.match(html, /id="courseSources"/);
+  assert.match(html, /\.course-cols \{[^}]*grid-template-columns/);
+  assert.ok(!html.includes('$("attach").hidden = !!currentCourse'), "the camera button stays in course chats");
+  assert.doesNotMatch(study, /\.innerHTML\s*=|insertAdjacentHTML|document\.write\(/);
 });
