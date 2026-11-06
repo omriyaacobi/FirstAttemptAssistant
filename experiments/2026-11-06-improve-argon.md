@@ -37,13 +37,13 @@ Run with `experiments/argon-run.js` (one clone per task; clone, private copy, te
 
 | # | Task | Did what was asked | Tests | Attempts | Argon time | Total | Files changed |
 |---|---|---|---|---|---|---|---|
-| 1 | Light accent colour purple -> teal #0d9488, keep dark readable | Yes: light `--accent`, a lighter teal for dark mode, and the phone status-bar colour | 605/605 | 2 (try 1 failed an existing page test, the retry fixed it) | 125 s + 148 s | 766 s | `public/index.html` |
+| 1 | Light accent colour purple -> teal #0d9488, keep dark readable | Yes: light `--accent`, a lighter teal for dark mode, and the phone status-bar colour | 605/605 | 2 (try 1 failed an existing page test, the retry fixed it) | 121 s + 148 s | 766 s | `public/index.html` |
 | 2 | 4 px more space between sidebar chats | Yes (`#chats { display:flex; flex-direction:column; gap:4px }`) | 605/605 | 1 | 38 s | 356 s | `public/index.html` |
-| 3 | Move the Quota button above "+ New chat" | Yes (the button moved, same id and attributes) | 605/605 | 1 | 40 s | 410 s | `public/index.html` |
+| 3 | Move the Quota button above "+ New chat" | Yes (the button moved, same id and attributes) | 605/605 | 1 | 36 s | 410 s | `public/index.html` |
 | 4 | Add a muted line "Bot runs on this computer." at the bottom of the sidebar | Yes (`<p class="sub">`, reuses the muted style) | 605/605 | 1 | 24 s | 331 s | `public/index.html` |
-| 4b | Follow-up on the SAME copy: "make that line italic and centered" | Yes (inline style on that line) | 605/605 | 1 | about 25 s | 175 s | `public/index.html` |
-| 5 | Phone (<= 560 px): Send button full width under the message box | Plausible: a rule inside the existing 560 px media block. **Not looked at on a real phone or in a browser.** | 605/605 | 1 | 36 s | 344 s | `public/index.html` |
-| 6 | Hebrew request: small grey line "נבנה עם עמרי" at the bottom of the sidebar | Yes (`<div class="sub" dir="auto">`, and it answered in Hebrew) | 605/605 | 1 | 59 s | 369 s | `public/index.html` |
+| 4b | Follow-up on the SAME copy: "make that line italic and centered" | Yes (inline style on that line) | 605/605 | 1 | not timed alone | 175 s | `public/index.html` |
+| 5 | Phone (<= 560 px): Send button full width under the message box | Plausible: a rule inside the existing 560 px media block. **Not looked at on a real phone or in a browser.** | 605/605 | 1 | 33 s | 344 s | `public/index.html` |
+| 6 | Hebrew request: small grey line "נבנה עם עמרי" at the bottom of the sidebar | Yes (`<div class="sub" dir="auto">`, and it answered in Hebrew) | 605/605 | 1 | 60 s | 369 s | `public/index.html` |
 | M1 | Same as 1 with `gemini-4-argon-medium` | Yes | 605/605 | 2 | 136 s + 75 s | 701 s | `public/index.html` |
 
 - The runs of tasks 2 to 6 were all correct on the first try and touched only `public/index.html`. In every run the "only files under `public/`" check had nothing to refuse.
