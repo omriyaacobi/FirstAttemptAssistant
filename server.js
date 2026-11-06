@@ -558,6 +558,8 @@ if (require.main === module) {
     store,
     courses: createCourses(path.join(__dirname, "data", "courses")),
     askCourse, ingestFile, askChain, askFile: askAgyWithFile,
+    // Other-language search words for course questions (crosslang.js): one short Flash call through the front desk's pre-warmed agy.
+    expand: (text) => { const { expandQuery } = require("./crosslang"); const fd = require("./frontdesk"); return expandQuery({ text, askStructured: fd.warm.askStructured, model: fd.FRONT_DESK_MODEL.model }); },
     about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
     log: console.log,
   });

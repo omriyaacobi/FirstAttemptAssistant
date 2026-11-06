@@ -431,3 +431,11 @@ Why: Omri sent a timetable photo and asked for it weekly until the end of Januar
 - Not done: no way to delete or change events (on purpose); a card cannot be edited, cancel and ask again.
 
 - Several events from TEXT (2026-11-06 evening, on main): after the single event worked live, "add me the schedule" in a text-only message was refused. Fix: the `addEvent` action has a field `eventsJson` for a whole schedule written in the message or listed earlier in the chat; it goes through the same code checks as a photo (`checkPhotoEvents`) into ONE card. Needs a Bot restart. Not tried live yet. A photo is still the surest way, because the photo itself is not re-sent in a later message.
+
+## Course search across Hebrew and English (branch claude/hebrew-notes-477307, 2026-11-06, NOT pushed or merged)
+- Problem reproduced on the real courses: Hebrew questions about English slides found the right page only 5 times in 10 (the old .pptx has no KEYWORDS line). Calculus 2 was already fine because its pages carry bilingual keywords.
+- Fix: `crosslang.js`. Plain code checks if the question's language differs from the notes' language (words, LaTeX ignored). Only then one Flash call (pre-warmed agy, 8 s limit, no Claude) returns search words in Hebrew and English; they are cleaned and added to the page search. Failure or timeout = today's search. Lecture-by-number and whole-course are untouched; the words never reach the prompt or `safeWebQuery`.
+- Result: 28 of 28 questions hit (was 23), 3 s median added only on cross-language questions. Details: experiments/2026-11-06-hebrew-english-search.md. Tests: `crosslang.test.js` (fake models, failure, timeout); the whole suite passes.
+- Hooks: `study.js` (`choosePages` extra words, `askCourse` `expand`), `course-routes.js`, `server.js` (uses the front desk's warm agy pool; needs a Restart Bot to take effect).
+- Not verified: the live app path (server restart not done), a Hebrew question on a course with only Hebrew pages and no keywords, the warm pool sharing with a front-desk message sent at the same moment (it then just starts cold, slower by ~3 s).
+- Idea for later: re-read old files so they get KEYWORDS lines (would remove the need for the call on them).
