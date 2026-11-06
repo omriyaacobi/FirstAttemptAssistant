@@ -21,14 +21,14 @@
 const { exec, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const { poolsOf, poolsForModel, CLAUDE_PLAN, CLAUDE_OPUS_WEEK } = require("./router");
-const { CLAUDE_CMD, claudeEnv, SANDBOX_DIR, killTree } = require("./providers");
+const { CLAUDE_CMD, claudeEnv, SANDBOX_DIR, killTree, onClaudeRateLimit } = require("./providers");
 
 const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bin\\agy.exe";
 
 const LOW_THRESHOLD = 15; // a pool is "low" when any of its windows has less than this % left (the same for Claude and Gemini)
 const LOOKUP_TIMEOUT_MS = 15000; // an agy lookup that takes longer than this counts as failed
 const CLAUDE_PROBE_TIMEOUT_MS = 40000; // the tiny Haiku call that reads Claude's limits
-const CLAUDE_PROBE_EVERY_MS = 60 * 1000; // ...at most once a minute (each one costs a few tokens of the Claude plan)
+const CLAUDE_PROBE_EVERY_MS = 10 * 60 * 1000; // ...at most once in 10 minutes, and not at all when a real answer showed the numbers lately (each probe costs a few thousand tokens of the Claude plan)
 const LIMIT_BACKOFF_MS = 30 * 60 * 1000; // a limit error with no reset time in it: treat the pool as low this long
 const CLAUDE_SONNET_WEEK = "Claude plan (Sonnet)";
 
@@ -76,6 +76,31 @@ function rowFromRateLimitInfo(info, now = Date.now()) {
   return { ...where, remaining, resets, source: "claude" };
 }
 
+// A real event looks like (ids removed):
+//   {"status":"allowed","resetsAt":1793989800,"rateLimitType":"five_hour","isUsingOverage":false,
+//    "unifiedWindows":{"five_hour":{"utilization":0.33,"resetsAt":1793989800,"status":"allowed"},
+//                      "seven_day":{"utilization":0.57,"resetsAt":1793977200,"status":"allowed"}}}
+// The numbers live in unifiedWindows, one entry per window that exists (seven_day_opus is simply absent when the plan has none).
+// There is no top-level "utilization": the top-level fields only name the window the CLI considers most important.
+// So: every window in unifiedWindows becomes its own row; the top-level shape is read only as a fallback (a window
+// that unifiedWindows does not cover, or a "rejected" event, which must always count). Returns a list of rows.
+function rowsFromRateLimitInfo(info, now = Date.now()) {
+  if (!info || typeof info !== "object") return [];
+  const rows = [];
+  const windows = info.unifiedWindows && typeof info.unifiedWindows === "object" ? info.unifiedWindows : {};
+  for (const [type, w] of Object.entries(windows)) {
+    if (!w || typeof w !== "object") continue;
+    const row = rowFromRateLimitInfo({ status: typeof w.status === "string" ? w.status : "allowed", rateLimitType: type, utilization: w.utilization, resetsAt: w.resetsAt }, now);
+    if (row) rows.push(row);
+  }
+  const covered = Object.hasOwn(windows, info.rateLimitType);
+  if (!covered || info.status === "rejected") {
+    const row = rowFromRateLimitInfo(info, now);
+    if (row) rows.push(row); // pushed last, so it wins over a window row for the same window
+  }
+  return rows;
+}
+
 // Reads the output of `claude -p --output-format stream-json --verbose`: one JSON object per line. Returns the rows from the
 // rate_limit_event lines, plus the text of an error result (a failed call prints its error as the result), if any.
 function parseClaudeStream(text, now = Date.now()) {
@@ -87,8 +112,7 @@ function parseClaudeStream(text, now = Date.now()) {
     try { event = JSON.parse(line); } catch (error) { continue; }
     if (!event || typeof event !== "object") continue;
     if (event.type === "rate_limit_event") {
-      const row = rowFromRateLimitInfo(event.rate_limit_info, now);
-      if (row) rows.push(row);
+      rows.push(...rowsFromRateLimitInfo(event.rate_limit_info, now));
     } else if (event.type === "result" && event.is_error && typeof event.result === "string") {
       errorText = event.result.slice(0, 300);
     }
@@ -202,7 +226,7 @@ function fetchUsage() {
 function probeClaude() {
   return new Promise((resolve) => {
     fs.mkdirSync(SANDBOX_DIR, { recursive: true });
-    const command = `${CLAUDE_CMD} -p --model haiku --tools "" --no-session-persistence --output-format stream-json --verbose`;
+    const command = `${CLAUDE_CMD} -p --model haiku --tools "" --no-session-persistence --disable-slash-commands --system-prompt ok --output-format stream-json --verbose`;
     const child = exec(command, { cwd: SANDBOX_DIR, env: claudeEnv(), maxBuffer: 1e7, windowsHide: true }, (error, stdout) => {
       clearTimeout(timer);
       resolve(parseClaudeStream(stdout));
@@ -224,7 +248,7 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
   let agyRows = [];
   const claudeRows = new Map(); // "pool|window" -> the newest row for that window
   const failures = new Map(); // pool -> a row made from a limit error
-  let pendingAgy = null, pendingClaude = null, lastProbe = -Infinity;
+  let pendingAgy = null, pendingClaude = null, lastProbe = -Infinity, lastSeen = -Infinity; // lastSeen: when the Claude numbers were last seen (probe or a real answer)
 
   // Calls fn and always returns a promise, even if fn throws at once.
   const safely = (fn) => { try { return Promise.resolve(fn()); } catch (error) { return Promise.reject(error); } };
@@ -246,7 +270,13 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
 
   function takeClaude({ rows, errorText }) {
     for (const row of rows) claudeRows.set(`${row.pool}|${row.window}`, row);
+    if (rows.length) lastSeen = now();
     if (errorText) noteFailure({ provider: "claude", model: "haiku" }, errorText); // e.g. "You've hit your limit"
+  }
+
+  // A real Claude answer printed its rate_limit_info (providers.js hands it over): free numbers, no extra call.
+  function noteClaudeInfo(info) {
+    try { takeClaude({ rows: rowsFromRateLimitInfo(info, now()), errorText: "" }); } catch (error) { /* quota can never break an answer */ }
   }
 
   const claudeBlocked = () => allRows().some((r) => r.pool === CLAUDE_PLAN && r.remaining === 0 && Date.parse(r.resets) > now());
@@ -259,8 +289,8 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
         .catch(() => { /* keep the last known rows */ })
         .finally(() => { pendingAgy = null; });
     }
-    // Claude: at most one probe at a time and one a minute, and none while the plan is known to be used up until its reset.
-    if (!pendingClaude && now() - lastProbe >= claudeEveryMs && !claudeBlocked()) {
+    // Claude: at most one probe at a time and one in 10 minutes (counted from the last probe OR the last time a real answer showed the numbers), and none while the plan is known to be used up until its reset.
+    if (!pendingClaude && now() - Math.max(lastProbe, lastSeen) >= claudeEveryMs && !claudeBlocked()) {
       lastProbe = now();
       pendingClaude = Promise.resolve()
         .then(fetchClaude)
@@ -270,13 +300,14 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
     }
     return Promise.all([pendingAgy, pendingClaude]).then(() => {});
   }
-  return { get, refresh, noteFailure };
+  return { get, refresh, noteFailure, noteClaudeInfo };
 }
 
 // The one shared instance Bot uses.
 const quota = createQuota();
+onClaudeRateLimit(quota.noteClaudeInfo);
 
 module.exports = {
-  parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota,
+  parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota,
   getLowPools: quota.get, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
 };

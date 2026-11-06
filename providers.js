@@ -95,12 +95,38 @@ function claudeCommand(model) {
   return `${CLAUDE_CMD} -p --model ${model} --tools "" --no-session-persistence`;
 }
 
+// Claude's rate limits come for free with every answer: in stream-json mode the CLI prints "rate_limit_event" messages next
+// to the answer. askClaude hands each one's rate_limit_info to whoever registered here (quota.js), so Bot learns the plan's
+// 5-hour and weekly use from real answers without an extra call. A listener that throws is ignored.
+const rateLimitListeners = [];
+const onClaudeRateLimit = (fn) => { rateLimitListeners.push(fn); };
+
+// Reads `claude -p --output-format stream-json --verbose` output (one JSON object per line). Returns the answer text (the
+// "result" event; for a failed call it is the error text), whether it was an error, and the rate_limit_info objects.
+// parsed is false when there was no result event at all (then the caller uses the raw output, as before).
+function readClaudeStream(stdout) {
+  const out = { parsed: false, text: "", isError: false, infos: [] };
+  for (const line of String(stdout).split(/\r?\n/)) {
+    if (!line.startsWith("{")) continue;
+    let event;
+    try { event = JSON.parse(line); } catch (error) { continue; }
+    if (!event || typeof event !== "object") continue;
+    if (event.type === "rate_limit_event" && event.rate_limit_info) out.infos.push(event.rate_limit_info);
+    else if (event.type === "result" && typeof event.result === "string") Object.assign(out, { parsed: true, text: event.result, isError: Boolean(event.is_error) });
+  }
+  return out;
+}
+
 // Claude Code CLI. The question goes in through stdin so special characters are safe.
 function askClaude(question, model) {
   return new Promise((resolve, reject) => {
-    const child = exec(claudeCommand(model), { cwd: sandbox(), env: claudeEnv() }, (error, stdout, stderr) => {
-      if (error) return reject(new Error(stderr || stdout.trim() || error.message)); // claude prints its errors (e.g. "OAuth session expired") on stdout
-      resolve(stdout.trim());
+    const child = exec(`${claudeCommand(model)} --output-format stream-json --verbose`, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      const out = readClaudeStream(stdout);
+      for (const info of out.infos) for (const fn of rateLimitListeners) { try { fn(info); } catch (listenerError) { /* quota can never break an answer */ } }
+      // claude prints its errors (for example an expired login, or a used-up plan) as the result, on stdout
+      if (out.isError) return reject(new Error(out.text));
+      if (error) return reject(new Error(stderr || (out.parsed ? out.text : stdout.trim()) || error.message));
+      resolve(out.parsed ? out.text.trim() : stdout.trim());
     });
     withTimeout(child, timeoutFor(model), reject, model);
     child.stdin.end(question);
@@ -397,5 +423,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
