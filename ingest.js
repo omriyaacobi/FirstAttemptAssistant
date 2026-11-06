@@ -121,6 +121,7 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
         if (read) finishPdf(read.pages, read.total, read.stoppedAt);
         return;
       }
+      if (file.kind === "pdf") log("[ingest] this PDF cannot be cut (for example it uses object streams), so it is read whole, which is slower");
       let total = file.kind === "image" ? 1 : null;
       let from = pages.length ? resumeFrom : 1;
       let stoppedAt = 0; // the first page of the chunk that failed, if one did

@@ -177,6 +177,12 @@
 - Tests: `frontdesk.test.js` (backup with fakes, drift test: the two briefings must name the same destinations and actions) and `frontdesk.backup.test.js` (REAL Haiku with Gemini forced to fail, for a calendar and a reminder message; skipped when there is no Claude token).
 - Remember: when you change a routing rule in `router-brief.md`, change `router-brief-haiku.md` too.
 - Not built: a cool-down that skips a failing Gemini (each message still tries Gemini first, up to the 30 s deadline, before Haiku); keeping one `claude` process open to skip its ~2 s start.
+- Faster and better reading + study upgrade (2026-11-06, branch `claude/study-faster-fe7506`, NOT pushed or merged). Numbers: `experiments/2026-11-06-faster-reading.md`.
+  - **Reading:** Omri's 87-page notebook went from about 40 min to 5 min 48 s, and from 13/22 to 22/22 on a page checked by hand. It is not a scan: it is an iOS notes export whose pages are 500 KB of pen strokes. agy spent about 200 s opening the whole file on every call, so `pdfcut.js` (built-ins only) gives it a small file of just those pages. 10 pages per chunk, 3 at once, every chunk saved as it finishes.
+  - **Flash rewrites instead of copying** (wrong integral bounds, fifth roots for fourth roots). So cut files now go to Argon low, then Sonnet (`askClaudeWithFile`: Read tool only, empty folder), then Flash, with a "copy word for word" prompt. **To do on the merged version: press Read again on the Calculus 2 file**, since the saved pages are the old Flash read. It costs about 8 points of Argon's weekly pool.
+  - **Study:** formulas are drawn (`mathBox` in `public/index.html`, no package); a chat can use pages while the rest is read, with a progress bar and real time left; a source opens in a popup over the chat, with previous and next page and "Open the original page" (one-page PDF, `/files/<id>/original?page=n`); the same file twice in a course is refused (fingerprint in `courses.js`).
+  - **Not done:** PDFs with object streams cannot be cut yet and stay on the old path (logged). The phone popup was tested at 375 px, not on the real S23; how Android opens the one-page PDF is unchecked. Answers from a real model were tried in one chat.
+
 # Progress
 
 ## Done
