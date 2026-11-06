@@ -148,7 +148,9 @@
   /* Pop-up window (the quota). A native <dialog>: Esc closes it and the page behind it is dimmed. */
   dialog.popup { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y: auto; margin: auto; padding: 16px;
                  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, .35); }
-  dialog.source-popup { width: min(720px, calc(100vw - 32px)); }
+  dialog.source-popup { width: min(720px, calc(100vw - 32px)); padding-bottom: 0; overflow-x: hidden; }
+  #sourceBody { overflow-x: auto; }
+  #sourceActions { position: sticky; bottom: 0; background: var(--card); padding: 10px 0 14px; margin-top: 0; align-items: center; flex-wrap: wrap; } /* always in reach on a long page */
   .popup-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
   a.button-link { display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-text); text-decoration: none; font-size: .9rem; }
   dialog.popup::backdrop { background: rgba(20, 8, 32, .55); }
@@ -601,7 +603,8 @@
       if (c !== "\\") {
         i++;
         if (/[A-Za-z]/.test(c)) into.appendChild(el("i", "", c));
-        else into.appendChild(document.createTextNode(c === "-" ? "−" : c === "*" ? "∗" : c === "'" ? "′" : c));
+        else if ("=<>+-".includes(c)) into.appendChild(document.createTextNode("\u2009" + (c === "-" ? "−" : c) + "\u2009")); // a thin space around operators
+        else into.appendChild(document.createTextNode(c === "*" ? "∗" : c === "'" ? "′" : c));
         return null;
       }
       i++;

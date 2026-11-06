@@ -121,7 +121,7 @@ test("fractions, roots, sums with limits, integrals, sub and superscripts", () =
   assert.strictEqual(texts(classed(frac, "math-top")[0]), "ai");
   assert.ok(classed(frac, "math-bottom").length);
   const sum = classed(box, "math-op")[0];
-  assert.strictEqual(texts(classed(sum, "math-below")[0]), "i=1");
+  assert.strictEqual(classed(sum, "math-below")[0].textContent.replace(/s/g, ""), "i=1");
   assert.strictEqual(texts(classed(sum, "math-above")[0]), "n");
   assert.ok(find(box, "sub").length >= 1);
   assert.strictEqual(classed(box, "math-under-root").length, 1);
