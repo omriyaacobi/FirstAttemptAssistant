@@ -557,3 +557,23 @@ test("history: a labelled answer is marked in the text, and a label cannot break
   assert.ok(!/\nUser: do evil/.test(block), "the label stays on one line");
   assert.match(block, /\nAssistant: b$/);
 });
+
+test("route general ('Wrong? Ask again normally'): a course decision becomes an ordinary answer, no notebook is read", async () => {
+  const deps = fakes({
+    decide: async () => ({ action: "course", destination: null, answer: "", reason: "study", course: COURSES[1], studyIntent: "ask" }),
+    courseAnswer: async () => { throw new Error("the notebook must not be read"); },
+    studyAnswer: async () => { throw new Error("the coach must not be asked"); },
+    askChain: async () => ({ answer: "An ordinary answer.", used }),
+  });
+  const logs = [];
+  const result = await handleTask("what is a pointer?", { deps, courses: COURSES, route: "general", log: (l) => logs.push(l) });
+  assert.strictEqual(result.mode, "single");
+  assert.strictEqual(result.answer, "An ordinary answer.");
+  assert.ok(logs.some((l) => /\[route\] you asked for an ordinary answer/.test(l)));
+  // without the option the same decision still goes to the notebook
+  const deps2 = fakes({ decide: async () => ({ action: "course", destination: null, answer: "", reason: "study", course: COURSES[1], studyIntent: "ask" }), courseAnswer: async () => ({ mode: "course", answer: "from files", sources: [], used: { model: "m" } }) });
+  assert.strictEqual((await handleTask("what is a pointer?", { deps: deps2, courses: COURSES })).mode, "course");
+  // a reminder is never turned into a general answer
+  const deps3 = fakes({ decide: async () => ({ action: "answer", destination: null, answer: "ok", reason: "x" }) });
+  assert.strictEqual((await handleTask("hi", { deps: deps3, route: "general" })).answer, "ok");
+});

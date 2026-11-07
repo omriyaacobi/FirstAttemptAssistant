@@ -371,3 +371,36 @@ test("the switch: BOT_THREAD in the environment or .env, default off", () => {
   assert.strictEqual(loadThreadFlag(envFile, {}), false);
   assert.strictEqual(loadThreadFlag(envFile, { BOT_THREAD: "1" }), true);
 });
+
+test("SERVER (thread on): the trash list shows deleted messages after a reload, and Restore brings one back (night check)", async () => {
+  const thread = createThreadStore(tmp());
+  const s = await startServer({ thread });
+  try {
+    const ask = await s.request("POST", "/api/ask", { body: { task: "remember this question" } });
+    for (let i = 0; i < 100; i++) { const j = await s.request("GET", "/api/jobs/" + ask.json.job.id); if (j.json.job.status !== "running") break; await tick(10); }
+    const id = (await s.request("GET", "/api/thread")).json.messages[0].id;
+    assert.deepStrictEqual((await s.request("GET", "/api/thread/trash")).json.items, []);
+    assert.strictEqual((await s.request("DELETE", "/api/thread/" + id)).status, 200);
+    const list = (await s.request("GET", "/api/thread/trash")).json.items;
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0].id, id);
+    assert.strictEqual(list[0].text, "remember this question");
+    assert.strictEqual(list[0].daysLeft, 30);
+    assert.strictEqual((await s.request("POST", "/api/thread/" + id + "/restore")).status, 200);
+    assert.deepStrictEqual((await s.request("GET", "/api/thread/trash")).json.items, []);
+  } finally { s.close(); }
+});
+
+test("SERVER (thread on): /api/ask takes route general only; anything else is refused", async () => {
+  const seen = [];
+  const thread = createThreadStore(tmp());
+  const s = await startServer({ thread, handle: async (task, options) => { seen.push(options.route); return single("ok"); } });
+  try {
+    assert.strictEqual((await s.request("POST", "/api/ask", { body: { task: "a", route: "calendar" } })).status, 400);
+    const ok = await s.request("POST", "/api/ask", { body: { task: "b", route: "general" } });
+    assert.strictEqual(ok.status, 202);
+    const plain = await s.request("POST", "/api/ask", { body: { task: "c" } });
+    for (const r of [ok, plain]) for (let i = 0; i < 100; i++) { const j = await s.request("GET", "/api/jobs/" + r.json.job.id); if (j.json.job.status !== "running") break; await tick(10); }
+    assert.deepStrictEqual(seen, ["general", null]);
+  } finally { s.close(); }
+});

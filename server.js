@@ -488,6 +488,11 @@ function createServer({
         if (Number.isNaN(before) || Number.isNaN(limit)) return sendJson(res, 400, { error: "before and limit must be numbers" });
         return sendJson(res, 200, { ...thread.page({ before, limit }), courses: courseRoutes ? courseRoutes.list() : [] });
       }
+      // The 30-day trash, newest first: so Restore works after a reload too (not only right after deleting). Text is cut; the page draws it with textContent.
+      if (id === "trash" && !restore && req.method === "GET") {
+        const nowMs = Date.now();
+        return sendJson(res, 200, { items: thread.trashList().slice(0, 100).map((t) => ({ id: t.message.id, role: t.message.role, text: String(t.message.text || "").slice(0, 300), at: t.message.at, trashedAt: t.trashedAt, daysLeft: Math.max(0, 30 - Math.floor((nowMs - t.trashedAt) / 86400000)) })) });
+      }
       if (id && !THREAD_ID_PATTERN.test(id)) return sendJson(res, 404, { error: "message not found" });
       if (id && !restore && req.method === "DELETE") return thread.trash(id) ? sendJson(res, 200, { ok: true, keptDays: 30 }) : sendJson(res, 404, { error: "message not found" });
       if (id && restore && req.method === "POST") return thread.restore(id) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "message not found in the trash" });
@@ -632,7 +637,8 @@ function createServer({
       // The thread: there is no chat, so no chat id and no course id is read. Every message is its own job (jobs.js startThread).
       if (thread) {
         try {
-          const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true });
+          if (input.route !== undefined && input.route !== "general") { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 400, { error: 'route can only be "general"' }); }
+          const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true, route: input.route === "general" ? "general" : null });
           return sendJson(res, 202, { job });
         } catch (error) {
           if (image) fs.rmSync(image.path, { force: true });

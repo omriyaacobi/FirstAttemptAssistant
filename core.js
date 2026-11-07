@@ -138,7 +138,7 @@ async function handleTask(task, options = {}) {
 
 // courses (thread only): the real course list [{ id, name }] and studyState (one line per course, written by code). With a list, the front
 // desk may choose the action "course"; without it (BOT_THREAD off) that action does not exist and nothing below changes.
-async function runTask(task, { noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false, gate = null } = {}) {
+async function runTask(task, { route = null, noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false, gate = null } = {}) {
   const d = { ...defaultDeps, ...deps };
   // gate (thread only, given by jobs.js): called ONCE, right before slow work starts (a model answer, a plan, a course answer, a photo).
   // It resolves when a slow slot is free (and an earlier question about the same course is done). Fast actions never call it.
@@ -529,6 +529,13 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   }
   const target = decision.action === "delegate" ? ` -> ${decision.destination}` : "";
   log(`[frontdesk] decision: ${decision.action}${target} (${decision.reason}) in ${timing.frontDeskSeconds} s${decision.hedged ? " (a second call was started because the first was slow)" : ""}`);
+
+  // "Wrong? Ask again normally" (the page sends route "general", checked in server.js): course files, the calendar, earlier chats and the study plan
+  // are skipped and the question is answered as an ordinary one. Only these four actions change; a reminder or a saved fact is still what it is.
+  if (route === "general" && ["course", "calendar", "addEvent", "recall"].includes(decision.action)) {
+    log(`[route] you asked for an ordinary answer, so "${decision.action}" is skipped`);
+    decision = { action: "delegate", destination: "gemini-flash", reason: "you asked for an ordinary answer, not course files, your calendar or your study plan" };
+  }
 
   // The user turned splitting off, so a "split" decision is handled as one job instead.
   if (decision.action === "split" && noPlan) {

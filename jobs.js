@@ -267,7 +267,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     return "general";
   }
 
-  function startThread({ task, noPlan = false, image = null, deeper = false }) {
+  function startThread({ task, noPlan = false, image = null, deeper = false, route = null }) {
     if (!thread) throw Object.assign(new Error("the thread is off"), { status: 404 });
     if (threadJobs().filter((j) => j.status === "running").length >= MAX_THREAD_JOBS) {
       throw Object.assign(new Error("too many messages are being worked on at once, wait a little"), { status: 429 });
@@ -315,7 +315,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
         };
         const list = courses();
-        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job) });
+        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job) });
         const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);
         // An empty answer is a failure, not a reply: the page must never show a blank bubble.
         if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");
