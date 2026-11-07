@@ -13,7 +13,7 @@
 
 const crypto = require("node:crypto");
 const { MODELS } = require("./router");
-const { defang, sourcesFor, labelOutside, askedLectures, pickPages } = require("./study");
+const { defang, sourcesFor, labelOutside, askedLectures, pickPages, lectureIndex } = require("./study");
 const plan = require("./study-plan");
 const { clean } = require("./study-tracker");
 const { langOf, mostlyHebrew, say } = require("./lang");
@@ -147,6 +147,22 @@ function pickAssignment({ tracker, ref, message }) {
   return open.find((a) => a.title && low.includes(a.title.toLowerCase())) || open[0] || null;
 }
 
+// A lecture the student uploaded: a "Lecture N" heading in a file, or a file named like lecture1.txt. Returns { lecture, refs } or null.
+function uploadedLecture(pages, n) {
+  if (!Array.isArray(pages) || !pages.length) return null;
+  const index = lectureIndex(pages);
+  const want = n || (index.length ? Math.min(...index.map((e) => e.lecture)) : null);
+  const hit = index.find((e) => e.lecture === want);
+  if (hit) return { lecture: hit.lecture, refs: [{ fileId: hit.fileId, from: hit.from, to: hit.to, fileName: "" }] };
+  const byName = new Map();
+  for (const p of pages) { const m = /lecture[\s_-]*0*(\d{1,3})\b/i.exec(String(p.fileName || "")); if (m) byName.set(Number(m[1]), [...(byName.get(Number(m[1])) || []), p]); }
+  const k = n || (byName.size ? Math.min(...byName.keys()) : null);
+  const list = k && byName.get(k);
+  if (!list) return null;
+  const nums = list.map((p) => p.page);
+  return { lecture: k, refs: [{ fileId: list[0].fileId, from: Math.min(...nums), to: Math.max(...nums), fileName: String(list[0].fileName || "") }] };
+}
+
 // ---- model calls with code checks ----
 async function makeQuestions({ askChain, courseName, topic, material, wanted, n = QUESTIONS_PER_QUIZ, lang = "en", log }) {
   const prompt = `${TUTOR_RULES}\n\nWrite exactly ${n} short check questions for the course "${defang(courseName)}" about: ${defang(topic || "the material below")}.\n${wanted ? `One question for each of these pieces of knowledge: ${wanted.map(defang).join("; ")}.\n` : ""}Each question must test understanding, not recall of a phrase, and be answerable in 1 to 4 sentences or a short calculation. Use the material; if it does not cover the topic use general knowledge. ${langLine(lang)}\nReply with ONLY one JSON object: {"questions": [{"q": "...", "key": "the correct answer in 1 to 3 sentences", "topic": "2 to 5 words"}]}\n\n${material.block}`;
@@ -250,7 +266,8 @@ function summary(session, rec) {
   const lines = [`That was the last question: ${right} of ${session.questions.length} fully right.`];
   if (solid.length) lines.push(`Solid: ${solid.join(", ")}.`);
   if (weak.length) lines.push(`Needs work: ${weak.join(", ")}.`);
-  if (session.target.type === "lecture") lines.push(rec.understood ? "That counts as understood for this lecture." : rec.total >= 3 ? "Not yet counted as understood (it needs 70% or more). Want me to teach the weak part and ask again?" : "Too few questions to count it as understood.");
+  if (session.target.type === "lecture" && !session.target.date) lines.push("This lecture is not on a timetable, so this was practice: it is not counted as understood.");
+  else if (session.target.type === "lecture") lines.push(rec.understood ? "That counts as understood for this lecture." : rec.total >= 3 ? "Not yet counted as understood (it needs 70% or more). Want me to teach the weak part and ask again?" : "Too few questions to count it as understood.");
   if (session.target.type === "assignment") lines.push(weak.length ? "Those are the gaps to close before the assignment. Want me to teach them first?" : "You have what you need. Start with the first part, and tell me what you try: I will give hints, not the solution.");
   return lines.join(" ");
 }
@@ -336,9 +353,13 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   }
 
   // teach and quiz: a lecture
-  const pick = pickLecture({ tracker, ref, message, now, intent });
+  let pick = pickLecture({ tracker, ref, message, now, intent });
+  // The student uploaded the lecture themself: let them work on it even when the timetable does not (or cannot) say it was held.
+  // Practice only: with no timetable date the check is kept as topic practice and is never counted as "understood".
+  const up = !pick.slot && (askedLectures(message)[0] || !tracker.slots(ref.key).length) ? uploadedLecture(pages, askedLectures(message)[0] || null) : null;
+  if (up) pick = { slot: { date: null, n: up.lecture }, why: "uploaded", material: up.refs };
   if (!pick.slot) return finish({ answer: pick.why === "none-held" ? `Lecture ${pick.n} has not been held yet by the timetable. If a class was cancelled, tell me ("no lecture on <date>") and the numbers will move.` : "I do not see a held lecture that still needs work. Tell me about a new one: a topic, a date, or send the slides.", needs: "lecture" });
-  const lec = tracker.course(ref).lectures[pick.slot.date];
+  const lec = pick.why === "uploaded" ? { material: pick.material, topic: "" } : tracker.course(ref).lectures[pick.slot.date];
   const topic = (lec && lec.topic) || "";
   if (!(lec && lec.material.length) && !topic) return finish({ answer: say(langOf(message), `I have nothing about the lecture of ${plan.niceDate(pick.slot.date)} yet. What was it about, or can you send the slides? With only a topic I can still teach it from general knowledge, and I will say so.`, `עדיין אין לי כלום על ההרצאה מ${plan.niceDate(pick.slot.date, "he")}. על מה היא הייתה, או שאפשר לשלוח את השקפים? גם עם נושא בלבד אפשר ללמד מידע כללי, ואציין את זה.`), needs: "material", target: { type: "lecture", date: pick.slot.date } });
   const mat = materialFor(pages, lec ? lec.material : []);
@@ -347,19 +368,19 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   try {
     if (intent === "teach") {
       const t = await teachText({ askChain, courseName, topic: label, material: mat, message, lang, log, onText });
-      tracker.markTaught(ref, pick.slot.date); // taught is NOT understood: only a graded check does that
+      if (pick.slot.date) tracker.markTaught(ref, pick.slot.date); // taught is NOT understood: only a graded check does that
       let tail = "\n\n" + tx({ lang }).offer;
       if (t.question) {
-        const s1 = newSession("quiz", { type: "lecture", date: pick.slot.date }, { lang, questions: [{ id: "q1", q: t.question.q, key: t.question.key, topic: label, attempts: 0, hints: 0, state: "open", verdict: null, revealed: false }], fromTeach: true });
+        const s1 = newSession("quiz", { type: "lecture", date: pick.slot.date, n: pick.slot.n }, { lang, questions: [{ id: "q1", q: t.question.q, key: t.question.key, topic: label, attempts: 0, hints: 0, state: "open", verdict: null, revealed: false }], fromTeach: true });
         tracker.setSession(ref, s1);
         tail = "\n\n" + tx({ lang }).back(t.question.q);
       }
       return finish({ answer: labelOutside(t.text + tail, message), model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: /\[OUT\]/.test(t.text) || !mat.picked.length, target: { type: "lecture", date: pick.slot.date } });
     }
     const made = await makeQuestions({ askChain, courseName, topic: label, material: mat, lang, log });
-    const s = newSession("quiz", { type: "lecture", date: pick.slot.date }, { lang, questions: made.questions });
+    const s = newSession("quiz", { type: "lecture", date: pick.slot.date, n: pick.slot.n }, { lang, questions: made.questions });
     tracker.setSession(ref, s);
-    return finish({ answer: `${tx(s).quizIntro(label, plan.niceDate(pick.slot.date))}\n\n${showQuestion(s)}`, model: made.model, mode: "quiz", sources: sourcesFor("", mat.picked), outside: !mat.picked.length, target: s.target });
+    return finish({ answer: `${tx(s).quizIntro(label, pick.slot.date ? plan.niceDate(pick.slot.date) : (s.lang === "he" ? "מהקבצים שהעלית" : "from your uploaded files"))}\n\n${showQuestion(s)}`, model: made.model, mode: "quiz", sources: sourcesFor("", mat.picked), outside: !mat.picked.length, target: s.target });
   } catch (error) { return finish(unavailable(error.message, langOf(message))); }
 }
 

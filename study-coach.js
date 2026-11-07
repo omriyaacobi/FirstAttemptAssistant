@@ -42,6 +42,29 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const today = () => plan.parts(now(), timezone).date;
   const refs = () => tracker.refsFor(courses.list());
   const tracked = (ref) => tracker.slots(ref.key).length > 0;
+  // A course named in a message: through the timetable, else when every significant word of its name is there ("linear algebra" -> "Linear Algebra Demo").
+  const GENERIC = new Set(["demo", "intro", "introduction", "course", "the", "and", "for"]);
+  const sigWords = (name) => (String(name).toLowerCase().match(/[\p{L}]{3,}/gu) || []).filter((w) => !GENERIC.has(w));
+  function refInText(seg) {
+    const all = refs();
+    const key = plan.courseKeyFor(tracker.timetable(), seg);
+    const byKey = key && all.find((r) => r.key === key);
+    if (byKey) return byKey;
+    const low = String(seg).toLowerCase();
+    const hits = all.filter((r) => { const w = sigWords(r.name); return w.length && w.every((x) => low.includes(x)); });
+    return hits.length === 1 ? hits[0] : null;
+  }
+  // The course Bot itself just asked "where are you" about (within a day), else the only course there is.
+  function askedCourse() {
+    const all = refs();
+    const recent = all.map((r) => ({ r, at: tracker.course(r).askedPosition || 0 })).filter((x) => x.at && now() - x.at < 24 * 3600 * 1000 && !tracker.progress(x.r).positionKnown).sort((a, b) => b.at - a.at);
+    if (recent.length) return recent[0].r;
+    return all.length === 1 ? all[0] : null;
+  }
+  const courseNames = () => refs().map((r) => r.name).join(", ");
+  const DUE_WORDS = /\b(?:homework|assignment|exercise|hw|due|submit|submission|deadline|exam|test|quiz)\b|מטלה|תרגיל|הגשה|מבחן|בוחן/i;
+  const MISSED = /\b(?:skipp?ed|missed|bunked)\b[^.\n]{0,30}\b(?:class|classes|lecture|lectures|lesson|university|school)\b|דילגתי|פספסתי|לא\s+הלכתי/i;
+  const IS_QUESTION = /\?|^\s*(?:which|what|when|where|how\s+many|do\s+i|did\s+i|is\s+there|are\s+there|any)\b|^\s*(?:איזה|איזו|מה|מתי|כמה|יש\s+לי|האם)/i;
 
   // ---- the line for the front desk ----
   function studyLine() {
@@ -91,12 +114,19 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   function courseLines(ref) {
     const p = tracker.progress(ref);
     const removed = tracker.state().skips.some((s) => s.course === ref.key || s.course === "*");
+    if (!tracked(ref)) { // no timetable for this course: no counts, only what was told
+      const lines = [T(`${ref.name}: I have no timetable for this course, so I cannot count lectures.`, `${ref.name}: אין לי מערכת שעות לקורס הזה, אז אי אפשר לספור הרצאות.`)];
+      if (!p.positionKnown) lines.push(T("  I do not know where you are in this course yet.", "  עדיין לא ידוע לי איפה עומדים בקורס הזה."));
+      else lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${clean(noteText(p.position.note), 60)}.`);
+      for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
+      return lines.join("\n");
+    }
     const lines = [T(`${ref.name}: ${p.held} lecture${p.held === 1 ? "" : "s"} held so far by the timetable${removed ? " (cancelled ones removed)" : ""}.`, `${ref.name}: ${p.held === 1 ? "הרצאה אחת" : `${p.held} הרצאות`} עד עכשיו לפי המערכת${removed ? " (בלי אלה שבוטלו)" : ""}.`)];
     lines.push(T(`  Material in Bot for ${p.withMaterial} of them. Checked as understood (3+ questions, 70%+): ${p.understood}.`, `  יש ב-Bot חומר ל-${p.withMaterial} מהן. נבדקו כמובנות (3 שאלות ומעלה, 70% ומעלה): ${p.understood}.`));
     if (p.behind.length) lines.push(`  ${T(`Behind on ${p.behind.length}`, `פיגור ב-${p.behind.length}`)}: ${p.behind.slice(0, 4).map((b) => `${T("lecture", "הרצאה")} ${b.n} (${niceDate(b.date)})${b.hasMaterial || b.topic ? "" : T(", no material yet", ", עדיין בלי חומר")}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
     else if (p.held) lines.push(T("  Nothing behind by the timetable.", "  אין פיגור לפי המערכת."));
     if (!p.positionKnown) lines.push(T("  I do not know where you are in this course yet.", "  עדיין לא ידוע לי איפה עומדים בקורס הזה."));
-    else lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${p.position.seenThrough ? niceDate(p.position.seenThrough) : T("a topic", "נושא מסוים")}${p.position.note ? ` (${clean(noteText(p.position.note), 60)})` : ""}.`);
+    else lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${p.position.seenThrough ? niceDate(p.position.seenThrough) : p.position.note ? clean(noteText(p.position.note), 60) : T("a topic", "נושא מסוים")}${p.position.seenThrough && p.position.note ? ` (${clean(noteText(p.position.note), 60)})` : ""}.`);
     for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
     return lines.join("\n");
   }
@@ -144,13 +174,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const unclear = [];
     const segments = String(text).split(/\n|;|(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
     for (const seg of segments) {
-      const key = plan.courseKeyFor(t, seg);
-      const ref = key && all.find((r) => r.key === key);
+      const ref = refInText(seg);
       const undo = UNDO_WORDS.test(seg);
       if (SKIP_WORDS.test(seg) || undo) {
         const day = parseDay(seg, "week");
         const course = ref ? ref.key : /classes|university|school|לימודים/i.test(seg) ? "*" : null;
         if (!day || !course) { unclear.push(seg); continue; }
+        if (ref && !tracked(ref)) { lines.push(T(`I have no timetable for ${ref.name}, so there is no lecture of it to remove and I changed nothing. Tell me when a lecture happened ("my last ${ref.name} lecture was Monday") and I note where you are.`, `אין לי מערכת שעות ${bet(ref.name)}, אז אין הרצאה להסיר ולא שיניתי כלום. אפשר לספר לי מתי הייתה הרצאה ואני רושם איפה עומדים.`)); continue; }
         if (undo) { const d = day.date || null; if (!d) { unclear.push(seg); continue; } tracker.removeSkip({ date: d, course }); lines.push(T(`Put the ${ref ? ref.name + " " : ""}lecture on ${niceDate(d)} back in the count.`, `החזרתי לספירה את ההרצאה${ref ? ` ${bet(ref.name)}` : ""} מ${niceDate(d)}.`)); continue; }
         if (day.date && ref && !tracker.slots(ref.key).some((x) => x.date === day.date)) { lines.push(T(`${ref.name} has no lecture on ${niceDate(day.date)} by the timetable, so nothing changed.`, `לפי המערכת אין הרצאה ${bet(ref.name)} ב${niceDate(day.date)}, אז לא שיניתי כלום.`)); continue; }
         const dates = day.week ? (course === "*" ? all.filter(tracked).flatMap((r) => tracker.skipWeek(r.key)) : tracker.skipWeek(course)) : [tracker.addSkip({ date: day.date, course }) && day.date];
@@ -158,20 +188,58 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         lines.push(dates.length ? T(`Removed ${ref ? ref.name : "every course"}: ${removedDays}. The lecture numbers after it moved up. (Say "there was a lecture on <day>" to undo.)`, `הסרתי ${ref ? `את ${ref.name}` : "את כל הקורסים"}: ${removedDays}. מספרי ההרצאות שאחריה זזו. (כדי לבטל: "הייתה הרצאה ב<יום>".)`) : T(`${ref ? ref.name : "That"} has no lecture that day, so nothing changed.`, `${ref ? `${bet(ref.name)} ` : ""}אין הרצאה ביום הזה, אז לא שיניתי כלום.`));
         continue;
       }
-      if (POSITION_WORDS.test(seg) || (ref && (askedLectures(seg).length || parseDay(seg, "past")))) {
-        if (!ref) { unclear.push(seg); continue; }
+      const hasFact = askedLectures(seg).length || (parseDay(seg, "past") || {}).date;
+      if (!DUE_WORDS.test(seg) && (POSITION_WORDS.test(seg) || hasFact)) {
+        // No course in the message: the one Bot just asked about. But "my last Biology lecture ..." names a course Bot does not have: never reassign it.
+        const namesOther = /\b(?:last|latest)\s+(?!lecture|class)[\p{L}\s.-]{2,40}?\s+(?:lecture|class)\b/iu.test(seg);
+        const target = ref || (namesOther ? null : askedCourse());
+        if (!target) { unclear.push(seg); continue; }
         const n = askedLectures(seg)[0];
         const day = n ? null : parseDay(seg, "past");
         try {
-          const pos = n ? tracker.setPosition(ref, { n }) : day && day.date ? tracker.setPosition(ref, { date: day.date }) : tracker.setPosition(ref, { note: seg });
+          // A course with no timetable cannot count lectures: store exactly what the student said as the position (their words are the source).
+          const loose = !tracked(target);
+          const said = n ? T(`lecture ${n}`, `הרצאה ${n}`) : day && day.date ? niceDate(day.date) : clean(seg, 60);
+          const pos = loose ? tracker.setPosition(target, { note: said }) : n ? tracker.setPosition(target, { n }) : day && day.date ? tracker.setPosition(target, { date: day.date }) : tracker.setPosition(target, { note: seg });
           const upTo = pos.seenThrough ? niceDate(pos.seenThrough) : clean(pos.note, 60);
-          lines.push(T(`${ref.name}: noted that you are up to ${upTo}. That tells me where you are, not what you understood: that comes from questions.`, `${ref.name}: רשמתי שהמיקום הוא עד ${upTo}. זה אומר לי איפה עומדים, לא מה הובן: את זה בודקים בשאלות.`));
-        } catch (error) { lines.push(`${ref.name}: ${error.message}.`); }
+          lines.push(T(`${target.name}: noted that you are up to ${upTo}.${loose ? " I have no timetable for this course, so I cannot count lectures by date." : ""} That tells me where you are, not what you understood: that comes from questions.`, `${target.name}: רשמתי שהמיקום הוא עד ${upTo}.${loose ? " אין לי מערכת שעות לקורס הזה, אז אי אפשר לספור הרצאות לפי תאריך." : ""} זה אומר לי איפה עומדים, לא מה הובן: את זה בודקים בשאלות.`));
+        } catch (error) { lines.push(`${target.name}: ${error.message}.`); }
         continue;
       }
       unclear.push(seg);
     }
     return { lines, unclear };
+  }
+
+  // The "I did not catch" help: examples use the student's REAL course names (never invented ones).
+  function helpLine(unclear) {
+    const all = refs();
+    const a = all[0] ? all[0].name : null, b = all[1] ? all[1].name : a;
+    const bits = [a && `"no ${a} lecture this week"`, '"no classes on 24 Dec"', a && `"my last ${a} lecture was Monday"`, b && `"lecture 4 in ${b}"`].filter(Boolean);
+    const heBits = [a && `"אין הרצאה ${bet(a)} השבוע"`, '"אין לימודים ב-24/12"', a && `"ההרצאה האחרונה שלי ${bet(a)} הייתה ביום שני"`, b && `"הרצאה 4 ${bet(b)}"`].filter(Boolean);
+    return T(`I did not catch: "${clean(unclear.join(" / "), 160)}". ${all.length ? `Your courses: ${courseNames()}. ` : ""}Tell me for example: ${bits.join(", ")}.`, `לא הבנתי: "${clean(unclear.join(" / "), 160)}". ${all.length ? `הקורסים שלך: ${courseNames()}. ` : ""}אפשר לכתוב למשל: ${heBits.join(", ")}.`);
+  }
+
+  // "I skipped class today, what did I miss?": the lectures of that day by the timetable, in a few lines. Code only.
+  function missedAnswer(text) {
+    const day = (parseDay(text, "past") || {}).date || today();
+    const named = refInText(text);
+    const list = named ? [named] : refs();
+    const rows = list.filter(tracked).flatMap((r) => tracker.slots(r.key).filter((s) => s.date === day).map((s) => ({ r, s })));
+    if (!rows.length) {
+      return refs().some(tracked)
+        ? T(`By the timetable there was no lecture on ${niceDate(day)}${named ? ` in ${named.name}` : ""}, so nothing was missed. Say "where am I" to see your whole status.`, `לפי המערכת לא הייתה הרצאה ב${niceDate(day)}, אז לא פספסת כלום. אפשר לשאול "מה המצב שלי" לתמונה מלאה.`)
+        : T(`I have no timetable for ${named ? named.name : "your courses"}, so I cannot know what was missed. Tell me the topic or send the slides and I can teach it; "quiz me on lecture 1" works when a lecture file is uploaded.`, `אין לי מערכת שעות ${named ? bet(named.name) : "לקורסים שלך"}, אז אני לא יודע מה פספסת. אפשר לכתוב לי את הנושא או לשלוח את השקפים, ואלמד אותו.`);
+    }
+    const lines = rows.map(({ r, s }) => { const l = tracker.course(r).lectures[s.date]; return T(`${r.name} lecture ${s.n} (${niceDate(s.date)}, ${s.start})${l && (l.material.length || l.topic) ? " - I have material for it" : " - nothing in Bot for it yet"}.`, `${r.name} הרצאה ${s.n} (${niceDate(s.date)}, ${s.start})${l && (l.material.length || l.topic) ? " - יש לי חומר עליה" : " - עדיין אין עליה כלום ב-Bot"}.`); });
+    return `${T("By the timetable you missed:", "לפי המערכת פספסת:")}\n${lines.join("\n")}\n${T('Say "teach me <course> lecture <n>" or send the slides.', 'אפשר לכתוב "תלמד אותי הרצאה <מספר>" או לשלוח את השקפים.')}`;
+  }
+
+  // "Which course do I have a homework for?": the saved assignments, never a new proposal.
+  function assignmentList(ref) {
+    const list = ref ? [ref] : refs();
+    const rows = list.flatMap((r) => tracker.course(r).assignments.filter((a) => a.status !== "done").map((a) => T(`"${clean(a.title, 60)}" in ${r.name} (${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"})`, `"${clean(a.title, 60)}" ${bet(r.name)} (${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"})`)));
+    return rows.length ? `${T("Saved assignments:", "המטלות השמורות:")}\n- ${rows.join("\n- ")}` : T("I have no assignment saved yet. Send me the file or paste the text of the assignment, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה. אפשר לשלוח את הקובץ או להדביק את הטקסט של המטלה, ואציע אותה לאישור.");
   }
 
   // ---- several courses in one message ("calc lecture 4, algo I'm up to date, systems I haven't started") ----
@@ -277,12 +345,14 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       return done({ answer: r.answer });
     }
 
+    if ((intent === "update" || intent === "progress") && MISSED.test(text) && !SKIP_WORDS.test(text)) return done({ answer: missedAnswer(text) });
+
     if (intent === "update") {
       if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) { const many = await interpretPositions(text); if (many) return done({ answer: many }); }
       const { lines, unclear } = interpretUpdate(text);
       if (lines.length || SKIP_WORDS.test(text) || UNDO_WORDS.test(text)) {
         const out = [...lines];
-        if (unclear.length) out.push(T(`I did not catch: "${clean(unclear.join(" / "), 160)}". Tell me for example: "no Systems Programming lecture this week", "no classes on 24 Dec", "my last Calculus lecture was Monday", or "lecture 4 in Algorithms".`, `לא הבנתי: "${clean(unclear.join(" / "), 160)}". אפשר לכתוב למשל: "אין הרצאה בתכנות מערכות השבוע", "אין לימודים ב-24/12", "ההרצאה האחרונה שלי בחדו\"א הייתה ביום שני", או "הרצאה 4 באלגוריתמים".`));
+        if (unclear.length) out.push(helpLine(unclear));
         return done({ answer: out.join("\n") || T("Tell me what changed.", "מה השתנה?") });
       }
       // No schedule fact in the message (for example "I skip class, help me catch up"): do not dead-end; show where they stand and ask.
@@ -291,8 +361,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
 
     const ref = resolveRef(text, courseId, courseName);
 
+    if (intent === "progress" && IS_QUESTION.test(text) && /homework|assignment|\bhw\b|מטלה|שיעורי\s+בית/i.test(text)) return done({ answer: assignmentList(ref) });
+
     if (intent === "progress" || intent === "plan" || intent === "motivate") {
-      const list = ref ? [ref] : refs().filter(tracked);
+      const trackedRefs = refs().filter(tracked);
+      const list = ref ? [ref] : trackedRefs.length ? trackedRefs : refs(); // with no timetable at all, still show what is known (positions, assignments)
       if (!list.length) return done({ answer: T("I do not have the timetable for these courses yet.", "עדיין אין לי מערכת שעות לקורסים האלה.") });
       for (const r of list) maybeAlign(r);
       if (intent === "motivate") {
@@ -310,6 +383,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     }
 
     if (intent === "assignment") {
+      if (IS_QUESTION.test(text)) return done({ answer: assignmentList(ref) }); // a question never makes a proposal card
       if (!ref) return done({ answer: whichCourse() });
       const r = await onUpload({ courseId: ref.courseId, text, kind: "assignment" });
       return done(r);
