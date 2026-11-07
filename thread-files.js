@@ -13,9 +13,13 @@ const { langOf, say: words, bet } = require("./lang");
 const crypto = require("node:crypto");
 const plan = require("./study-plan");
 const { sniffFile, cleanName } = require("./upload");
+const { unzip, looksLikeZip } = require("./unzip");
+const { sniffOffice } = require("./office");
 
 const PENDING_MS = 30 * 60 * 1000;
 const MAX_PENDING = 5;
+const MAX_PENDING_BYTES = 400 * 1024 * 1024; // all waiting files together (a waiting zip is held unpacked, in memory)
+const MAX_SHOWN = 8; // lines of "skipped" a zip summary lists; the rest is only counted
 const AFTER_CLASS_MS = 3 * 3600 * 1000;
 
 // Which course is meant? Returns { ref, how } or null (then Bot asks).
@@ -54,8 +58,90 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     return { status: "filed", courseId, fileId: saved.id, messageId: reply.id };
   }
 
+  // ---- a ZIP: opened by unzip.js (all its limits live there), then each file takes the same road as a single upload ----
+  // Every file passes the same checks (addUpload: real first bytes, 50 MB, course size, no duplicate). A file that fails is SKIPPED
+  // with its reason and the others go on. Bot answers with ONE summary message. Files from a zip are read like any course file,
+  // but the study coach is not asked about each one (that would be one card per file): ask Bot about a lecture afterwards.
+  // What is inside the zip is untrusted data: names are only shown as text, never used as paths, never read as instructions.
+  const showName = (n) => cleanName(n, "file");
+  const pendingBytes = () => [...pending.values()].reduce((n, p) => n + (p.size || 0), 0);
+
+  function zipSummary(lang, zipName, filed, skipped, waiting) {
+    const extra = skipped.length > MAX_SHOWN ? skipped.length - MAX_SHOWN : 0;
+    const skipLines = skipped.slice(0, MAX_SHOWN).map((s) => `- ${showName(s.name)}: ${s.reason}`).join("\n");
+    const byCourse = new Map();
+    for (const f of filed) byCourse.set(f.courseName, (byCourse.get(f.courseName) || 0) + 1);
+    const where = [...byCourse].map(([c, n]) => `${n} ${lang === "he" ? bet(c) : `in ${c}`}`).join(", ");
+    const parts = [];
+    if (filed.length) parts.push(words(lang, `From "${zipName}" I filed ${filed.length} file${filed.length === 1 ? "" : "s"}: ${where}. Bot is reading them now.`, `מתוך "${zipName}" תייקתי ${filed.length} קבצים: ${where}. Bot קורא אותם עכשיו.`));
+    else parts.push(words(lang, `Nothing from "${zipName}" was filed.`, `שום דבר מתוך "${zipName}" לא תויק.`));
+    if (waiting) parts.push(words(lang, `${waiting} more file${waiting === 1 ? "" : "s"} wait for you: which course are they for? Tap one below. Nothing is saved until you choose.`, `עוד ${waiting} קבצים מחכים: לאיזה קורס הם שייכים? אפשר ללחוץ על אחד למטה. שום דבר לא נשמר לפני הבחירה.`));
+    if (skipped.length) parts.push(words(lang, `Skipped ${skipped.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${skipped.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
+    return parts.join("\n\n");
+  }
+
+  // Files from a zip, into one course. Adds to `filed` and `skipped`. The coach is not told (see above).
+  function fileMany(courseId, courseName, items, filed, skipped) {
+    for (const item of items) {
+      try {
+        courseRoutes.addUpload(courseId, item.bytes, item.name);
+        filed.push({ name: item.name, courseName });
+      } catch (error) { skipped.push({ name: item.name, reason: String(error.message).slice(0, 120) }); }
+    }
+  }
+
+  function receiveZip({ bytes, name, text = "" }) {
+    sweep();
+    const clean = cleanName(name, "archive.zip");
+    const lang = langOf(text);
+    const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", at: now() });
+    let opened;
+    try { opened = unzip(bytes); } catch (error) { // the whole zip is refused: the message is already in the thread, so it gets its answer
+      thread.append({ role: "assistant", text: words(lang, `I did not open "${clean}": ${String(error.message).slice(0, 200)}`, `לא פתחתי את "${clean}": ${String(error.message).slice(0, 200)}`), replyTo: question.id, topic: "general", error: true, at: now() });
+      throw error;
+    }
+    const skipped = [...opened.skipped];
+    const list = courseRoutes.list();
+    if (!opened.files.length || !list.length) {
+      say(!list.length ? words(lang, "There are no courses yet, so I have nowhere to file these. Add a course first.", "עדיין אין קורסים, אז אין לי איפה לתייק את אלה. צריך קודם להוסיף קורס.") : zipSummary(lang, clean, [], skipped, 0), question.id);
+      return { status: "no-files", questionId: question.id };
+    }
+    // Each file is matched to a course the way a single file is (its name, the zip's name, your words, the class on right now).
+    const filed = [];
+    const undecided = [];
+    const groups = new Map(); // courseId -> { ref, items }
+    for (const item of opened.files) {
+      const choice = pickCourse({ fileName: `${clean} ${showName(item.name)}`, text, coach, courseList: list, now: now() });
+      if (!choice) { undecided.push({ bytes: item.bytes, name: showName(item.name) }); continue; }
+      const g = groups.get(choice.ref.courseId) || { ref: choice.ref, items: [] };
+      g.items.push({ bytes: item.bytes, name: showName(item.name) });
+      groups.set(choice.ref.courseId, g);
+    }
+    for (const [courseId, g] of groups) fileMany(courseId, g.ref.name, g.items, filed, skipped);
+    let waiting = null;
+    if (undecided.length) { // ONE question for all the files that no rule could place
+      const id = crypto.randomBytes(8).toString("hex");
+      pending.set(id, { files: undecided, zipName: clean, text, questionId: question.id, at: now(), size: undecided.reduce((n, f) => n + f.bytes.length, 0) });
+      while (pending.size > 1 && (pending.size > MAX_PENDING || pendingBytes() > MAX_PENDING_BYTES)) pending.delete(pending.keys().next().value);
+      waiting = { id, name: clean, courses: list, expiresAt: now() + PENDING_MS };
+    }
+    const reply = say(zipSummary(lang, clean, filed, skipped, undecided.length), question.id, { result: { filedCount: filed.length, skippedCount: skipped.length, ...(waiting ? { fileChoice: waiting } : {}) } });
+    return { status: waiting ? "asking" : "filed", filedCount: filed.length, skippedCount: skipped.length, questionId: question.id, messageId: reply.id, ...(waiting ? { pendingId: waiting.id, courses: list } : {}) };
+  }
+
+  // The waiting files of a zip, to the course Omri tapped.
+  function assignMany(pendingId, p, courseId, ref) {
+    const filed = [];
+    const skipped = [];
+    fileMany(courseId, ref.name, p.files, filed, skipped);
+    pending.delete(pendingId);
+    const reply = say(zipSummary(langOf(p.text), p.zipName, filed, skipped, 0), p.questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, filedCount: filed.length, skippedCount: skipped.length } });
+    return { status: "filed", courseId, filedCount: filed.length, skippedCount: skipped.length, messageId: reply.id };
+  }
+
   // The file with its message. Everything is checked here BEFORE anything is written. Returns { status: "filed" | "asking", ... }.
   function receive({ bytes, name, text = "" }) {
+    if (looksLikeZip(bytes) && !sniffOffice(bytes)) return receiveZip({ bytes, name, text }); // a folder of files; a Word or PowerPoint file is ONE file
     sniffFile(bytes); // the real type; throws a 400 / 415
     sweep();
     const clean = cleanName(name);
@@ -86,6 +172,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     if (!p) throw Object.assign(new Error("that file is no longer waiting (30 minutes pass); send it again"), { status: 404 });
     const ref = courseRoutes.list().find((c) => c.id === courseId);
     if (!ref) throw Object.assign(new Error("course not found"), { status: 404 });
+    if (p.files) return assignMany(pendingId, p, courseId, { name: ref.name });
     pending.delete(pendingId);
     try {
       return file(courseId, { name: ref.name }, "your choice", p);

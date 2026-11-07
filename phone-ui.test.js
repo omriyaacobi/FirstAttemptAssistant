@@ -33,7 +33,7 @@ test("camera: a button opens the back camera, and its picture goes down the same
 });
 
 test("files: a PDF, pptx, docx, txt or md waits in a chip with a remove button, then goes to the checked upload route; pictures are not files", () => {
-  assert.match(html, /const FILE_TYPES = \/\\\.\(pdf\|pptx\|docx\|txt\|md\)\$\/i;/);
+  assert.match(html, /const FILE_TYPES = \/\\\.\(pdf\|pptx\|docx\|txt\|md\|zip\)\$\/i;/);
   assert.match(html, /const MAX_FILE = 50 \* 1024 \* 1024;/); // the same 50 MB as the server (upload checks are never weakened)
   assert.match(html, /\/api\/thread\/upload\?name=/);
   assert.match(html, /\/api\/thread\/file\/" \+ encodeURIComponent\(choice\.id\) \+ "\/assign"/);

@@ -3141,8 +3141,9 @@
     // (PDF, pptx, docx, txt, md) waits in the chip above the box until you press Send. Then it goes to POST /api/thread/upload, the route
     // with the old upload checks: code files it under the right course, or Bot asks which one (buttons under its question).
     // The checks here are only a courtesy so you hear about a wrong file early; the server checks everything again.
-    const FILE_TYPES = /\.(pdf|pptx|docx|txt|md)$/i;
+    const FILE_TYPES = /\.(pdf|pptx|docx|txt|md|zip)$/i;
     const MAX_FILE = 50 * 1024 * 1024;
+    const MAX_ZIP = 200 * 1024 * 1024; // a zip may hold many files; the PC unpacks and checks each one
     const sizeText = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
     let attachedFile = null; // { file, xhr } while a non-picture file waits or uploads
     function chipMode(fileMode) {
@@ -3161,14 +3162,15 @@
     function pickFile(file) {
       clearFile();
       if (photo) clearPhoto();
-      if (!FILE_TYPES.test(file.name)) { $("status").textContent = "Bot can read PDF, pptx, docx, txt and md files, and pictures."; return; }
-      if (file.size > MAX_FILE) { $("status").textContent = "That file is " + sizeText(file.size) + ". The most is 50 MB."; return; }
+      if (!FILE_TYPES.test(file.name)) { $("status").textContent = "Bot can read PDF, pptx, docx, txt and md files, zips of them, and pictures."; return; }
+      const isZip = /\.zip$/i.test(file.name);
+      if (file.size > (isZip ? MAX_ZIP : MAX_FILE)) { $("status").textContent = "That file is " + sizeText(file.size) + ". The most is " + (isZip ? "200" : "50") + " MB."; return; }
       if (!file.size) { $("status").textContent = "That file is empty."; return; }
       attachedFile = { file, xhr: null };
       chipMode(true);
       $("fileIcon").textContent = (file.name.split(".").pop() || "file").slice(0, 4).toUpperCase();
       $("photoInfo").textContent = file.name; // the size goes in the line below, so a Hebrew name and the English size never mix on one line
-      $("fileHint").textContent = sizeText(file.size) + ". Press Send. Bot picks the course from the file name and your words, or asks you.";
+      $("fileHint").textContent = sizeText(file.size) + ". Press Send. Bot picks the course from the file name and your words, or asks you." + (isZip ? " It opens the zip and files each PDF, slide, Word or text file in it." : "");
       $("photoChip").hidden = false;
       $("status").textContent = "";
     }
@@ -3449,7 +3451,7 @@
       $("studyBtn").addEventListener("click", (e) => { e.stopImmediatePropagation(); navGo({ view: "tstudy", id: null }); showView("tstudy"); }, true);
       $("task").placeholder = matchMedia("(pointer: coarse)").matches ? "Write to Bot..." : "Write to Bot. Enter sends, Shift+Enter adds a new line.";
       // files: anything that is not a picture goes to a course
-      $("photoInput").accept = "image/*,application/pdf,.pdf,.pptx,.docx,.txt,.md";
+      $("photoInput").accept = "image/*,application/pdf,application/zip,.pdf,.pptx,.docx,.txt,.md,.zip";
       $("attach").title = "Attach a photo or a file";
       $("attach").setAttribute("aria-label", "Attach a photo or a file");
       $("photoInput").addEventListener("change", (e) => {

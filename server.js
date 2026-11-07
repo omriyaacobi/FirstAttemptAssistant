@@ -74,6 +74,7 @@ const { createSummaries } = require("./thread-summary");
 const { studyOverview } = require("./study-page");
 const { visibleProposals } = require("./suggestion-filter");
 const { readRawBody } = require("./upload");
+const { MAX_ZIP_BYTES } = require("./unzip");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
 const { createCourses, validId: validCourseId } = require("./courses");
@@ -458,7 +459,8 @@ function createServer({
     if (thread && threadFiles && req.method === "POST" && url.pathname === "/api/thread/upload") {
       if (!String(req.headers["content-type"] || "").startsWith("application/octet-stream")) return sendJson(res, 415, { error: "send the file as application/octet-stream" });
       try {
-        const bytes = await readRawBody(req);
+        // A zip may be bigger than one file (its files are unpacked and checked one by one in unzip.js); anything else keeps the 50 MB limit.
+        const bytes = await readRawBody(req, /\.zip$/i.test(String(url.searchParams.get("name") || "")) ? MAX_ZIP_BYTES : undefined);
         const text = String(url.searchParams.get("text") || "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 500);
         return sendJson(res, 201, threadFiles.receive({ bytes, name: url.searchParams.get("name"), text }));
       } catch (error) {
