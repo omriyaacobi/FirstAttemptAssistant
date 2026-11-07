@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const zlib = require("node:zlib");
-const { unzip, looksLikeZip, MAX_FILES, MAX_ENTRIES, MAX_TOTAL_BYTES, MAX_FILE_BYTES } = require("./unzip");
+const { unzip, looksLikeZip, classify, MAX_CODE_BYTES, MAX_FILES, MAX_ENTRIES, MAX_TOTAL_BYTES, MAX_FILE_BYTES } = require("./unzip");
 const { createStudyCoach } = require("./study-coach");
 const { createThreadFiles } = require("./thread-files");
 const { createThreadStore } = require("./thread-store");
@@ -119,7 +119,8 @@ test("ZIP: a zip inside a zip, other types, symlinks, passwords and unknown comp
   assert.deepStrictEqual(names(r), ["ok.pdf"]);
   const why = Object.fromEntries(r.skipped.map((s) => [s.name, s.reason]));
   assert.match(why["inner.zip"], /zip inside a zip/);
-  assert.match(why["program.exe"], /not supported/);
+  assert.match(why["program.exe"], /compiled/); // now counted as a build leftover
+  assert.strictEqual(r.skipped.find((s) => s.name === "program.exe").code, "junk");
   assert.match(why["old.ppt"], /not supported/);
   assert.match(why["link.txt"], /symbolic/);
   assert.match(why["secret.pdf"], /password/);
@@ -181,9 +182,10 @@ test("ZIP upload: files named after a course are filed there, the bad ones are s
   const msgs = [...thread.all()];
   assert.deepStrictEqual(msgs.map((m) => m.role), ["user", "assistant"]); // one question, ONE answer
   assert.match(msgs[0].text, /^\(file attached: week1\.zip\)/);
-  assert.match(msgs[1].text, /filed 2 files: 2 in Calculus 2/);
-  assert.match(msgs[1].text, /Skipped 3/);
-  assert.match(msgs[1].text, /run\.exe: this type is not supported/);
+  assert.match(msgs[1].text, /filed 2 files \(2 documents\) in Calculus 2/);
+  assert.match(msgs[1].text, /Skipped 2:/);
+  assert.match(msgs[1].text, /Also skipped 1 compiled\/binary file\./); // run.exe is a build leftover: counted, not listed
+  assert.ok(!/run\.exe/.test(msgs[1].text));
   assert.match(msgs[1].text, /evil\.pdf: the name tries to leave the folder/);
   assert.match(msgs[1].text, /fake\.pdf: this file type is not supported/);
   assert.strictEqual(msgs[1].replyTo, msgs[0].id);
@@ -202,7 +204,7 @@ test("ZIP upload: when no rule knows the course Bot asks ONCE for all the files;
   assert.strictEqual(done.filedCount, 3);
   assert.deepStrictEqual(routes.added.map((a) => a.courseId), [IDS.sp, IDS.sp, IDS.sp]);
   const last = [...thread.all()].pop();
-  assert.match(last.text, /filed 3 files: 3 in Systems Programming/);
+  assert.match(last.text, /filed 3 files \(3 documents\) in Systems Programming/);
   assert.throws(() => files.assign(r.pendingId, IDS.sp), (e) => e.status === 404); // used once
 });
 
@@ -241,4 +243,109 @@ test("ZIP upload (server): a .zip goes through POST /api/thread/upload and answe
     const bad = await post("/api/thread/upload?name=broken.zip", buildZip([{ name: "l1.pdf", data: PDF("1") }], { cut: 10 }));
     assert.strictEqual(bad.status, 400);
   } finally { server.close(); }
+});
+
+// ---------------------------------------------------------------- a zip from a programming course (code, build leftovers)
+// Everything below is made up: short invented C-like text, empty "compiled" files, no real names.
+const CODE = (tag) => `/* made-up ${tag} */\nint ${tag}_add(int a, int b) {\n  return a + b;\n}\n`;
+const ELF_LIKE = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2, 3]), Buffer.alloc(40)]);
+function codeZip() {
+  return buildZip([
+    { name: "proj/docs/guide.pdf", data: PDF("g") },
+    { name: "proj/docs/notes.md", data: "# made-up notes\nabout the parser\n" },
+    { name: "proj/src/parser.c", data: CODE("parser") },
+    { name: "proj/src/parser.h", data: "#ifndef P_H\n#define P_H\nint parser_add(int a, int b);\n#endif\n" },
+    { name: "proj/tests/Makefile", data: "all:\n\techo made-up\n" },
+    { name: "proj/Makefile", data: "all:\n\techo made-up root\n" },
+    { name: "proj/src/parser.o", data: ELF_LIKE },
+    { name: "proj/lib/libx.a", data: ELF_LIKE },
+    { name: "proj/build/out.txt", data: "left over of a build" },
+    { name: "proj/node_modules/pkg/index.js", data: "module.exports = 1;" },
+    { name: "proj/src/__pycache__/m.pyc", data: ELF_LIKE },
+    { name: "proj/src/fake.c", data: Buffer.concat([Buffer.from("int x;\n"), Buffer.alloc(30)]) }, // NUL bytes: not text, refused
+    { name: "proj/src/pdf-in-disguise.c", data: PDF("d") }, // a PDF renamed .c: refused, not filed as a PDF
+    { name: "proj/data.weird", data: "who knows" },
+    { name: "proj/../../evil.c", data: CODE("evil") },
+  ]);
+}
+
+test("ZIP code: source and project text files are kept as code, build leftovers are marked junk, fakes and hostile names are refused", () => {
+  const r = unzip(codeZip());
+  assert.deepStrictEqual(r.files.map((f) => `${f.group}:${f.path}`).sort(), [
+    "code:proj/Makefile", "code:proj/src/parser.c", "code:proj/src/parser.h", "code:proj/tests/Makefile", "doc:proj/docs/guide.pdf", "doc:proj/docs/notes.md",
+  ]);
+  const byCode = {};
+  for (const s of r.skipped) byCode[s.code] = (byCode[s.code] || 0) + 1;
+  assert.deepStrictEqual(byCode, { junk: 5, notext: 2, type: 1, name: 1 }); // .o .a build/ node_modules/ __pycache__/ ; fake.c + pdf-in-disguise.c ; .weird ; ../
+  assert.strictEqual(classify("a/b/Makefile"), "code");
+  assert.strictEqual(classify("README"), "code");
+  assert.strictEqual(classify("x/y.exe"), "junk");
+  assert.strictEqual(classify("x/y.docx"), "doc");
+});
+
+test("ZIP code: a code file over the code limit is skipped; a high-bit (non UTF-8) one too; the document limit is unchanged", () => {
+  const big = buildZip([{ name: "a.c", data: "x", method: 0, size: MAX_CODE_BYTES + 1 }, { name: "latin.c", data: Buffer.from([0x69, 0x6e, 0x74, 0x20, 0xe9, 0x0a]) }, { name: "ok.c", data: CODE("ok") }]);
+  const r = unzip(big);
+  assert.deepStrictEqual(r.files.map((f) => f.name), ["ok.c"]);
+  assert.deepStrictEqual(r.skipped.map((s) => s.code), ["codebig", "notext"]);
+});
+
+function codeSetup() {
+  const s = setup();
+  const sniffing = s.routes.addUpload;
+  s.routes.addUpload = (courseId, bytes, name) => { // the real kind check of a single upload, so the road is as real as possible
+    require("./upload").sniffFile(bytes);
+    return sniffing(courseId, bytes, name);
+  };
+  return s;
+}
+
+test("ZIP code upload (English): documents and code are counted apart, junk is ONE line, code is filed under its path", () => {
+  const { thread, routes, files } = codeSetup();
+  const r = files.receive({ bytes: codeZip(), name: "Systems Programming proj.zip", text: "here is the project" });
+  assert.strictEqual(r.status, "filed");
+  assert.strictEqual(r.filedCount, 6);
+  assert.deepStrictEqual(routes.added.map((a) => a.name).sort(), ["guide.pdf", "notes.md", "proj/Makefile", "proj/src/parser.c", "proj/src/parser.h", "proj/tests/Makefile"].sort());
+  const text = [...thread.all()].pop().text;
+  assert.match(text, /I filed 6 files \(2 documents, 4 code files\) in Systems Programming\./);
+  assert.match(text, /Also skipped 5 compiled\/binary files\./);
+  assert.match(text, /Skipped 4:/);
+  assert.match(text, /fake\.c: not really text/);
+  assert.match(text, /evil\.c: the name tries to leave the folder/);
+  assert.ok(!/parser\.o|libx\.a|pycache|node_modules/.test(text), "junk is never listed by name");
+  assert.ok(text.split("\n").length < 14);
+});
+
+test("ZIP code upload (Hebrew): the reasons are Hebrew, names sit inside isolate marks, junk is one line", () => {
+  const { thread, files } = codeSetup();
+  files.receive({ bytes: codeZip(), name: "Systems Programming proj.zip", text: "שלום, זה הפרויקט של Systems Programming" });
+  const text = [...thread.all()].pop().text;
+  assert.match(text, /תייקתי 6 קבצים \(2 מסמכים, 4 קבצי קוד\)/);
+  assert.match(text, /בנוסף דולגו 5 קבצים מקומפלים\/בינאריים\./);
+  assert.match(text, /דולגו 4:/);
+  assert.match(text, /\u2066[^\n]*fake\.c\u2069: לא טקסט אמיתי/);
+  assert.match(text, /\u2066[^\n]*evil\.c\u2069: שם לא בטוח/);
+  assert.ok(!/ this type is |not supported|the name tries/.test(text), "no English reasons inside the Hebrew message");
+  assert.ok(!/parser\.o|libx\.a/.test(text));
+});
+
+test("ZIP code upload: a made-up code file reaches the course as plain text and a question about its name finds it (real courses + ingest + search)", async () => {
+  const { createCourses } = require("./courses");
+  const { ingestFile } = require("./ingest");
+  const { createIndex, search } = require("./search");
+  const courses = createCourses(tmp());
+  const c = courses.create("Systems Programming");
+  const { sniffFile } = require("./upload");
+  const bytes = Buffer.from(CODE("parser"));
+  const { kind, ext } = sniffFile(bytes);
+  const file = courses.addFile(c.id, { bytes, kind, ext, name: "src/parser.c" });
+  await ingestFile({ courses, courseId: c.id, fileId: file.id, askFile: async () => { throw new Error("no model for text"); } });
+  const pages = courses.allPages(c.id);
+  assert.strictEqual(pages.length, 1);
+  assert.strictEqual(pages[0].fileName, "src/parser.c");
+  const other = courses.addFile(c.id, { bytes: Buffer.from("plain notes about something else entirely\n"), kind: "text", ext: ".txt", name: "other.txt" });
+  await ingestFile({ courses, courseId: c.id, fileId: other.id, askFile: async () => { throw new Error("no"); } });
+  const all = courses.allPages(c.id);
+  const hits = search(createIndex(all), "what does the parser do", 3);
+  assert.strictEqual(all[hits[0].index].fileName, "src/parser.c");
 });

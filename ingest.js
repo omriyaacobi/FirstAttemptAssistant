@@ -108,7 +108,8 @@ async function ingestFile({ courses, courseId, fileId, askFile, log = () => {} }
     const resumeFrom = file.kind === "pdf" && file.resumeFrom > 1 ? file.resumeFrom : 0; // a read that stopped half way continues here
     if (resumeFrom) pages = courses.getPages(courseId, fileId);
     if (file.kind === "text") {
-      pages = splitText(fs.readFileSync(fp, "utf8"));
+      // The file name is part of the search text of each piece, so "what does parser.c do" finds a code file by its name.
+      pages = splitText(fs.readFileSync(fp, "utf8")).map((p) => ({ ...p, keywords: String(file.name || "").slice(0, 120) }));
     } else if (file.kind === "office") {
       const doc = readOffice(fs.readFileSync(fp)); // no model: the text is read straight out of the file (office.js)
       pages = doc.kind === "pptx"

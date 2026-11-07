@@ -625,3 +625,10 @@ All in `public/index.html` (no server file changed). Tested on a private server 
 - No new package: the project has no `package.json`, and `office.js` already reads zips with `node:zlib`, so `unzip.js` does the same. Limits (constants at the top of `unzip.js`): 200 MB zip, 300 MB unpacked, 50 MB per file, 200 files, 2000 entries.
 - Files from a zip are read like any course file, but the study coach does not propose a lecture/assignment per file (that would be one card each). Ask Bot about a lecture afterwards.
 - Tests: `unzip.test.js` (zips built in the test: normal, zip-slip, bomb, too many files, nested, unsupported, empty, corrupt, whole road, route). Needs a real phone: picking a big zip and the upload over Tailscale.
+
+## Zip upload: code zips (2026-11-08, branch claude/zip-code-files-d3124f, not merged yet)
+- Omri's first real zip was a C project: 52 of 80 files were skipped as "this type is not supported", and the Hebrew message listed English names. Cause: the first version copied the single-file list (pdf, pptx, docx, txt, md, pictures) without checking what a code zip holds.
+- Now `unzip.js` also takes source and project text files (`CODE_EXT`, `CODE_NAMES`) as plain text, with a real bytes check (`looksLikeText`) and a 1 MB cap each. Compiled leftovers and tool folders are only counted (`JUNK_EXT`, `JUNK_DIRS`). Every old limit is unchanged.
+- The notebook (`ingest.js`) now puts the file name into each text piece's search words, so "what does parser.c do" finds it; code files are filed as `src/parser.c` (end of the path), shown and cited by that name.
+- `thread-files.js`: the summary is in the message's language, shows documents and code files apart, lists at most 5 skipped files and counts the junk in one line.
+- Real zip (counts only, temp folder, no model): 28 documents + 27 code files filed, 24 compiled files counted, 1 unknown file listed. Tests: `unzip.test.js` (made-up zips). Not verified: the real Bot on screen, a real model answering a question about code.
