@@ -279,7 +279,8 @@ async function askCourse({ course, pages, question, history = [], deeper = false
     if (r.words) chosen = choosePages(pages, question, history, r.words);
   }
   const { picked, why, index } = chosen;
-  log(`[course] ${course.name}: ${picked.length} of ${pages.length} pages sent (${why})`);
+  const asked = [...askedLectures(question)].filter((n) => n >= 1 && n <= 60).sort((a, b) => a - b).slice(0, 6);
+  log(`[course] ${course.name}: ${picked.length} of ${pages.length} pages sent (${why})${asked.length ? ` lectures: ${asked.join(",")}` : ""}`); // the page's step text reads this: which lecture is being read
   const t0 = Date.now();
   let web = null;
   const lookup = async (query) => {

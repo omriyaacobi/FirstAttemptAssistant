@@ -25,6 +25,15 @@ test("describeProgress turns log lines into plain words", () => {
   assert.match(describeProgress(["[quota] low: x"]), /Starting/); // unknown lines change nothing
 });
 
+test("describeProgress says which lecture a course answer is reading, and what the study coach is doing", () => {
+  assert.strictEqual(describeProgress(["[course] Calculus 2: 6 of 87 pages sent (lecture)  lectures: 5".replace("  ", " ")]), "Reading Calculus 2, lecture 5 (6 pages)");
+  assert.strictEqual(describeProgress(["[course] Calculus 2: 9 of 87 pages sent (search) lectures: 5,6"]), "Reading Calculus 2, lectures 5, 6 (9 pages)");
+  assert.strictEqual(describeProgress(["[course] Calculus 2: 1 of 87 pages sent (search)"]), "Reading Calculus 2 (1 page)");
+  assert.match(describeProgress(["[study] teach in Calculus 2"]), /Preparing the lesson \(Calculus 2\)/);
+  assert.match(describeProgress(["[study] teach in Calculus 2", "[tutor] asking gemini-4-argon-medium"]), /tutor model/);
+  assert.match(describeProgress(["[study] progress"]), /progress/);
+});
+
 test("describeProgress counts planner steps", () => {
   const plan = ["[planner] 3 step(s), planned by gemini/flash"];
   assert.match(describeProgress(plan), /3 steps/);

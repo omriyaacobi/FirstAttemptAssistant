@@ -57,6 +57,9 @@ function describeProgress(lines) {
     else if ((m = line.match(/^\[planner\] step (\d+) (?:FAILED|done)/))) finished.add(m[1]);
     else if (/^\[planner\] all steps finished/.test(line)) text = "All steps finished";
     else if (/^\[reminder\]/.test(line)) text = "Setting your reminder";
+    else if ((m = line.match(/^\[study\] (\w+)(?: in (.+))?$/))) text = ({ teach: "Preparing the lesson", quiz: "Preparing your quiz", start: "Preparing the assignment check", answer: "Checking your answer", progress: "Counting your progress from the timetable", plan: "Counting your progress from the timetable", update: "Noting where you are", assignment: "Reading the assignment", motivate: "Looking at your progress", confirm: "Saving", cancel: "Dropping it", pause: "Pausing study reminders", resume: "Turning study reminders on" }[m[1]] || "Working on your studies") + (m[2] ? ` (${m[2].slice(0, 60)})` : "");
+    else if ((m = line.match(/^\[course\] (.+): (\d+) of \d+ pages sent \(.*?\)(?: lectures: ([\d,]+))?$/))) text = `Reading ${m[1].slice(0, 60)}${m[3] ? (m[3].includes(",") ? ", lectures " : ", lecture ") + m[3].replace(/,/g, ", ") : ""} (${m[2]} page${m[2] === "1" ? "" : "s"})`;
+    else if (/^\[tutor\] asking /.test(line)) text = "The tutor model is writing (this can take 20 seconds)";
     else if (/^\[queue\] waiting for a free slot/.test(line)) text = "Waiting for a free slot: Bot is busy with other tasks";
     else if (/^\[queue\] waiting for an earlier question/.test(line)) text = "Waiting for your earlier question about the same course to finish";
     else if (/^\[queue\] started/.test(line)) text = "Starting";
