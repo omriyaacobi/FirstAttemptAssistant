@@ -707,6 +707,7 @@ if (require.main === module) {
   });
   // BOT_THREAD=on in .env turns the one-conversation thread on (default off: Bot is then exactly what it was).
   const thread = threadOn ? createThreadStore(path.join(__dirname, "data", "thread")) : null;
+  if (thread) { try { const n = thread.markUnanswered(); if (n) console.log(`Thread: ${n} question(s) had no answer because Bot was stopped; each now says so.`); } catch (error) { console.error("Thread:", error.message); } } // nothing is lost silently after a restart
   const coach = thread ? createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log }) : null;
   const summaries = thread ? createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, log: console.log }) : null;
   if (thread) threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });

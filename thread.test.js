@@ -192,3 +192,24 @@ test("export writes only messages made after the switch, into a new empty folder
   const all = exportConversations({ threadDir, outDir: path.join(root, "export-all"), conversationsDir: conv, all: true });
   assert.strictEqual(all.messages, 9);
 });
+
+test("after a restart, a recent question with no answer gets one plain reply; answered, old, imported and deleted-answer ones do not", () => {
+  const dir = tmp();
+  let clock = T0 + 3600 * 1000;
+  const store = createThreadStore(dir, { now: () => clock });
+  const q1 = store.append({ role: "user", text: "cut off by a restart", at: T0 });
+  const q2 = store.append({ role: "user", text: "answered", at: T0 + 1000 });
+  store.append({ role: "assistant", text: "yes", replyTo: q2.id, at: T0 + 2000 });
+  const q3 = store.append({ role: "user", text: "answer deleted by the user", at: T0 + 3000 });
+  const a3 = store.append({ role: "assistant", text: "gone", replyTo: q3.id, at: T0 + 4000 });
+  store.trash(a3.id);
+  store.append({ role: "user", text: "imported and unanswered", at: T0 + 5000, imported: { conversationId: "c", title: "t", index: 0 } });
+  const old = store.append({ role: "user", text: "two days ago", at: T0 - 2 * DAY });
+  assert.strictEqual(store.markUnanswered(), 1);
+  const replies = store.page({ limit: 50 }).messages.filter((m) => m.replyTo === q1.id);
+  assert.strictEqual(replies.length, 1);
+  assert.strictEqual(replies[0].error, true);
+  assert.match(replies[0].text, /restarted \(or stopped\)/);
+  assert.strictEqual(store.page({ limit: 50 }).messages.some((m) => m.replyTo === old.id), false);
+  assert.strictEqual(store.markUnanswered(), 0); // a second run adds nothing
+});

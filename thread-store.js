@@ -199,6 +199,21 @@ function createThreadStore(dir, { now = Date.now } = {}) {
   // The newest messages (for building the context of a new message).
   const recent = (limit = 30) => page({ limit }).messages;
 
+  // After a restart no job is running any more. A question of the last 24 hours that has no answer was cut off by that restart (or a crash):
+  // it gets one plain reply saying so, so nothing is lost silently and the page shows an answer under it. Imported messages are never touched.
+  function markUnanswered({ since = 24 * 3600 * 1000, text = "Bot was restarted (or stopped) before it finished this message, so there is no answer. Please send it again." } = {}) {
+    const recentMessages = page({ limit: 200 }).messages;
+    const answered = new Set(recentMessages.filter((m) => m.role === "assistant" && m.replyTo).map((m) => m.replyTo));
+    for (const t of trashList()) if (t.message && t.message.replyTo) answered.add(t.message.replyTo); // an answer you deleted was still an answer
+    const marked = [];
+    for (const m of recentMessages) {
+      if (m.role !== "user" || m.imported || answered.has(m.id) || now() - m.at > since) continue;
+      marked.push(append({ role: "assistant", text, replyTo: m.id, topic: "general", error: true, at: Math.max(now(), m.at + 1) }));
+    }
+    return marked.length;
+  }
+
+
   // ---- the imported marker (thread.js) ----
   const importedFrom = () => readIndex().importedFrom;
   function setImportedFrom(list) {
@@ -253,7 +268,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     return removed;
   }
 
-  return { append, appendMany, days, find, page, all, recent, trash, trashList, restore, purgeTrash, importedFrom, setImportedFrom, rebuildIndex: () => rebuildIndex(), readDay };
+  return { markUnanswered, append, appendMany, days, find, page, all, recent, trash, trashList, restore, purgeTrash, importedFrom, setImportedFrom, rebuildIndex: () => rebuildIndex(), readDay };
 }
 
 // BOT_THREAD in the environment or in .env: "on", "1", "true" or "yes" turns the thread on; anything else (or nothing) is off.
