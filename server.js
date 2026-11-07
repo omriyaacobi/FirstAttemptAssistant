@@ -74,6 +74,7 @@ const { createStudyCoach } = require("./study-coach");
 const { createThreadFiles } = require("./thread-files");
 const { createSummaries } = require("./thread-summary");
 const { studyOverview } = require("./study-page");
+const { visibleProposals } = require("./suggestion-filter");
 const { readRawBody } = require("./upload");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
@@ -437,7 +438,19 @@ function createServer({
       return sendJson(res, r.ok ? 200 : 409, r);
     }
     if (thread && summaries && url.pathname.startsWith("/api/summaries/proposals")) {
-      if (req.method === "GET" && url.pathname === "/api/summaries/proposals") return sendJson(res, 200, { proposals: summaries.proposals() });
+      if (req.method === "GET" && url.pathname === "/api/summaries/proposals") {
+        // Hide what Bot already has: a reminder, a saved fact, an assignment, a calendar card, or a place in a course (suggestion-filter.js).
+        let existing = { facts: [], reminders: [], assignments: [], calendar: [] };
+        try {
+          existing = {
+            facts: memory.list().map((f) => f.text),
+            reminders: reminders.list().map((r) => r.text),
+            assignments: coach ? coach.tracker.refsFor(courseRoutes ? courseRoutes.list() : []).flatMap((r) => coach.tracker.progress(r).assignments.map((x) => x.title)) : [],
+            calendar: thread.recent(200).flatMap((m) => (m.result && m.result.calendarAdd && Array.isArray(m.result.calendarAdd.events) ? m.result.calendarAdd.events.map((e) => e.summary) : [])),
+          };
+        } catch (error) { /* without the lists nothing is hidden */ }
+        return sendJson(res, 200, { proposals: visibleProposals(summaries.proposals(), existing) });
+      }
       const act = url.pathname.match(/^\/api\/summaries\/proposals\/([a-z]_\d{4}-\d{2}-\d{2}_\d{1,2})\/(accept|dismiss)$/);
       if (act && req.method === "POST") {
         const item = summaries.peek(act[1]);
