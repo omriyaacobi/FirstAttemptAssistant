@@ -81,3 +81,28 @@ test("no cache can keep the phone on an old page", () => {
   assert.match(html, /async function checkNewPage\(\)/); // a page left open in the background asks for the page again when you come back
   assert.match(html, /fetch\("\/", \{ cache: "no-store" \}\)/);
 });
+
+test("an upload refusal drops your words only when the server really kept the message; a login that ended keeps everything", () => {
+  const threadScript = (html.match(/<script id="threadScript">([\s\S]*?)<\/script>/) || [])[1] || "";
+  const pure = threadScript.match(/\/\/ <thread-pure>([\s\S]*?)\/\/ <\/thread-pure>/)[1];
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(pure + "\nthis.out = { tUploadKept, tUploadError };", sandbox);
+  const { tUploadKept, tUploadError } = sandbox.out;
+  assert.strictEqual(tUploadKept(409, [], "a.pdf"), true); // a duplicate is only refused after the message was saved
+  assert.strictEqual(tUploadKept(415, ["(file attached: a.pdf) hi"], "a.pdf"), true); // refused after saving: the thread shows a new message
+  assert.strictEqual(tUploadKept(415, [], "a.pdf"), false); // refused by the first-bytes check before anything was saved
+  assert.strictEqual(tUploadKept(413, [], "a.pdf"), false);
+  for (const status of [401, 403, 500, 502, 504]) assert.strictEqual(tUploadKept(status, ["(file attached: a.pdf)"], "a.pdf"), false, "status " + status + " keeps nothing");
+  assert.match(tUploadError(401, "log in first"), /Log in again/);
+  assert.doesNotMatch(html, /saved: true/); // the old rule: every non-2xx answer counted as saved
+  assert.match(html, /\[400, 409, 413, 415\]\.includes\(error\.status\)/);
+});
+
+test("the bottom bar comes back when the keyboard goes away although the box keeps focus (Back gesture)", () => {
+  assert.match(html, /function keyboardCheck\(\)/);
+  assert.match(html, /window\.visualViewport\.addEventListener\("resize"/);
+  assert.match(html, /window\.addEventListener\("resize"/);
+  assert.match(html, /h >= heightNoKeyboard - 80\) document\.body\.classList\.remove\("typing"\)/);
+  assert.match(html, /document\.addEventListener\("input"[^\n]*classList\.add\("typing"\)/);
+});

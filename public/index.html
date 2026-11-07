@@ -2119,6 +2119,18 @@
     setTimeout(() => { try { e.target.scrollIntoView({ block: "nearest" }); } catch (error) { /* old browser */ } }, 350);
   });
   document.addEventListener("focusout", () => setTimeout(() => { if (!typingField(document.activeElement)) document.body.classList.remove("typing"); }, 150));
+  // The Back gesture closes the keyboard but the box keeps its focus, so "typing" would stay on and the bar stay hidden. The page height
+  // grows back when the keyboard goes: compare it with the height recorded before the keyboard opened (this needs the real S23 to confirm).
+  let heightNoKeyboard = window.innerHeight;
+  document.addEventListener("focusin", () => { if (!document.body.classList.contains("typing")) heightNoKeyboard = Math.max(heightNoKeyboard, window.innerHeight); }, true);
+  function keyboardCheck() {
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    if (!document.body.classList.contains("typing")) { heightNoKeyboard = Math.max(h, window.innerHeight); return; }
+    if (h >= heightNoKeyboard - 80) document.body.classList.remove("typing"); // the keyboard is gone (a keyboard is far taller than 80 px)
+  }
+  document.addEventListener("input", (e) => { if (typingField(e.target)) document.body.classList.add("typing"); }); // typing means the keyboard is up again
+  window.addEventListener("resize", () => setTimeout(keyboardCheck, 100));
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", () => setTimeout(keyboardCheck, 100));
 
   // ---- Is there a newer page on the PC? ----
   // The page file is never cached (the server says no-store and the service worker has no fetch handler), but a page that stays open in the
@@ -2483,6 +2495,20 @@
     const [y, m, d] = key.split("-").map(Number);
     const text = new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", ...(y !== new Date(nowMs).getFullYear() ? { year: "numeric" } : {}) });
     return text;
+  }
+  // Did the server keep your message although it refused the file? Only the upload route's own refusals do (thread-files.js saves the
+  // question, then addUpload may refuse: a duplicate is always 409; 400/413/415 can also come before anything is saved). So for
+  // 400/413/415 look at what really arrived: a new user message "(file attached: <name>)". Any other status (401 login ended, 403, 500, a proxy)
+  // kept nothing: the words and the chip stay.
+  function tUploadKept(status, newUserTexts, name) {
+    if (status === 409) return true;
+    if (![400, 413, 415].includes(status)) return false;
+    return (newUserTexts || []).some((t) => String(t).startsWith("(file attached: "));
+  }
+  function tUploadError(status, message) {
+    if (status === 401) return "Your login ended. Log in again (reload the page), then press Send: your words and the file are still here.";
+    if (status === 403) return "The PC refused this (" + message + "). Your words and the file are still here.";
+    return message;
   }
   // Today and yesterday are open, older days start folded away.
   const tDayOpen = (key, nowMs) => key >= tDayKey(nowMs - 86400000);
@@ -3147,7 +3173,7 @@
           let data = {};
           try { data = JSON.parse(xhr.responseText); } catch (error) { /* not JSON */ }
           if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-          else reject(Object.assign(new Error(data.error || "the server answered " + xhr.status), { status: xhr.status, saved: true }));
+          else reject(Object.assign(new Error(data.error || "the server answered " + xhr.status), { status: xhr.status }));
         };
         xhr.onerror = () => reject(Object.assign(new Error("no connection"), { network: true }));
         xhr.onabort = () => reject(Object.assign(new Error("cancelled"), { network: true, cancelled: true }));
@@ -3157,6 +3183,7 @@
     async function sendFile() {
       const f = attachedFile;
       const sentRaw = $("task").value;
+      const before = [...T.msgs.keys()];
       const text = sentRaw.trim();
       T.busy = true;
       $("send").disabled = true;
@@ -3178,7 +3205,13 @@
       } catch (error) {
         if (error.cancelled) { $("status").textContent = ""; return; }
         $("fileProgress").hidden = true;
-        if (error.saved) {
+        const known = new Set(before);
+        let kept = false;
+        if ([400, 409, 413, 415].includes(error.status)) {
+          await refreshNewest();
+          kept = tUploadKept(error.status, [...T.msgs.values()].filter((m) => m.role === "user" && !known.has(m.id)).map((m) => m.text), f.file.name);
+        }
+        if (kept) {
           // The server refused the file but kept your message, with the reason as Bot's reply: show it, and drop the chip (sending it again would only be refused again).
           clearSentText(sentRaw);
           clearFile();
@@ -3189,9 +3222,9 @@
           toBottom();
         } else {
           $("photoChip").classList.add("error");
-          $("photoInfo").textContent = f.file.name + ": not sent. Check the connection, then press Send again.";
+          $("photoInfo").textContent = f.file.name + ": not sent. Your words and the file are still here; press Send again.";
           $("status").textContent = "";
-          toast("Upload failed: " + error.message);
+          toast("Upload failed: " + tUploadError(error.status, error.message));
         }
       } finally {
         T.busy = false;
