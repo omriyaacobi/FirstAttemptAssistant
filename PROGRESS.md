@@ -616,3 +616,6 @@ All in `public/index.html` (no server file changed). Tested on a private server 
 
 ## Improve Bot watch (2026-11-07, for at least a week)
 - `improve-watch.js` is the daily check of Self-edit commits: code checks (protected files, raw HTML, outside scripts, secrets, weaker tests), all tests in a temporary copy, page scripts parse, live Bot answers. `node improve-watch.js` reports, `node improve-watch.js done` marks reviewed. It is one fixed script so the scheduled task `watch-improve-bot` needs only two plain commands that can be always allowed. It reads only; it never edits, commits, pushes or restarts. State lives in `data/improve-watch-*`.
+
+## Manager handoff (2026-11-07)
+- The manager role moved to a fresh Sonnet chat to save Claude quota. `HANDOFF.md` has how we work, where things stand, the first jobs and the QA plan.
