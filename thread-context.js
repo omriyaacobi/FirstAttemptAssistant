@@ -19,21 +19,23 @@ const CARD_SCAN_DAYS = 14; // how far back the newest calendar card is looked fo
 
 // The most that buildHistory can ever return, in characters of text and notes (used by the tests). Roughly: the recent turns,
 // one pinned card with its full note (core.js refuses a note that does not fit its own cap), and the pending lines.
-const MAX_CONTEXT_CHARS = RECENT_CHARS + 6000 + MAX_PENDING * (PENDING_CHARS + 80);
+const NOTES_CHARS = 2400; // the last 3 daily notes (thread-summary.js), already capped there
+const MAX_CONTEXT_CHARS = RECENT_CHARS + 6000 + NOTES_CHARS + MAX_PENDING * (PENDING_CHARS + 80);
 
 const clip = (text, max) => { const t = String(text); return t.length > max ? t.slice(0, max) : t; };
 
 // "course answer: Calculus 2" for an answer that came from a course (written by code, never by a model).
 function labelOf(message, courseName) {
   const r = message.result;
-  if (message.role !== "assistant" || !r || r.mode !== "course") return undefined;
-  const name = r.courseName || (courseName && courseName(r.courseId)) || "";
-  return name ? `course answer: ${name}` : "course answer";
+  if (message.role !== "assistant" || !r || (r.mode !== "course" && r.mode !== "study")) return undefined;
+  const name = r.courseName || (courseName && r.courseId && courseName(r.courseId)) || "";
+  const kind = r.mode === "study" ? "study coach" : "course answer";
+  return name ? `${kind}: ${name}` : kind;
 }
 
 // store: the thread store. entryOf(message): how jobs.js turns a message into a history entry (adds the calendar card note).
 // busy: ids of the user messages that are still being answered (they are shown as pending lines, not as turns).
-function buildHistory(store, { entryOf, courseName = null, busy = [], pending = [], maxChars = RECENT_CHARS } = {}) {
+function buildHistory(store, { entryOf, courseName = null, busy = [], pending = [], notes = "", maxChars = RECENT_CHARS } = {}) {
   const hide = new Set(busy);
   const usable = (m) => !m.error && typeof m.text === "string" && m.text.trim() && !hide.has(m.id);
   const recent = store.page({ limit: SCAN_MESSAGES }).messages.filter(usable);
@@ -57,6 +59,8 @@ function buildHistory(store, { entryOf, courseName = null, busy = [], pending = 
   // The newest calendar card note stays in the context even when a busy hour pushed its message out of the recent turns.
   const pinned = pinnedCard(store, { entryOf, hide, already: entries });
   if (pinned) out.unshift(pinned);
+  // The notes about the last days come first (oldest context), inside their own marker, as data that may be wrong.
+  if (notes) out.unshift({ role: "assistant", text: clip(notes, NOTES_CHARS), label: "notes" });
 
   for (const task of pending.slice(0, MAX_PENDING)) {
     out.push({ role: "assistant", text: `(Bot is still working on an earlier message: "${clip(String(task).replace(/\s+/g, " ").trim(), PENDING_CHARS)}")` });

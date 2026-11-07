@@ -10,6 +10,11 @@
 //   GET    /api/jobs/:id           -> one job (see jobs.js: the answer is saved into the conversation by the server)
 //   GET    /api/thread?before=<ms>&limit=<n> -> ONE conversation (only when BOT_THREAD=on): the newest messages, older ones by "before"
 //   DELETE /api/thread/:id         -> move one thread message to the 30-day trash; POST /api/thread/:id/restore brings it back
+//   POST   /api/thread/upload?name=&text= -> a FILE or photo with a message (raw bytes): filed under a course by code, or Bot asks which one
+//   POST   /api/thread/file/:id/assign    -> { courseId }: the course tapped for a file Bot asked about
+//   GET    /api/study                     -> data for the Study page: per course where Omri should be, where they are, what is due, questions
+//   POST   /api/study/confirm | /cancel   -> { id }: the Confirm / Cancel tap on a study card (an assignment, or lecture material)
+//   GET    /api/summaries/proposals       -> facts and tasks from the daily summaries, waiting for a tap; POST .../:id/accept | /dismiss
 //   GET    /api/conversations      -> the list of saved conversations
 //   GET    /api/conversations/:id  -> one conversation with all its messages
 //   DELETE /api/conversations/:id  -> delete a conversation
@@ -65,6 +70,11 @@ const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
 const { createThreadStore, loadThreadFlag, ID_PATTERN: THREAD_ID_PATTERN } = require("./thread-store");
+const { createStudyCoach } = require("./study-coach");
+const { createThreadFiles } = require("./thread-files");
+const { createSummaries } = require("./thread-summary");
+const { studyOverview } = require("./study-page");
+const { readRawBody } = require("./upload");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
 const { createCourses, validId: validCourseId } = require("./courses");
@@ -182,6 +192,9 @@ function createServer({
   uploadDir = path.join(__dirname, "data", "uploads"), // a photo waits here only while its task runs (data/ is git-ignored)
   auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) }),
   push = createPush({ dir: path.join(__dirname, "data") }),
+  coach = null, // the study coach (study-coach.js), only with the thread
+  summaries = null, // the daily summaries (thread-summary.js), only with the thread
+  threadFiles = null, // files that arrive with a message (thread-files.js), only with the thread
   thread = null, // the ONE conversation (thread-store.js); off unless given (BOT_THREAD=on), so with it off every route is exactly as before
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
   backup = null, // the data/ backup (backup.js); off unless given, so tests never read data/
@@ -195,11 +208,26 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Thread jobs (BOT_THREAD=on) pass the real course list; only then is the course action possible, and the answer comes from the notebook.
   const threadHandle = (task, options = {}) => (options.courses && courseRoutes
-    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), ...(threadDeps ? threadDeps() : {}) } })
+    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), ...(coach ? { studyAnswer: (args) => coach.answerStudy(args) } : {}), ...(threadDeps ? threadDeps() : {}) } })
     : handle(task, options));
+  // One short block of study state for the front desk (written by code from the tracker; data, never instructions).
+  const studyState = () => {
+    if (!coach) return "";
+    try {
+      const lines = [coach.studyLine()];
+      const card = coach.pendingProposal();
+      if (card) lines.push(`A confirmation card is waiting for the user's yes or no (${card.kind} for ${card.course}).`);
+      for (const ref of coach.tracker.refsFor(courseRoutes ? courseRoutes.list() : [])) {
+        if (coach.tracker.getSession(ref)) lines.push(`A quiz or lesson is open in ${ref.name}: the user's next message is probably an answer (studyIntent answer).`);
+      }
+      return lines.filter(Boolean).join("\n").slice(0, 900);
+    } catch (error) { return ""; }
+  };
   const jobs = createJobs({
     handle: threadHandle,
     thread,
+    summaries,
+    studyState,
     courses: () => (courseRoutes ? courseRoutes.list() : []),
     courseName: courseRoutes ? (id) => courseRoutes.name(id) : null,
     cardNote: (add, options) => calendarCards.note(add, options), // the chat history tells the next message what the calendar cards held and what happened to them
@@ -257,7 +285,7 @@ function createServer({
         phoneAccess: auth.enabled,
         loggedIn: remote ? auth.isLoggedIn(req) : true,
         images: true, // this Bot can receive a photo with a message
-        ...(thread ? { thread: true } : {}), // one conversation (BOT_THREAD=on): the page shows the thread; with it off the answer has no such key, as before
+        ...(thread ? { thread: true } : {}), ...(thread && coach ? { study: true } : {}), // one conversation (BOT_THREAD=on): the page shows the thread; with it off the answer has no such key, as before
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
         adminPin: remote && auth.adminEnabled && auth.isLoggedIn(req),
         adminUnlocked: remote && auth.isLoggedIn(req) && auth.isUnlocked(req),
@@ -395,6 +423,56 @@ function createServer({
 
     // Study notebooks: courses, their files and chats. All checks above (host, origin, phone login) have already run.
     if (courseRoutes && (await courseRoutes.handle(req, res, url, { sendJson, readJsonBody }))) return;
+
+    if (thread && coach && req.method === "GET" && url.pathname === "/api/study") {
+      return sendJson(res, 200, studyOverview({ coach, courseList: courseRoutes ? courseRoutes.list() : [] }));
+    }
+    const studyCard = url.pathname.match(/^\/api\/study\/(confirm|cancel)$/);
+    if (thread && coach && studyCard && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      if (typeof input.id !== "string" || !/^p[a-z0-9]{3,24}$/.test(input.id)) return sendJson(res, 400, { error: "bad card id" });
+      const r = studyCard[1] === "confirm" ? coach.confirmProposal(input.id) : coach.cancelProposal(input.id);
+      try { thread.append({ role: "assistant", text: r.answer, topic: "study", result: { mode: "study", answer: r.answer } }); } catch (error) { /* the reply still reaches the page */ }
+      return sendJson(res, r.ok ? 200 : 409, r);
+    }
+    if (thread && summaries && url.pathname.startsWith("/api/summaries/proposals")) {
+      if (req.method === "GET" && url.pathname === "/api/summaries/proposals") return sendJson(res, 200, { proposals: summaries.proposals() });
+      const act = url.pathname.match(/^\/api\/summaries\/proposals\/([a-z]_\d{4}-\d{2}-\d{2}_\d{1,2})\/(accept|dismiss)$/);
+      if (act && req.method === "POST") {
+        const item = summaries.peek(act[1]);
+        if (!item) return sendJson(res, 404, { error: "that proposal is gone or was already answered" });
+        if (act[2] === "dismiss") { summaries.dismiss(act[1]); return sendJson(res, 200, { ok: true }); }
+        // Only this tap saves anything. A fact goes through memory (profile.js checks it again); a task needs a real date.
+        try {
+          if (item.kind === "fact") memory.add(item.text);
+          else {
+            if (!item.due) return sendJson(res, 400, { error: "this task has no date, so no reminder can be set: tell Bot when to remind you" });
+            reminders.create({ text: item.text, at: new Date(`${item.due}T09:00:00`).toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+          }
+        } catch (error) { return sendJson(res, 400, { error: error.message }); }
+        summaries.accept(act[1]);
+        return sendJson(res, 200, { ok: true, saved: item.kind });
+      }
+      return sendJson(res, 404, { error: "not found" });
+    }
+    // A file or photo that comes with a message. Same checks as a course file (real first bytes, 50 MB), then code picks the course.
+    if (thread && threadFiles && req.method === "POST" && url.pathname === "/api/thread/upload") {
+      if (!String(req.headers["content-type"] || "").startsWith("application/octet-stream")) return sendJson(res, 415, { error: "send the file as application/octet-stream" });
+      try {
+        const bytes = await readRawBody(req);
+        const text = String(url.searchParams.get("text") || "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 500);
+        return sendJson(res, 201, threadFiles.receive({ bytes, name: url.searchParams.get("name"), text }));
+      } catch (error) {
+        return sendJson(res, error.status || 500, { error: error.message });
+      }
+    }
+    const assignRoute = url.pathname.match(/^\/api\/thread\/file\/([a-f0-9]{16})\/assign$/);
+    if (thread && threadFiles && assignRoute && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      try { return sendJson(res, 201, threadFiles.assign(assignRoute[1], String(input.courseId || ""))); } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
+    }
 
     // The ONE conversation (only when BOT_THREAD=on; with it off these routes do not exist).
     const threadRoute = url.pathname.match(/^\/api\/thread(?:\/([^/]+?)(\/restore)?)?$/);
@@ -608,19 +686,26 @@ if (require.main === module) {
   const push = createPush({ dir: path.join(__dirname, "data"), log: console.log });
   const auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) });
   const store = createStore(path.join(__dirname, "data", "conversations")); // the course chats live here too
+  const coursesStore = createCourses(path.join(__dirname, "data", "courses"));
+  const threadOn = loadThreadFlag(path.join(__dirname, ".env"));
+  let threadFiles = null; // set below when the thread is on; the course reader calls it after a file is read
   const courseRoutes = createCourseRoutes({
     store,
-    courses: createCourses(path.join(__dirname, "data", "courses")),
+    courses: coursesStore,
+    onFileReady: threadOn ? (args) => (threadFiles ? threadFiles.onFileReady(args) : undefined) : null,
     askCourse, ingestFile, askChain, askFile: askAgyWithFile,
     // Other-language search words for course questions (crosslang.js): one short Flash call through the front desk's pre-warmed agy.
     expand: (text) => { const { expandQuery } = require("./crosslang"); const fd = require("./frontdesk"); return expandQuery({ text, askStructured: fd.warm.askStructured, model: fd.FRONT_DESK_MODEL.model }); },
     about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
     log: console.log,
   });
-  const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, log: console.log });
-  const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
   // BOT_THREAD=on in .env turns the one-conversation thread on (default off: Bot is then exactly what it was).
-  const thread = loadThreadFlag(path.join(__dirname, ".env")) ? createThreadStore(path.join(__dirname, "data", "thread")) : null;
+  const thread = threadOn ? createThreadStore(path.join(__dirname, "data", "thread")) : null;
+  const coach = thread ? createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log }) : null;
+  const summaries = thread ? createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, log: console.log }) : null;
+  if (thread) threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
+  const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, study: coach, thread, log: console.log });
+  const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
   let threadDeps = null;
   if (thread) {
     const { findInThread } = require("./recall");
@@ -630,7 +715,7 @@ if (require.main === module) {
     purge();
     setInterval(purge, 6 * 3600 * 1000).unref();
   }
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps });
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;

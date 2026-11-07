@@ -369,7 +369,19 @@ async function runTask(task, { noPlan = false, planOnly = false, forced = null, 
   // The front desk chose "course" (thread only): the message is about studying. Code has already checked the course against the real list.
   // The answer comes from the course's notebook exactly as a course chat's did (study.js, through d.courseAnswer). With no course named
   // ("what should I study today?") code asks which course; the reply is written by code, never by a model.
+  // The coach's intents (study-coach.js). The desk's older names map onto them: a quiz or exercises is a quiz, "open" shows progress.
+  // "ask" and "summary" stay a plain question to the notebook.
+  const COACH_INTENT = { quiz: "quiz", exercises: "quiz", teach: "teach", start: "start", answer: "answer", progress: "progress", open: "progress", plan: "plan", update: "update", assignment: "assignment", motivate: "motivate", pause: "pause", resume: "resume", confirm: "confirm", cancel: "cancel" };
+  const MODEL_INTENTS = new Set(["quiz", "teach", "start", "answer", "assignment"]); // these call Argon; the others are code only (fast lane)
   async function courseAnswer(decision) {
+    const coachIntent = COACH_INTENT[decision.studyIntent];
+    if (d.studyAnswer && coachIntent) {
+      if (MODEL_INTENTS.has(coachIntent)) await slow({ course: decision.course ? decision.course.id : undefined });
+      log(`[study] ${coachIntent}${decision.course ? " in " + decision.course.name : ""}`);
+      const r = await d.studyAnswer({ studyIntent: coachIntent, text: task, courseId: decision.course ? decision.course.id : null, courseName: decision.course ? decision.course.name : null });
+      log(timingLine());
+      return { ...r, ...(decision.course ? { courseId: decision.course.id, courseName: decision.course.name } : {}), studyIntent: decision.studyIntent, reason: decision.reason };
+    }
     if (!d.courseAnswer) return runSingle({ chain: d.chainForDestination("gemini-flash"), rule: "course (notebooks are off)", reason: "the study notebooks are not available" });
     if (!decision.course) {
       const names = (courses || []).map((c) => c.name).join(", ");

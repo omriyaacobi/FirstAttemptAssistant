@@ -22,7 +22,7 @@
 const fs = require("node:fs");
 const { validId } = require("./courses");
 const { openPdf } = require("./pdfcut");
-const { sniffFile, readRawBody } = require("./upload");
+const { sniffFile, readRawBody, cleanName } = require("./upload");
 
 const { MODELS } = require("./router");
 
@@ -50,7 +50,7 @@ function migrateOldChats(courses, store) {
   }
 }
 
-function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, about = () => "", askChain, expand = null, log = () => {} }) {
+function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, about = () => "", askChain, expand = null, onFileReady = null, log = () => {} }) {
   courses.recover();
   migrateOldChats(courses, store);
 
@@ -63,10 +63,28 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     while (queue.length) {
       const { courseId, fileId } = queue.shift();
       await ingestFile({ courses, courseId, fileId, askFile, log });
+      // The file was read (or failed). The thread uses this to tell the study coach (a file may be a lecture or an assignment).
+      if (onFileReady) { try { await onFileReady({ courseId, fileId }); } catch (error) { log(`[course] after-read hook failed: ${error.message}`); } }
     }
     reading = false;
   }
   const enqueue = (courseId, fileId) => { queue.push({ courseId, fileId }); pump(); };
+
+  // The SAME checks as the upload route below (real first bytes, 50 MB, 400 MB per course, no duplicate), for a file that arrives with a
+  // message in the thread. Throws errors with a status. Returns the saved file entry; reading starts in the background.
+  function addUpload(courseId, bytes, name) {
+    const { kind, ext } = sniffFile(bytes);
+    const file = courses.addFile(courseId, { bytes, kind, ext, name: cleanName(name) });
+    enqueue(courseId, file.id);
+    return file;
+  }
+  // What the coach needs after a file was read: the entry and the start of its text.
+  const fileInfo = (courseId, fileId, maxChars = 4000) => {
+    const file = courses.getFile(courseId, fileId);
+    if (!file) return null;
+    const text = courses.getPages(courseId, fileId).map((p) => p.text).join("\n").slice(0, maxChars);
+    return { fileId, fileName: file.name, pages: file.pages || 0, status: file.status, text };
+  };
 
   const chatsOf = (id) => store.list().filter((c) => c.courseId === id);
 
@@ -188,7 +206,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   }
 
   // list(): the real courses as [{ id, name }]. The front desk may only choose from these (thread; see frontdesk.js).
-  return { handle, answer, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  return { handle, answer, addUpload, fileInfo, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };

@@ -78,7 +78,7 @@ function describeProgress(lines) {
 // thread (optional, BOT_THREAD=on): the thread store (thread-store.js); with it, startThread() works. courses() gives the real course list
 // [{ id, name }], studyState() one line per course written by code (the study tracker), courseName(id) the name for a label. All three
 // are safe to leave out. With no thread, nothing below changes: start() is exactly what it was.
-function createJobs({ handle, handleCourse = null, cardNote = null, store, thread = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
+function createJobs({ handle, handleCourse = null, cardNote = null, store, thread = null, summaries = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
   const jobs = new Map(); // id -> job
   let runningCount = 0;
 
@@ -257,7 +257,8 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
 
   // The topic word code writes on an answer: where it belongs in the thread (never decided by a model).
   function topicOf(result) {
-    if (result && result.mode === "course" && typeof result.courseId === "string") return `course:${result.courseId}`;
+    if (result && (result.mode === "course" || result.mode === "study") && typeof result.courseId === "string") return `course:${result.courseId}`;
+    if (result && result.mode === "study") return "study";
     if (result && (result.calendarAdd || /calendar/i.test(String(result.rule || "")))) return "calendar";
     if (result && result.topic === "study") return "study";
     return "general";
@@ -269,6 +270,8 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
       throw Object.assign(new Error("too many messages are being worked on at once, wait a little"), { status: 429 });
     }
     const running = threadJobs().filter((j) => j.status === "running");
+    // The first message of a new day starts the daily summaries in the background (thread-summary.js); it never delays this message.
+    if (summaries) { try { Promise.resolve(summaries.catchUp()).catch(() => {}); } catch (error) { /* a summary problem never blocks a message */ } }
     // The memory for this message: built BEFORE its own question is saved, from finished messages only. Questions still being
     // answered become one "still working on" line each.
     const history = buildHistory(thread, {
@@ -276,6 +279,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
       courseName,
       busy: running.map((j) => j.messageId),
       pending: running.map((j) => j.task),
+      notes: summaries ? (() => { try { return summaries.notesBlock(); } catch (error) { return ""; } })() : "",
     });
     const startedAt = now();
     const question = thread.append({ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt, topic: "general" });
@@ -309,7 +313,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
         };
         const list = courses();
         const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job) });
-        const text = result.mode === "course" ? result.answer : resultText(result);
+        const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);
         // An empty answer is a failure, not a reply: the page must never show a blank bubble.
         if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");
         topic = topicOf(result);

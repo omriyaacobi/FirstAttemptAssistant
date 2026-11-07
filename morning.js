@@ -26,7 +26,7 @@ const minutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5
 const clean = (text) => String(text).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-function createMorning({ file, store, reminders, push, study = null, calendar = readCalendar, now = () => Date.now(), timezone = localZone(), log = () => {} }) {
+function createMorning({ file, store, reminders, push, study = null, thread = null, calendar = readCalendar, now = () => Date.now(), timezone = localZone(), log = () => {} }) {
   if (!file) throw new Error("createMorning needs a file");
   let timer = null;
 
@@ -94,17 +94,23 @@ function createMorning({ file, store, reminders, push, study = null, calendar = 
   // Writes today's brief into a new chat and tells the phones.
   async function send() {
     const { text, summary } = await compose();
-    const title = `Morning brief, ${today()}`;
-    const chat = store.create(title);
     const result = { mode: "single", rule: "morning brief", reason: "you turned on the morning brief", chain: [], used: { provider: "code", model: "no model" }, answer: text, seconds: 0 };
-    store.append(chat.id, [{ role: "assistant", text, result, at: now() }]);
+    let saved;
+    if (thread) {
+      // The one conversation (BOT_THREAD=on): the brief is ONE message in the thread, not a new chat. recall.js skips it (rule "morning brief").
+      saved = { messageId: thread.append({ role: "assistant", text, result, topic: "general", at: now() }).id };
+    } else {
+      const chat = store.create(`Morning brief, ${today()}`);
+      store.append(chat.id, [{ role: "assistant", text, result, at: now() }]);
+      saved = { conversationId: chat.id };
+    }
     log("[morning] brief saved");
     try {
       await push.notifyAll({ title: "Your morning brief", body: summary, tag: `morning-${today()}` });
     } catch (error) {
       log(`[morning] push failed: ${error.message}`);
     }
-    return { conversationId: chat.id };
+    return saved;
   }
 
   // Sends today's brief if it is on, the time has come and it was not sent yet. Safe to call at any time.

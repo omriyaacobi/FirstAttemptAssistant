@@ -5,7 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
-const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE, briefText, readBrief, REPLY_FORMAT, SCHEMA_COURSE, COMPACT_SCHEMA_COURSE, backupBriefFile } = require("./frontdesk");
+const { decide, validateDecision, buildPrompt, ACTIONS, SCHEMA, COMPACT_SCHEMA, BRIEF_FILE, BACKUP_BRIEF_FILE, STUDY_INTENTS, briefText, readBrief, REPLY_FORMAT, SCHEMA_COURSE, COMPACT_SCHEMA_COURSE, backupBriefFile } = require("./frontdesk");
 const { DESTINATIONS } = require("./router");
 
 test("validateDecision accepts each kind of good decision", () => {
@@ -339,7 +339,7 @@ test("DRIFT (courses): both briefings carry the course rules, the three extra li
     assert.match(all, /which course/i); // no clue about the course: ask
     assert.strictEqual((text.match(/<!--thread-->/g) || []).length, (text.match(/<!--\/thread-->/g) || []).length, "every block is closed");
   }
-  assert.match(read(BRIEF_FILE), /ask, quiz, exercises, summary, plan, open/);
+  for (const f of [BRIEF_FILE, BACKUP_BRIEF_FILE]) for (const intent of STUDY_INTENTS) assert.ok(read(f).includes(intent), `${f} does not mention the study intent "${intent}"`);
   // thread off: no trace of courses left, no gaps; thread on: no markers left
   for (const f of [BRIEF_FILE, BACKUP_BRIEF_FILE]) {
     const off = briefText(read(f), false);
