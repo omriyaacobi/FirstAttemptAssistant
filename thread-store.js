@@ -117,7 +117,9 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     } catch (error) { /* missing or damaged: rebuilt below */ }
     return rebuildIndex();
   }
-  function writeIndex(index) { writeAtomic(indexFile, JSON.stringify(index)); }
+  // The index is only a cache of the day files (rebuilt when missing). A failed write (a locked file on Windows, a full disk) must never
+  // turn a message that is already safely on disk into an error, so it is ignored: the next read rebuilds the index.
+  function writeIndex(index) { try { writeAtomic(indexFile, JSON.stringify(index)); } catch (error) { /* cache only */ } }
 
   function entryFor(day) {
     const messages = readDay(day);

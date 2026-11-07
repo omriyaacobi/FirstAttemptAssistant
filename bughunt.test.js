@@ -23,3 +23,16 @@ test("a half-written last line (a crash while saving) does not swallow the NEXT 
   assert.strictEqual(store.trash(two.id), true);
   assert.deepStrictEqual(store.readDay(dayOf(T)).map((m) => m.text), ["one"]);
 });
+
+test("the index is only a cache: when it cannot be written (a file lock on Windows) messages are still saved and read", () => {
+  const dir = tmp();
+  const store = createThreadStore(dir);
+  store.append({ role: "user", text: "before", at: T });
+  fs.rmSync(path.join(dir, "index.json"));
+  fs.mkdirSync(path.join(dir, "index.json")); // writing a file over a folder fails, like a locked file does
+  const m = store.append({ role: "user", text: "after", at: T + 1 }); // used to throw after the message was already on disk
+  assert.strictEqual(m.text, "after");
+  assert.deepStrictEqual(store.page({}).messages.map((x) => x.text), ["before", "after"]);
+  assert.strictEqual(store.trash(m.id), true);
+  assert.deepStrictEqual([...store.all()].map((x) => x.text), ["before"]);
+});
