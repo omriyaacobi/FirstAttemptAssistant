@@ -238,3 +238,11 @@ test("a lecture is found by number, by weekday, or as the earliest one not under
   assert.strictEqual(pick("quiz me").slot.date, "2026-10-18"); // the one with material comes first
   assert.strictEqual(pick("lecture 40").slot, null);
 });
+
+test("teach picks the lecture AFTER the place Omri said he is at; quiz still takes the earliest open one (night check)", () => {
+  const s = setup();
+  s.t.setPosition(SP, { date: "2026-10-29" }); // seen through lecture 4
+  const next = (intent) => tutor.pickLecture({ tracker: s.t, ref: SP, message: "next lecture", now: NOW, intent });
+  assert.strictEqual(next("teach").slot.date, "2026-11-01"); // lecture 5
+  assert.strictEqual(next("quiz").slot.date, "2026-10-18");
+});

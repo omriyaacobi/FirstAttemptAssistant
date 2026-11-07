@@ -123,7 +123,7 @@ function dateFromMessage(text, tracker, ref, now) {
 }
 // Which lecture is meant: one the message names (number or day), else the earliest held lecture that is not understood yet and has
 // something to work with (material or a topic), else the earliest not understood one (the tutor then asks for material).
-function pickLecture({ tracker, ref, message, now }) {
+function pickLecture({ tracker, ref, message, now, intent = null }) {
   const c = tracker.course(ref);
   const held = tracker.slots(ref.key).filter((s) => plan.isHeld(s, now));
   const named = askedLectures(message);
@@ -131,7 +131,10 @@ function pickLecture({ tracker, ref, message, now }) {
   const day = dateFromMessage(message, tracker, ref, now);
   if (day) { const s = held.find((x) => x.date === day); if (s) return { slot: s, why: "named" }; }
   const open = held.filter((s) => !(c.lectures[s.date] && c.lectures[s.date].understood));
-  const usable = open.find((s) => c.lectures[s.date] && (c.lectures[s.date].material.length || c.lectures[s.date].topic));
+  const hasMaterial = (s) => c.lectures[s.date] && (c.lectures[s.date].material.length || c.lectures[s.date].topic);
+  // "Teach me the next lecture" after Omri said where he is: the next one AFTER that place (the night check found it taught lecture 1 to someone at lecture 5).
+  const after = intent === "teach" && c.position && c.position.known && c.position.seenThrough ? open.filter((x) => x.date > c.position.seenThrough) : [];
+  const usable = after.find(hasMaterial) || after[0] || open.find(hasMaterial);
   const s = usable || open[0] || null;
   return { slot: s, why: s ? "next" : "none" };
 }
@@ -316,7 +319,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   }
 
   // teach and quiz: a lecture
-  const pick = pickLecture({ tracker, ref, message, now });
+  const pick = pickLecture({ tracker, ref, message, now, intent });
   if (!pick.slot) return finish({ answer: pick.why === "none-held" ? `Lecture ${pick.n} has not been held yet by the timetable. If a class was cancelled, tell me ("no lecture on <date>") and the numbers will move.` : "I do not see a held lecture that still needs work. Tell me about a new one: a topic, a date, or send the slides.", needs: "lecture" });
   const lec = tracker.course(ref).lectures[pick.slot.date];
   const topic = (lec && lec.topic) || "";
