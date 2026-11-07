@@ -181,3 +181,31 @@ test("motivate is code-written (no model), honest, and points at the smallest ne
   assert.match(r.answer, /smallest next step: lecture 2 \(Thursday 22 Oct\)/);
   assert.strictEqual(calls.length, 0);
 });
+
+test("one message with the place in several courses: the model proposes, code checks each one, the answer lists every course", async () => {
+  const { coach, dir } = make();
+  const proposal = { courses: [
+    { course: "Calculus 2", state: "lecture", lecture: 4 },
+    { course: "Algorithms Planning", state: "upToDate" },
+    { course: "Systems Programming", state: "notStarted" },
+    { course: "High-Performance Systems Programming S1", state: "lecture", lecture: 9 }, // not held yet: refused
+    { course: "Made Up Course", state: "lecture", lecture: 1 }, // not a real course: ignored
+  ] };
+  const coach2 = require("./study-coach").createStudyCoach({ dir, courses: { list: () => COURSES, allPages: () => [] }, askChain: async () => ({ answer: "Sure: " + JSON.stringify(proposal), used: { model: "x" } }), now: () => clock.now });
+  const r = await coach2.answerStudy({ studyIntent: "update", text: "calc lecture 4, algo I'm up to date, systems I haven't started, high performance lecture 9" });
+  assert.match(r.answer, /Calculus 2: up to lecture 4 \(Wednesday 28 Oct\)/);
+  assert.match(r.answer, /Algorithms Planning: up to lecture 6 .*the latest one held/);
+  assert.match(r.answer, /Systems Programming: not started yet/);
+  assert.match(r.answer, /High-Performance Systems Programming S1: lecture 9 has not been held yet/);
+  assert.match(r.answer, /High-Performance Systems Programming S1: you did not say, so I still do not know/);
+  assert.doesNotMatch(r.answer, /Made Up/);
+  const p = coach2.tracker.progress(coach2.tracker.refsFor(COURSES)[0]);
+  assert.strictEqual(p.positionKnown, true);
+  assert.strictEqual(p.position.seenThrough, "2026-10-28");
+});
+
+test("several courses at once: a model that fails or sends junk falls back to the plain rules", async () => {
+  const { coach } = make(); // the fake model answers "?"
+  const r = await coach.answerStudy({ studyIntent: "update", text: "my last Calculus lecture was Monday" });
+  assert.match(r.answer, /Calculus 2: noted that you are up to/);
+});

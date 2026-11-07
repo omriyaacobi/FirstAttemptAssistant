@@ -12,6 +12,7 @@
 
 const plan = require("./study-plan");
 const { createTracker, clean } = require("./study-tracker");
+const { checkPositions, proposePositions } = require("./study-positions");
 const { createNudges } = require("./study-nudges");
 const tutor = require("./tutor");
 const { lectureIndex, askedLectures } = require("./study");
@@ -161,6 +162,32 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { lines, unclear };
   }
 
+  // ---- several courses in one message ("calc lecture 4, algo I'm up to date, systems I haven't started") ----
+  // The model proposes one entry per course it sees; code checks each (study-positions.js) and writes it. The answer lists EVERY tracked course with what
+  // is stored now, so a misreading is easy to spot. Returns null when the model gave nothing usable (the plain rules then try the message).
+  async function interpretPositions(text) {
+    const list = refs().filter(tracked);
+    if (list.length < 2) return null;
+    let raw = null;
+    try { raw = await proposePositions({ askChain, text, refs: list, today: today(), log }); } catch (error) { log(`[positions] failed: ${error.message}`); return null; }
+    const heldOf = (ref) => tracker.slots(ref.key).filter((x) => plan.isHeld(x, now(), timezone));
+    const { items, problems } = checkPositions(raw, list, heldOf, today());
+    if (!items.length && !problems.length) return null;
+    const stored = new Map();
+    for (const it of items) {
+      try {
+        if (it.kind === "notStarted") { const c = tracker.course(it.ref); c.position = { known: true, seenThrough: null, note: "not started yet", at: now() }; tracker.save(c); stored.set(it.ref.key, "not started yet"); }
+        else { tracker.setPosition(it.ref, { n: it.slot.n }); stored.set(it.ref.key, `up to lecture ${it.slot.n} (${plan.niceDate(it.slot.date)})${it.kind === "upToDate" ? ", the latest one held" : ""}`); }
+      } catch (error) { problems.push(`${it.ref.name}: ${error.message}.`); }
+    }
+    const lines = list.map((r) => {
+      if (stored.has(r.key)) return `${r.name}: ${stored.get(r.key)}.`;
+      const p = tracker.progress(r);
+      return p.positionKnown ? `${r.name}: you did not mention it, so it stays as it was (${p.position.seenThrough ? "up to " + plan.niceDate(p.position.seenThrough) : p.position.note || "set"}).` : `${r.name}: you did not say, so I still do not know where you are.`;
+    });
+    return [`Here is exactly what I stored (today is ${plan.niceDate(today())}):`, ...lines, ...problems, "If one is wrong, tell me that course again, for example \"Calculus lecture 5\". This only says where you are, not what you understood."].join("\n");
+  }
+
   // ---- proposals (model proposes, code checks, the student confirms) ----
   function addProposal(p) {
     const id = `p${++proposalCounter}${now().toString(36)}`;
@@ -236,6 +263,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     }
 
     if (intent === "update") {
+      if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) { const many = await interpretPositions(text); if (many) return done({ answer: many }); }
       const { lines, unclear } = interpretUpdate(text);
       const out = [...lines];
       if (unclear.length) out.push(`I did not catch: "${clean(unclear.join(" / "), 160)}". Tell me for example: "no Systems Programming lecture this week", "no classes on 24 Dec", "my last Calculus lecture was Monday", or "lecture 4 in Algorithms".`);
