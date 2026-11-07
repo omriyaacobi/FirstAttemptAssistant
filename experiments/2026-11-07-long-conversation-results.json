@@ -1,0 +1,3200 @@
+{
+ "control": [
+  125,
+  90,
+  101,
+  127,
+  128,
+  87,
+  106,
+  114,
+  83,
+  116,
+  107,
+  108,
+  99,
+  125,
+  88,
+  113,
+  100,
+  111,
+  0,
+  107,
+  0,
+  83,
+  90,
+  100,
+  96,
+  102,
+  110,
+  94,
+  0,
+  125,
+  90,
+  103,
+  115,
+  90,
+  138,
+  132,
+  102,
+  91,
+  88,
+  103
+ ],
+ "askedLog": [
+  {
+   "fact": "cat",
+   "age": 0,
+   "day": 2,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 68,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "cat",
+   "age": 1,
+   "day": 3,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 68,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "style",
+   "age": 0,
+   "day": 3,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 45,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "style",
+   "age": 1,
+   "day": 4,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 45,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "cat",
+   "age": 3,
+   "day": 5,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 68,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "style",
+   "age": 3,
+   "day": 6,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 45,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 0,
+   "day": 9,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 115,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 1,
+   "day": 10,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 115,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "cat",
+   "age": 10,
+   "day": 12,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 108,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 3,
+   "day": 12,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 2
+   }
+  },
+  {
+   "fact": "style",
+   "age": 10,
+   "day": 13,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 90,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 10,
+   "day": 19,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 4
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 0,
+   "day": 30,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 106,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 1,
+   "day": 31,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 106,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "cat",
+   "age": 30,
+   "day": 32,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 124,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 3,
+   "day": 33,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 106,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "style",
+   "age": 30,
+   "day": 33,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 90,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 30,
+   "day": 39,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 130,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 4
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 10,
+   "day": 40,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 106,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 3,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 0,
+   "day": 45,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 69,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 0,
+   "day": 45,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 1,
+   "day": 46,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 69,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 1,
+   "day": 46,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 3,
+   "day": 48,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 69,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 3,
+   "day": 48,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 4,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 10,
+   "day": 55,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 69,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 10,
+   "day": 55,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 30,
+   "day": 60,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 106,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 0,
+   "day": 60,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 144,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 1,
+   "day": 61,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 144,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "cat",
+   "age": 60,
+   "day": 62,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 105,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 3,
+    "recallRankOfGold": 3,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 3,
+   "day": 63,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 144,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "style",
+   "age": 60,
+   "day": 63,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 90,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 60,
+   "day": 69,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 114,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 4
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 10,
+   "day": 70,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 144,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 30,
+   "day": 75,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 69,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 30,
+   "day": 75,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 3
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 0,
+   "day": 80,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 111,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 1,
+   "day": 81,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 111,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 3,
+   "day": 83,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 111,
+   "explicit": {
+    "today_nothing_saved": false,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 30,
+   "day": 90,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 127,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 60,
+   "day": 90,
+   "changedSince": true,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 121,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1,
+    "staleOnly": false,
+    "protoStaleOnly": false
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 10,
+   "day": 90,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 111,
+   "explicit": {
+    "today_nothing_saved": false,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "cat",
+   "age": 90,
+   "day": 92,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 125,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 3,
+    "recallRankOfGold": 3,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "style",
+   "age": 90,
+   "day": 93,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 89,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "allergy",
+   "age": 90,
+   "day": 99,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 130,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 4
+   }
+  },
+  {
+   "fact": "landlord",
+   "age": 0,
+   "day": 100,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 80,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "landlord",
+   "age": 1,
+   "day": 101,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 80,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "landlord",
+   "age": 3,
+   "day": 103,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 80,
+   "explicit": {
+    "today_nothing_saved": false,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 60,
+   "day": 105,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 102,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 60,
+   "day": 105,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 3
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 30,
+   "day": 110,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 111,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 2,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "landlord",
+   "age": 10,
+   "day": 110,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 79,
+   "explicit": {
+    "today_nothing_saved": false,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "parrot",
+   "age": 0,
+   "day": 118,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "parrot",
+   "age": 1,
+   "day": 119,
+   "changedSince": false,
+   "implicit.none": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.half": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": true,
+    "notes": false,
+    "facts": false,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 60,
+   "day": 120,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 135,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 2
+   }
+  },
+  {
+   "fact": "exam",
+   "age": 90,
+   "day": 120,
+   "changedSince": true,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 121,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1,
+    "staleOnly": false,
+    "protoStaleOnly": false
+   }
+  },
+  {
+   "fact": "parrot",
+   "age": 3,
+   "day": 121,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "parrot",
+   "age": 10,
+   "day": 128,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "landlord",
+   "age": 30,
+   "day": 130,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 79,
+   "explicit": {
+    "today_nothing_saved": false,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "wedding",
+   "age": 90,
+   "day": 135,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 102,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "wedding-en-only",
+   "age": 90,
+   "day": 135,
+   "changedSince": false,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 3
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 60,
+   "day": 140,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 111,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "parrot",
+   "age": 30,
+   "day": 148,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  },
+  {
+   "fact": "dog",
+   "age": 90,
+   "day": 150,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 135,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 2,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 2
+   }
+  },
+  {
+   "fact": "landlord",
+   "age": 60,
+   "day": 160,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": false,
+   "implicit.protoChars": 79,
+   "explicit": {
+    "today_nothing_saved": false,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "proto_only": {
+     "hasNew": false,
+     "hasOld": false
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 0,
+    "protoRankOfGold": 0
+   }
+  },
+  {
+   "fact": "decision",
+   "age": 90,
+   "day": 170,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 110,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 4,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 2
+   }
+  },
+  {
+   "fact": "parrot",
+   "age": 60,
+   "day": 178,
+   "changedSince": false,
+   "implicit.none": {
+    "history": false,
+    "notes": false,
+    "facts": false,
+    "any": false
+   },
+   "implicit.half": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.all+60": {
+    "history": false,
+    "notes": false,
+    "facts": true,
+    "any": true
+   },
+   "implicit.proto": true,
+   "implicit.protoChars": 126,
+   "explicit": {
+    "today_nothing_saved": true,
+    "today_with_facts": true,
+    "recall_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "proto_only": {
+     "hasNew": true,
+     "hasOld": true
+    },
+    "recallExcerpts": 1,
+    "recallRankOfGold": 1,
+    "protoRankOfGold": 1
+   }
+  }
+ ],
+ "sizes": [
+  {
+   "day": 10,
+   "threadChars": 43075,
+   "threadMessages": 132,
+   "historyChars": 5760,
+   "factChars": 930
+  },
+  {
+   "day": 20,
+   "threadChars": 84243,
+   "threadMessages": 258,
+   "historyChars": 5953,
+   "factChars": 429
+  },
+  {
+   "day": 30,
+   "threadChars": 127998,
+   "threadMessages": 386,
+   "historyChars": 5619,
+   "factChars": 948
+  },
+  {
+   "day": 40,
+   "threadChars": 178408,
+   "threadMessages": 546,
+   "historyChars": 5669,
+   "factChars": 132
+  },
+  {
+   "day": 50,
+   "threadChars": 236021,
+   "threadMessages": 716,
+   "historyChars": 5655,
+   "factChars": 160
+  },
+  {
+   "day": 60,
+   "threadChars": 289056,
+   "threadMessages": 878,
+   "historyChars": 5926,
+   "factChars": 471
+  },
+  {
+   "day": 70,
+   "threadChars": 338812,
+   "threadMessages": 1030,
+   "historyChars": 5476,
+   "factChars": 430
+  },
+  {
+   "day": 80,
+   "threadChars": 394266,
+   "threadMessages": 1198,
+   "historyChars": 5951,
+   "factChars": 423
+  },
+  {
+   "day": 90,
+   "threadChars": 449789,
+   "threadMessages": 1362,
+   "historyChars": 5505,
+   "factChars": 380
+  },
+  {
+   "day": 100,
+   "threadChars": 503149,
+   "threadMessages": 1528,
+   "historyChars": 5422,
+   "factChars": 965
+  },
+  {
+   "day": 110,
+   "threadChars": 541741,
+   "threadMessages": 1642,
+   "historyChars": 5689,
+   "factChars": 137
+  },
+  {
+   "day": 120,
+   "threadChars": 581232,
+   "threadMessages": 1762,
+   "historyChars": 5573,
+   "factChars": 419
+  },
+  {
+   "day": 130,
+   "threadChars": 625716,
+   "threadMessages": 1892,
+   "historyChars": 5893,
+   "factChars": 188
+  },
+  {
+   "day": 140,
+   "threadChars": 670065,
+   "threadMessages": 2022,
+   "historyChars": 5770,
+   "factChars": 282
+  },
+  {
+   "day": 150,
+   "threadChars": 714483,
+   "threadMessages": 2158,
+   "historyChars": 5807,
+   "factChars": 419
+  },
+  {
+   "day": 160,
+   "threadChars": 757486,
+   "threadMessages": 2284,
+   "historyChars": 5547,
+   "factChars": 939
+  },
+  {
+   "day": 170,
+   "threadChars": 805629,
+   "threadMessages": 2428,
+   "historyChars": 5596,
+   "factChars": 645
+  },
+  {
+   "day": 180,
+   "threadChars": 858705,
+   "threadMessages": 2592,
+   "historyChars": 5968,
+   "factChars": 419
+  }
+ ],
+ "pairs": 1307,
+ "ms": {
+  "threadExchanges": 309,
+  "findInThread": 353,
+  "readAll": 171,
+  "buildHistory": 19
+ },
+ "messages": 2614
+}

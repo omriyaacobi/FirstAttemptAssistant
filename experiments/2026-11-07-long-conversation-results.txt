@@ -1,0 +1,65 @@
+# Long-conversation simulation (made-up data, code only)
+Thread: 2614 messages over 182 days. Questions asked: 68.
+Timing on this PC at 6 months: threadExchanges 309 ms, findInThread (index + search) 353 ms, read all days 171 ms, buildHistory 19 ms. Search pairs: 1307.
+
+## Size of the thread vs the size of what a message carries
+day | thread messages | thread chars | history chars carried | saved-fact chars carried
+30 | 386 | 127998 | 5619 | 948
+60 | 878 | 289056 | 5926 | 471
+90 | 1362 | 449789 | 5505 | 380
+120 | 1762 | 581232 | 5573 | 419
+150 | 2158 | 714483 | 5807 | 419
+180 | 2592 | 858705 | 5968 | 419
+
+## A. Implicit questions (the message needs a past fact but does not ask about the past; recall does NOT run)
+Share of questions whose answer is inside the prompt, by age of the fact, and by what was saved.
+age | saved=none | saved=half | saved=all | saved=all+60 | via history | via notes
+same day | 89% | 89% | 89% | 89% | 89% | 0%  (n=9)
+1d | 89% | 89% | 89% | 89% | 89% | 0%  (n=9)
+3d | 0% | 44% | 100% | 100% | 0% | 0%  (n=9)
+10d | 0% | 44% | 100% | 100% | 0% | 0%  (n=9)
+30d | 0% | 44% | 100% | 100% | 0% | 0%  (n=9)
+60d | 0% | 38% | 100% | 88% | 0% | 0%  (n=8)
+90d | 0% | 17% | 100% | 100% | 0% | 0%  (n=6)
+
+## B. Explicit questions ("what is my cat called?"; the front desk is ASSUMED to say recall and to write good search words)
+age | today: recall only (nothing saved) | today + saved facts (all) | prototype recall
+same day | 100% | 100% | 80%  (n=10)
+1d | 100% | 100% | 80%  (n=10)
+3d | 80% | 100% | 80%  (n=10)
+10d | 80% | 100% | 80%  (n=10)
+30d | 90% | 100% | 90%  (n=10)
+60d | 89% | 100% | 78%  (n=9)
+90d | 100% | 100% | 86%  (n=7)
+
+Per fact, explicit question, today's recall.js vs the prototype (every age, hit = the right value is in the excerpts):
+fact | today recall | prototype | rank of gold today (0 = missed) | note
+cat | 100% | 71% | 1,1,1,1,1,3,3
+style | 100% | 100% | 1,1,1,1,1,1,1
+allergy | 100% | 100% | 1,1,1,1,1,1,1
+exam | 100% | 100% | 1,1,1,1,1
+wedding | 100% | 100% | 1,1,1,1,1,1,1
+wedding-en-only | 71% | 43% | 0,0,4,1,1,1,1
+dog | 100% | 100% | 1,1,1,1,1,1,1
+decision | 43% | 100% | 0,0,0,0,2,1,1
+landlord | 0% | 0% | 0,0,0,0,0,0
+parrot | 100% | 100% | 1,1,1,1,1,1
+
+Implicit question, per fact, at ages 3d or more (hit = the answer is inside the prompt):
+fact | saved=none | saved=half | saved=all | always-on retrieval prototype (top 2 snippets)
+cat | 0% | 100% | 100% | 60%
+style | 0% | 0% | 100% | 0%
+allergy | 0% | 0% | 100% | 80%
+exam | 0% | 100% | 100% | 100%
+wedding | 0% | 0% | 100% | 0%
+dog | 0% | 0% | 100% | 0%
+decision | 0% | 0% | 100% | 100%
+landlord | 0% | 100% | 100% | 0%
+parrot | 0% | 100% | 100% | 100%
+All facts, age 3d+: saved=all 100%, always-on retrieval 46%, both together 100%.
+Control (40 ordinary questions, no planted fact): always-on retrieval injected something into 93% of them, 97 characters on average (the hard cap is 1,000).
+
+## C. The fact that changed (exam moved on day 70). Asked after the change:
+questions: 2. Today's recall: newest date present 100%; ONLY the old date came back (wrong answer risk) 0%.
+Prototype: newest date present 100%; only the old date 0%.
+Implicit question about it, saved=all (desk replaced the old fact): newest date in the prompt 100%.
