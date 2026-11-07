@@ -15,12 +15,35 @@ const plan = require("./study-plan");
 const { sniffFile, cleanName } = require("./upload");
 const { unzip, looksLikeZip } = require("./unzip");
 const { sniffOffice } = require("./office");
+const { dueFromWords } = require("./due-date");
 
 const PENDING_MS = 30 * 60 * 1000;
 const MAX_PENDING = 5;
 const MAX_PENDING_BYTES = 400 * 1024 * 1024; // all waiting files together (a waiting zip is held unpacked, in memory)
 const MAX_SHOWN = 8; // lines of "skipped" a zip summary lists; the rest is only counted
 const AFTER_CLASS_MS = 3 * 3600 * 1000;
+// Words of a course name that say nothing about WHICH course it is.
+const GENERIC = new Set(["intro", "introduction", "demo", "course", "class", "advanced", "basic", "basics", "lecture", "with", "from", "that", "this", "and", "the", "for", "part", "level", "semester"]);
+const wordsOf = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+const sameWord = (a, b) => a === b || a + "s" === b || a === b + "s";
+
+// The course whose own name words (not generic ones) appear in the words: "the programming course" -> "Intro Programming Demo".
+// Several courses sharing the word, or two different courses named, is not a clue: null (Bot asks).
+function pickByNameWords(refs, probe) {
+  const said = wordsOf(probe);
+  const hits = [];
+  for (const r of refs) {
+    const mine = [...new Set(wordsOf(r.name).filter((w) => w.length >= 4 && !GENERIC.has(w) && !/^\d+$/.test(w)))];
+    const matched = mine.filter((w) => said.some((x) => sameWord(w, x)));
+    if (matched.length) hits.push({ ref: r, matched });
+  }
+  if (!hits.length) return null;
+  hits.sort((a, b) => b.matched.length - a.matched.length);
+  const top = hits[0];
+  if (hits.length > 1 && hits[1].matched.length === top.matched.length) return null;
+  if (hits.slice(1).some((h) => h.matched.some((w) => !top.matched.includes(w)))) return null; // another course is named too
+  return top.ref;
+}
 
 // Which course is meant? Returns { ref, how } or null (then Bot asks).
 function pickCourse({ fileName = "", text = "", coach, courseList, now = Date.now() }) {
@@ -33,6 +56,8 @@ function pickCourse({ fileName = "", text = "", coach, courseList, now = Date.no
   const lower = probe.toLowerCase();
   const named = refs.filter((r) => r.name && lower.includes(String(r.name).toLowerCase()));
   if (named.length === 1) return { ref: named[0], how: "the course name in your message or the file name" };
+  const byWords = pickByNameWords(refs, probe);
+  if (byWords) return { ref: byWords, how: "the course name in your message or the file name" };
   // a class that is on right now or ended a moment ago
   const p = plan.parts(now, tracker.timezone || plan.TIMEZONE);
   const recent = refs.filter((r) => tracker.slots(r.key).some((s) => s.date === p.date && s.attends !== false
@@ -142,7 +167,10 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   // The file with its message. Everything is checked here BEFORE anything is written. Returns { status: "filed" | "asking", ... }.
   function receive({ bytes, name, text = "" }) {
     if (looksLikeZip(bytes) && !sniffOffice(bytes)) return receiveZip({ bytes, name, text }); // a folder of files; a Word or PowerPoint file is ONE file
-    sniffFile(bytes); // the real type; throws a 400 / 415
+    const sniffed = sniffFile(bytes); // the real type; throws a 400 / 415
+    // A name that promises a PDF / Word / PowerPoint / image but the bytes are plain text: refuse, do not file it as notes.
+    const said = /\.(pdf|docx|pptx|png|jpe?g|webp)$/i.exec(String(name || ""));
+    if (said && sniffed.kind === "text") throw Object.assign(new Error(`"${cleanName(name)}" is named like a ${said[1].toUpperCase()} file but it is only plain text, so it may be damaged or renamed. Send the real file, or rename it .txt if it is plain text.`), { status: 415 });
     sweep();
     const clean = cleanName(name);
     const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", at: now() });
@@ -191,13 +219,18 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     if (!info) return;
     if (info.status === "failed" || !info.pages) { say(words(langOf(ctx.text), `I could not read "${info ? info.fileName : "the file"}". It is still in the course; you can try reading it again on the Courses screen.`, `לא הצלחתי לקרוא את "${info ? info.fileName : "הקובץ"}". הוא עדיין בקורס, ואפשר לנסות לקרוא אותו שוב במסך הקורסים.`), ctx.questionId, { topic: `course:${courseId}` }); return; }
     let r;
+    // "Due next Sunday" in the message or the file: CODE turns it into a real date and tells the coach (a model never works out dates).
+    const due = dueFromWords(`${ctx.text}\n${String(info.text || "").slice(0, 20000)}`, now());
     try {
-      r = await coach.onUpload({ courseId, files: [{ fileId, fileName: info.fileName, pages: info.pages }], text: info.text, dateText: `${ctx.text} ${info.fileName}` });
+      r = await coach.onUpload({ courseId, files: [{ fileId, fileName: info.fileName, pages: info.pages }], text: info.text, dateText: `${ctx.text} ${info.fileName}${due ? ` (due date worked out by Bot from the calendar: ${due})` : ""}` });
     } catch (error) {
       log(`[files] the coach failed: ${error.message}`);
       r = { answer: words(langOf(ctx.text), `"${info.fileName}" is read (${info.pages} pages). I could not decide where it belongs: ${String(error.message).slice(0, 120)}.`, `"${info.fileName}" נקרא (${info.pages} עמודים). לא הצלחתי להחליט לאן הוא שייך: ${String(error.message).slice(0, 120)}.`) };
     }
-    say(r.answer, ctx.questionId, { topic: `course:${courseId}`, result: { courseId, ...(r.proposal ? { proposal: r.proposal } : {}) } });
+    // Several files in a row would each get the same "Which date was it?": name the file so the answers can be told apart.
+    let answer = r.answer;
+    if (!r.proposal && /Which date was it\?|באיזה תאריך היא הייתה\?/.test(String(answer))) answer = `"${info.fileName}": ${answer}`;
+    say(answer, ctx.questionId, { topic: `course:${courseId}`, result: { courseId, ...(r.proposal ? { proposal: r.proposal } : {}) } });
   }
 
   return { receive, assign, onFileReady, pendingCount: () => pending.size };

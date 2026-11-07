@@ -54,7 +54,7 @@ function formatEvents(events, { from, days }) {
 function friendlyError(error) {
   const text = String(error && error.message || error);
   if (/invalid_grant|Not signed in/.test(text)) return "Bot's Google login has expired (Google ends it every 7 days while the app is in Testing mode). On the PC run: node calendar.js login";
-  if (/No Google client found/.test(text)) return "Bot has no Google client file yet, see calendar-setup.md.";
+  if (/No Google client found/.test(text)) return "Google Calendar is not connected yet. It needs a one-time setup on the PC; the steps are in calendar-setup.md.";
   return `Bot could not read the calendar: ${text}`;
 }
 
