@@ -516,3 +516,8 @@ Why: you want to keep up with the semester, and to be taught or pushed without a
 **Tests**: `study-tracker.test.js`, `tutor.test.js`, `study-nudges.test.js`, `study-coach.test.js` (fake models, temp folders). Whole suite: 731 pass.
 
 **Not done / limits**: nothing is connected, so none of it has run against the real Argon or the real courses. The page has no cards yet. The timetable is a default in code (copied to `data/study/timetable.json`); Google Calendar is not read for it. Proposals vanish if Bot restarts. The model could still write a hint that is too generous: only the leak check (a hint containing the reference answer is replaced) and the length cap guard that. Grading quality was only tested with fakes: try it on 5 real questions first.
+
+## Study coach: real Argon test (2026-11-07 night, same branch)
+- About 48 real Argon calls on a copy of the Calculus notebook and a made-up course; results and 7 fixes in `experiments/2026-11-07-tutor-real-test.md`. Grading held firm against pushing, never marked a wrong check as understood, the tutor never gave an assignment solution when pushed. Fixes: dates like "29 Oct", LaTeX inside JSON, off-topic messages no longer count as attempts, Hebrew prompts and Hebrew code-written words, one question back after teaching, math the page cannot draw is rewritten (`fixMath`), `[OUT]` never leaks. Tests: `tutor-real.test.js`.
+- Same file: research notes on getting BGU Moodle updates (calendar link first; no login done anywhere).
+- Not done: streaming of tutor turns (14 to 24 s per turn), dates in Hebrew replies still English.
