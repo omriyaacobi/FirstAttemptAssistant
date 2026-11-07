@@ -111,6 +111,10 @@ test("Improve Bot is a chat: progress, follow-ups, preview, and simple Approve a
   assert.match(html, /\.preview-box \{/); // Preview is a popup over the dimmed chat, not a full page
 });
 
+test("the list of what Bot knows about me is folded until you open it", () => {
+  assert.match(html, /<details>\s*<summary[^>]*><strong>What Bot knows about me<\/strong><\/summary>\s*<div id="memory"/);
+});
+
 const study = fs.readFileSync(path.join(__dirname, "public", "study.js"), "utf8");
 
 test("every course card is exactly the same size, and a long name is cut instead of growing the card", () => {

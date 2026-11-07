@@ -439,9 +439,12 @@
       <div id="reminders" class="sub">None yet. Try: "remind me tomorrow at 9 to call the bank".</div>
     </section>
     <section aria-label="What Bot knows about me">
-      <div class="row" style="margin-top:0"><strong>What Bot knows about me</strong></div>
-      <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
-      <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
+      <!-- Folded by default: the list only shows when you open it. -->
+      <details>
+        <summary style="cursor:pointer"><strong>What Bot knows about me</strong></summary>
+        <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
+        <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
+      </details>
     </section>
     <section aria-label="Morning brief" id="morningBox" hidden>
       <div class="row" style="margin-top:0">
