@@ -129,7 +129,7 @@ test("the page keeps what the task asked for: composer open, trash, notice, olde
   assert.match(html, /id="tstudyView"/);
   assert.match(threadScript, /showView\("study", c\.id\)/);
   // a file that is not a picture goes to a course through the existing upload route
-  assert.match(threadScript, /\/api\/courses\/\$\{pick\.value\}\/files\?name=/);
+  assert.match(threadScript, /\/api\/thread\/upload\?name=/); // the upload route with the old checks; the file waits in the chip until Send
   // old Courses code is still there for the switch-off mode
   assert.match(html, /<script src="\/study\.js"><\/script>/);
 });

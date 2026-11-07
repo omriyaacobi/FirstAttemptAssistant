@@ -2,7 +2,7 @@
 <html lang="en" data-theme="midnight">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Bot</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png">
@@ -219,6 +219,15 @@
   .photo-chip img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
   .photo-chip span { flex: 1; color: var(--muted); font-size: .85rem; }
   .photo-chip button { width: 32px; height: 32px; padding: 0; border-radius: 50%; background: var(--mine); color: var(--muted); font-size: 1rem; line-height: 1; }
+  /* A file (PDF, pptx, docx, text) waiting to be sent: a small tile with its type, its name and size, a progress bar while it uploads */
+  .photo-chip .file-icon { flex: none; width: 56px; height: 56px; display: grid; place-items: center; border-radius: 10px; background: var(--mine); color: var(--accent); font-weight: 700; font-size: .8rem; border: 1px solid var(--line); }
+  .photo-chip .file-icon[hidden], .photo-chip img[hidden], .photo-chip progress[hidden] { display: none; }
+  .photo-chip .chip-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .photo-chip .chip-text span { overflow-wrap: anywhere; }
+  .photo-chip progress { width: 100%; height: 8px; accent-color: var(--accent); }
+  .photo-chip.error #photoInfo { color: var(--bad); }
+  .tfilechoice { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .tfilechoice button { min-height: 44px; }
   .me img { display: block; max-width: min(240px, 100%); border-radius: 8px; margin-bottom: 6px; }
   #toasts { position: fixed; top: 12px; right: 12px; z-index: 20; display: flex; flex-direction: column; gap: 8px; max-width: min(360px, calc(100vw - 24px)); }
   .toast { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.25); display: flex; gap: 10px; align-items: flex-start; }
@@ -231,6 +240,7 @@
 
   /* Phone-only pieces (hamburger, close button, backdrop) are hidden on the PC page */
   .iconbtn, .backdrop, .side-close { display: none; }
+  .bottombar, #restartSide { display: none; }
 
   @media (max-width: 760px) {
     .diff span { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -250,8 +260,28 @@
     .side-close { display: inline-flex; }
     .backdrop { display: block; position: fixed; inset: 0; z-index: 5; background: rgba(20, 8, 32, .5); opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; }
     .backdrop.show { opacity: 1; visibility: visible; }
-    .composer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+    /* Phone: the page is a column: the screen, then a bar of the main places under your thumb. The keyboard shrinks the page
+       (interactive-widget=resizes-content), and the bar steps aside while you type, so the box is never hidden. */
+    html, body { height: 100%; height: 100dvh; }
+    body { display: flex; flex-direction: column; }
+    .app { flex: 1; min-height: 0; height: auto; }
+    .composer { padding-bottom: 12px; }
     #toasts { top: calc(12px + env(safe-area-inset-top)); }
+    #restartTop { display: none; } /* on the phone, Restart Bot is in the menu and in Improve Bot, big enough for a thumb */
+    #restartSide { display: block; width: 100%; min-height: 48px; font-size: 1rem; color: var(--text); }
+    .bottombar { display: flex; flex: none; border-top: 1px solid var(--line); background: var(--card); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); position: relative; z-index: 4; }
+    body.typing .bottombar { display: none; }
+    .bottombar button.tab { flex: 1; min-height: 56px; border-radius: 0; background: transparent; color: var(--muted); border: 0; font-size: .8rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 2px; }
+    .bottombar button.tab svg { width: 24px; height: 24px; }
+    .bottombar button.tab[aria-current="page"] { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+    .bottombar button.tab:active { background: var(--mine); }
+    /* every button and field big enough for a thumb (44 px) */
+    button, select, summary, .improve-head .actions button, .coursebar button { min-height: 44px; }
+    button.ghost { padding: 8px 12px; }
+    .iconbtn { flex: none; }
+    .composer .row label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+    input[type="checkbox"] { width: 24px; height: 24px; flex: none; }
+    .photo-chip button { width: 44px; min-width: 44px; height: 44px; }
     .me { margin-left: 5%; }
   }
 
@@ -433,6 +463,7 @@
       </div>
     </section>
     <button id="studyBtn" title="One tab for each course: upload materials and study with Bot">Courses</button>
+    <button class="ghost" id="restartSide" title="Restart Bot to load new code (needs start-web.cmd)">Restart Bot</button>
     <button class="improve" id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
   </aside>
 
@@ -453,19 +484,28 @@
       <div class="inner">
         <div class="photo-chip" id="photoChip" hidden>
           <img id="photoThumb" alt="Attached photo">
-          <span id="photoInfo">Photo attached</span>
-          <button type="button" id="photoRemove" aria-label="Remove photo">✕</button>
+          <span class="file-icon" id="fileIcon" hidden aria-hidden="true">FILE</span>
+          <span class="chip-text"><span id="photoInfo" dir="auto">Photo attached</span><span class="sub" id="fileHint" hidden></span><progress id="fileProgress" max="100" hidden aria-label="Upload progress"></progress></span>
+          <button type="button" id="photoRemove" aria-label="Remove attachment">✕</button>
         </div>
         <textarea id="task" dir="auto" aria-label="Your message" placeholder="Type a task. Enter sends, Shift+Enter adds a new line."></textarea>
         <div class="row">
           <label><input type="checkbox" id="noplan"> <span id="noplanText">Don't split into steps</span></label>
+          <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
           <span class="status" id="status" role="status"></span>
+        </div>
+        <div class="row tools-row">
           <span class="tools">
-            <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
             <input type="file" id="photoInput" accept="image/*" hidden>
-            <button type="button" class="attach" id="attach" aria-label="Attach a photo" title="Attach a photo">
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+            <button type="button" class="attach" id="camera" aria-label="Take a photo" title="Take a photo with the camera">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1.2-1.6A1 1 0 0 1 9.5 4h5a1 1 0 0 1 .8.4L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
             </button>
+            <button type="button" class="attach" id="attach" aria-label="Attach a photo" title="Attach a photo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l8-8"/></svg>
+            </button>
+          </span>
+          <span class="tools">
             <button type="button" class="mic" id="mic" hidden title="Talk to Bot: speak, and it is sent when you stop">Mic</button>
             <button type="submit" id="send">Send</button>
           </span>
@@ -552,6 +592,12 @@
     </div>
   </div>
 </div>
+<nav class="bottombar" id="bottombar" aria-label="Main places">
+  <button type="button" class="tab" id="tabChat" data-view="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg><span>Chat</span></button>
+  <button type="button" class="tab" id="tabStudy" data-view="study"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5C5 5 8 5 12 7c4-2 7-2 9-.5V19c-2-1.500-5-1.500-9 .5-4-2-7-2-9-.5z"/><path d="M12 7v12.500"/></svg><span id="tabStudyText">Courses</span></button>
+  <button type="button" class="tab" id="tabImprove" data-view="improve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.500 4.500l5 5L8 21H3v-5z"/><path d="M12.500 6.500l5 5"/></svg><span>Improve</span></button>
+  <button type="button" class="tab" id="tabMenu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
+</nav>
 
 <script>
   // Everything the models send back is untrusted text, so this page only ever uses
@@ -1187,6 +1233,23 @@
   }
 
   $("attach").addEventListener("click", () => $("photoInput").click());
+  // The camera button opens the phone's camera straight away (capture="environment" = the back camera). What it returns is handed to the
+  // very same photo input, so a camera picture goes down exactly the path of a picture you pick: shrunk in the page, sent with the
+  // message to /api/ask (so "add this to my calendar" photos still work). On a PC without a camera the browser shows its file picker.
+  $("camera").addEventListener("click", () => { $("cameraInput").value = ""; $("cameraInput").click(); });
+  $("cameraInput").addEventListener("change", () => {
+    const file = $("cameraInput").files[0];
+    if (!file) return;
+    try {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      $("photoInput").files = transfer.files;
+      $("photoInput").dispatchEvent(new Event("change"));
+    } catch (error) {
+      $("status").textContent = "Could not use that picture. Try the paperclip instead.";
+    }
+    $("cameraInput").value = "";
+  });
   $("photoInput").addEventListener("change", async () => {
     const file = $("photoInput").files[0];
     if (!file) return;
@@ -1382,7 +1445,14 @@
   window.addEventListener("online", pollJobs);
   window.addEventListener("focus", pollJobs);
 
+  // After a message is safely with Bot, take out of the box what was sent. Whatever you typed meanwhile (the round trip takes a moment,
+  // longer on the phone) stays: clearing the whole box used to throw away words typed while the message was on its way.
+  function clearSentText(sentRaw) {
+    const box = $("task");
+    if (box.value.startsWith(sentRaw)) box.value = box.value.slice(sentRaw.length).replace(/^\s+/, "");
+  }
   async function send() {
+    const sentRaw = $("task").value;
     const attached = photo;
     const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
     if (!task || busy) return;
@@ -1399,7 +1469,7 @@
       if (!res.ok) throw new Error(body.error || `server answered ${res.status}`);
       const job = body.job;
       // Only now is the message safely with Bot, so only now the box is cleared.
-      $("task").value = "";
+      clearSentText(sentRaw);
       clearPhoto();
       currentId = job.conversationId;
       if ($("messages").querySelector(".empty")) $("messages").replaceChildren();
@@ -1590,6 +1660,7 @@
     $("tstudyView").hidden = name !== "tstudy";
     if (name === "tstudy" && window.botThread) window.botThread.showStudy();
     if (name === "study") window.studyShow && window.studyShow(course, focus); else window.studyHide && window.studyHide();
+    markTab(name);
     if (name === "improve") {
       updateGate();
       loadProposals(true);
@@ -1599,7 +1670,6 @@
 
   // The phone has its own top bar and never pushes to GitHub.
   function updateGate() {
-    $("restartTop").hidden = session.remote;
     $("gitCard").hidden = session.remote; // pushing stays PC-only
   }
   function setStatus(id, text, bad) {
@@ -1966,7 +2036,8 @@
   // Send: a new request, a follow-up on the open request, or (while the editor is busy) a message that waits its turn.
   let sending = false;
   async function sendImprove() {
-    const typed = $("improveText").value.trim();
+    const sentRaw = $("improveText").value;
+    const typed = sentRaw.trim();
     const p = current;
     if (typed && p && p.status === "running") {
       queued.push(typed);
@@ -1990,7 +2061,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
       if (wasQueue) queued = [];
-      else $("improveText").value = "";
+      else if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, ""); // words typed while it was sending stay
       setStatus("improveStatus", "");
       openProposalId = data.proposal.id;
       current = data.proposal;
@@ -2026,6 +2097,56 @@
   });
   $("restartBtn").addEventListener("click", restartBot);
   $("restartTop").addEventListener("click", restartBot);
+  $("restartSide").addEventListener("click", restartBot);
+
+  // ---- Phone: the bottom bar of main places, and the keyboard ----
+  // The bar is only drawn on narrow screens (CSS). Each tab presses the sidebar button that already does the job, so the thread page's own
+  // handlers (Study instead of Courses, Conversation instead of New chat) are used and nothing is done twice.
+  $("tabChat").addEventListener("click", () => { if (navState.side) closeSide(); if (session.thread) $("new").click(); else { navGo({ view: "chat", id: currentId, course: currentCourse && currentCourse.id }); showView("chat"); } });
+  $("tabStudy").addEventListener("click", () => $("studyBtn").click());
+  $("tabImprove").addEventListener("click", () => $("improveBtn").click());
+  $("tabMenu").addEventListener("click", () => { if (navState.side) closeSide(); else openSide(); });
+  function markTab(view) {
+    const tab = { chat: "tabChat", study: "tabStudy", tstudy: "tabStudy", improve: "tabImprove" }[view];
+    for (const id of ["tabChat", "tabStudy", "tabImprove"]) { if (id === tab) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current"); }
+  }
+  markTab("chat");
+  // While a text box has the cursor the on-screen keyboard is up: the bar steps aside and the box is scrolled into view.
+  const typingField = (node) => node && (node.tagName === "TEXTAREA" || (node.tagName === "INPUT" && /^(text|password|search|time|number|email|url|tel)$/.test(node.type)));
+  document.addEventListener("focusin", (e) => {
+    if (!typingField(e.target)) return;
+    document.body.classList.add("typing");
+    setTimeout(() => { try { e.target.scrollIntoView({ block: "nearest" }); } catch (error) { /* old browser */ } }, 350);
+  });
+  document.addEventListener("focusout", () => setTimeout(() => { if (!typingField(document.activeElement)) document.body.classList.remove("typing"); }, 150));
+
+  // ---- Is there a newer page on the PC? ----
+  // The page file is never cached (the server says no-store and the service worker has no fetch handler), but a page that stays open in the
+  // background keeps running its old code. So when you come back to it, ask the PC for the page again and compare a fingerprint.
+  let pageStamp = null, stampAt = 0;
+  const fingerprint = (text) => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0; return h + ":" + text.length; };
+  async function checkNewPage() {
+    if (Date.now() - stampAt < 60000) return;
+    stampAt = Date.now();
+    try {
+      const res = await fetch("/", { cache: "no-store" });
+      if (!res.ok) return;
+      const now = fingerprint((await res.text()).replace(/\r\n/g, "\n"));
+      if (pageStamp === null) { pageStamp = now; return; }
+      if (now === pageStamp || $("updateNote")) return;
+      const box = el("div", "toast");
+      box.id = "updateNote";
+      box.appendChild(el("div", "what", "Bot has a new page. Reload to use it (anything you typed is lost)."));
+      const go = el("button", "", "Reload");
+      go.addEventListener("click", () => location.reload());
+      const later = el("button", "ghost", "Later");
+      later.addEventListener("click", () => { pageStamp = now; box.remove(); });
+      box.append(go, later);
+      $("toasts").appendChild(box);
+    } catch (error) { /* offline: try again next time */ }
+  }
+  checkNewPage();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkNewPage(); });
   $("gitRefresh").addEventListener("click", loadGit);
   $("pushBtn").addEventListener("click", pushToGitHub);
   $("menu2").addEventListener("click", openSide);
@@ -2322,6 +2443,9 @@
   // Start: first ask the server who we are. On the phone, log in first; Improve Bot is PC-only.
   (async () => {
     try { session = await (await fetch("/api/session")).json(); } catch (error) { /* keep the PC defaults */ }
+    // The thread script below this one may not have run yet when a fast answer comes back; start only once the whole page is read.
+    // (Without this the page sometimes came up as the OLD chat list although the server said thread: true.)
+    if (document.readyState === "loading") await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
     if (session.remote && !session.loggedIn) {
       $("loginView").hidden = false;
       $("loginToken").focus();
@@ -2590,7 +2714,7 @@
       chip.dir = "auto";
       row.appendChild(chip);
       const question = m.replyTo && T.msgs.get(m.replyTo);
-      if (route.wrong && question && question.role === "user") {
+      if (route.wrong && question && question.role === "user" && !/^\(file attached:/.test(question.text)) { // asking a file again as plain words makes no sense
         const again = el("button", "ghost tagain", "Wrong? Ask again normally");
         again.type = "button";
         again.addEventListener("click", async () => {
@@ -2607,6 +2731,7 @@
       else node.appendChild(m.result ? renderResult(m.result) : botCard([["Answer"]], renderText(m.text)));
       const proposal = m.result && (m.result.proposal || (m.result.study && m.result.study.proposal));
       if (proposal && proposal.id) node.appendChild(proposalButtons(proposal));
+      if (m.result && m.result.fileChoice && m.result.fileChoice.id) node.appendChild(fileChoiceButtons(m.result.fileChoice));
       node.appendChild(deleteButton(m, node));
       revealOnTap(node);
       return node;
@@ -2843,14 +2968,16 @@
     }
     // The page's own send(): the composer is never locked. Only the moment the message is on its way is busy.
     async function threadSend() {
+      if (attachedFile) { if (!T.busy) await sendFile(); return; }
       const attached = photo;
+      const sentRaw = $("task").value;
       const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
       if (!task || T.busy) return;
       T.busy = true;
       $("send").disabled = true;
       try {
         await ask(task, attached ? attached.dataUrl : null, $("noplan").checked);
-        $("task").value = "";
+        clearSentText(sentRaw);
         clearPhoto();
         $("tempty").hidden = true;
       } catch (error) {
@@ -2972,38 +3099,135 @@
       return actions;
     }
 
-    // ---- files from the composer: a picture goes with the message (the page's own photo code); any other file goes into a course ----
-    function fileDialog(file) {
-      const dlg = el("dialog", "popup");
-      dlg.appendChild(el("strong", "", "Add this file to a course"));
-      const name = el("p", "sub", file.name + " (" + Math.max(1, Math.round(file.size / 1024)) + " KB)");
-      name.dir = "auto";
-      dlg.appendChild(name);
-      const pick = el("select");
-      pick.setAttribute("aria-label", "Course");
-      [...T.courses.entries()].forEach(([id, n]) => { const o = el("option", "", n); o.value = id; pick.appendChild(o); });
-      const status = el("p", "sub");
-      const actions = el("div", "actions");
-      const go = el("button", "", "Add to course");
-      const cancel = el("button", "ghost", "Cancel");
-      for (const b of [go, cancel]) b.type = "button";
-      cancel.addEventListener("click", () => { dlg.close(); dlg.remove(); });
-      go.addEventListener("click", async () => {
-        if (!pick.value) return;
-        go.disabled = true;
-        status.textContent = "Uploading...";
-        try {
-          if (file.size > 50 * 1024 * 1024) throw new Error("too big (50 MB at most)");
-          await api(`/api/courses/${pick.value}/files?name=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
-          dlg.close(); dlg.remove();
-          toast(`Uploaded to ${T.courses.get(pick.value) || "the course"}. Bot is reading it; the progress is under Study, Files.`);
-        } catch (error) { go.disabled = false; status.textContent = error.message; }
+    // ---- files from the composer ----
+    // A picture goes with the message (the page's own photo code, the same path for the camera and for a file you pick). Any other file
+    // (PDF, pptx, docx, txt, md) waits in the chip above the box until you press Send. Then it goes to POST /api/thread/upload, the route
+    // with the old upload checks: code files it under the right course, or Bot asks which one (buttons under its question).
+    // The checks here are only a courtesy so you hear about a wrong file early; the server checks everything again.
+    const FILE_TYPES = /\.(pdf|pptx|docx|txt|md)$/i;
+    const MAX_FILE = 50 * 1024 * 1024;
+    const sizeText = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+    let attachedFile = null; // { file, xhr } while a non-picture file waits or uploads
+    function chipMode(fileMode) {
+      $("photoThumb").hidden = fileMode;
+      $("fileIcon").hidden = !fileMode;
+      $("fileHint").hidden = !fileMode;
+      $("fileProgress").hidden = true;
+      $("photoChip").classList.remove("error");
+    }
+    function clearFile() {
+      if (attachedFile && attachedFile.xhr) { try { attachedFile.xhr.abort(); } catch (error) { /* already finished */ } }
+      if (attachedFile) $("photoChip").hidden = true; // the chip showed that file
+      attachedFile = null;
+      chipMode(false);
+    }
+    function pickFile(file) {
+      clearFile();
+      if (photo) clearPhoto();
+      if (!FILE_TYPES.test(file.name)) { $("status").textContent = "Bot can read PDF, pptx, docx, txt and md files, and pictures."; return; }
+      if (file.size > MAX_FILE) { $("status").textContent = "That file is " + sizeText(file.size) + ". The most is 50 MB."; return; }
+      if (!file.size) { $("status").textContent = "That file is empty."; return; }
+      attachedFile = { file, xhr: null };
+      chipMode(true);
+      $("fileIcon").textContent = (file.name.split(".").pop() || "file").slice(0, 4).toUpperCase();
+      $("photoInfo").textContent = file.name; // the size goes in the line below, so a Hebrew name and the English size never mix on one line
+      $("fileHint").textContent = sizeText(file.size) + ". Press Send. Bot picks the course from the file name and your words, or asks you.";
+      $("photoChip").hidden = false;
+      $("status").textContent = "";
+    }
+    // The upload with a progress bar (fetch cannot report how much was sent, XMLHttpRequest can). Resolves with the server's answer.
+    function uploadWithProgress(url, file, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        attachedFile.xhr = xhr;
+        xhr.open("POST", url);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+        xhr.onload = () => {
+          let data = {};
+          try { data = JSON.parse(xhr.responseText); } catch (error) { /* not JSON */ }
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+          else reject(Object.assign(new Error(data.error || "the server answered " + xhr.status), { status: xhr.status, saved: true }));
+        };
+        xhr.onerror = () => reject(Object.assign(new Error("no connection"), { network: true }));
+        xhr.onabort = () => reject(Object.assign(new Error("cancelled"), { network: true, cancelled: true }));
+        xhr.send(file);
       });
-      actions.append(go, cancel);
-      if (!T.courses.size) { status.textContent = "There is no course yet. Add one under Study, Files."; go.disabled = true; }
-      dlg.append(pick, status, actions);
-      document.body.appendChild(dlg);
-      dlg.showModal();
+    }
+    async function sendFile() {
+      const f = attachedFile;
+      const sentRaw = $("task").value;
+      const text = sentRaw.trim();
+      T.busy = true;
+      $("send").disabled = true;
+      $("photoChip").classList.remove("error");
+      $("fileProgress").hidden = false;
+      $("fileProgress").value = 0;
+      $("status").textContent = "Uploading...";
+      try {
+        const url = "/api/thread/upload?name=" + encodeURIComponent(f.file.name) + (text ? "&text=" + encodeURIComponent(text.slice(0, 500)) : "");
+        await uploadWithProgress(url, f.file, (pct) => { $("fileProgress").value = pct; $("status").textContent = "Uploading " + pct + "%"; });
+        clearSentText(sentRaw);
+        clearFile();
+        $("photoChip").hidden = true;
+        $("status").textContent = "";
+        $("tempty").hidden = true;
+        await refreshNewest();
+        toBottom();
+        speedUp();
+      } catch (error) {
+        if (error.cancelled) { $("status").textContent = ""; return; }
+        $("fileProgress").hidden = true;
+        if (error.saved) {
+          // The server refused the file but kept your message, with the reason as Bot's reply: show it, and drop the chip (sending it again would only be refused again).
+          clearSentText(sentRaw);
+          clearFile();
+          $("photoChip").hidden = true;
+          $("status").textContent = "";
+          toast("Not added: " + error.message);
+          await refreshNewest();
+          toBottom();
+        } else {
+          $("photoChip").classList.add("error");
+          $("photoInfo").textContent = f.file.name + ": not sent. Check the connection, then press Send again.";
+          $("status").textContent = "";
+          toast("Upload failed: " + error.message);
+        }
+      } finally {
+        T.busy = false;
+        $("send").disabled = false;
+        if (f) f.xhr = null;
+      }
+    }
+    // Under Bot's question "Which course is this file for?": one big button per course. Nothing is saved until you tap one (and it waits 30 minutes).
+    function fileChoiceButtons(choice) {
+      const box = el("div", "tfilechoice");
+      const note = el("p", "sub", "");
+      const buttons = [];
+      const waiting = choice.expiresAt && Date.now() > choice.expiresAt;
+      for (const c of choice.courses || []) {
+        const b = el("button", "", c.name);
+        b.type = "button";
+        b.dir = "auto";
+        b.disabled = !!waiting;
+        b.addEventListener("click", async () => {
+          buttons.forEach((x) => (x.disabled = true));
+          note.textContent = "Adding to " + c.name + "...";
+          try {
+            await api("/api/thread/file/" + encodeURIComponent(choice.id) + "/assign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId: c.id }) });
+            box.replaceChildren(el("span", "sub", "Added to " + c.name + "."));
+            await refreshNewest();
+          } catch (error) {
+            if (error.status === 404) { box.replaceChildren(el("span", "sub", "This file is no longer waiting (30 minutes pass). Attach it again.")); }
+            else { buttons.forEach((x) => (x.disabled = false)); note.textContent = "Not added: " + error.message; }
+          }
+        });
+        buttons.push(b);
+        box.appendChild(b);
+      }
+      if (waiting) note.textContent = "This file is no longer waiting. Attach it again.";
+      box.appendChild(note);
+      return box;
     }
 
     // ---- the Study page (view only; files live in the old Courses screen) ----
@@ -3186,8 +3410,12 @@
       $("attach").setAttribute("aria-label", "Attach a photo or a file");
       $("photoInput").addEventListener("change", (e) => {
         const file = $("photoInput").files[0];
-        if (file && !file.type.startsWith("image/")) { e.stopImmediatePropagation(); $("photoInput").value = ""; fileDialog(file); }
+        if (!file) return;
+        if (!file.type.startsWith("image/")) { e.stopImmediatePropagation(); $("photoInput").value = ""; pickFile(file); }
+        else { clearFile(); } // a picture replaces a waiting file (one attachment at a time); the old photo code goes on from here
       }, true);
+      $("photoRemove").addEventListener("click", clearFile);
+      $("tabStudyText").textContent = "Study";
       document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
       window.addEventListener("focus", () => { poll(); });
       window.addEventListener("online", () => { poll(); });
