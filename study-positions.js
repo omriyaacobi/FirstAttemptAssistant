@@ -4,6 +4,7 @@
 // real date), writes it, and Bot answers with exactly what it stored for EVERY tracked course, so a misreading is easy to spot. A course that was
 // not mentioned stays unknown (or keeps what it had), and Bot says so. Nothing here marks anything as understood.
 
+const { say } = require("./lang");
 const crypto = require("node:crypto");
 const { MODELS } = require("./router");
 const { defang, } = require("./study");
@@ -16,7 +17,7 @@ const STATES = new Set(["lecture", "upToDate", "notStarted", "date", "unknown"])
 
 // raw: what the model sent. refs: the tracked courses [{ key, name, courseId }]. heldOf(ref) -> held slots [{ n, date }].
 // Returns { items: [{ ref, kind: "lecture"|"date"|"upToDate"|"notStarted", slot? , date? }], problems: [text] }. Anything else is dropped.
-function checkPositions(raw, refs, heldOf, today) {
+function checkPositions(raw, refs, heldOf, today, lang = "en") {
   const items = [], problems = [], seen = new Set();
   const list = raw && Array.isArray(raw.courses) ? raw.courses.slice(0, 12) : [];
   for (const e of list) {
@@ -29,20 +30,20 @@ function checkPositions(raw, refs, heldOf, today) {
     seen.add(ref.key);
     const held = heldOf(ref);
     if (state === "notStarted") { items.push({ ref, kind: "notStarted" }); continue; }
-    if (!held.length) { problems.push(`${ref.name}: no lecture has been held yet by the timetable, so I stored nothing.`); continue; }
+    if (!held.length) { problems.push(say(lang, `${ref.name}: no lecture has been held yet by the timetable, so I stored nothing.`, `${ref.name}: לפי המערכת עדיין לא הייתה הרצאה, אז לא שמרתי כלום.`)); continue; }
     if (state === "upToDate") { items.push({ ref, kind: "upToDate", slot: held[held.length - 1] }); continue; }
     if (state === "lecture") {
       const n = Number(e.lecture);
       const slot = Number.isInteger(n) ? held.find((s) => s.n === n) : null;
-      if (!slot) problems.push(`${ref.name}: lecture ${clean(String(e.lecture), 12)} has not been held yet by the timetable (${held.length} so far), so I stored nothing.`);
+      if (!slot) problems.push(say(lang, `${ref.name}: lecture ${clean(String(e.lecture), 12)} has not been held yet by the timetable (${held.length} so far), so I stored nothing.`, `${ref.name}: לפי המערכת הרצאה ${clean(String(e.lecture), 12)} עדיין לא הייתה (עד עכשיו ${held.length}), אז לא שמרתי כלום.`));
       else items.push({ ref, kind: "lecture", slot });
       continue;
     }
     if (state === "date") {
       const d = String(e.date || "");
-      if (!plan.isIsoDate(d) || d > today) { problems.push(`${ref.name}: I could not use the date, so I stored nothing.`); continue; }
+      if (!plan.isIsoDate(d) || d > today) { problems.push(say(lang, `${ref.name}: I could not use the date, so I stored nothing.`, `${ref.name}: לא הצלחתי להשתמש בתאריך, אז לא שמרתי כלום.`)); continue; }
       const slot = [...held].reverse().find((s) => s.date <= d);
-      if (!slot) problems.push(`${ref.name}: no lecture was held on or before ${plan.niceDate(d)}, so I stored nothing.`);
+      if (!slot) problems.push(say(lang, `${ref.name}: no lecture was held on or before ${plan.niceDate(d)}, so I stored nothing.`, `${ref.name}: לא הייתה הרצאה עד ${plan.niceDate(d, "he")}, אז לא שמרתי כלום.`));
       else items.push({ ref, kind: "date", slot });
     }
   }

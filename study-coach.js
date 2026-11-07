@@ -11,8 +11,14 @@
 // questions, grading and reading an assignment, always through tutor.js and always checked by code.
 
 const plan = require("./study-plan");
-// The language of the reply being written (Hebrew when the student wrote Hebrew); only the DATES change with it (study-plan.niceDate).
+// The language of the reply being written (Hebrew when the student wrote Hebrew). The Hebrew sentences avoid "you" and "I" verbs that
+// show a gender. T(english, hebrew) picks one.
 let curLang = "en";
+const T = (en, he) => say(curLang, en, he);
+const { langOf, say, bet } = require("./lang");
+const STATUS_HE = { todo: "עוד לא התחיל", started: "בעבודה", done: "הושלם" };
+const NOTE_HE = { "not started yet": "עוד לא התחיל" };
+const noteText = (note) => (curLang === "he" && NOTE_HE[note]) || note;
 const niceDate = (iso) => plan.niceDate(iso, curLang);
 const { createTracker, clean } = require("./study-tracker");
 const { checkPositions, proposePositions } = require("./study-positions");
@@ -67,7 +73,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const withSession = all.filter((r) => tracker.getSession(r));
     return withSession.length === 1 ? withSession[0] : null;
   }
-  const whichCourse = () => `Which course do you mean? ${refs().map((r) => r.name).join(", ")}.`;
+  const whichCourse = () => T(`Which course do you mean? ${refs().map((r) => r.name).join(", ")}.`, `לאיזה קורס הכוונה? ${refs().map((r) => r.name).join(", ")}.`);
 
   // Course with all its lectures already uploaded (Calculus 2): notebook lecture k is ASSUMED to be the k-th class. Once, and it says so.
   function maybeAlign(ref) {
@@ -78,35 +84,36 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (!index.length || index.length <= held) return ""; // fewer notebook lectures than classes held: material arrives week by week
     const placed = tracker.alignNotebook(ref, index);
     tracker.save({ ...tracker.course(ref), aligned: true });
-    return placed ? `\n\n(Note: all ${ref.name} lectures are uploaded, so I assumed notebook lecture k is the k-th class by the timetable. If a class was cancelled or the numbers do not match, tell me.)` : "";
+    return placed ? T(`\n\n(Note: all ${ref.name} lectures are uploaded, so I assumed notebook lecture k is the k-th class by the timetable. If a class was cancelled or the numbers do not match, tell me.)`, `\n\n(הערה: כל ההרצאות של ${ref.name} כבר הועלו, אז הנחתי שהרצאה k במחברת היא השיעור ה-k לפי המערכת. אם שיעור בוטל או שהמספרים לא מתאימים, כדאי לכתוב לי.)`) : "";
   }
 
   // ---- progress ----
   function courseLines(ref) {
     const p = tracker.progress(ref);
-    const lines = [`${ref.name}: ${p.held} lecture${p.held === 1 ? "" : "s"} held so far by the timetable${tracker.state().skips.some((s) => s.course === ref.key || s.course === "*") ? " (cancelled ones removed)" : ""}.`];
-    lines.push(`  Material in Bot for ${p.withMaterial} of them. Checked as understood (3+ questions, 70%+): ${p.understood}.`);
-    if (p.behind.length) lines.push(`  Behind on ${p.behind.length}: ${p.behind.slice(0, 4).map((b) => `lecture ${b.n} (${niceDate(b.date)})${b.hasMaterial || b.topic ? "" : ", no material yet"}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
-    else if (p.held) lines.push("  Nothing behind by the timetable.");
-    if (!p.positionKnown) lines.push("  I do not know where you are in this course yet.");
-    else lines.push(`  You told me you are up to ${p.position.seenThrough ? niceDate(p.position.seenThrough) : "a topic"}${p.position.note ? ` (${clean(p.position.note, 60)})` : ""}.`);
-    for (const a of p.assignments.slice(0, 3)) lines.push(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`);
+    const removed = tracker.state().skips.some((s) => s.course === ref.key || s.course === "*");
+    const lines = [T(`${ref.name}: ${p.held} lecture${p.held === 1 ? "" : "s"} held so far by the timetable${removed ? " (cancelled ones removed)" : ""}.`, `${ref.name}: ${p.held === 1 ? "הרצאה אחת" : `${p.held} הרצאות`} עד עכשיו לפי המערכת${removed ? " (בלי אלה שבוטלו)" : ""}.`)];
+    lines.push(T(`  Material in Bot for ${p.withMaterial} of them. Checked as understood (3+ questions, 70%+): ${p.understood}.`, `  יש ב-Bot חומר ל-${p.withMaterial} מהן. נבדקו כמובנות (3 שאלות ומעלה, 70% ומעלה): ${p.understood}.`));
+    if (p.behind.length) lines.push(`  ${T(`Behind on ${p.behind.length}`, `פיגור ב-${p.behind.length}`)}: ${p.behind.slice(0, 4).map((b) => `${T("lecture", "הרצאה")} ${b.n} (${niceDate(b.date)})${b.hasMaterial || b.topic ? "" : T(", no material yet", ", עדיין בלי חומר")}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
+    else if (p.held) lines.push(T("  Nothing behind by the timetable.", "  אין פיגור לפי המערכת."));
+    if (!p.positionKnown) lines.push(T("  I do not know where you are in this course yet.", "  עדיין לא ידוע לי איפה עומדים בקורס הזה."));
+    else lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${p.position.seenThrough ? niceDate(p.position.seenThrough) : T("a topic", "נושא מסוים")}${p.position.note ? ` (${clean(noteText(p.position.note), 60)})` : ""}.`);
+    for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
     return lines.join("\n");
   }
   function positionQuestion(list) {
     const unknown = list.filter((r) => !tracker.progress(r).positionKnown);
     if (!unknown.length) return "";
-    return `\n\nSo that I do not guess: ${unknown.length === 1 ? "where are you in " + unknown[0].name : "where are you in " + unknown.map((r) => r.name).join(", ")}? Tell me the last lecture you went through: a date ("Thursday"), a number ("lecture 4") or a topic. I will not mark anything as understood from this: that only happens when you answer my questions.`;
+    return T(`\n\nSo that I do not guess: ${unknown.length === 1 ? "where are you in " + unknown[0].name : "where are you in " + unknown.map((r) => r.name).join(", ")}? Tell me the last lecture you went through: a date ("Thursday"), a number ("lecture 4") or a topic. I will not mark anything as understood from this: that only happens when you answer my questions.`, `\n\nכדי שלא אנחש: איפה עומדים ${bet(unknown.map((r) => r.name).join(", "))}? אפשר לכתוב לי מה ההרצאה האחרונה שעברת עליה: תאריך ("יום חמישי"), מספר ("הרצאה 4") או נושא. זה לא מסמן שום דבר כמובן: זה קורה רק אחרי תשובות לשאלות שלי.`);
   }
   function nextStep(ref) {
     const p = tracker.progress(ref);
     const a = p.assignments.find((x) => x.due && plan.daysBetween(today(), x.due) >= 0 && plan.daysBetween(today(), x.due) <= 7);
-    if (a) return `The next step with a real date: "${clean(a.title, 60)}" is due ${niceDate(a.due)}. Say "help me start" and I check what it needs.`;
+    if (a) return T(`The next step with a real date: "${clean(a.title, 60)}" is due ${niceDate(a.due)}. Say "help me start" and I check what it needs.`, `הצעד הבא עם תאריך אמיתי: "${clean(a.title, 60)}" להגשה עד ${niceDate(a.due)}. אפשר לכתוב "תעזור לי להתחיל" ואבדוק מה צריך בשביל זה.`);
     const b = p.behind.find((x) => x.hasMaterial || x.topic);
-    if (b) return `The smallest next step: lecture ${b.n} (${niceDate(b.date)}) of ${ref.name}. "Teach me" and I explain it, or "quiz me" and you try first.`;
+    if (b) return T(`The smallest next step: lecture ${b.n} (${niceDate(b.date)}) of ${ref.name}. "Teach me" and I explain it, or "quiz me" and you try first.`, `הצעד הקטן הבא: הרצאה ${b.n} (${niceDate(b.date)}) ${bet(ref.name)}. "תלמד אותי" ואסביר אותה, או "תבחן אותי" כדי לנסות קודם לבד.`);
     const empty = p.behind.find((x) => !x.hasMaterial && !x.topic);
-    if (empty) return `Lecture ${empty.n} of ${ref.name} (${niceDate(empty.date)}) has nothing in Bot yet. Send the slides or tell me its topic, and we can start.`;
-    return p.held ? `${ref.name} is on track by the timetable. A 3-question review keeps it that way: "quiz me".` : `${ref.name} has no lectures held yet.`;
+    if (empty) return T(`Lecture ${empty.n} of ${ref.name} (${niceDate(empty.date)}) has nothing in Bot yet. Send the slides or tell me its topic, and we can start.`, `להרצאה ${empty.n} ${bet(ref.name)} (${niceDate(empty.date)}) עדיין אין חומר ב-Bot. אפשר לשלוח את השקפים או לכתוב לי את הנושא, ונתחיל.`);
+    return p.held ? T(`${ref.name} is on track by the timetable. A 3-question review keeps it that way: "quiz me".`, `${ref.name} בקצב לפי המערכת. חזרה של 3 שאלות תשמור על זה: "תבחן אותי".`) : T(`${ref.name} has no lectures held yet.`, `${bet(ref.name)} עדיין לא היו הרצאות.`);
   }
 
   // ---- chat corrections: dates, skips, positions (code only; a model is never asked to write a date) ----
@@ -144,10 +151,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         const day = parseDay(seg, "week");
         const course = ref ? ref.key : /classes|university|school|לימודים/i.test(seg) ? "*" : null;
         if (!day || !course) { unclear.push(seg); continue; }
-        if (undo) { const d = day.date || null; if (!d) { unclear.push(seg); continue; } tracker.removeSkip({ date: d, course }); lines.push(`Put the ${ref ? ref.name + " " : ""}lecture on ${niceDate(d)} back in the count.`); continue; }
-        if (day.date && ref && !tracker.slots(ref.key).some((x) => x.date === day.date)) { lines.push(`${ref.name} has no lecture on ${niceDate(day.date)} by the timetable, so nothing changed.`); continue; }
+        if (undo) { const d = day.date || null; if (!d) { unclear.push(seg); continue; } tracker.removeSkip({ date: d, course }); lines.push(T(`Put the ${ref ? ref.name + " " : ""}lecture on ${niceDate(d)} back in the count.`, `החזרתי לספירה את ההרצאה${ref ? ` ${bet(ref.name)}` : ""} מ${niceDate(d)}.`)); continue; }
+        if (day.date && ref && !tracker.slots(ref.key).some((x) => x.date === day.date)) { lines.push(T(`${ref.name} has no lecture on ${niceDate(day.date)} by the timetable, so nothing changed.`, `לפי המערכת אין הרצאה ${bet(ref.name)} ב${niceDate(day.date)}, אז לא שיניתי כלום.`)); continue; }
         const dates = day.week ? (course === "*" ? all.filter(tracked).flatMap((r) => tracker.skipWeek(r.key)) : tracker.skipWeek(course)) : [tracker.addSkip({ date: day.date, course }) && day.date];
-        lines.push(dates.length ? `Removed ${ref ? ref.name : "every course"}: ${[...new Set(dates)].sort().map((d) => niceDate(d)).join(", ")}. The lecture numbers after it moved up. (Say "there was a lecture on <day>" to undo.)` : `${ref ? ref.name : "That"} has no lecture that day, so nothing changed.`);
+        const removedDays = [...new Set(dates)].sort().map((d) => niceDate(d)).join(", ");
+        lines.push(dates.length ? T(`Removed ${ref ? ref.name : "every course"}: ${removedDays}. The lecture numbers after it moved up. (Say "there was a lecture on <day>" to undo.)`, `הסרתי ${ref ? `את ${ref.name}` : "את כל הקורסים"}: ${removedDays}. מספרי ההרצאות שאחריה זזו. (כדי לבטל: "הייתה הרצאה ב<יום>".)`) : T(`${ref ? ref.name : "That"} has no lecture that day, so nothing changed.`, `${ref ? `${bet(ref.name)} ` : ""}אין הרצאה ביום הזה, אז לא שיניתי כלום.`));
         continue;
       }
       if (POSITION_WORDS.test(seg) || (ref && (askedLectures(seg).length || parseDay(seg, "past")))) {
@@ -156,7 +164,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         const day = n ? null : parseDay(seg, "past");
         try {
           const pos = n ? tracker.setPosition(ref, { n }) : day && day.date ? tracker.setPosition(ref, { date: day.date }) : tracker.setPosition(ref, { note: seg });
-          lines.push(`${ref.name}: noted that you are up to ${pos.seenThrough ? niceDate(pos.seenThrough) : clean(pos.note, 60)}. That tells me where you are, not what you understood: that comes from questions.`);
+          const upTo = pos.seenThrough ? niceDate(pos.seenThrough) : clean(pos.note, 60);
+          lines.push(T(`${ref.name}: noted that you are up to ${upTo}. That tells me where you are, not what you understood: that comes from questions.`, `${ref.name}: רשמתי שהמיקום הוא עד ${upTo}. זה אומר לי איפה עומדים, לא מה הובן: את זה בודקים בשאלות.`));
         } catch (error) { lines.push(`${ref.name}: ${error.message}.`); }
         continue;
       }
@@ -174,27 +183,27 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     let raw = null;
     try { raw = await proposePositions({ askChain, text, refs: list, today: today(), log }); } catch (error) { log(`[positions] failed: ${error.message}`); return null; }
     const heldOf = (ref) => tracker.slots(ref.key).filter((x) => plan.isHeld(x, now(), timezone));
-    const { items, problems } = checkPositions(raw, list, heldOf, today());
+    const { items, problems } = checkPositions(raw, list, heldOf, today(), curLang);
     if (!items.length && !problems.length) return null;
     const stored = new Map();
     for (const it of items) {
       try {
-        if (it.kind === "notStarted") { const c = tracker.course(it.ref); c.position = { known: true, seenThrough: null, note: "not started yet", at: now() }; tracker.save(c); stored.set(it.ref.key, "not started yet"); }
-        else { tracker.setPosition(it.ref, { n: it.slot.n }); stored.set(it.ref.key, `up to lecture ${it.slot.n} (${niceDate(it.slot.date)})${it.kind === "upToDate" ? ", the latest one held" : ""}`); }
+        if (it.kind === "notStarted") { const c = tracker.course(it.ref); c.position = { known: true, seenThrough: null, note: "not started yet", at: now() }; tracker.save(c); stored.set(it.ref.key, T("not started yet", "עוד לא התחיל")); }
+        else { tracker.setPosition(it.ref, { n: it.slot.n }); stored.set(it.ref.key, T(`up to lecture ${it.slot.n} (${niceDate(it.slot.date)})${it.kind === "upToDate" ? ", the latest one held" : ""}`, `עד הרצאה ${it.slot.n} (${niceDate(it.slot.date)})${it.kind === "upToDate" ? ", האחרונה שהייתה" : ""}`)); }
       } catch (error) { problems.push(`${it.ref.name}: ${error.message}.`); }
     }
     const lines = list.map((r) => {
       if (stored.has(r.key)) return `${r.name}: ${stored.get(r.key)}.`;
       const p = tracker.progress(r);
-      return p.positionKnown ? `${r.name}: you did not mention it, so it stays as it was (${p.position.seenThrough ? "up to " + niceDate(p.position.seenThrough) : p.position.note || "set"}).` : `${r.name}: you did not say, so I still do not know where you are.`;
+      return p.positionKnown ? T(`${r.name}: you did not mention it, so it stays as it was (${p.position.seenThrough ? "up to " + niceDate(p.position.seenThrough) : p.position.note || "set"}).`, `${r.name}: לא הוזכר, אז נשאר כמו שהיה (${p.position.seenThrough ? "עד " + niceDate(p.position.seenThrough) : noteText(p.position.note) || "שמור"}).`) : T(`${r.name}: you did not say, so I still do not know where you are.`, `${r.name}: לא נאמר, אז עדיין לא ידוע לי איפה עומדים.`);
     });
-    return [`Here is exactly what I stored (today is ${niceDate(today())}):`, ...lines, ...problems, "If one is wrong, tell me that course again, for example \"Calculus lecture 5\". This only says where you are, not what you understood."].join("\n");
+    return [T(`Here is exactly what I stored (today is ${niceDate(today())}):`, `הנה בדיוק מה ששמרתי (היום ${niceDate(today())}):`), ...lines, ...problems, T("If one is wrong, tell me that course again, for example \"Calculus lecture 5\". This only says where you are, not what you understood.", "אם משהו לא נכון, אפשר לכתוב לי שוב על הקורס הזה, למשל \"חדו\"א הרצאה 5\". זה רק אומר איפה עומדים, לא מה הובן.")].join("\n");
   }
 
   // ---- proposals (model proposes, code checks, the student confirms) ----
   function addProposal(p) {
     const id = `p${++proposalCounter}${now().toString(36)}`;
-    const item = { id, createdAt: now(), expiresAt: now() + PROPOSAL_MS, ...p };
+    const item = { id, createdAt: now(), expiresAt: now() + PROPOSAL_MS, lang: curLang, ...p };
     proposals.set(id, item);
     for (const [k, v] of proposals) if (v.expiresAt < now()) proposals.delete(k);
     return item;
@@ -202,25 +211,27 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const latestProposal = () => [...proposals.values()].filter((p) => p.expiresAt >= now()).pop() || null;
   function confirmProposal(id) {
     const p = proposals.get(id);
-    if (!p || p.expiresAt < now()) { proposals.delete(id); return { ok: false, answer: "That proposal expired or was already used. Send the file or message again." }; }
+    if (p) curLang = p.lang || "en"; // a tap on the card has no text of its own: the card keeps the language it was asked in
+    if (!p || p.expiresAt < now()) { proposals.delete(id); return { ok: false, answer: T("That proposal expired or was already used. Send the file or message again.", "ההצעה הזו פגה או שכבר נעשה בה שימוש. אפשר לשלוח שוב את הקובץ או ההודעה.") }; }
     proposals.delete(id); // single use
     try {
       if (p.kind === "assignment") {
         const a = tracker.addAssignment(p.ref, p.fields);
-        return { ok: true, answer: `Saved "${a.title}" for ${p.ref.name}${a.due ? `, due ${niceDate(a.due)}` : " (no due date)"}. ${a.needs.length ? `It needs: ${a.needs.join(", ")}.` : ""} Say "help me start" when you want to begin.` };
+        return { ok: true, answer: T(`Saved "${a.title}" for ${p.ref.name}${a.due ? `, due ${niceDate(a.due)}` : " (no due date)"}. ${a.needs.length ? `It needs: ${a.needs.join(", ")}.` : ""} Say "help me start" when you want to begin.`, `שמרתי את "${a.title}" ${bet(p.ref.name)}${a.due ? `, להגשה עד ${niceDate(a.due)}` : " (בלי תאריך הגשה)"}. ${a.needs.length ? `צריך בשבילה: ${a.needs.join(", ")}.` : ""} כדי להתחיל אפשר לכתוב "תעזור לי להתחיל".`) };
       }
       if (p.kind === "material") {
         tracker.attachMaterial(p.ref, p.date, p.refs, { topic: p.topic || "" });
-        return { ok: true, answer: `Attached it to the ${p.ref.name} lecture of ${niceDate(p.date)}. Say "teach me" or "quiz me" when you are ready.` };
+        return { ok: true, answer: T(`Attached it to the ${p.ref.name} lecture of ${niceDate(p.date)}. Say "teach me" or "quiz me" when you are ready.`, `צירפתי את זה להרצאה ${bet(p.ref.name)} מ${niceDate(p.date)}. כשיהיה נוח אפשר לכתוב "תלמד אותי" או "תבחן אותי".`) };
       }
-    } catch (error) { return { ok: false, answer: `I could not save it: ${error.message}.` }; }
-    return { ok: false, answer: "Unknown proposal." };
+    } catch (error) { return { ok: false, answer: T(`I could not save it: ${error.message}.`, `לא הצלחתי לשמור: ${error.message}.`) }; }
+    return { ok: false, answer: T("Unknown proposal.", "הצעה לא מוכרת.") };
   }
-  function cancelProposal(id) { return { ok: proposals.delete(id), answer: "Dropped. Nothing was saved." }; }
+  function cancelProposal(id) { const p = proposals.get(id); if (p) curLang = p.lang || "en"; return { ok: proposals.delete(id), answer: T("Dropped. Nothing was saved.", "בוטל. שום דבר לא נשמר.") }; }
   const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
 
   // A file arrived. files: [{ fileId, fileName, pages }]; text: the file text or message (for assignments); dateText: what the student wrote about the date.
   async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto" }) {
+    curLang = langOf(`${dateText}`.replace(/\S+\.\w{2,4}\b/g, "")); // the words that came with the file, not its file name
     const ref = refs().find((r) => r.courseId === courseId);
     if (!ref) return { answer: whichCourse() };
     const asAssignment = kind === "assignment" || (kind === "auto" && /assignment|exercise|homework|\bhw\b|due\b|submit|תרגיל|מטלה|הגשה|עבודה\s+להגשה/i.test(`${dateText} ${text.slice(0, 2000)}`));
@@ -228,19 +239,19 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log });
       if (!r.ok) return { answer: r.answer };
       const p = addProposal({ kind: "assignment", ref, fields: r.proposal });
-      return { answer: `I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, proposal: card(p) };
+      return { answer: T(`I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, `הבנתי שזו מטלה ${bet(ref.name)}: "${p.fields.title}", ${p.fields.due ? `להגשה עד ${niceDate(p.fields.due)}` : "לא מצאתי תאריך הגשה"}${p.fields.needs.length ? `, צריך בשבילה: ${p.fields.needs.join(", ")}` : ""}. זה נכון? אחרי אישור אשמור; לפני כן שום דבר לא נשמר.`), proposal: card(p) };
     }
     const refsList = files.filter((f) => f && f.fileId && f.pages >= 1).map((f) => ({ fileId: f.fileId, from: 1, to: f.pages, fileName: f.fileName }));
-    if (!refsList.length) return { answer: "I could not find readable pages in that file yet." };
+    if (!refsList.length) return { answer: T("I could not find readable pages in that file yet.", "עדיין לא מצאתי דפים קריאים בקובץ הזה.") };
     const named = parseDay(dateText || "", "past");
     let slot = null, how = "";
     if (named && named.date) {
       slot = [...tracker.slots(ref.key)].reverse().find((s) => s.date <= named.date); // the lecture on that day, or the one before it
-      how = "from the date you gave";
+      how = T("from the date you gave", "לפי התאריך שכתבת");
     }
-    if (!slot) { slot = tracker.suggestSlot(ref); how = "the most recent lecture that has no material yet"; }
-    if (!slot) return { answer: `I cannot tell which ${ref.name} lecture this belongs to. Which date was it?` };
-    const q = `Is this the ${ref.name} lecture of ${niceDate(slot.date)} (${how})? Confirm, or tell me the right date.`;
+    if (!slot) { slot = tracker.suggestSlot(ref); how = T("the most recent lecture that has no material yet", "ההרצאה האחרונה שעדיין אין לה חומר"); }
+    if (!slot) return { answer: T(`I cannot tell which ${ref.name} lecture this belongs to. Which date was it?`, `לא ברור לי לאיזו הרצאה ${bet(ref.name)} זה שייך. באיזה תאריך היא הייתה?`) };
+    const q = T(`Is this the ${ref.name} lecture of ${niceDate(slot.date)} (${how})? Confirm, or tell me the right date.`, `זו ההרצאה ${bet(ref.name)} מ${niceDate(slot.date)} (${how})? אפשר לאשר, או לכתוב לי את התאריך הנכון.`);
     const p = addProposal({ kind: "material", ref, date: slot.date, refs: refsList, question: q });
     return { answer: q, proposal: card(p) };
   }
@@ -248,20 +259,20 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // ---- the answer to a message the front desk marked with a studyIntent ----
   async function answerStudy({ studyIntent, text = "", courseId = null, courseName = null, onText = null }) {
     const t0 = Date.now();
-    curLang = /[֐-׿]/.test(String(text)) ? "he" : "en"; // the dates in this reply read in the language the student wrote in
+    curLang = langOf(text); // this reply reads in the language the student wrote in
     const done = (r) => ({ mode: "study", answer: "", sources: [], outside: false, model: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r });
     const intent = INTENTS.includes(studyIntent) ? studyIntent : "progress"; // an unknown intent is the safest one: only shows numbers
 
     if (intent === "pause") {
       const day = parseDay(text, "week");
-      try { nudges.pause(day && day.date && day.date >= today() ? day.date : null); } catch (error) { return done({ answer: `I could not pause: ${error.message}.` }); }
+      try { nudges.pause(day && day.date && day.date >= today() ? day.date : null); } catch (error) { return done({ answer: T(`I could not pause: ${error.message}.`, `לא הצלחתי להשהות: ${error.message}.`) }); }
       const s = nudges.settings();
-      return done({ answer: `Study reminders are paused${s.pausedUntil ? ` until ${niceDate(s.pausedUntil)}` : " until you say resume"}. Your progress is kept. Nothing is lost while you are away.` });
+      return done({ answer: T(`Study reminders are paused${s.pausedUntil ? ` until ${niceDate(s.pausedUntil)}` : " until you say resume"}. Your progress is kept. Nothing is lost while you are away.`, `תזכורות הלימוד מושהות${s.pausedUntil ? ` עד ${niceDate(s.pausedUntil)}` : " עד שיתקבל ממך אישור להמשיך"}. ההתקדמות נשמרת, ושום דבר לא הולך לאיבוד בינתיים.`) });
     }
-    if (intent === "resume") { nudges.resume(); return done({ answer: "Study reminders are on again. Welcome back: say \"where am I\" and I will show the real numbers, with no guilt." }); }
+    if (intent === "resume") { nudges.resume(); return done({ answer: T("Study reminders are on again. Welcome back: say \"where am I\" and I will show the real numbers, with no guilt.", "תזכורות הלימוד חזרו לפעול. טוב שחזרת: אפשר לשאול \"מה המצב שלי\" ואראה את המספרים האמיתיים, בלי רגשות אשם.") }); }
     if (intent === "confirm" || intent === "cancel") {
       const p = latestProposal();
-      if (!p) return done({ answer: "There is nothing waiting for confirmation." });
+      if (!p) return done({ answer: T("There is nothing waiting for confirmation.", "אין כרגע שום דבר שמחכה לאישור.") });
       const r = intent === "confirm" ? confirmProposal(p.id) : cancelProposal(p.id);
       return done({ answer: r.answer });
     }
@@ -270,28 +281,28 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) { const many = await interpretPositions(text); if (many) return done({ answer: many }); }
       const { lines, unclear } = interpretUpdate(text);
       const out = [...lines];
-      if (unclear.length) out.push(`I did not catch: "${clean(unclear.join(" / "), 160)}". Tell me for example: "no Systems Programming lecture this week", "no classes on 24 Dec", "my last Calculus lecture was Monday", or "lecture 4 in Algorithms".`);
-      return done({ answer: out.join("\n") || "Tell me what changed." });
+      if (unclear.length) out.push(T(`I did not catch: "${clean(unclear.join(" / "), 160)}". Tell me for example: "no Systems Programming lecture this week", "no classes on 24 Dec", "my last Calculus lecture was Monday", or "lecture 4 in Algorithms".`, `לא הבנתי: "${clean(unclear.join(" / "), 160)}". אפשר לכתוב למשל: "אין הרצאה בתכנות מערכות השבוע", "אין לימודים ב-24/12", "ההרצאה האחרונה שלי בחדו\"א הייתה ביום שני", או "הרצאה 4 באלגוריתמים".`));
+      return done({ answer: out.join("\n") || T("Tell me what changed.", "מה השתנה?") });
     }
 
     const ref = resolveRef(text, courseId, courseName);
 
     if (intent === "progress" || intent === "plan" || intent === "motivate") {
       const list = ref ? [ref] : refs().filter(tracked);
-      if (!list.length) return done({ answer: "I do not have the timetable for these courses yet." });
+      if (!list.length) return done({ answer: T("I do not have the timetable for these courses yet.", "עדיין אין לי מערכת שעות לקורסים האלה.") });
       for (const r of list) maybeAlign(r);
       if (intent === "motivate") {
         const r = list[0];
         const p = tracker.progress(r);
-        const good = p.understood ? `You have already checked ${p.understood} lecture${p.understood === 1 ? "" : "s"} of ${r.name}. ` : "";
-        return done({ answer: `${good}${nextStep(r)} Fifteen minutes is enough to start.` });
+        const good = p.understood ? T(`You have already checked ${p.understood} lecture${p.understood === 1 ? "" : "s"} of ${r.name}. `, `כבר נבדקו ${p.understood === 1 ? "הרצאה אחת" : `${p.understood} הרצאות`} ${bet(r.name)}. `) : "";
+        return done({ answer: `${good}${nextStep(r)} ${T("Fifteen minutes is enough to start.", "רבע שעה מספיקה כדי להתחיל.")}` });
       }
       const body = list.map(courseLines).join("\n\n");
       const next = intent === "plan" ? `\n\n${list.map(nextStep).join("\n")}` : "";
       const asked = list.filter((r) => !tracker.progress(r).positionKnown);
       const first = positionQuestion(list);
       if (first) tracker.markAsked(asked[0], { position: true });
-      return done({ answer: `Where you should be (timetable, ${niceDate(today())}) and where you are:\n\n${body}${next}${first}`, study: { courses: list.map((r) => tracker.progress(r)) } });
+      return done({ answer: `${T(`Where you should be (timetable, ${niceDate(today())}) and where you are:`, `איפה צריך להיות (לפי המערכת, ${niceDate(today())}) ואיפה עומדים בפועל:`)}\n\n${body}${next}${first}`, study: { courses: list.map((r) => tracker.progress(r)) } });
     }
 
     if (intent === "assignment") {

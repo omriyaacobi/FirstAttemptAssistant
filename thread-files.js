@@ -9,6 +9,7 @@
 // PROPOSAL (a Confirm card: "is this the lecture of Thursday 5 Nov?"), and nothing is attached until Omri confirms.
 // A photo that says "add this to my calendar" is NOT handled here: it still goes through /api/ask exactly as before.
 
+const { langOf, say: words, bet } = require("./lang");
 const crypto = require("node:crypto");
 const plan = require("./study-plan");
 const { sniffFile, cleanName } = require("./upload");
@@ -49,7 +50,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   function file(courseId, ref, how, { bytes, name, text, questionId }) {
     const saved = courseRoutes.addUpload(courseId, bytes, name); // may throw 400/409/413/415: the caller shows the reason
     context.set(`${courseId}/${saved.id}`, { text, questionId });
-    const reply = say(`Filed "${saved.name}" under ${ref.name} (I chose it from ${how}). Bot is reading it now and will tell you when it is ready.`, questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, fileId: saved.id } });
+    const reply = say(words(langOf(text), `Filed "${saved.name}" under ${ref.name} (I chose it from ${how}). Bot is reading it now and will tell you when it is ready.`, `תייקתי את "${saved.name}" ${bet(ref.name)} (לפי שם הקובץ או ההודעה). Bot קורא אותו עכשיו ויעדכן כשזה מוכן.`), questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, fileId: saved.id } });
     return { status: "filed", courseId, fileId: saved.id, messageId: reply.id };
   }
 
@@ -59,21 +60,22 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     sweep();
     const clean = cleanName(name);
     const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", at: now() });
+    const lang = langOf(text);
     const list = courseRoutes.list();
-    if (!list.length) { say("There are no courses yet, so I have nowhere to file this. Add a course first.", question.id); return { status: "no-course", questionId: question.id }; }
+    if (!list.length) { say(words(lang, "There are no courses yet, so I have nowhere to file this. Add a course first.", "עדיין אין קורסים, אז אין לי איפה לתייק את זה. צריך קודם להוסיף קורס."), question.id); return { status: "no-course", questionId: question.id }; }
     const choice = pickCourse({ fileName: clean, text, coach, courseList: list, now: now() });
     if (choice) {
       try {
         return { ...file(choice.ref.courseId, choice.ref, choice.how, { bytes, name: clean, text, questionId: question.id }), questionId: question.id };
       } catch (error) { // a duplicate or a too big file: the message is already in the thread, so it gets its answer (else the next restart says "Bot was stopped")
-        thread.append({ role: "assistant", text: `I could not file "${clean}": ${String(error.message).slice(0, 200)}`, replyTo: question.id, topic: "general", error: true, at: now() });
+        thread.append({ role: "assistant", text: words(lang, `I could not file "${clean}": ${String(error.message).slice(0, 200)}`, `לא הצלחתי לתייק את "${clean}": ${String(error.message).slice(0, 200)}`), replyTo: question.id, topic: "general", error: true, at: now() });
         throw error;
       }
     }
     if (pending.size >= MAX_PENDING) pending.delete(pending.keys().next().value);
     const id = crypto.randomBytes(8).toString("hex");
     pending.set(id, { bytes, name: clean, text, questionId: question.id, at: now() });
-    const reply = say(`Which course is "${clean}" for? Tap one: ${list.map((c) => c.name).join(", ")}. Nothing is saved until you choose.`, question.id, { result: { fileChoice: { id, name: clean, courses: list, expiresAt: now() + PENDING_MS } } });
+    const reply = say(words(lang, `Which course is "${clean}" for? Tap one: ${list.map((c) => c.name).join(", ")}. Nothing is saved until you choose.`, `לאיזה קורס שייך "${clean}"? אפשר ללחוץ על אחד: ${list.map((c) => c.name).join(", ")}. שום דבר לא נשמר לפני הבחירה.`), question.id, { result: { fileChoice: { id, name: clean, courses: list, expiresAt: now() + PENDING_MS } } });
     return { status: "asking", pendingId: id, questionId: question.id, messageId: reply.id, courses: list };
   }
 
@@ -100,13 +102,13 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     context.delete(`${courseId}/${fileId}`);
     const info = courseRoutes.fileInfo(courseId, fileId);
     if (!info) return;
-    if (info.status === "failed" || !info.pages) { say(`I could not read "${info ? info.fileName : "the file"}". It is still in the course; you can try reading it again on the Courses screen.`, ctx.questionId, { topic: `course:${courseId}` }); return; }
+    if (info.status === "failed" || !info.pages) { say(words(langOf(ctx.text), `I could not read "${info ? info.fileName : "the file"}". It is still in the course; you can try reading it again on the Courses screen.`, `לא הצלחתי לקרוא את "${info ? info.fileName : "הקובץ"}". הוא עדיין בקורס, ואפשר לנסות לקרוא אותו שוב במסך הקורסים.`), ctx.questionId, { topic: `course:${courseId}` }); return; }
     let r;
     try {
       r = await coach.onUpload({ courseId, files: [{ fileId, fileName: info.fileName, pages: info.pages }], text: info.text, dateText: `${ctx.text} ${info.fileName}` });
     } catch (error) {
       log(`[files] the coach failed: ${error.message}`);
-      r = { answer: `"${info.fileName}" is read (${info.pages} pages). I could not decide where it belongs: ${String(error.message).slice(0, 120)}.` };
+      r = { answer: words(langOf(ctx.text), `"${info.fileName}" is read (${info.pages} pages). I could not decide where it belongs: ${String(error.message).slice(0, 120)}.`, `"${info.fileName}" נקרא (${info.pages} עמודים). לא הצלחתי להחליט לאן הוא שייך: ${String(error.message).slice(0, 120)}.`) };
     }
     say(r.answer, ctx.questionId, { topic: `course:${courseId}`, result: { courseId, ...(r.proposal ? { proposal: r.proposal } : {}) } });
   }

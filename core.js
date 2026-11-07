@@ -15,6 +15,7 @@
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
 
+const { mostlyHebrew, HEBREW_RULE, say, langOf } = require("./lang");
 const { chainForDestination, chainForType, DEFAULT_CHAIN, MODELS } = require("./router");
 const path = require("node:path");
 const { ask, askChain, askAgyWithImage, timeoutFor } = require("./providers");
@@ -140,6 +141,7 @@ async function handleTask(task, options = {}) {
 // desk may choose the action "course"; without it (BOT_THREAD off) that action does not exist and nothing below changes.
 async function runTask(task, { route = null, noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false, gate = null } = {}) {
   const d = { ...defaultDeps, ...deps };
+  const lang = langOf(task); // the language of Bot's own fixed sentences in this answer
   // gate (thread only, given by jobs.js): called ONCE, right before slow work starts (a model answer, a plan, a course answer, a photo).
   // It resolves when a slow slot is free (and an earlier question about the same course is done). Fast actions never call it.
   let slotTaken = false;
@@ -152,7 +154,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   // attempts lists every model that was tried, including failed ones (see askChain).
   const timing = { frontDeskSeconds: null, plannerSeconds: null, attempts: [] };
   // The front desk decides from the newest message (plus the history for context).
-  const prompt = withContext(task, history);
+  const prompt = withContext(task, history) + (mostlyHebrew(task) ? `\n\n${HEBREW_RULE}` : "");
   // What Bot knows about the user (profile.js), read fresh for every task. Goes to the front desk and to
   // the models, but personalize() keeps it away from the web routes. A problem here never breaks a task.
   let about = "";
@@ -234,13 +236,13 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   function setReminder(decision) {
     try {
       const saved = d.createReminder(decision.reminder);
-      const answer = `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`;
+      const answer = say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל-${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`);
       log(`[reminder] saved ${saved.id}`);
       log(timingLine());
       return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, reminder: saved, seconds: seconds(), timing };
     } catch (error) {
       log(`[reminder] could not save: ${error.message}`);
-      const answer = `I could not set that reminder: ${error.message}`;
+      const answer = say(lang, `I could not set that reminder: ${error.message}`, `לא הצלחתי לקבוע את התזכורת: ${error.message}`);
       return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds() };
     }
   }
@@ -318,10 +320,10 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     if (decision.calendarAdd) {
       try {
         extra = { calendarAdd: d.addCalendarCard(decision.calendarAdd, { supersedes }) };
-        answer = "Add this to your calendar? Nothing is added until you tap Confirm.";
+        answer = say(lang, "Add this to your calendar? Nothing is added until you tap Confirm.", "להוסיף ליומן? שום דבר לא נוסף לפני לחיצה על Confirm.");
         log(`[calendar] drafted ${decision.calendarAdd.events.length} event(s), waiting for Confirm`);
       } catch (error) {
-        answer = `Bot could not prepare the card: ${error.message}`;
+        answer = say(lang, `Bot could not prepare the card: ${error.message}`, `Bot לא הצליח להכין את הכרטיס: ${error.message}`);
       }
     }
     log(timingLine());
@@ -389,7 +391,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
       const names = (courses || []).map((c) => c.name).join(", ");
       log("[course] no course named, asking which one");
       log(timingLine());
-      return { mode: "single", rule: "asked you a question", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: `Which course is this about? Your courses: ${names}.`, seconds: seconds(), timing, topic: "study" };
+      return { mode: "single", rule: "asked you a question", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: say(lang, `Which course is this about? Your courses: ${names}.`, `על איזה קורס מדובר? הקורסים שלך: ${names}.`), seconds: seconds(), timing, topic: "study" };
     }
     await slow({ course: decision.course.id }); // thread: waits for a slot, and for an earlier question about the same course
     log(`[course] ${decision.course.name} (${decision.studyIntent})`);
