@@ -428,7 +428,7 @@ function createServer({
     if (courseRoutes && (await courseRoutes.handle(req, res, url, { sendJson, readJsonBody }))) return;
 
     if (thread && coach && req.method === "GET" && url.pathname === "/api/study") {
-      return sendJson(res, 200, studyOverview({ coach, courseList: courseRoutes ? courseRoutes.list() : [] }));
+      return sendJson(res, 200, studyOverview({ coach, courseList: courseRoutes ? courseRoutes.list() : [], lang: url.searchParams.get("lang") === "he" ? "he" : "en" })); // ?lang=he: the questions Bot writes by code come in Hebrew
     }
     const studyCard = url.pathname.match(/^\/api\/study\/(confirm|cancel)$/);
     if (thread && coach && studyCard && req.method === "POST") {

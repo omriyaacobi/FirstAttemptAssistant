@@ -73,8 +73,10 @@ function materialFor(pages, refs, extra = []) {
 }
 
 // ---- the model, through the fixed Argon chain ----
-async function ask(askChain, prompt, log = () => {}) {
-  const r = await askChain(TUTOR_CHAIN, prompt, { onTry: (m) => log(`[tutor] asking ${m.model}`), onFail: (f) => log(`[tutor] ${f.model} failed: ${f.message}`) });
+// onText (optional): the page shows the text while it is written. Only the plain-text steps (teaching, guided work) pass it; the JSON steps
+// (questions, grading, assignment fields) never do, so nobody sees half a JSON object, and a hint never does (its leak check runs after it).
+async function ask(askChain, prompt, log = () => {}, onText = null) {
+  const r = await askChain(TUTOR_CHAIN, prompt, { onTry: (m) => log(`[tutor] asking ${m.model}`), onFail: (f) => log(`[tutor] ${f.model} failed: ${f.message}`), ...(onText ? { onText } : {}) });
   return { text: String(r.answer || ""), model: r.used && r.used.model };
 }
 const unavailable = (why) => ({ ok: false, answer: `I could not reach the tutoring model (Argon), so I changed nothing: ${clean(why, 100)}. Try again in a few minutes.`, model: null });
@@ -190,7 +192,21 @@ async function makeHint({ askChain, q, level, answer, told = "", material, lang 
 
 // Teaching: 3 or 4 short steps from the material, then ONE question back. The question and its key come on a last line that CODE removes
 // from the text and keeps as a one-question check, so the student's reply is graded like any other answer (never against what they claim).
-async function teachText({ askChain, courseName, topic, material, message, lang = "en", log }) {
+// What may be shown while the teaching text is written: everything BEFORE the last-line check question. That line carries the KEY (the
+// answer), so the stream is cut from the first letter of QUESTION: on, and a last line that is only the beginning of that word is held back.
+function visibleTeaching(text) {
+  const s = String(text || "");
+  const at = s.search(/\n?\s*QUESTION:/i);
+  if (at >= 0) return s.slice(0, at).trimEnd();
+  const nl = s.lastIndexOf("\n");
+  const tail = s.slice(nl + 1).trim().toUpperCase();
+  if (tail.length >= 1 && "QUESTION:".startsWith(tail)) return s.slice(0, Math.max(0, nl)).trimEnd();
+  return s;
+}
+// Guided work is cut to 900 characters in the end, so the stream is cut the same way.
+const visibleWork = (text) => String(text || "").slice(0, 900);
+
+async function teachText({ askChain, courseName, topic, material, message, lang = "en", log, onText = null }) {
   const prompt = `${TUTOR_RULES}
 
 Teach the topic "${defang(topic)}" of the course "${defang(courseName)}" to the student, who asked: <<<${defang(message).slice(0, 500)}>>>
@@ -198,17 +214,17 @@ Use the material as the main source and cite pages as [S1]. Teach only the 3 or 
 Then, on the very last line, write exactly: QUESTION: <one short question that checks the main idea, answerable in 1 to 3 sentences> || KEY: <its correct answer in one or two sentences>
 
 ${material.block}`;
-  const got = await ask(askChain, prompt, log);
+  const got = await ask(askChain, prompt, log, onText ? (t) => onText(visibleTeaching(t)) : null);
   const m = /\n?\s*QUESTION:\s*([^\n]{5,600}?)\s*\|\|\s*KEY:\s*([^\n]{1,1200})\s*$/i.exec(got.text);
   const body = (m ? got.text.slice(0, m.index) : got.text).trim();
   return { text: cutSentence(body, MAX_REPLY * 2), model: got.model, question: m ? { q: clean(m[1], 600), key: clean(m[2], 1200) } : null };
 }
 
 // Guided work on an assignment: hints only. The prompt forbids a solution; the length cap keeps a long solution from going through.
-async function workText({ askChain, assignment, message, lang = "en", log }) {
+async function workText({ askChain, assignment, message, lang = "en", log, onText = null }) {
   const marker = crypto.randomBytes(6).toString("hex");
   const prompt = `${TUTOR_RULES}\n\nThe student is working on an assignment and wrote: <<<${defang(message).slice(0, 1500)}>>>\nDo NOT solve it and do NOT write the final code or the final result. Reply with feedback on what they wrote (if anything), then ONE guiding question or ONE small hint for the next step. Maximum 4 sentences. ${langLine(lang)}\n<assignment id="${marker}">\n${defang(assignment.text || assignment.title).slice(0, 8000)}\n</assignment id="${marker}">`;
-  const got = await ask(askChain, prompt, log);
+  const got = await ask(askChain, prompt, log, onText ? (t) => onText(visibleWork(t)) : null);
   return { text: cutSentence(clean(got.text, 3000), 900), model: got.model };
 }
 
@@ -241,7 +257,7 @@ function summary(session, rec) {
 // The one entry point. ctx: { tracker, ref, pages, courseName, askChain, now, log }.
 // intent: "teach" | "quiz" | "start" | "answer" | null (null: continue the open session if there is one).
 // Returns { answer, outside, sources, model, mode, done, needs }.
-async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {} }) {
+async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null }) {
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(labelOutside(r.answer, message)) }); // a stray [OUT] tag from the model never reaches the page
   const session = tracker.getSession(ref);
@@ -249,7 +265,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
 
   if (continuing && session.mode === "work") {
     let w;
-    try { w = await workText({ askChain, assignment: tracker.course(ref).assignments.find((a) => a.id === session.target.id) || { title: "the assignment" }, message, lang: session.lang, log }); } catch (error) { return finish(unavailable(error.message)); }
+    try { w = await workText({ askChain, assignment: tracker.course(ref).assignments.find((a) => a.id === session.target.id) || { title: "the assignment" }, message, lang: session.lang, log, onText }); } catch (error) { return finish(unavailable(error.message)); }
     return finish({ answer: w.text, model: w.model, mode: "work" });
   }
   if (continuing) {
@@ -329,7 +345,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   const lang = isHebrew(message) ? "he" : "en";
   try {
     if (intent === "teach") {
-      const t = await teachText({ askChain, courseName, topic: label, material: mat, message, lang, log });
+      const t = await teachText({ askChain, courseName, topic: label, material: mat, message, lang, log, onText });
       tracker.markTaught(ref, pick.slot.date); // taught is NOT understood: only a graded check does that
       let tail = "\n\n" + tx({ lang }).offer;
       if (t.question) {
@@ -346,4 +362,4 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   } catch (error) { return finish(unavailable(error.message)); }
 }
 
-module.exports = { fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS };
+module.exports = { visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS };

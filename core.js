@@ -380,7 +380,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     if (d.studyAnswer && coachIntent) {
       if (MODEL_INTENTS.has(coachIntent)) await slow({ course: decision.course ? decision.course.id : undefined });
       log(`[study] ${coachIntent}${decision.course ? " in " + decision.course.name : ""}`);
-      const r = await d.studyAnswer({ studyIntent: coachIntent, text: task, courseId: decision.course ? decision.course.id : null, courseName: decision.course ? decision.course.name : null });
+      const r = await d.studyAnswer({ studyIntent: coachIntent, text: task, courseId: decision.course ? decision.course.id : null, courseName: decision.course ? decision.course.name : null, ...(onPartial ? { onText: onPartial } : {}) }); // the teaching text shows while it is written
       log(timingLine());
       return { ...r, ...(decision.course ? { courseId: decision.course.id, courseName: decision.course.name } : {}), studyIntent: decision.studyIntent, reason: decision.reason };
     }
