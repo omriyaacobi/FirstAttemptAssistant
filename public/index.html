@@ -2410,9 +2410,7 @@
     if (m.imported) return { label: "Earlier chat", wrong: false };
     return { label: "General", wrong: false };
   }
-  // "Wrong? ask again normally": the same question, with one plain sentence that tells the front desk to answer it as an ordinary
-  // question. (There is no server option for this yet; the sentence is visible in the conversation, nothing is hidden.)
-  const tAskAgainText = (question) => "(Please answer this as an ordinary question, not from my course files, my calendar or my study plan.) " + question;
+  // "Wrong? ask again normally" sends the same question with route "general" (a real option of /api/ask; the server skips course files, calendar, earlier chats and the study plan).
   // Study page: turn what the server knows about a course into plain lines. Works with the tracker's progress() object, with
   // ready-made strings, or with nothing at all.
   function tStudyLines(c) {
@@ -2587,7 +2585,7 @@
         again.type = "button";
         again.addEventListener("click", async () => {
           again.disabled = true;
-          try { await ask(tAskAgainText(question.text), null, false); again.replaceWith(el("span", "sub", "Asked again.")); } catch (error) { again.disabled = false; toast("Not sent: " + error.message); }
+          try { await ask(question.text, null, false, "general"); again.replaceWith(el("span", "sub", "Asked again.")); } catch (error) { again.disabled = false; toast("Not sent: " + error.message); }
         });
         row.appendChild(again);
       }
@@ -2635,21 +2633,97 @@
       }
       return card;
     }
-    // A proposal from Bot (an assignment to save, a lecture to attach). Nothing is saved before a tap; a tap just sends the
-    // plain words "yes" / "no" as your next message, which Bot reads as the answer to its own question.
+    // A proposal from Bot (an assignment to save, a lecture to attach). Nothing is saved before a tap. The tap calls the study card routes
+    // (POST /api/study/confirm or /cancel with the card's id): the same single-use card the typed words "yes" / "no" would answer. The
+    // server writes Bot's reply into the conversation; the page then reloads the newest messages.
     function proposalButtons(proposal) {
       const actions = el("div", "actions tproposal");
       const yes = el("button", "", "Yes, save it");
       const no = el("button", "ghost", "No, drop it");
       for (const b of [yes, no]) b.type = "button";
-      const send = (text) => async () => {
+      const tap = (what) => async () => {
         yes.disabled = no.disabled = true;
-        try { await ask(text, null, false); actions.replaceChildren(el("span", "sub", "Sent.")); } catch (error) { yes.disabled = no.disabled = false; toast("Not sent: " + error.message); }
+        try {
+          await api("/api/study/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: proposal.id }) });
+          actions.replaceChildren(el("span", "sub", what === "confirm" ? "Saved." : "Dropped."));
+        } catch (error) {
+          if (error.status === 409 || error.status === 404) actions.replaceChildren(el("span", "sub", "This card is no longer waiting (" + error.message + ")."));
+          else { yes.disabled = no.disabled = false; toast("Not done: " + error.message); }
+        }
+        await refreshNewest();
       };
-      yes.addEventListener("click", send("Yes, save it."));
-      no.addEventListener("click", send("No, drop it."));
+      yes.addEventListener("click", tap("confirm"));
+      no.addEventListener("click", tap("cancel"));
       actions.append(yes, no);
       return actions;
+    }
+
+    // Facts and tasks Bot found in your earlier days (thread-summary.js). Each one is a card: nothing is saved before Yes. The box sits above the days.
+    async function loadSuggestions() {
+      let list = [];
+      try { list = (await api("/api/summaries/proposals")).proposals || []; } catch (error) { return; }
+      const box = $("tsuggest");
+      if (!box) return;
+      box.replaceChildren();
+      box.hidden = !list.length;
+      if (!list.length) return;
+      box.appendChild(el("strong", "", "Bot noticed something in your earlier days"));
+      box.appendChild(small("Nothing is saved until you say Yes. Bot can be wrong."));
+      for (const p of list.slice(0, 8)) {
+        const card = el("div", "card tsug");
+        const t = el("div", "", (p.kind === "task" ? "Task: " : "Fact: ") + String(p.text || "").slice(0, 300) + (p.kind === "task" ? (p.due ? " (" + String(p.due).slice(0, 10) + ")" : " (no date)") : ""));
+        t.dir = "auto";
+        card.appendChild(t);
+        if (p.quote) { const q = el("div", "sub", "You wrote: “" + String(p.quote).slice(0, 200) + "” (" + String(p.day || "") + ")"); q.dir = "auto"; card.appendChild(q); }
+        const row = el("div", "actions tproposal");
+        const yes = el("button", "", p.kind === "task" ? "Remind me" : "Remember it");
+        const no = el("button", "ghost", "No");
+        for (const b of [yes, no]) b.type = "button";
+        const act = (what) => async () => {
+          yes.disabled = no.disabled = true;
+          try { await api("/api/summaries/proposals/" + p.id + "/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); card.remove(); if (!box.querySelector(".tsug")) box.hidden = true; }
+          catch (error) { yes.disabled = no.disabled = false; toast("Not done: " + error.message); }
+        };
+        yes.addEventListener("click", act("accept"));
+        no.addEventListener("click", act("dismiss"));
+        row.append(yes, no);
+        card.appendChild(row);
+        box.appendChild(card);
+      }
+    }
+
+    // The 30-day trash as a list, so Restore also works after a reload (GET /api/thread/trash).
+    async function showTrash() {
+      const panel = $("ttrash");
+      if (!panel.hidden) { panel.hidden = true; return; }
+      panel.replaceChildren(el("p", "sub", "Loading..."));
+      panel.hidden = false;
+      let items = [];
+      try { items = (await api("/api/thread/trash")).items || []; } catch (error) { panel.replaceChildren(small("Could not load the trash: " + error.message, "sub err")); return; }
+      panel.replaceChildren(el("strong", "", "Deleted messages (kept 30 days)"));
+      if (!items.length) panel.appendChild(small("Nothing deleted."));
+      for (const it of items) {
+        const row = el("div", "card ttrashrow");
+        const t = el("div", "", (it.role === "user" ? "You: " : "Bot: ") + it.text);
+        t.dir = "auto";
+        const when = small(it.daysLeft + " day" + (it.daysLeft === 1 ? "" : "s") + " left");
+        const back = el("button", "ghost", "Restore");
+        back.type = "button";
+        back.addEventListener("click", async () => {
+          back.disabled = true;
+          try { await api("/api/thread/" + it.id + "/restore", { method: "POST" }); row.remove(); await reloadAll(); }
+          catch (error) { back.disabled = false; toast("Not restored: " + error.message); }
+        });
+        row.append(t, when, back);
+        panel.appendChild(row);
+      }
+    }
+    // After a restore the message must appear in its place: the simplest honest way is to load the conversation again.
+    async function reloadAll() {
+      T.msgs.clear(); T.nodes.clear(); T.groups.clear(); T.answersOf.clear(); T.days.clear();
+      $("tdays").replaceChildren();
+      T.oldest = null;
+      await loadFirst();
     }
 
     // Adds one message to the page (does nothing if it is already there). Returns its element.
@@ -2729,6 +2803,7 @@
       const added = addAll(data.messages || []);
       if (!T.msgs.size) $("tempty").hidden = false; else $("tempty").hidden = true;
       const answers = added.filter((a) => a.m.role === "assistant");
+      if (answers.length) loadSuggestions();
       if (wasBottom) toBottom();
       else if (answers.length) showReady(answers[answers.length - 1].n);
       else if (added.length) checkReady();
@@ -2745,8 +2820,8 @@
     }
 
     // ---- sending ----
-    async function ask(task, image, noPlan) {
-      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(image ? { image } : {}) }) });
+    async function ask(task, image, noPlan, route) {
+      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(route ? { route } : {}), ...(image ? { image } : {}) }) });
       const job = body.job;
       T.offset = job.now - Date.now();
       T.jobs.set(job.id, job);
@@ -3022,12 +3097,19 @@
       older.hidden = true;
       older.addEventListener("click", loadOlder);
       top.appendChild(older);
+      const trashBtn = el("button", "ghost", "Deleted messages");
+      trashBtn.id = "ttrashBtn";
+      trashBtn.type = "button";
+      trashBtn.addEventListener("click", showTrash);
+      top.appendChild(trashBtn);
       const slot = el("div"); slot.id = "tnoticeSlot";
+      const suggest = el("div", "tsuggest"); suggest.id = "tsuggest"; suggest.hidden = true;
+      const trashPanel = el("div", "ttrashpanel"); trashPanel.id = "ttrash"; trashPanel.hidden = true;
       const days = el("div"); days.id = "tdays";
       const empty = el("p", "empty", "Say anything. Bot keeps one conversation going and works out what each message is about.");
       empty.id = "tempty";
       empty.hidden = true;
-      $("messages").append(slot, top, days, empty);
+      $("messages").append(slot, suggest, top, days, trashPanel, empty);
       const ready = el("button", "tready", "Answer ready ↓");
       ready.id = "tready";
       ready.type = "button";
@@ -3068,7 +3150,7 @@
       window.addEventListener("focus", () => { poll(); });
       window.addEventListener("online", () => { poll(); });
       notice();
-      loadFirst().catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
+      loadFirst().then(loadSuggestions).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
     }
 
     return { start, showStudy, T };

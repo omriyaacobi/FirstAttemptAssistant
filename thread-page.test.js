@@ -17,7 +17,7 @@ const pure = (threadScript.match(/\/\/ <thread-pure>([\s\S]*?)\/\/ <\/thread-pur
 function helpers() {
   const sandbox = {};
   vm.createContext(sandbox);
-  vm.runInContext(pure + "\nthis.out = { tDayKey, tDayLabel, tDayOpen, tRoute, tAskAgainText, tStudyLines, T_PAGE };", sandbox);
+  vm.runInContext(pure + "\nthis.out = { tDayKey, tDayLabel, tDayOpen, tRoute, tStudyLines, T_PAGE };", sandbox);
   return sandbox.out;
 }
 const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h).getTime();
@@ -72,11 +72,17 @@ test("the route chip: a course name, Calendar, Study, an earlier chat, or Genera
   assert.strictEqual(h.tRoute({ topic: { x: 1 } }, courses).label, "General");
 });
 
-test("'ask again normally' keeps the question and says in plain words what to change", () => {
-  const h = helpers();
-  const text = h.tAskAgainText("What is a pointer?");
-  assert.ok(text.endsWith("What is a pointer?"));
-  assert.match(text, /ordinary question/);
+test("'ask again normally' sends the same question with the real route option, nothing is added to the text", () => {
+  assert.match(threadScript, /await ask\(question\.text, null, false, "general"\)/);
+  assert.match(threadScript, /\.\.\.\(route \? \{ route \} : \{\}\)/);
+});
+
+test("proposal buttons call the study card routes; suggestions and the trash list use their routes", () => {
+  assert.match(threadScript, /"\/api\/study\/" \+ what/);
+  assert.match(threadScript, /JSON\.stringify\(\{ id: proposal\.id \}\)/);
+  assert.doesNotMatch(threadScript, /Yes, save it\."/); // no more plain-words tap
+  assert.match(threadScript, /\/api\/summaries\/proposals\/" \+ p\.id \+ "\/" \+ what/);
+  assert.match(threadScript, /\/api\/thread\/trash/);
 });
 
 test("Study page lines come from the tracker's numbers, from ready-made text, or say 'not known'", () => {
