@@ -11,6 +11,7 @@
 //        remind   -> the time is checked and saved (reminders.js)
 //        remember -> a fact is PROPOSED; the page asks you to Save it (profile.js). Saved at once only when your own
 //                    short message says "remember that ..." (explicitRemember), and then the page offers Undo
+//        listReminders -> code reads the real reminder list (reminders.js)
 //        recall   -> code searches your earlier chats (recall.js), or lists what Bot knows about you
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
@@ -58,6 +59,7 @@ const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemo
   addCalendarCard: (proposal, opts) => getCards().add(proposal, opts),
   searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
+  listReminders: () => getReminders().list(),
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
 // ---- Conversation memory ----
@@ -245,6 +247,23 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
       const answer = say(lang, `I could not set that reminder: ${error.message}`, `לא הצלחתי לקבוע את התזכורת: ${error.message}`);
       return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds() };
     }
+  }
+
+  // "What reminders do I have?": the answer is written by code from the real list (never from chat history, which goes stale).
+  function listReminders(decision) {
+    let items;
+    try { items = d.listReminders(); } catch (error) {
+      log(`[reminder] could not read the list: ${error.message}`);
+      return { mode: "single", rule: "list reminders", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: say(lang, `I could not read your reminders: ${error.message}`, `לא הצלחתי לקרוא את התזכורות: ${error.message}`), seconds: seconds(), timing };
+    }
+    const pending = items.filter((r) => r.status === "pending");
+    const line = (r) => "- " + formatWhen(r.at, r.timezone) + ": " + r.text;
+    const body = pending.map(line).join("\n");
+    const answer = pending.length
+      ? say(lang, `You have ${pending.length} pending ${pending.length === 1 ? "reminder" : "reminders"}:\n${body}`, `יש לך ${pending.length} תזכורות ממתינות:\n${body}`)
+      : say(lang, "You have no reminders waiting.", "אין לך תזכורות ממתינות.");
+    log(timingLine());
+    return { mode: "single", rule: "list reminders", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
   }
 
   // The user said something worth remembering. The front desk only PROPOSED it (and profile.js checked it):
@@ -574,6 +593,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   if (decision.action === "calendar") return readCalendar(decision);
   if (decision.action === "addEvent") return addEvent(decision);
   if (decision.action === "recall") return recall(decision);
+  if (decision.action === "listReminders") return listReminders(decision);
   if (decision.action === "course") return courseAnswer(decision);
 
   if (decision.action === "delegate") {

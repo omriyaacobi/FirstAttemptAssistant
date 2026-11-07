@@ -358,3 +358,8 @@ test("course: the schema for the thread has the two extra fields, and the old sc
   assert.ok(!SCHEMA.required.includes("course") && !SCHEMA.properties.action.enum.includes("course"));
   assert.deepStrictEqual(COMPACT_SCHEMA.required, ["action", "reason"]);
 });
+
+test("validateDecision accepts listReminders and gives it no fields", () => {
+  const out = validateDecision({ action: "listReminders", destination: "none", answer: "from chat history", reason: "asks for reminders" });
+  assert.deepStrictEqual(out, { action: "listReminders", destination: null, answer: "", reason: "asks for reminders" });
+});
