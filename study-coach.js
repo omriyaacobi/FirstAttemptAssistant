@@ -261,7 +261,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const t0 = Date.now();
     curLang = langOf(text); // this reply reads in the language the student wrote in
     const done = (r) => ({ mode: "study", answer: "", sources: [], outside: false, model: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r });
-    const intent = INTENTS.includes(studyIntent) ? studyIntent : "progress"; // an unknown intent is the safest one: only shows numbers
+    let intent = INTENTS.includes(studyIntent) ? studyIntent : "progress"; // an unknown intent is the safest one: only shows numbers
 
     if (intent === "pause") {
       const day = parseDay(text, "week");
@@ -280,9 +280,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (intent === "update") {
       if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) { const many = await interpretPositions(text); if (many) return done({ answer: many }); }
       const { lines, unclear } = interpretUpdate(text);
-      const out = [...lines];
-      if (unclear.length) out.push(T(`I did not catch: "${clean(unclear.join(" / "), 160)}". Tell me for example: "no Systems Programming lecture this week", "no classes on 24 Dec", "my last Calculus lecture was Monday", or "lecture 4 in Algorithms".`, `לא הבנתי: "${clean(unclear.join(" / "), 160)}". אפשר לכתוב למשל: "אין הרצאה בתכנות מערכות השבוע", "אין לימודים ב-24/12", "ההרצאה האחרונה שלי בחדו\"א הייתה ביום שני", או "הרצאה 4 באלגוריתמים".`));
-      return done({ answer: out.join("\n") || T("Tell me what changed.", "מה השתנה?") });
+      if (lines.length || SKIP_WORDS.test(text) || UNDO_WORDS.test(text)) {
+        const out = [...lines];
+        if (unclear.length) out.push(T(`I did not catch: "${clean(unclear.join(" / "), 160)}". Tell me for example: "no Systems Programming lecture this week", "no classes on 24 Dec", "my last Calculus lecture was Monday", or "lecture 4 in Algorithms".`, `לא הבנתי: "${clean(unclear.join(" / "), 160)}". אפשר לכתוב למשל: "אין הרצאה בתכנות מערכות השבוע", "אין לימודים ב-24/12", "ההרצאה האחרונה שלי בחדו\"א הייתה ביום שני", או "הרצאה 4 באלגוריתמים".`));
+        return done({ answer: out.join("\n") || T("Tell me what changed.", "מה השתנה?") });
+      }
+      // No schedule fact in the message (for example "I skip class, help me catch up"): do not dead-end; show where they stand and ask.
+      intent = "progress";
     }
 
     const ref = resolveRef(text, courseId, courseName);

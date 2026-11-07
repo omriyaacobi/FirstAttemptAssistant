@@ -209,3 +209,10 @@ test("several courses at once: a model that fails or sends junk falls back to th
   const r = await coach.answerStudy({ studyIntent: "update", text: "my last Calculus lecture was Monday" });
   assert.match(r.answer, /Calculus 2: noted that you are up to/);
 });
+
+test("an 'update' that holds no schedule fact (I skip class, help me catch up) shows where you stand instead of 'I did not catch'", async () => {
+  const { coach } = make();
+  const r = await coach.answerStudy({ studyIntent: "update", text: "אני לא מגיע לשיעורים בקורס הזה, עזור לי להשלים את הפער" });
+  assert.doesNotMatch(r.answer, /לא הבנתי|I did not catch/);
+  assert.match(r.answer, /לא יודע|עדיין|הרצאות|איפה/);
+});
