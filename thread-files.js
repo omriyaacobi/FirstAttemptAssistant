@@ -62,7 +62,14 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     const list = courseRoutes.list();
     if (!list.length) { say("There are no courses yet, so I have nowhere to file this. Add a course first.", question.id); return { status: "no-course", questionId: question.id }; }
     const choice = pickCourse({ fileName: clean, text, coach, courseList: list, now: now() });
-    if (choice) return { ...file(choice.ref.courseId, choice.ref, choice.how, { bytes, name: clean, text, questionId: question.id }), questionId: question.id };
+    if (choice) {
+      try {
+        return { ...file(choice.ref.courseId, choice.ref, choice.how, { bytes, name: clean, text, questionId: question.id }), questionId: question.id };
+      } catch (error) { // a duplicate or a too big file: the message is already in the thread, so it gets its answer (else the next restart says "Bot was stopped")
+        thread.append({ role: "assistant", text: `I could not file "${clean}": ${String(error.message).slice(0, 200)}`, replyTo: question.id, topic: "general", error: true, at: now() });
+        throw error;
+      }
+    }
     if (pending.size >= MAX_PENDING) pending.delete(pending.keys().next().value);
     const id = crypto.randomBytes(8).toString("hex");
     pending.set(id, { bytes, name: clean, text, questionId: question.id, at: now() });
