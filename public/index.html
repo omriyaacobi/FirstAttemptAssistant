@@ -2413,9 +2413,20 @@
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognizer = null;
 
+  // The speech language follows what you write: Hebrew letters in the box mean Hebrew, Latin letters mean English,
+  // an empty box keeps the last language. (The browser cannot hear two languages at once, so it needs one per turn.)
+  // <mic-pure>
+  function micLangFor(draft, current) {
+    const he = (String(draft).match(/[֐-׿]/g) || []).length;
+    const en = (String(draft).match(/[A-Za-z]/g) || []).length;
+    return he > en ? "he-IL" : en > he ? "en-US" : current;
+  }
+  // </mic-pure>
+
   function toggleMic() {
     if (recognizer) { recognizer.stop(); return; }
     const r = new SpeechRecognition();
+    $("micLang").value = micLangFor($("task").value, $("micLang").value);
     r.lang = $("micLang").value;
     r.interimResults = true;
     r.continuous = false;
@@ -2448,7 +2459,6 @@
 
   if (SpeechRecognition) {
     $("mic").hidden = false;
-    $("micLang").hidden = false;
     $("mic").addEventListener("click", toggleMic);
   }
 

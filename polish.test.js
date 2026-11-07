@@ -104,6 +104,18 @@ test("page language: Hebrew when you write Hebrew, else the browser's language, 
   assert.strictEqual(P.tLangOf([], "en-GB"), "en");
 });
 
+test("the mic language follows the draft text, and the language picker stays hidden", () => {
+  const micPure = (html.match(/\/\/ <mic-pure>([\s\S]*?)\/\/ <\/mic-pure>/) || [])[1] || "";
+  const box = {};
+  vm.createContext(box);
+  vm.runInContext(micPure + "\nthis.micLangFor = micLangFor;", box);
+  assert.strictEqual(box.micLangFor("שלום מה נשמע", "en-US"), "he-IL");
+  assert.strictEqual(box.micLangFor("hello there", "he-IL"), "en-US");
+  assert.strictEqual(box.micLangFor("", "he-IL"), "he-IL"); // empty box: keep the last language
+  assert.ok(/id="micLang"[^>]*\bhidden\b/.test(html));
+  assert.ok(!html.includes('$("micLang").hidden = false'));
+});
+
 test("the keeping-up pill says it in words, in English and in Hebrew", () => {
   assert.strictEqual(P.tKeeping({ state: "behind", n: 2 }, "en").text, "Behind by 2 lectures");
   assert.strictEqual(P.tKeeping({ state: "behind", n: 1 }, "en").text, "Behind by 1 lecture");
