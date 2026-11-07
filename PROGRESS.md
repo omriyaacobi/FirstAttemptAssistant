@@ -556,3 +556,13 @@ Built on top of the thread core and the study coach (`claude/night-integrate`). 
 
 ## Night check of the whole thread Bot (2026-11-07, branch `claude/night-check-424ecd`, NOT merged)
 Tested end to end on a private server (port 3101, a throwaway copy of `data/` without the Google token and push subscriptions, real models through agy). Read `experiments/2026-11-07-night-decisions-check.md` first: it lists 11 bugs found and fixed (the big one: "teach me" and quizzes ended as an empty answer), all journeys with what was seen, and what was NOT tested (the real Google read and Confirm). Left open: several study places in one message, noisy summary suggestions.
+
+## Bug hunt on the new Bot (night of 2026-11-07, branch `claude/night-bughunt`)
+Six real bugs found by reading `thread-store.js`, `thread-files.js`, `course-routes.js`, `server.js` and `reminders.js`; each has a failing-first test in `bughunt.test.js` and its own commit:
+1. A half-written last line of a day file (power cut) swallowed the NEXT message (and a later trash mark). Now a newline goes first.
+2. A failed write of `index.json` (locked file) turned an already-saved message into an error. The index is only a cache, so the failure is ignored.
+3. A refused file (same bytes twice, too big) left its message with no answer; after a restart Bot would say "it was stopped". Now it gets an error reply.
+4. Any route that threw ended Bot (async handler, unhandled rejection). Now a plain 500 and Bot keeps running (the log has the route name only, never the query or body).
+5. One file whose reading threw stopped the reading queue for good and ended Bot (unhandled rejection).
+6. The reminder timer threw on a failed save (locked file), which ends Bot (no uncaughtException handler). Now it logs and retries.
+Left alone (reported in the notes to the main chat): paging with equal timestamps, file bytes kept up to 30 min in memory, two simultaneous study answers without a course named.
