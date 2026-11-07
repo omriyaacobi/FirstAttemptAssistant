@@ -101,4 +101,17 @@ function inQuietHours(nowMs, quiet = DEFAULT_QUIET, tz = TIMEZONE) {
   return a === b ? false : a < b ? m >= a && m < b : m >= a || m < b;
 }
 
-module.exports = { SEMESTER, TIMEZONE, DEFAULT_TIMETABLE, DEFAULT_QUIET, parts, isIsoDate, addDays, weekdayOf, weekStart, daysBetween, niceDate, DAY_NAMES, minutesOf, cleanTimetable, courseKeyFor, slotsOf, isHeld, heldSlots, inClass, inQuietHours };
+// An explicit date written in a message: 2026-10-29, 29/10, 29.10, "29 Oct", "Oct 29". The year is the semester's (months before July are 2027).
+const MONTH_NUMBERS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function explicitDate(text) {
+  const low = String(text).toLowerCase();
+  const iso = /\b(\d{4}-\d{2}-\d{2})\b/.exec(low);
+  if (iso) return isIsoDate(iso[1]) ? iso[1] : null;
+  const make = (month, day) => { const d = `${month < 7 ? 2027 : 2026}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`; return isIsoDate(d) ? d : null; };
+  const dm = /\b(\d{1,2})[/.](\d{1,2})\b(?![/.]\d)/.exec(low);
+  if (dm) { const r = make(Number(dm[2]), Number(dm[1])); if (r) return r; }
+  const mn = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\b/.exec(low);
+  return mn ? make(MONTH_NUMBERS[mn[2] || mn[3]], Number(mn[1] || mn[4])) : null;
+}
+
+module.exports = { explicitDate, SEMESTER, TIMEZONE, DEFAULT_TIMETABLE, DEFAULT_QUIET, parts, isIsoDate, addDays, weekdayOf, weekStart, daysBetween, niceDate, DAY_NAMES, minutesOf, cleanTimetable, courseKeyFor, slotsOf, isHeld, heldSlots, inClass, inQuietHours };
