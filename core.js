@@ -348,7 +348,9 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
       log(`[recall] could not search: ${error.message}`);
     }
     log(`[recall] found ${found.length} place(s)`);
-    if (!found.length) return reply("I could not find that in your earlier chats. (Chats inside a course and calendar replies are not searched.)");
+    if (!found.length) return reply(Array.isArray(courses) // thread on: course answers ARE searched (one conversation); only calendar replies and morning briefs are skipped
+      ? "I could not find that in your conversation, including your course questions. (Calendar replies and morning briefs are not searched.)"
+      : "I could not find that in your earlier chats. (Chats inside a course and calendar replies are not searched.)");
     const chats = [...new Map(found.map((f) => [f.conversationId, { id: f.conversationId, title: f.title }])).values()];
     const chain = quotaChain(d.chainForDestination("gemini-flash"), await getLow());
     try {

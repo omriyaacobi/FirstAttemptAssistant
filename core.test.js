@@ -577,3 +577,12 @@ test("route general ('Wrong? Ask again normally'): a course decision becomes an 
   const deps3 = fakes({ decide: async () => ({ action: "answer", destination: null, answer: "ok", reason: "x" }) });
   assert.strictEqual((await handleTask("hi", { deps: deps3, route: "general" })).answer, "ok");
 });
+
+test("recall with nothing found: the thread says course questions ARE searched; the old chats keep the old sentence", async () => {
+  const deps = fakes({ decide: async () => ({ action: "recall", destination: null, answer: "", reason: "r", query: "zebra" }), searchChats: () => [] });
+  const old = await handleTask("what did I say about zebras?", { deps });
+  assert.match(old.answer, /Chats inside a course and calendar replies are not searched/);
+  const thread = await handleTask("what did I say about zebras?", { deps, courses: COURSES });
+  assert.match(thread.answer, /including your course questions/);
+  assert.doesNotMatch(thread.answer, /Chats inside a course/);
+});
