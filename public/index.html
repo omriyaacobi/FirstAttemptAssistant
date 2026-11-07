@@ -345,7 +345,15 @@
   .tlabel { font-size: .8rem; }
   .tdue { margin: 0; padding-left: 18px; }
   .tquestion { border-left: 3px solid var(--accent); padding-left: 10px; display: flex; flex-direction: column; gap: 4px; }
-  .tquestion button, .tcourse .actions button { min-height: 44px; }
+  .tquestion button, .tcourse .actions button, .tnotice .actions button { min-height: 44px; }
+  /* "Am I keeping up?": a pill with words (the colour is only a help) */
+  .tkeep { align-self: flex-start; padding: 6px 14px; border-radius: 99px; font-weight: 700; border: 2px solid var(--line); color: var(--muted); }
+  .tkeep-on_track { color: var(--ok); border-color: var(--ok); }
+  .tkeep-behind { color: var(--bad); border-color: var(--bad); }
+  .tkeep-ahead { color: var(--accent); border-color: var(--accent); }
+  .tcourse .actions { flex-wrap: wrap; }
+  [dir="rtl"] .tdue { padding-left: 0; padding-right: 18px; }
+  [dir="rtl"] .tquestion { border-left: 0; border-right: 3px solid var(--accent); padding-left: 0; padding-right: 10px; }
   /* tap targets of at least 44 px for the pieces the old page drew smaller */
   body.thread button.chip { min-height: 44px; }
   body.thread .bot summary, body.thread .msg > details > summary { display: flex; align-items: center; min-height: 44px; }
@@ -491,8 +499,8 @@
       <div class="titles"><strong>Bot</strong><span>Study</span></div>
     </div>
     <div class="scroll"><div class="inner">
-      <div class="row" style="margin-top:0"><h1>Study</h1><span class="status" id="tstudyStatus" role="status"></span></div>
-      <p class="sub">A view of where you are in each course. To change anything, tell Bot in the conversation.</p>
+      <div class="row" style="margin-top:0"><h1 id="tstudyTitle">Study</h1><span class="status" id="tstudyStatus" role="status"></span></div>
+      <p class="sub" id="tstudyIntro">A view of where you are in each course. To change anything, tell Bot in the conversation.</p>
       <div id="tstudyBody"></div>
     </div></div>
   </section>
@@ -2376,7 +2384,7 @@
     if (session.thread && window.botThread) window.botThread.start();
     else { showEmpty(); loadChats(); pollJobs(); }
     loadQuota();
-    if (matchMedia("(pointer: coarse)").matches) $("task").placeholder = "Type a task..."; // a phone has no Shift+Enter
+    if (matchMedia("(pointer: coarse)").matches && !session.thread) $("task").placeholder = "Type a task..."; // a phone has no Shift+Enter
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
   })();
 </script>
@@ -2411,39 +2419,88 @@
     return { label: "General", wrong: false };
   }
   // "Wrong? ask again normally" sends the same question with route "general" (a real option of /api/ask; the server skips course files, calendar, earlier chats and the study plan).
-  // Study page: turn what the server knows about a course into plain lines. Works with the tracker's progress() object, with
-  // ready-made strings, or with nothing at all.
-  function tStudyLines(c) {
+  // ---- words the PAGE writes, in English or Hebrew (the model's own answers already follow the student's language) ----
+  const tHasHebrew = (text) => /[֐-׿]/.test(String(text || ""));
+  // Hebrew when most of your last few messages are Hebrew; with no messages yet, the browser's language decides.
+  function tLangOf(texts, navLang) {
+    const recent = (Array.isArray(texts) ? texts : []).slice(-4);
+    if (!recent.length) return /^he/i.test(String(navLang || "")) ? "he" : "en";
+    const he = recent.filter(tHasHebrew).length;
+    return he > 0 && he * 2 >= recent.length ? "he" : "en";
+  }
+  const TS = {
+    en: {
+      title: "Study", loading: "Loading...", intro: "A view of where you are in each course. To change anything, tell Bot in the conversation.",
+      noStudy: "Bot's study plan is not connected to this page yet, so only your files are shown.", noCourses: "No courses yet. Add one under Files.",
+      should: "Where you should be", at: "Where you are", due: "Due", question: "Bot's open question", answer: "Answer in the conversation",
+      tell: "Tell Bot where I am", files: "Files", nothingDue: "Nothing due", notKnown: "Not known yet", tellInChat: "Tell Bot in the conversation",
+      manage: "Add a course or manage files", none: "No lectures held yet", held: (n) => `${n} lecture${n === 1 ? "" : "s"} held so far`, last: "last", next: "Next", lecture: "lecture",
+      upTo: "Up to", position: "Position set", notTold: "You have not told Bot yet", understood: (n) => `${n} lecture${n === 1 ? "" : "s"} checked as understood`, behindShort: (n) => `${n} behind`,
+      dueWord: "due", review: (n) => `${n} topic${n === 1 ? "" : "s"} to review`, more: (n) => `(+${n} more)`, fileCount: (f, p) => `${f} file${f === 1 ? "" : "s"}, ${p} pages read`,
+      keep: { on_track: "On track", behind: (n) => `Behind by ${n} lecture${n === 1 ? "" : "s"}`, ahead: (n) => `Ahead by ${n} lecture${n === 1 ? "" : "s"}`, unknown: "Not told Bot yet", topic: "Told Bot a topic, no date to count" },
+      tellText: (name) => `My last ${name} lecture was `,
+      noticeTitle: "Hi! Bot is now one conversation",
+      notice: ["Just write here. Bot works out whether it is about a course, your calendar or anything else.", "Your old chats are above (\"Load older messages\"). A deleted message stays 30 days.", "To go back to separate chats: BOT_THREAD=off in .env, then restart Bot.", "A good first step: tell me where you are in each course, for example \"my last Calculus lecture was Monday\". The Study page shows if you are keeping up."],
+      gotIt: "Got it", openStudy: "Open Study", locale: "en-GB",
+    },
+    he: {
+      title: "לימודים", loading: "טוען...", intro: "תמונה של המקום שלך בכל קורס. כדי לשנות משהו, תגיד ל-Bot בשיחה.",
+      noStudy: "תוכנית הלימוד של Bot עדיין לא מחוברת לעמוד הזה, ולכן רואים רק את הקבצים.", noCourses: "אין קורסים עדיין. אפשר להוסיף בקבצים.",
+      should: "איפה אמור להיות", at: "איפה אתה עכשיו", due: "להגשה", question: "השאלה הפתוחה של Bot", answer: "לענות בשיחה",
+      tell: "לספר ל-Bot איפה אני", files: "קבצים", nothingDue: "אין הגשות", notKnown: "עוד לא ידוע", tellInChat: "ספר ל-Bot בשיחה",
+      manage: "להוסיף קורס או לנהל קבצים", none: "עדיין לא התקיימו הרצאות", held: (n) => (n === 1 ? "הרצאה אחת התקיימה עד עכשיו" : `${n} הרצאות התקיימו עד עכשיו`), last: "אחרונה", next: "הבאה", lecture: "הרצאה",
+      upTo: "עד", position: "המקום נקבע", notTold: "עוד לא עדכנת את Bot", understood: (n) => (n === 1 ? "הרצאה אחת נבדקה והובנה" : `${n} הרצאות נבדקו והובנו`), behindShort: (n) => `${n} בפיגור`,
+      dueWord: "להגשה", review: (n) => (n === 1 ? "נושא אחד לחזרה" : `${n} נושאים לחזרה`), more: (n) => `(ועוד ${n})`, fileCount: (f, p) => `${f} קבצים, ${p} עמודים נקראו`,
+      keep: { on_track: "בקצב", behind: (n) => (n === 1 ? "בפיגור של הרצאה אחת" : `בפיגור של ${n} הרצאות`), ahead: (n) => (n === 1 ? "מקדים בהרצאה אחת" : `מקדים ב-${n} הרצאות`), unknown: "עוד לא עדכנת את Bot", topic: "סיפרת נושא, אין תאריך לספור" },
+      tellText: (name) => `ההרצאה האחרונה שלי בקורס ${name} הייתה `,
+      noticeTitle: "שלום! Bot הוא עכשיו שיחה אחת",
+      notice: ["פשוט כותבים כאן. Bot מבין לבד אם זה על קורס, על היומן או על משהו אחר.", "השיחות הישנות למעלה (\"Load older messages\"). הודעה שנמחקה נשמרת 30 יום.", "כדי לחזור לשיחות נפרדות: BOT_THREAD=off בקובץ ‎.env ולהפעיל את Bot מחדש.", "התחלה טובה: ספר לי איפה אתה בכל קורס, למשל \"ההרצאה האחרונה שלי בחדוא 2 הייתה ביום שני\". בעמוד Study רואים אם אתה עומד בקצב."],
+      gotIt: "הבנתי", openStudy: "לפתוח את Study", locale: "he-IL",
+    },
+  };
+  const tNiceDay = (iso, lang) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "")); return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString((TS[lang] || TS.en).locale, { weekday: "short", day: "numeric", month: "short" }) : null; };
+  // "Am I keeping up?" for one course: the server's keepingUp { state, n } as { state, text } in plain words.
+  function tKeeping(k, lang) {
+    const S = (TS[lang] || TS.en).keep;
+    const state = k && typeof k.state === "string" && Object.hasOwn(S, k.state) ? k.state : "unknown";
+    const n = k && Number.isFinite(k.n) ? k.n : 0;
+    const v = S[state];
+    return { state, text: typeof v === "function" ? v(n) : v };
+  }
+  // Study page: turn what the server knows about a course into plain lines. Works with the real /api/study shape, with ready-made
+  // strings, or with nothing at all. lang is "en" or "he".
+  function tStudyLines(c, lang) {
+    const S = TS[lang] || TS.en;
     const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const text = (v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : null);
     // The REAL GET /api/study shape (study-page.js): shouldBe { held, lastLecture {n,date}, nextLecture }, you { positionKnown, position { seenThrough, note }, withMaterial, understood },
-    // behind [{ date, n, ... }], due / assignments, questions [string]. Checked in the night check against the running server.
-    const niceDay = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "")); return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : null; };
-    const lec = (l) => (l && num(l.n) !== null ? `lecture ${l.n}${niceDay(l.date) ? " (" + niceDay(l.date) + ")" : ""}` : null);
+    // behind [{ date, n, ... }], due / assignments, questions [string], keepingUp { state, n }.
+    const niceDay = (iso) => tNiceDay(iso, lang);
+    const lec = (l) => (l && num(l.n) !== null ? `${S.lecture} ${l.n}${niceDay(l.date) ? " (" + niceDay(l.date) + ")" : ""}` : null);
     let should = text(c.shouldBe);
     if (!should && c.shouldBe && typeof c.shouldBe === "object" && num(c.shouldBe.held) !== null) {
       const sb = c.shouldBe;
-      should = sb.held === 0 ? "No lectures held yet" : `${sb.held} lecture${sb.held === 1 ? "" : "s"} held so far` + (lec(sb.lastLecture) ? `, last: ${lec(sb.lastLecture)}` : "") + (lec(sb.nextLecture) ? `. Next: ${lec(sb.nextLecture)}` : "");
+      should = sb.held === 0 ? S.none : S.held(sb.held) + (lec(sb.lastLecture) ? `, ${S.last}: ${lec(sb.lastLecture)}` : "") + (lec(sb.nextLecture) ? `. ${S.next}: ${lec(sb.nextLecture)}` : "");
     }
-    if (!should && num(c.held) !== null) should = c.held === 0 ? "No lectures held yet" : `${c.held} lecture${c.held === 1 ? "" : "s"} held so far`;
+    if (!should && num(c.held) !== null) should = c.held === 0 ? S.none : S.held(c.held);
     let at = text(c.youAre);
     if (!at && c.you && typeof c.you === "object") {
       const y = c.you, p = y.position && typeof y.position === "object" ? y.position : null;
-      const done = num(y.understood) !== null ? `${y.understood} lecture${y.understood === 1 ? "" : "s"} checked as understood` : null;
+      const done = num(y.understood) !== null ? S.understood(y.understood) : null;
       const found = p && p.seenThrough && Array.isArray(c.behind) ? c.behind.find((b) => b && b.date === p.seenThrough) : null;
-      const where = y.positionKnown && p && p.seenThrough ? `Up to ${found && num(found.n) !== null ? "lecture " + found.n + " (" + niceDay(p.seenThrough) + ")" : niceDay(p.seenThrough) || p.seenThrough}${p.note ? ", " + String(p.note).slice(0, 100) : ""}` : y.positionKnown ? "Position set" : "You have not told Bot yet";
+      const where = y.positionKnown && p && p.seenThrough ? `${S.upTo} ${found && num(found.n) !== null ? S.lecture + " " + found.n + " (" + niceDay(p.seenThrough) + ")" : niceDay(p.seenThrough) || p.seenThrough}${p.note ? ", " + String(p.note).slice(0, 100) : ""}` : y.positionKnown ? S.position : S.notTold;
       at = where + (done ? `. ${done}` : "");
     }
-    if (!at && c.position && c.position.known) at = c.position.n ? `Lecture ${c.position.n}${c.position.note ? ", " + String(c.position.note).slice(0, 100) : ""}` : "Position set";
-    if (!at && num(c.understood) !== null) at = `${c.understood} lecture${c.understood === 1 ? "" : "s"} checked as understood` + (Array.isArray(c.behind) && c.behind.length ? `, ${c.behind.length} behind` : "");
+    if (!at && c.position && c.position.known) at = c.position.n ? `${lang === "he" ? S.lecture : "Lecture"} ${c.position.n}${c.position.note ? ", " + String(c.position.note).slice(0, 100) : ""}` : S.position;
+    if (!at && num(c.understood) !== null) at = S.understood(c.understood) + (Array.isArray(c.behind) && c.behind.length ? `, ${S.behindShort(c.behind.length)}` : "");
     const due = (Array.isArray(c.assignments) ? c.assignments : Array.isArray(c.due) ? c.due : [])
       .filter((a) => a && typeof a.title === "string")
-      .map((a) => (a.title.slice(0, 120) + (typeof a.due === "string" && a.due ? ` (due ${a.due.slice(0, 10)})` : "")))
+      .map((a) => (a.title.slice(0, 120) + (typeof a.due === "string" && a.due ? ` (${S.dueWord} ${(lang === "he" ? tNiceDay(a.due.slice(0, 10), lang) : null) || a.due.slice(0, 10)})` : "")))
       .slice(0, 6);
-    if (num(c.topicsDue) > 0) due.push(`${c.topicsDue} topic${c.topicsDue === 1 ? "" : "s"} to review`);
+    if (num(c.topicsDue) > 0) due.push(S.review(c.topicsDue));
     const qs = Array.isArray(c.questions) ? c.questions.filter((q) => typeof q === "string" && q.trim()) : [];
-    const question = text(c.question) || text(c.openQuestion) || (qs.length ? qs[0].trim().slice(0, 300) + (qs.length > 1 ? ` (+${qs.length - 1} more)` : "") : null);
-    return { should, at, due, question };
+    const question = text(c.question) || text(c.openQuestion) || (qs.length ? qs[0].trim().slice(0, 300) + (qs.length > 1 ? ` ${S.more(qs.length - 1)}` : "") : null);
+    return { should, at, due, question, keeping: tKeeping(c.keepingUp, lang) };
   }
   // </thread-pure>
 
@@ -2997,39 +3054,63 @@
     }
 
     // ---- the Study page (view only; files live in the old Courses screen) ----
+    // The page's own words follow the language you write in: Hebrew when most of your last messages are Hebrew.
+    const pageLang = () => tLangOf([...T.msgs.values()].filter((m) => m.role === "user").sort((a, b) => a.at - b.at).map((m) => m.text), navigator.language);
     let studyData = null;
     async function showStudy() {
+      const lang = pageLang();
+      const S = TS[lang];
       const body = $("tstudyBody");
-      body.replaceChildren(el("p", "sub", "Loading..."));
+      body.dir = lang === "he" ? "rtl" : "ltr";
+      body.lang = lang;
+      $("tstudyIntro").textContent = S.intro;
+      $("tstudyTitle").textContent = S.title;
+      $("tstudyTitle").dir = body.dir;
+      $("tstudyIntro").dir = body.dir;
+      body.replaceChildren(el("p", "sub", S.loading));
       let list = null, courseList = [];
       try { courseList = (await api("/api/courses")).courses || []; } catch (error) { /* the study notebooks may be off */ }
       let note = null;
       try {
-        const data = await api("/api/study");
+        const data = await api("/api/study" + (lang === "he" ? "?lang=he" : ""));
         list = Array.isArray(data.courses) ? data.courses : null;
-      } catch (error) { note = "Bot's study plan is not connected to this page yet, so only your files are shown."; }
+      } catch (error) { note = S.noStudy; }
       const byId = new Map((list || []).map((c) => [c.courseId || c.id, c]));
       studyData = courseList.map((c) => ({ ...c, study: byId.get(c.id) || null }));
       for (const [id, c] of byId) if (!courseList.some((x) => x.id === id)) studyData.push({ id, name: c.name || id, files: 0, pages: 0, study: c });
       body.replaceChildren();
       if (note) body.appendChild(small(note));
-      if (!studyData.length) body.appendChild(small("No courses yet. Add one under Files."));
+      if (!studyData.length) body.appendChild(small(S.noCourses));
       const grid = el("div", "tstudy-grid");
-      studyData.forEach((c) => grid.appendChild(courseCard(c)));
+      studyData.forEach((c) => grid.appendChild(courseCard(c, lang)));
       body.appendChild(grid);
       const row = el("div", "actions");
-      const files = el("button", "ghost", "Add a course or manage files");
+      const files = el("button", "ghost", S.manage);
       files.type = "button";
       files.addEventListener("click", () => { navGo({ view: "study", id: null, course: null }); showView("study"); });
       row.appendChild(files);
       body.appendChild(row);
     }
-    function courseCard(c) {
+    // One tap: go to the conversation with a ready sentence in the box, cursor at the end, so you only add the lecture or the day.
+    function tellBot(name, lang) {
+      navGo({ view: "chat", id: null });
+      showView("chat");
+      const box = $("task");
+      box.value = TS[lang].tellText(name);
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+    function courseCard(c, lang) {
+      const S = TS[lang];
       const card = el("section", "card tcourse");
       const title = el("strong", "", c.name);
       title.dir = "auto";
       card.appendChild(title);
-      const lines = c.study ? tStudyLines(c.study) : { should: null, at: null, due: [], question: null };
+      const lines = c.study ? tStudyLines(c.study, lang) : { should: null, at: null, due: [], question: null, keeping: tKeeping(null, lang) };
+      // The answer to "am I keeping up?" comes first, as a coloured pill (the colour is never the only signal: the words say it too)
+      const pill = el("div", "tkeep tkeep-" + lines.keeping.state, lines.keeping.text);
+      pill.dir = "auto";
+      card.appendChild(pill);
       const line = (label, value, fallback) => {
         const row = el("div", "tline");
         row.appendChild(el("span", "sub tlabel", label));
@@ -3038,50 +3119,58 @@
         row.appendChild(v);
         card.appendChild(row);
       };
-      line("Where you should be", lines.should, "Not known yet");
-      line("Where you are", lines.at, "Tell Bot in the conversation");
+      line(S.should, lines.should, S.notKnown);
+      line(S.at, lines.at, S.tellInChat);
       const dueRow = el("div", "tline");
-      dueRow.appendChild(el("span", "sub tlabel", "Due"));
-      if (lines.due.length) { const ul = el("ul", "tdue"); lines.due.forEach((d) => { const li = el("li", "", d); li.dir = "auto"; ul.appendChild(li); }); dueRow.appendChild(ul); } else dueRow.appendChild(el("span", "sub", "Nothing due"));
+      dueRow.appendChild(el("span", "sub tlabel", S.due));
+      if (lines.due.length) { const ul = el("ul", "tdue"); lines.due.forEach((d) => { const li = el("li", "", d); li.dir = "auto"; ul.appendChild(li); }); dueRow.appendChild(ul); } else dueRow.appendChild(el("span", "sub", S.nothingDue));
       card.appendChild(dueRow);
       if (lines.question) {
         const q = el("div", "tquestion");
-        q.appendChild(el("span", "sub tlabel", "Bot's open question"));
+        q.appendChild(el("span", "sub tlabel", S.question));
         const t = el("div", "", lines.question);
         t.dir = "auto";
         q.appendChild(t);
-        const reply = el("button", "ghost", "Answer in the conversation");
+        const reply = el("button", "ghost", S.answer);
         reply.type = "button";
         reply.addEventListener("click", () => { navGo({ view: "chat", id: null }); showView("chat"); $("task").focus(); });
         q.appendChild(reply);
         card.appendChild(q);
       }
-      card.appendChild(el("div", "sub", `${c.files || 0} file${c.files === 1 ? "" : "s"}, ${c.pages || 0} pages read`));
+      card.appendChild(el("div", "sub", S.fileCount(c.files || 0, c.pages || 0)));
       const actions = el("div", "actions");
-      const files = el("button", "ghost", "Files");
+      const tell = el("button", "", S.tell);
+      tell.type = "button";
+      tell.addEventListener("click", () => tellBot(c.name, lang));
+      const files = el("button", "ghost", S.files);
       files.type = "button";
       files.addEventListener("click", () => { navGo({ view: "study", id: null, course: c.id }); showView("study", c.id); });
-      actions.appendChild(files);
+      actions.append(tell, files);
       card.appendChild(actions);
       return card;
     }
 
-    // ---- the first-use notice ----
+    // ---- the first-use notice (short, friendly; Hebrew when you write Hebrew) ----
     function notice() {
       let seen = false;
       try { seen = localStorage.getItem("botThreadNotice") === "1"; } catch (error) { /* private mode: show it again */ }
       if (seen) return;
+      const lang = pageLang();
+      const S = TS[lang];
       const box = el("div", "tnotice card");
-      box.appendChild(el("strong", "", "Bot is now one conversation"));
-      [
-        "There is no list of chats any more: everything you write goes into this one conversation, and Bot works out whether it is about a course, your calendar or anything else. You can send a second message while a slow answer is still being written.",
-        "Your old chats are kept: they are at the top of the conversation (tap \"Load older messages\"). Delete removes a message for 30 days first, and you can bring it back.",
-        "To go back to separate chats: put BOT_THREAD=off in the .env file and restart Bot. Nothing is lost.",
-      ].forEach((t) => box.appendChild(small(t)));
-      const ok = el("button", "", "Got it");
+      box.dir = lang === "he" ? "rtl" : "ltr";
+      box.appendChild(el("strong", "", S.noticeTitle));
+      S.notice.forEach((t) => box.appendChild(small(t)));
+      const actions = el("div", "actions");
+      const ok = el("button", "", S.gotIt);
       ok.type = "button";
-      ok.addEventListener("click", () => { try { localStorage.setItem("botThreadNotice", "1"); } catch (error) { /* ignore */ } box.remove(); });
-      box.appendChild(ok);
+      const done = () => { try { localStorage.setItem("botThreadNotice", "1"); } catch (error) { /* ignore */ } box.remove(); };
+      ok.addEventListener("click", done);
+      const study = el("button", "ghost", S.openStudy);
+      study.type = "button";
+      study.addEventListener("click", () => { done(); navGo({ view: "tstudy", id: null }); showView("tstudy"); });
+      actions.append(ok, study);
+      box.appendChild(actions);
       $("tnoticeSlot").appendChild(box);
     }
 
@@ -3149,8 +3238,7 @@
       document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
       window.addEventListener("focus", () => { poll(); });
       window.addEventListener("online", () => { poll(); });
-      notice();
-      loadFirst().then(loadSuggestions).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
+      loadFirst().then(() => { if (pageLang() === "he") $("micLang").value = "he-IL"; notice(); return loadSuggestions(); }).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
     }
 
     return { start, showStudy, T };

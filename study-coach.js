@@ -11,6 +11,9 @@
 // questions, grading and reading an assignment, always through tutor.js and always checked by code.
 
 const plan = require("./study-plan");
+// The language of the reply being written (Hebrew when the student wrote Hebrew); only the DATES change with it (study-plan.niceDate).
+let curLang = "en";
+const niceDate = (iso) => plan.niceDate(iso, curLang);
 const { createTracker, clean } = require("./study-tracker");
 const { checkPositions, proposePositions } = require("./study-positions");
 const { createNudges } = require("./study-nudges");
@@ -83,11 +86,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const p = tracker.progress(ref);
     const lines = [`${ref.name}: ${p.held} lecture${p.held === 1 ? "" : "s"} held so far by the timetable${tracker.state().skips.some((s) => s.course === ref.key || s.course === "*") ? " (cancelled ones removed)" : ""}.`];
     lines.push(`  Material in Bot for ${p.withMaterial} of them. Checked as understood (3+ questions, 70%+): ${p.understood}.`);
-    if (p.behind.length) lines.push(`  Behind on ${p.behind.length}: ${p.behind.slice(0, 4).map((b) => `lecture ${b.n} (${plan.niceDate(b.date)})${b.hasMaterial || b.topic ? "" : ", no material yet"}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
+    if (p.behind.length) lines.push(`  Behind on ${p.behind.length}: ${p.behind.slice(0, 4).map((b) => `lecture ${b.n} (${niceDate(b.date)})${b.hasMaterial || b.topic ? "" : ", no material yet"}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
     else if (p.held) lines.push("  Nothing behind by the timetable.");
     if (!p.positionKnown) lines.push("  I do not know where you are in this course yet.");
-    else lines.push(`  You told me you are up to ${p.position.seenThrough ? plan.niceDate(p.position.seenThrough) : "a topic"}${p.position.note ? ` (${clean(p.position.note, 60)})` : ""}.`);
-    for (const a of p.assignments.slice(0, 3)) lines.push(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${plan.niceDate(a.due)}` : ", no due date saved"}.`);
+    else lines.push(`  You told me you are up to ${p.position.seenThrough ? niceDate(p.position.seenThrough) : "a topic"}${p.position.note ? ` (${clean(p.position.note, 60)})` : ""}.`);
+    for (const a of p.assignments.slice(0, 3)) lines.push(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`);
     return lines.join("\n");
   }
   function positionQuestion(list) {
@@ -98,11 +101,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   function nextStep(ref) {
     const p = tracker.progress(ref);
     const a = p.assignments.find((x) => x.due && plan.daysBetween(today(), x.due) >= 0 && plan.daysBetween(today(), x.due) <= 7);
-    if (a) return `The next step with a real date: "${clean(a.title, 60)}" is due ${plan.niceDate(a.due)}. Say "help me start" and I check what it needs.`;
+    if (a) return `The next step with a real date: "${clean(a.title, 60)}" is due ${niceDate(a.due)}. Say "help me start" and I check what it needs.`;
     const b = p.behind.find((x) => x.hasMaterial || x.topic);
-    if (b) return `The smallest next step: lecture ${b.n} (${plan.niceDate(b.date)}) of ${ref.name}. "Teach me" and I explain it, or "quiz me" and you try first.`;
+    if (b) return `The smallest next step: lecture ${b.n} (${niceDate(b.date)}) of ${ref.name}. "Teach me" and I explain it, or "quiz me" and you try first.`;
     const empty = p.behind.find((x) => !x.hasMaterial && !x.topic);
-    if (empty) return `Lecture ${empty.n} of ${ref.name} (${plan.niceDate(empty.date)}) has nothing in Bot yet. Send the slides or tell me its topic, and we can start.`;
+    if (empty) return `Lecture ${empty.n} of ${ref.name} (${niceDate(empty.date)}) has nothing in Bot yet. Send the slides or tell me its topic, and we can start.`;
     return p.held ? `${ref.name} is on track by the timetable. A 3-question review keeps it that way: "quiz me".` : `${ref.name} has no lectures held yet.`;
   }
 
@@ -141,10 +144,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         const day = parseDay(seg, "week");
         const course = ref ? ref.key : /classes|university|school|לימודים/i.test(seg) ? "*" : null;
         if (!day || !course) { unclear.push(seg); continue; }
-        if (undo) { const d = day.date || null; if (!d) { unclear.push(seg); continue; } tracker.removeSkip({ date: d, course }); lines.push(`Put the ${ref ? ref.name + " " : ""}lecture on ${plan.niceDate(d)} back in the count.`); continue; }
-        if (day.date && ref && !tracker.slots(ref.key).some((x) => x.date === day.date)) { lines.push(`${ref.name} has no lecture on ${plan.niceDate(day.date)} by the timetable, so nothing changed.`); continue; }
+        if (undo) { const d = day.date || null; if (!d) { unclear.push(seg); continue; } tracker.removeSkip({ date: d, course }); lines.push(`Put the ${ref ? ref.name + " " : ""}lecture on ${niceDate(d)} back in the count.`); continue; }
+        if (day.date && ref && !tracker.slots(ref.key).some((x) => x.date === day.date)) { lines.push(`${ref.name} has no lecture on ${niceDate(day.date)} by the timetable, so nothing changed.`); continue; }
         const dates = day.week ? (course === "*" ? all.filter(tracked).flatMap((r) => tracker.skipWeek(r.key)) : tracker.skipWeek(course)) : [tracker.addSkip({ date: day.date, course }) && day.date];
-        lines.push(dates.length ? `Removed ${ref ? ref.name : "every course"}: ${[...new Set(dates)].sort().map(plan.niceDate).join(", ")}. The lecture numbers after it moved up. (Say "there was a lecture on <day>" to undo.)` : `${ref ? ref.name : "That"} has no lecture that day, so nothing changed.`);
+        lines.push(dates.length ? `Removed ${ref ? ref.name : "every course"}: ${[...new Set(dates)].sort().map((d) => niceDate(d)).join(", ")}. The lecture numbers after it moved up. (Say "there was a lecture on <day>" to undo.)` : `${ref ? ref.name : "That"} has no lecture that day, so nothing changed.`);
         continue;
       }
       if (POSITION_WORDS.test(seg) || (ref && (askedLectures(seg).length || parseDay(seg, "past")))) {
@@ -153,7 +156,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         const day = n ? null : parseDay(seg, "past");
         try {
           const pos = n ? tracker.setPosition(ref, { n }) : day && day.date ? tracker.setPosition(ref, { date: day.date }) : tracker.setPosition(ref, { note: seg });
-          lines.push(`${ref.name}: noted that you are up to ${pos.seenThrough ? plan.niceDate(pos.seenThrough) : clean(pos.note, 60)}. That tells me where you are, not what you understood: that comes from questions.`);
+          lines.push(`${ref.name}: noted that you are up to ${pos.seenThrough ? niceDate(pos.seenThrough) : clean(pos.note, 60)}. That tells me where you are, not what you understood: that comes from questions.`);
         } catch (error) { lines.push(`${ref.name}: ${error.message}.`); }
         continue;
       }
@@ -177,15 +180,15 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     for (const it of items) {
       try {
         if (it.kind === "notStarted") { const c = tracker.course(it.ref); c.position = { known: true, seenThrough: null, note: "not started yet", at: now() }; tracker.save(c); stored.set(it.ref.key, "not started yet"); }
-        else { tracker.setPosition(it.ref, { n: it.slot.n }); stored.set(it.ref.key, `up to lecture ${it.slot.n} (${plan.niceDate(it.slot.date)})${it.kind === "upToDate" ? ", the latest one held" : ""}`); }
+        else { tracker.setPosition(it.ref, { n: it.slot.n }); stored.set(it.ref.key, `up to lecture ${it.slot.n} (${niceDate(it.slot.date)})${it.kind === "upToDate" ? ", the latest one held" : ""}`); }
       } catch (error) { problems.push(`${it.ref.name}: ${error.message}.`); }
     }
     const lines = list.map((r) => {
       if (stored.has(r.key)) return `${r.name}: ${stored.get(r.key)}.`;
       const p = tracker.progress(r);
-      return p.positionKnown ? `${r.name}: you did not mention it, so it stays as it was (${p.position.seenThrough ? "up to " + plan.niceDate(p.position.seenThrough) : p.position.note || "set"}).` : `${r.name}: you did not say, so I still do not know where you are.`;
+      return p.positionKnown ? `${r.name}: you did not mention it, so it stays as it was (${p.position.seenThrough ? "up to " + niceDate(p.position.seenThrough) : p.position.note || "set"}).` : `${r.name}: you did not say, so I still do not know where you are.`;
     });
-    return [`Here is exactly what I stored (today is ${plan.niceDate(today())}):`, ...lines, ...problems, "If one is wrong, tell me that course again, for example \"Calculus lecture 5\". This only says where you are, not what you understood."].join("\n");
+    return [`Here is exactly what I stored (today is ${niceDate(today())}):`, ...lines, ...problems, "If one is wrong, tell me that course again, for example \"Calculus lecture 5\". This only says where you are, not what you understood."].join("\n");
   }
 
   // ---- proposals (model proposes, code checks, the student confirms) ----
@@ -204,11 +207,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     try {
       if (p.kind === "assignment") {
         const a = tracker.addAssignment(p.ref, p.fields);
-        return { ok: true, answer: `Saved "${a.title}" for ${p.ref.name}${a.due ? `, due ${plan.niceDate(a.due)}` : " (no due date)"}. ${a.needs.length ? `It needs: ${a.needs.join(", ")}.` : ""} Say "help me start" when you want to begin.` };
+        return { ok: true, answer: `Saved "${a.title}" for ${p.ref.name}${a.due ? `, due ${niceDate(a.due)}` : " (no due date)"}. ${a.needs.length ? `It needs: ${a.needs.join(", ")}.` : ""} Say "help me start" when you want to begin.` };
       }
       if (p.kind === "material") {
         tracker.attachMaterial(p.ref, p.date, p.refs, { topic: p.topic || "" });
-        return { ok: true, answer: `Attached it to the ${p.ref.name} lecture of ${plan.niceDate(p.date)}. Say "teach me" or "quiz me" when you are ready.` };
+        return { ok: true, answer: `Attached it to the ${p.ref.name} lecture of ${niceDate(p.date)}. Say "teach me" or "quiz me" when you are ready.` };
       }
     } catch (error) { return { ok: false, answer: `I could not save it: ${error.message}.` }; }
     return { ok: false, answer: "Unknown proposal." };
@@ -225,7 +228,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log });
       if (!r.ok) return { answer: r.answer };
       const p = addProposal({ kind: "assignment", ref, fields: r.proposal });
-      return { answer: `I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${plan.niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, proposal: card(p) };
+      return { answer: `I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, proposal: card(p) };
     }
     const refsList = files.filter((f) => f && f.fileId && f.pages >= 1).map((f) => ({ fileId: f.fileId, from: 1, to: f.pages, fileName: f.fileName }));
     if (!refsList.length) return { answer: "I could not find readable pages in that file yet." };
@@ -237,14 +240,15 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     }
     if (!slot) { slot = tracker.suggestSlot(ref); how = "the most recent lecture that has no material yet"; }
     if (!slot) return { answer: `I cannot tell which ${ref.name} lecture this belongs to. Which date was it?` };
-    const q = `Is this the ${ref.name} lecture of ${plan.niceDate(slot.date)} (${how})? Confirm, or tell me the right date.`;
+    const q = `Is this the ${ref.name} lecture of ${niceDate(slot.date)} (${how})? Confirm, or tell me the right date.`;
     const p = addProposal({ kind: "material", ref, date: slot.date, refs: refsList, question: q });
     return { answer: q, proposal: card(p) };
   }
 
   // ---- the answer to a message the front desk marked with a studyIntent ----
-  async function answerStudy({ studyIntent, text = "", courseId = null, courseName = null }) {
+  async function answerStudy({ studyIntent, text = "", courseId = null, courseName = null, onText = null }) {
     const t0 = Date.now();
+    curLang = /[֐-׿]/.test(String(text)) ? "he" : "en"; // the dates in this reply read in the language the student wrote in
     const done = (r) => ({ mode: "study", answer: "", sources: [], outside: false, model: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r });
     const intent = INTENTS.includes(studyIntent) ? studyIntent : "progress"; // an unknown intent is the safest one: only shows numbers
 
@@ -252,7 +256,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const day = parseDay(text, "week");
       try { nudges.pause(day && day.date && day.date >= today() ? day.date : null); } catch (error) { return done({ answer: `I could not pause: ${error.message}.` }); }
       const s = nudges.settings();
-      return done({ answer: `Study reminders are paused${s.pausedUntil ? ` until ${plan.niceDate(s.pausedUntil)}` : " until you say resume"}. Your progress is kept. Nothing is lost while you are away.` });
+      return done({ answer: `Study reminders are paused${s.pausedUntil ? ` until ${niceDate(s.pausedUntil)}` : " until you say resume"}. Your progress is kept. Nothing is lost while you are away.` });
     }
     if (intent === "resume") { nudges.resume(); return done({ answer: "Study reminders are on again. Welcome back: say \"where am I\" and I will show the real numbers, with no guilt." }); }
     if (intent === "confirm" || intent === "cancel") {
@@ -287,7 +291,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const asked = list.filter((r) => !tracker.progress(r).positionKnown);
       const first = positionQuestion(list);
       if (first) tracker.markAsked(asked[0], { position: true });
-      return done({ answer: `Where you should be (timetable, ${plan.niceDate(today())}) and where you are:\n\n${body}${next}${first}`, study: { courses: list.map((r) => tracker.progress(r)) } });
+      return done({ answer: `Where you should be (timetable, ${niceDate(today())}) and where you are:\n\n${body}${next}${first}`, study: { courses: list.map((r) => tracker.progress(r)) } });
     }
 
     if (intent === "assignment") {
@@ -299,7 +303,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // teach / quiz / start / answer: the tutor
     if (!ref) return done({ answer: whichCourse() });
     const align = maybeAlign(ref);
-    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log });
+    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText });
     return done({ ...r, mode: "study", answer: r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 

@@ -45,7 +45,12 @@ const daysBetween = (a, b) => Math.round((new Date(`${b}T00:00:00Z`) - new Date(
 const weekStart = (iso) => addDays(iso, -weekdayOf(iso)); // the Sunday of that week
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const niceDate = (iso) => `${DAY_NAMES[weekdayOf(iso)]} ${Number(iso.slice(8))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+const HE_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const HE_MONTHS = ["בינואר", "בפברואר", "במרץ", "באפריל", "במאי", "ביוני", "ביולי", "באוגוסט", "בספטמבר", "באוקטובר", "בנובמבר", "בדצמבר"];
+// lang "he" gives "יום רביעי 28 באוקטובר"; anything else (also a stray number from .map) gives "Wednesday 28 Oct".
+const niceDate = (iso, lang) => (lang === "he"
+  ? `${weekdayOf(iso) === 6 ? "" : "יום "}${HE_DAYS[weekdayOf(iso)]} ${Number(iso.slice(8))} ${HE_MONTHS[Number(iso.slice(5, 7)) - 1]}`
+  : `${DAY_NAMES[weekdayOf(iso)]} ${Number(iso.slice(8))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`);
 
 // Checks a timetable that came from a file. Returns a clean copy, or null when it is not usable.
 function cleanTimetable(t) {
