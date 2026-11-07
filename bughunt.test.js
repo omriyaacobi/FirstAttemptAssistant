@@ -94,3 +94,34 @@ test("a route that throws (a thread file that cannot be read) answers 500 instea
   }
   assert.deepStrictEqual(unhandled.map((e) => e.message), []);
 });
+
+// ---- the file reader queue ----
+const { createCourses } = require("./courses");
+const { createCourseRoutes } = require("./course-routes");
+
+test("one file whose reading throws does not stop the queue or end Bot (an unhandled rejection)", async () => {
+  const courses = createCourses(tmp());
+  const course = courses.create("Any");
+  const seen = [];
+  const ready = [];
+  const routes = createCourseRoutes({
+    courses, store: createStore(tmp()), askCourse: async () => ({}), askFile: async () => ({}), askChain: async () => ({}),
+    ingestFile: async ({ fileId }) => { seen.push(fileId); if (seen.length === 1) throw new Error("the course was deleted while the file was being read"); },
+    onFileReady: async ({ fileId }) => { ready.push(fileId); },
+  });
+  const unhandled = [];
+  const onRejection = (e) => unhandled.push(e.message);
+  process.on("unhandledRejection", onRejection);
+  try {
+    const mk = (n) => Buffer.concat([PDF, Buffer.from("%" + n)]);
+    routes.addUpload(course.id, mk("one"), "one.pdf");
+    routes.addUpload(course.id, mk("two"), "two.pdf");
+    for (let i = 0; i < 100 && !routes.idle(); i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 20));
+  } finally {
+    process.off("unhandledRejection", onRejection);
+  }
+  assert.deepStrictEqual(unhandled, []);
+  assert.strictEqual(seen.length, 2, "the second file was still read");
+  assert.strictEqual(routes.idle(), true, "the reader is free again");
+});

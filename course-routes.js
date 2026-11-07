@@ -60,13 +60,18 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   async function pump() {
     if (reading) return;
     reading = true;
-    while (queue.length) {
-      const { courseId, fileId } = queue.shift();
-      await ingestFile({ courses, courseId, fileId, askFile, log });
-      // The file was read (or failed). The thread uses this to tell the study coach (a file may be a lecture or an assignment).
-      if (onFileReady) { try { await onFileReady({ courseId, fileId }); } catch (error) { log(`[course] after-read hook failed: ${error.message}`); } }
+    try {
+      while (queue.length) {
+        const { courseId, fileId } = queue.shift();
+        // A reading that throws (for example the course was deleted meanwhile and the failure cannot even be saved) must not stop the
+        // queue, leave "reading" on for ever, or become an unhandled rejection (nobody awaits pump, and Node ends Bot on those).
+        try { await ingestFile({ courses, courseId, fileId, askFile, log }); } catch (error) { log(`[course] reading a file failed: ${error.message}`); }
+        // The file was read (or failed). The thread uses this to tell the study coach (a file may be a lecture or an assignment).
+        if (onFileReady) { try { await onFileReady({ courseId, fileId }); } catch (error) { log(`[course] after-read hook failed: ${error.message}`); } }
+      }
+    } finally {
+      reading = false;
     }
-    reading = false;
   }
   const enqueue = (courseId, fileId) => { queue.push({ courseId, fileId }); pump(); };
 
