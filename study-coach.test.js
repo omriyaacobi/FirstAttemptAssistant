@@ -120,6 +120,16 @@ test("a course question without a course asks which one", async () => {
   assert.match(r.answer, /Which course do you mean\?/);
 });
 
+test("every tutor answer says mode study (jobs.js reads result.answer only for that mode; the night check found teach became an empty answer)", async () => {
+  const { coach } = make();
+  for (const intent of ["teach", "quiz"]) {
+    const r = await coach.answerStudy({ studyIntent: intent, text: intent + " me lecture 3", courseId: IDS.calc });
+    assert.strictEqual(r.mode, "study", intent);
+    assert.ok(r.answer.length > 10, intent);
+    assert.ok(r.study && r.study.mode, "the tutor's own mode stays in study.mode");
+  }
+});
+
 test("an assignment message becomes a proposal; nothing is saved until Confirm, and Confirm works once", async () => {
   const { coach, sp } = make();
   const r = await coach.answerStudy({ studyIntent: "assignment", text: "exercise 4 is due Thursday 12 Nov, write a shell", courseId: IDS.sp });
