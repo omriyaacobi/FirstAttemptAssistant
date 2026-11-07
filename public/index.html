@@ -2418,9 +2418,24 @@
   function tStudyLines(c) {
     const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const text = (v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : null);
+    // The REAL GET /api/study shape (study-page.js): shouldBe { held, lastLecture {n,date}, nextLecture }, you { positionKnown, position { seenThrough, note }, withMaterial, understood },
+    // behind [{ date, n, ... }], due / assignments, questions [string]. Checked in the night check against the running server.
+    const niceDay = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "")); return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : null; };
+    const lec = (l) => (l && num(l.n) !== null ? `lecture ${l.n}${niceDay(l.date) ? " (" + niceDay(l.date) + ")" : ""}` : null);
     let should = text(c.shouldBe);
+    if (!should && c.shouldBe && typeof c.shouldBe === "object" && num(c.shouldBe.held) !== null) {
+      const sb = c.shouldBe;
+      should = sb.held === 0 ? "No lectures held yet" : `${sb.held} lecture${sb.held === 1 ? "" : "s"} held so far` + (lec(sb.lastLecture) ? `, last: ${lec(sb.lastLecture)}` : "") + (lec(sb.nextLecture) ? `. Next: ${lec(sb.nextLecture)}` : "");
+    }
     if (!should && num(c.held) !== null) should = c.held === 0 ? "No lectures held yet" : `${c.held} lecture${c.held === 1 ? "" : "s"} held so far`;
     let at = text(c.youAre);
+    if (!at && c.you && typeof c.you === "object") {
+      const y = c.you, p = y.position && typeof y.position === "object" ? y.position : null;
+      const done = num(y.understood) !== null ? `${y.understood} lecture${y.understood === 1 ? "" : "s"} checked as understood` : null;
+      const found = p && p.seenThrough && Array.isArray(c.behind) ? c.behind.find((b) => b && b.date === p.seenThrough) : null;
+      const where = y.positionKnown && p && p.seenThrough ? `Up to ${found && num(found.n) !== null ? "lecture " + found.n + " (" + niceDay(p.seenThrough) + ")" : niceDay(p.seenThrough) || p.seenThrough}${p.note ? ", " + String(p.note).slice(0, 100) : ""}` : y.positionKnown ? "Position set" : "You have not told Bot yet";
+      at = where + (done ? `. ${done}` : "");
+    }
     if (!at && c.position && c.position.known) at = c.position.n ? `Lecture ${c.position.n}${c.position.note ? ", " + String(c.position.note).slice(0, 100) : ""}` : "Position set";
     if (!at && num(c.understood) !== null) at = `${c.understood} lecture${c.understood === 1 ? "" : "s"} checked as understood` + (Array.isArray(c.behind) && c.behind.length ? `, ${c.behind.length} behind` : "");
     const due = (Array.isArray(c.assignments) ? c.assignments : Array.isArray(c.due) ? c.due : [])
@@ -2428,7 +2443,8 @@
       .map((a) => (a.title.slice(0, 120) + (typeof a.due === "string" && a.due ? ` (due ${a.due.slice(0, 10)})` : "")))
       .slice(0, 6);
     if (num(c.topicsDue) > 0) due.push(`${c.topicsDue} topic${c.topicsDue === 1 ? "" : "s"} to review`);
-    const question = text(c.question) || text(c.openQuestion);
+    const qs = Array.isArray(c.questions) ? c.questions.filter((q) => typeof q === "string" && q.trim()) : [];
+    const question = text(c.question) || text(c.openQuestion) || (qs.length ? qs[0].trim().slice(0, 300) + (qs.length > 1 ? ` (+${qs.length - 1} more)` : "") : null);
     return { should, at, due, question };
   }
   // </thread-pure>

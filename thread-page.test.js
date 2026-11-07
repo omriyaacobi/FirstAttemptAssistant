@@ -138,3 +138,14 @@ test("phone: no sideways scroll rules and 44 px tap targets for the new buttons"
   // the Study grid shrinks to one column on a phone
   assert.match(html, /\.tstudy-grid \{[^}]*minmax\(min\(100%, 300px\), 1fr\)/);
 });
+
+test("Study page lines read the REAL /api/study shape (copied from a running server in the night check)", () => {
+  const h = helpers();
+  const real = { id: "1c0bd5cbbdcdc210", name: "Calculus 2", tracked: true, shouldBe: { held: 6, lastLecture: { n: 6, date: "2026-11-04" }, nextLecture: { n: 7, date: "2026-11-09" } }, you: { positionKnown: true, position: { seenThrough: "2026-11-02", note: "" }, withMaterial: 6, understood: 0 }, behind: [{ date: "2026-11-02", n: 5, hasMaterial: true, topic: "" }, { date: "2026-11-04", n: 6, hasMaterial: true, topic: "" }], due: [], assignments: [], questions: ["Where are you in Calculus 2?", "Lecture 1 has no material."] };
+  const r = h.tStudyLines(real);
+  assert.match(r.should, /^6 lectures held so far, last: lecture 6 \(.*4 Nov\)\. Next: lecture 7 \(.*9 Nov\)$/);
+  assert.match(r.at, /^Up to lecture 5 \(.*2 Nov\)\. 0 lectures checked as understood$/);
+  assert.strictEqual(r.question, "Where are you in Calculus 2? (+1 more)");
+  const none = h.tStudyLines({ ...real, you: { positionKnown: false, position: null, withMaterial: 0, understood: 0 } });
+  assert.match(none.at, /^You have not told Bot yet/);
+});
