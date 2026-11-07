@@ -11,7 +11,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createServer } = require("./server");
 const { createStore } = require("./store");
-const { createAuth, loadPhoneConfig, parseEnv, MAX_FAILS, LOCK_MS, UNLOCK_MS } = require("./auth");
+const { createAuth, loadPhoneConfig, parseEnv, MAX_FAILS, LOCK_MS } = require("./auth");
 
 const HOST = "my-pc.tail1234.ts.net";
 const TOKEN = "a-long-random-test-token-0123456789";
@@ -35,6 +35,8 @@ async function start({ authConfig = config, now } = {}) {
     selfEdit: { list: () => [], isActive: () => false, start: async () => { calls.push("selfedit"); return { record: {} }; } },
     gitOps: { status: async () => ({}), push: async () => { calls.push("push"); return {}; } },
     usage: async () => [],
+    supervised: true,
+    restart: () => calls.push("restart"),
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;
@@ -103,7 +105,7 @@ test("the session cookie is HttpOnly, Secure and SameSite=Strict, and does not c
 test("the PC needs no login and keeps every feature", async () => {
   const s = await start();
   const session = (await s.pc("GET", "/api/session")).json();
-  assert.deepStrictEqual(session, { remote: false, phoneAccess: true, loggedIn: true, images: true, pushKey: "PUBLIC-KEY", adminPin: false, adminUnlocked: false });
+  assert.deepStrictEqual(session, { remote: false, phoneAccess: true, loggedIn: true, images: true, pushKey: "PUBLIC-KEY" });
   assert.strictEqual((await s.pc("GET", "/api/selfedit")).status, 200);
   assert.strictEqual((await s.pc("POST", "/api/login", { token: TOKEN })).status, 400); // nothing to log in to
   await s.close();
@@ -113,7 +115,7 @@ test("SECURITY: the phone gets only the page until it logs in", async () => {
   const s = await start();
   assert.strictEqual((await s.phone("GET", "/")).status, 200);
   assert.strictEqual((await s.phone("GET", "/manifest.webmanifest")).status, 200);
-  assert.deepStrictEqual((await s.phone("GET", "/api/session")).json(), { remote: true, phoneAccess: true, loggedIn: false, images: true, pushKey: null, adminPin: false, adminUnlocked: false });
+  assert.deepStrictEqual((await s.phone("GET", "/api/session")).json(), { remote: true, phoneAccess: true, loggedIn: false, images: true, pushKey: null });
   for (const [method, p] of [["GET", "/api/conversations"], ["GET", "/api/reminders"], ["GET", "/api/usage"]]) {
     assert.strictEqual((await s.phone(method, p)).status, 401, p);
   }
@@ -129,7 +131,7 @@ test("SECURITY: a forwarded request counts as the phone even if its Host looks l
   const res = await s.request("GET", "/api/conversations", { headers: { Host: `127.0.0.1:${s.port}`, "X-Forwarded-For": "100.64.0.2" } });
   assert.strictEqual(res.status, 401);
   const res2 = await s.request("GET", "/api/selfedit", { headers: { Host: `localhost:${s.port}`, "Tailscale-User-Login": "someone@example.com" } });
-  assert.strictEqual(res2.status, 403);
+  assert.strictEqual(res2.status, 401);
   const session = await s.request("GET", "/api/session", { headers: { Host: `localhost:${s.port}`, Forwarded: "for=100.64.0.2" } });
   assert.strictEqual(session.json().remote, true);
   await s.close();
@@ -170,10 +172,10 @@ test("after logging in, the phone can chat, see reminders and turn on push", asy
   await s.close();
 });
 
-test("SECURITY: even logged in, the phone can't use Improve Bot, Restart or GitHub", async () => {
+test("SECURITY: even logged in, the phone can't use GitHub", async () => {
   const s = await start();
   const cookie = await s.login();
-  for (const [method, p] of [["GET", "/api/selfedit"], ["POST", "/api/selfedit"], ["POST", "/api/restart"], ["GET", "/api/git"], ["POST", "/api/git/push"]]) {
+  for (const [method, p] of [["GET", "/api/git"], ["POST", "/api/git/push"]]) {
     const res = await s.phone(method, p, { cookie, body: method === "POST" ? { request: "x" } : undefined });
     assert.strictEqual(res.status, 403, p);
   }
@@ -199,99 +201,33 @@ test("SECURITY: with phone access off, the Tailscale name and forwarded requests
   await s.close();
 });
 
-// ---- the PIN for Improve Bot and Restart on the phone ----
+// ---- Improve Bot and Restart on the phone: the login is enough (Omri removed the PIN on 2026-11-07) ----
 
-const PIN = "482917";
-const withPin = { ...config, adminPin: PIN };
-const cookieOf = (res) => res.headers["set-cookie"][0].split(";")[0];
-
-test("phone config: a PIN shorter than 6 characters counts as no PIN", () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bot-env-")), ".env");
-  fs.writeFileSync(file, `BOT_PHONE_HOST=${HOST}\nBOT_PHONE_TOKEN=${TOKEN}\nBOT_ADMIN_PIN=123\n`);
-  assert.strictEqual(loadPhoneConfig(file).adminPin, undefined);
-  fs.writeFileSync(file, `BOT_PHONE_HOST=${HOST}\nBOT_PHONE_TOKEN=${TOKEN}\nBOT_ADMIN_PIN=${PIN}\n`);
-  assert.strictEqual(loadPhoneConfig(file).adminPin, PIN);
-});
-
-test("SECURITY: logged in without the PIN, the phone can't use Improve Bot or Restart", async () => {
-  const s = await start({ authConfig: withPin });
+test("a logged-in phone can use Improve Bot and Restart, with no PIN", async () => {
+  const s = await start();
   const cookie = await s.login();
-  const res = await s.phone("POST", "/api/selfedit", { cookie, body: { request: "x" } });
-  assert.strictEqual(res.status, 403);
-  assert.strictEqual(res.json().needPin, true);
-  assert.strictEqual((await s.phone("POST", "/api/restart", { cookie, body: {} })).status, 403);
-  assert.deepStrictEqual(s.calls, []);
+  assert.strictEqual((await s.phone("GET", "/api/selfedit", { cookie })).status, 200);
+  assert.strictEqual((await s.phone("POST", "/api/selfedit", { cookie, body: { request: "x" } })).status, 202);
+  assert.strictEqual((await s.phone("POST", "/api/restart", { cookie, body: {} })).status, 200);
+  assert.deepStrictEqual(s.calls, ["selfedit", "restart"]);
   await s.close();
 });
 
-test("SECURITY: without a login the PIN route and Improve Bot are refused", async () => {
-  const s = await start({ authConfig: withPin });
-  assert.strictEqual((await s.phone("POST", "/api/admin/unlock", { body: { pin: PIN } })).status, 401);
+test("SECURITY: without a login the phone can't use Improve Bot or Restart", async () => {
+  const s = await start();
   assert.strictEqual((await s.phone("GET", "/api/selfedit")).status, 401);
-  await s.close();
-});
-
-test("the right PIN unlocks Improve Bot, and the session says so", async () => {
-  const s = await start({ authConfig: withPin });
-  const cookie = await s.login();
-  assert.strictEqual((await s.phone("GET", "/api/session", { cookie })).json().adminPin, true);
-  const unlock = await s.phone("POST", "/api/admin/unlock", { cookie, body: { pin: PIN } });
-  assert.strictEqual(unlock.status, 200);
-  assert.match(unlock.headers["set-cookie"][0], /HttpOnly; Secure; SameSite=Strict/);
-  assert.ok(!unlock.headers["set-cookie"][0].includes(PIN));
-  const both = `${cookie}; ${cookieOf(unlock)}`;
-  assert.strictEqual((await s.phone("GET", "/api/session", { cookie: both })).json().adminUnlocked, true);
-  assert.strictEqual((await s.phone("GET", "/api/selfedit", { cookie: both })).status, 200);
-  assert.strictEqual((await s.phone("POST", "/api/selfedit", { cookie: both, body: { request: "x" } })).status, 202);
-  assert.deepStrictEqual(s.calls, ["selfedit"]);
-  await s.close();
-});
-
-test("SECURITY: GitHub stays refused on the phone even when unlocked", async () => {
-  const s = await start({ authConfig: withPin });
-  const cookie = await s.login();
-  const both = `${cookie}; ${cookieOf(await s.phone("POST", "/api/admin/unlock", { cookie, body: { pin: PIN } }))}`;
-  assert.strictEqual((await s.phone("GET", "/api/git", { cookie: both })).status, 403);
-  assert.strictEqual((await s.phone("POST", "/api/git/push", { cookie: both, body: {} })).status, 403);
+  assert.strictEqual((await s.phone("POST", "/api/selfedit", { body: { request: "x" } })).status, 401);
+  assert.strictEqual((await s.phone("POST", "/api/restart", { body: {} })).status, 401);
   assert.deepStrictEqual(s.calls, []);
   await s.close();
 });
 
-test("SECURITY: 5 wrong PINs lock it, even for the right PIN, and logging in still works", () => {
-  let t = 1_000_000;
-  const auth = createAuth({ config: withPin, now: () => t });
-  for (let i = 0; i < MAX_FAILS; i++) assert.strictEqual(auth.unlock("000000").status, 401);
-  assert.strictEqual(auth.unlock(PIN).status, 429);
-  assert.strictEqual(auth.login(TOKEN).ok, true);
-  t += LOCK_MS + 1;
-  assert.strictEqual(auth.unlock(PIN).ok, true);
-});
-
-test("SECURITY: the unlock ends after 15 minutes, and a made-up cookie never works", async () => {
-  let t = 1_000_000;
-  const s = await start({ authConfig: withPin, now: () => t });
+test("a BOT_ADMIN_PIN left in .env does nothing, and the PIN route is gone", async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bot-env-")), ".env");
+  fs.writeFileSync(file, `BOT_PHONE_HOST=${HOST}\nBOT_PHONE_TOKEN=${TOKEN}\nBOT_ADMIN_PIN=482917\n`);
+  assert.strictEqual(Object.hasOwn(loadPhoneConfig(file), "adminPin"), false);
+  const s = await start();
   const cookie = await s.login();
-  const both = `${cookie}; ${cookieOf(await s.phone("POST", "/api/admin/unlock", { cookie, body: { pin: PIN } }))}`;
-  assert.strictEqual((await s.phone("GET", "/api/selfedit", { cookie: `${cookie}; bot_admin=made-up` })).status, 403);
-  t += UNLOCK_MS - 1000;
-  assert.strictEqual((await s.phone("GET", "/api/selfedit", { cookie: both })).status, 200);
-  t += 2000;
-  assert.strictEqual((await s.phone("GET", "/api/selfedit", { cookie: both })).status, 403);
-  await s.close();
-});
-
-test("logging out also ends the PIN unlock", async () => {
-  const s = await start({ authConfig: withPin });
-  const cookie = await s.login();
-  const both = `${cookie}; ${cookieOf(await s.phone("POST", "/api/admin/unlock", { cookie, body: { pin: PIN } }))}`;
-  assert.strictEqual((await s.phone("POST", "/api/logout", { cookie: both, body: {} })).status, 200);
-  assert.strictEqual((await s.phone("GET", "/api/selfedit", { cookie: both })).status, 403);
-  await s.close();
-});
-
-test("the PC needs no PIN, and has no PIN to enter", async () => {
-  const s = await start({ authConfig: withPin });
-  assert.strictEqual((await s.pc("GET", "/api/selfedit")).status, 200);
-  assert.strictEqual((await s.pc("POST", "/api/admin/unlock", { pin: PIN })).status, 400);
+  assert.strictEqual((await s.phone("POST", "/api/admin/unlock", { cookie, body: { pin: "482917" } })).status, 404);
   await s.close();
 });

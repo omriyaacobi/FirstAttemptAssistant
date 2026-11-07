@@ -30,7 +30,7 @@
   .app { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: minmax(0, 1fr); height: 100%; } /* the row must not grow with the sidebar, or the message box slides off screen */
   .side { background: var(--side-bg); border-right: 1px solid var(--line); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
   .chat { display: flex; flex-direction: column; min-width: 0; height: 100%; }
-  /* A Restart button always within reach, top right, on the PC (the phone has its own top bar and needs the PIN, so it uses Improve Bot). */
+  /* A Restart button always within reach, top right, on the PC (the phone has its own top bar, so it uses the button in Improve Bot). */
   #restartTop { position: fixed; top: 8px; right: 12px; z-index: 20; padding: 4px 12px; font-size: .8rem; }
   .topbar { display: none; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
   #thread { flex: 1; overflow-y: auto; padding: 24px 16px; }
@@ -147,7 +147,6 @@
   .improve-head .actions { margin: 0; }
   .improve-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .improve-body[hidden] { display: none; }
-  #pinForm { margin: 12px 16px; }
   #improveThread .empty { margin-top: 8vh; }
   #improveThread .me .sub { color: var(--muted); font-size: .75rem; margin: 2px 0 0; }
   .progress-lines { margin: 0 0 8px; padding-left: 18px; list-style: disc; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
@@ -179,9 +178,6 @@
   .st-ok { color: var(--ok); } .st-bad { color: var(--bad); } .st-run { color: var(--accent); } .st-muted { color: var(--muted); }
   .diff { max-height: 480px; overflow: auto; font-size: .8rem; }
   .status.bad { color: var(--bad); font-weight: 600; white-space: normal; max-width: none; }
-  #pinForm { display: flex; flex-direction: column; gap: 10px; }
-  #pinForm[hidden] { display: none; }
-  #pinForm input { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--accent); }
   .diff span { display: block; white-space: pre; }
   .d-add { background: rgba(47, 158, 68, .18); } .d-del { background: rgba(201, 42, 42, .18); }
   .d-hunk { color: var(--muted); } .d-file { font-weight: 700; margin-top: 6px; }
@@ -520,12 +516,6 @@
         <button class="ghost" id="backToChat">Back to chat</button>
       </div>
     </div>
-    <form id="pinForm" class="card" hidden>
-      <strong>Enter your PIN</strong>
-      <p class="sub">Improve Bot changes the code running on your computer, so the phone asks for your PIN (BOT_ADMIN_PIN). It stays unlocked for 15 minutes.</p>
-      <input id="pinInput" type="password" autocomplete="off" aria-label="PIN" placeholder="PIN">
-      <div class="row"><span class="status" id="pinStatus" role="status"></span><button type="submit">Unlock</button></div>
-    </form>
     <div id="improveBody" class="improve-body">
       <div class="scroll" id="improveScroll"><div class="inner">
         <div id="improveThread" aria-live="polite"></div>
@@ -878,14 +868,11 @@
       // You asked Bot to change itself: offer to open "Improve Bot" with the request filled in.
       // This only fills in the box; you still read it and press Start yourself.
       if (result.improve && result.improve.request) {
-        if (session.remote && !session.adminPin) card.appendChild(el("p", "sub", "Improve Bot works from the PC. To use it on the phone, set BOT_ADMIN_PIN in the .env file."));
-        else {
-          const actions = el("div", "actions");
-          const open = el("button", "", "Open Improve Bot with this request");
-          open.addEventListener("click", () => openImproveWith(result.improve.request));
-          actions.appendChild(open);
-          card.appendChild(actions);
-        }
+        const actions = el("div", "actions");
+        const open = el("button", "", "Open Improve Bot with this request");
+        open.addEventListener("click", () => openImproveWith(result.improve.request));
+        actions.appendChild(open);
+        card.appendChild(actions);
       }
       // Bot only PROPOSED a fact. Nothing is stored until you press Save.
       if (result.remember && result.remember.fact) card.appendChild(rememberButtons(result.remember.fact, result.remember.replaces && result.remember.replaces.id));
@@ -1605,53 +1592,20 @@
     if (name === "study") window.studyShow && window.studyShow(course, focus); else window.studyHide && window.studyHide();
     if (name === "improve") {
       updateGate();
-      if (!adminLocked()) loadProposals(true);
+      loadProposals(true);
       loadGit();
     }
   }
 
-  // On the phone, Improve Bot and Restart need the PIN (auth.js). The server enforces it; this only
-  // shows the right screen. When the 15 minutes end, the next request comes back with needPin.
-  const adminLocked = () => session.remote && !session.adminUnlocked;
+  // The phone has its own top bar and never pushes to GitHub.
   function updateGate() {
-    const locked = adminLocked();
-    $("pinForm").hidden = !locked;
-    $("improveBody").hidden = locked;
-    $("restartBtn").hidden = locked;
     $("restartTop").hidden = session.remote;
     $("gitCard").hidden = session.remote; // pushing stays PC-only
-    if (locked && !$("improveView").hidden) $("pinInput").focus();
-  }
-  async function adminFetch(url, options) {
-    const res = await fetch(url, options);
-    if (res.status === 403 && (await res.clone().json().catch(() => ({}))).needPin) {
-      session.adminUnlocked = false;
-      updateGate();
-      setStatus("pinStatus", "Unlock ended: enter your PIN again.", true);
-      throw new Error("enter your PIN again");
-    }
-    return res;
   }
   function setStatus(id, text, bad) {
     $(id).textContent = text;
     $(id).classList.toggle("bad", Boolean(bad));
   }
-  $("pinForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setStatus("pinStatus", "Checking...");
-    try {
-      const res = await fetch("/api/admin/unlock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: $("pinInput").value }) });
-      if (!res.ok) throw new Error((await res.json()).error);
-      $("pinInput").value = "";
-      session.adminUnlocked = true;
-      setStatus("pinStatus", "");
-      updateGate();
-      loadProposals(true);
-    } catch (error) {
-      setStatus("pinStatus", error.message, true);
-    }
-  });
-
   // Used by the button under Bot's answer when you asked it to change itself.
   function openImproveWith(request) {
     navGo({ view: "improve", id: currentId });
@@ -1667,7 +1621,7 @@
   async function restartBot() {
     if (!confirm("Restart Bot now?\n\nThis loads any new code. It takes a few seconds.")) return;
     try {
-      const res = await adminFetch("/api/restart", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const res = await fetch("/api/restart", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
     } catch (error) {
@@ -1678,7 +1632,7 @@
     await sleep(1500); // let the old server stop
     for (let i = 0; i < 40; i++) {
       try {
-        if ((await fetch("/api/session", { cache: "no-store" })).ok) return location.reload(); // a restart also ends the PIN unlock
+        if ((await fetch("/api/session", { cache: "no-store" })).ok) return location.reload();
       } catch (error) { /* not back yet */ }
       await sleep(750);
     }
@@ -1772,7 +1726,7 @@
 
   async function loadProposals(adopt) {
     try {
-      const { proposals, busy } = await (await adminFetch("/api/selfedit")).json();
+      const { proposals, busy } = await (await fetch("/api/selfedit")).json();
       const list = $("proposals");
       list.replaceChildren();
       if (!proposals.length) list.appendChild(el("li", "sub", "No requests yet."));
@@ -1960,7 +1914,7 @@
 
   async function openProposal(id, quiet) {
     try {
-      const res = await adminFetch("/api/selfedit/" + id);
+      const res = await fetch("/api/selfedit/" + id);
       if (!res.ok) return;
       const { proposal, now } = await res.json();
       if (now) serverOffset = now - Date.now();
@@ -1981,7 +1935,7 @@
     const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub." : "Throw this away?\n\nNothing in your project will change.";
     if (!confirm(text)) return;
     try {
-      const res = await adminFetch(`/api/selfedit/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const res = await fetch(`/api/selfedit/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
     } catch (error) {
@@ -2028,7 +1982,7 @@
     setStatus("improveStatus", "Sending...");
     try {
       const followUp = p && p.status === "ready";
-      const res = await adminFetch(followUp ? `/api/selfedit/${p.id}/message` : "/api/selfedit", {
+      const res = await fetch(followUp ? `/api/selfedit/${p.id}/message` : "/api/selfedit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(followUp ? { message: text } : { request: text, model: $("improveModel").value }),
@@ -2373,7 +2327,6 @@
       $("loginToken").focus();
       return;
     }
-    if (session.remote && !session.adminPin) $("improveBtn").hidden = true;
     setupNotifyButton();
     loadReminders();
     loadMemory();

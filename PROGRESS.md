@@ -584,3 +584,8 @@ What Omri touches first, made nicer. All in the page, `tutor.js`, `study-coach.j
 - **Not checked for real:** a real S23, Confirm against Google in the new page, a real upload in the live Bot, real streaming from Argon, a morning brief firing at its time.
 - **Known limits:** long chat sentences from the coach stay English apart from dates; messages with the same millisecond could be skipped when loading older ones; up to 5 waiting uploads stay in memory until the next upload; a failed daily summary retries on every message.
 - **Next:** Omri tells Bot where they are in each course, tries the tutor, sets the backup values in `.env`, presses Read again on Calculus, and answers the night questions in the `experiments/2026-11-07-night-decisions*.md` files.
+
+## Phone: no more PIN (2026-11-07, Omri asked)
+- On the phone the Restart and Improve Bot screens asked for a PIN and Omri could not type it. The PIN is gone: the phone login is enough for both. Push to GitHub stays PC-only.
+- Removed: the PIN code in `auth.js` and `server.js`, the PIN form in `public/index.html`, `/api/admin/unlock`. A `BOT_ADMIN_PIN` line left in `.env` does nothing and can be deleted.
+- Trade-off: anyone holding the unlocked, logged-in phone can restart Bot and approve code changes. To bring it back: tag `before-no-pin`.

@@ -43,7 +43,7 @@ function fakeApi() {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
     const method = String((options && options.method) || "GET").toUpperCase();
     if (method !== "GET") return json({ error: "Preview only: nothing is saved here." }, 403);
-    if (url.pathname === "/api/session") return json({ remote: false, loggedIn: true, images: true, pushKey: null, adminPin: false, adminUnlocked: false });
+    if (url.pathname === "/api/session") return json({ remote: false, loggedIn: true, images: true, pushKey: null });
     if (url.pathname === "/api/conversations") return json({ conversations: [{ id: "demo", title: demo.title }] });
     if (url.pathname === "/api/conversations/demo") return json(demo);
     if (url.pathname === "/api/jobs") return json({ jobs: [] });

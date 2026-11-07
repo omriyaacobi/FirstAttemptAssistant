@@ -98,7 +98,7 @@ test("the quota is a pop-up opened from a sidebar button, not a panel in the mid
 
 test("Improve Bot is a chat: progress, follow-ups, preview, and simple Approve and Reject buttons", () => {
   const view = html.slice(html.indexOf('<section class="chat" id="improveView"'), html.indexOf("<script>"));
-  for (const id of ["improveThread", "improveText", "improveStart", "newImprove", "previewFrame", "pinForm"]) assert.ok(view.includes(`id="${id}"`), id);
+  for (const id of ["improveThread", "improveText", "improveStart", "newImprove", "previewFrame"]) assert.ok(view.includes(`id="${id}"`), id);
   assert.match(view, /<iframe id="previewFrame"[^>]*sandbox="allow-scripts"/); // no allow-same-origin
   assert.doesNotMatch(view, /allow-same-origin/);
   assert.ok(html.includes("`/api/selfedit/${p.id}/message`")); // a follow-up goes to the same proposal
