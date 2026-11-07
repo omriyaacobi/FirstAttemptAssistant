@@ -308,9 +308,52 @@
   .callist { margin: 0; padding-left: 18px; }
   .callist li { margin: 6px 0; }
   @media (max-width: 600px) { .calcard .actions button { flex: 1 1 40%; min-height: 44px; } }
+
+  /* ===== The one conversation (BOT_THREAD=on). Everything here only matters with body.thread; with the switch off none of it applies. ===== */
+  body.thread nav[aria-label="Conversations"] { display: none; }
+  body.thread .course-cols > section:nth-child(2) { display: none; } /* the old per-course chats */
+  body.thread .course-cols { grid-template-columns: minmax(0, 1fr); }
+  #thread { position: relative; }
+  .tolderrow { display: flex; justify-content: center; margin: 0 0 12px; }
+  .tolderrow button { min-height: 44px; }
+  .tday { margin-bottom: 8px; }
+  .tdayhead { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; margin: 0 0 8px; padding: 6px 12px; border: 1px solid var(--line); text-align: left; }
+  .tdayhead[aria-expanded="false"]::after { content: "+"; color: var(--muted); }
+  .tdayhead[aria-expanded="true"]::after { content: "\2212"; color: var(--muted); }
+  .tdaylabel { font-weight: 700; flex: 1; }
+  .tdaybody[hidden] { display: none; }
+  .tgroup { margin-bottom: 14px; }
+  .tgroup .msg { margin-bottom: 8px; }
+  .troute { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .badge.route { background: var(--mine); color: var(--accent); }
+  .tagain { min-height: 44px; padding: 0 12px; font-size: .85rem; }
+  .tmsg .tdel { display: block; margin-left: auto; max-height: 0; min-height: 0; padding: 0; overflow: hidden; opacity: 0; border: 0; font-size: .85rem; }
+  .tmsg.sel .tdel, .tmsg:focus-within .tdel { max-height: none; min-height: 44px; min-width: 44px; padding: 0 14px; opacity: 1; border: 1px solid var(--line); margin-top: 4px; }
+  @media (hover: hover) { .tmsg:hover .tdel { max-height: none; min-height: 44px; min-width: 44px; padding: 0 14px; opacity: 1; border: 1px solid var(--line); margin-top: 4px; } }
+  .ttrash { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 44px; padding: 4px 0; }
+  .ttrash button { min-height: 44px; }
+  .tproposal button, .tready { min-height: 44px; }
+  .tready { position: sticky; bottom: 8px; display: block; width: max-content; margin: 0 auto; z-index: 4; border-radius: 99px; padding: 0 18px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  .tready[hidden] { display: none; }
+  .tnotice { margin-bottom: 16px; }
+  .tnotice button { min-height: 44px; margin-top: 10px; }
+  .twork .bot.think { margin-top: 4px; }
+  .tstudy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; margin: 12px 0; }
+  .tcourse { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .tcourse strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+  .tline { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .tlabel { font-size: .8rem; }
+  .tdue { margin: 0; padding-left: 18px; }
+  .tquestion { border-left: 3px solid var(--accent); padding-left: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .tquestion button, .tcourse .actions button { min-height: 44px; }
+  /* tap targets of at least 44 px for the pieces the old page drew smaller */
+  body.thread button.chip { min-height: 44px; }
+  body.thread .bot summary, body.thread .msg > details > summary { display: flex; align-items: center; min-height: 44px; }
+  body.thread #micLang, body.thread #mic, body.thread .composer .tools button { min-height: 44px; }
 </style>
 </head>
 <body>
+<button class="ghost" id="restartTop" title="Restart Bot to load new code (needs start-web.cmd)">Restart Bot</button>
 <div id="toasts" role="status" aria-live="polite"></div>
 <div id="loginView" class="login" hidden>
   <form id="loginForm" class="card">
@@ -437,6 +480,20 @@
     <div class="scroll"><div class="inner">
       <div class="row" style="margin-top:0"><h1 id="studyTitle" dir="auto">Courses</h1><span class="status" id="studyStatus" role="status"></span></div>
       <div id="studyBody"></div>
+    </div></div>
+  </section>
+
+  <section class="chat" id="tstudyView" hidden>
+    <div class="topbar">
+      <button class="iconbtn" id="menu4" aria-label="Show conversations" aria-expanded="false" aria-controls="side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="titles"><strong>Bot</strong><span>Study</span></div>
+    </div>
+    <div class="scroll"><div class="inner">
+      <div class="row" style="margin-top:0"><h1>Study</h1><span class="status" id="tstudyStatus" role="status"></span></div>
+      <p class="sub">A view of where you are in each course. To change anything, tell Bot in the conversation.</p>
+      <div id="tstudyBody"></div>
     </div></div>
   </section>
 
@@ -1297,6 +1354,7 @@
 
   const FAST_POLL_WINDOW_MS = 40000;
   async function pollJobs() {
+    if (session.thread) return; // one conversation (BOT_THREAD=on): the thread script below follows the jobs
     if (jobState.polling) return;
     jobState.polling = true;
     try {
@@ -1368,7 +1426,7 @@
       $("task").focus();
     }
   }
-  pollJobs();
+  // (the first pollJobs() call is made by the start-up code at the bottom, once the server has said which mode it is in)
 
   // ---- Quota panel ----
   // The numbers are read from agy only while the pop-up is open (it is a slow call, and nobody sees them otherwise).
@@ -1453,7 +1511,7 @@
   function setSide(open) {
     $("side").classList.toggle("open", open);
     $("backdrop").classList.toggle("show", open);
-    ["menu", "menu2", "menu3"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
+    ["menu", "menu2", "menu3", "menu4"].forEach((id) => $(id).setAttribute("aria-expanded", String(open)));
   }
 
   // Go somewhere new (another chat, the Improve view). Never adds a duplicate of where we already are.
@@ -1499,6 +1557,7 @@
     if (!s || !s.view) return; // not one of ours
     navState = s;
     if (s.view === "improve") showView("improve");
+    else if (s.view === "tstudy") showView("tstudy");
     else if (s.view === "study") showView("study", s.course);
     else if (s.id && s.id !== currentId) openChat(s.id, true);
     else if (!s.id && (currentId || !sameCourse(s.course, currentCourse && currentCourse.id))) newChat(true, s.course ? { id: s.course, name: courseNames.get(s.course) || "Course" } : null);
@@ -1507,6 +1566,7 @@
   });
 
   $("menu").addEventListener("click", openSide);
+  $("menu4").addEventListener("click", openSide);
   $("sideClose").addEventListener("click", closeSide);
   $("backdrop").addEventListener("click", closeSide);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && navState.side) closeSide(); });
@@ -1532,6 +1592,8 @@
     $("chatView").hidden = name !== "chat";
     $("improveView").hidden = name !== "improve";
     $("studyView").hidden = name !== "study";
+    $("tstudyView").hidden = name !== "tstudy";
+    if (name === "tstudy" && window.botThread) window.botThread.showStudy();
     if (name === "study") window.studyShow && window.studyShow(course, focus); else window.studyHide && window.studyHide();
     if (name === "improve") {
       updateGate();
@@ -2311,14 +2373,690 @@
     loadBackup();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
-    showEmpty();
-    loadChats();
+    if (session.thread && window.botThread) window.botThread.start();
+    else { showEmpty(); loadChats(); pollJobs(); }
     loadQuota();
     if (matchMedia("(pointer: coarse)").matches) $("task").placeholder = "Type a task..."; // a phone has no Shift+Enter
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
   })();
 </script>
 <script src="/study.js"></script>
-<button class="ghost" id="restartTop" title="Restart Bot to load new code (needs start-web.cmd)">Restart Bot</button>
+<script id="threadScript">
+  // ===== The ONE conversation (only when the server says BOT_THREAD is on) =====
+  // With the switch off nothing below runs: window.botThread.start() is only called when /api/session says "thread: true".
+  // It reuses the page's own helpers (el, renderResult, renderText, botCard, logDetails, errorCard, photo) and takes over
+  // sending and following jobs. All text goes in with textContent; the only HTML-like thing is the existing math path.
+
+  // <thread-pure>
+  // Small helpers with no page in them; thread-page.test.js runs them on their own.
+  const T_PAGE = 50;
+  const tPad = (n) => String(n).padStart(2, "0");
+  const tDayKey = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${tPad(d.getMonth() + 1)}-${tPad(d.getDate())}`; };
+  function tDayLabel(key, nowMs) {
+    if (key === tDayKey(nowMs)) return "Today";
+    if (key === tDayKey(nowMs - 86400000)) return "Yesterday";
+    const [y, m, d] = key.split("-").map(Number);
+    const text = new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", ...(y !== new Date(nowMs).getFullYear() ? { year: "numeric" } : {}) });
+    return text;
+  }
+  // Today and yesterday are open, older days start folded away.
+  const tDayOpen = (key, nowMs) => key >= tDayKey(nowMs - 86400000);
+  // The small chip on a reply: which part of Bot answered. `courses` is a Map id -> name.
+  function tRoute(m, courses) {
+    const topic = typeof m.topic === "string" ? m.topic : "general";
+    if (topic.startsWith("course:")) return { label: (m.result && m.result.courseName) || courses.get(topic.slice(7)) || "Course", wrong: true };
+    if (topic === "calendar") return { label: "Calendar", wrong: true };
+    if (topic === "study") return { label: "Study", wrong: true };
+    if (m.imported) return { label: "Earlier chat", wrong: false };
+    return { label: "General", wrong: false };
+  }
+  // "Wrong? ask again normally": the same question, with one plain sentence that tells the front desk to answer it as an ordinary
+  // question. (There is no server option for this yet; the sentence is visible in the conversation, nothing is hidden.)
+  const tAskAgainText = (question) => "(Please answer this as an ordinary question, not from my course files, my calendar or my study plan.) " + question;
+  // Study page: turn what the server knows about a course into plain lines. Works with the tracker's progress() object, with
+  // ready-made strings, or with nothing at all.
+  function tStudyLines(c) {
+    const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const text = (v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : null);
+    let should = text(c.shouldBe);
+    if (!should && num(c.held) !== null) should = c.held === 0 ? "No lectures held yet" : `${c.held} lecture${c.held === 1 ? "" : "s"} held so far`;
+    let at = text(c.youAre);
+    if (!at && c.position && c.position.known) at = c.position.n ? `Lecture ${c.position.n}${c.position.note ? ", " + String(c.position.note).slice(0, 100) : ""}` : "Position set";
+    if (!at && num(c.understood) !== null) at = `${c.understood} lecture${c.understood === 1 ? "" : "s"} checked as understood` + (Array.isArray(c.behind) && c.behind.length ? `, ${c.behind.length} behind` : "");
+    const due = (Array.isArray(c.assignments) ? c.assignments : Array.isArray(c.due) ? c.due : [])
+      .filter((a) => a && typeof a.title === "string")
+      .map((a) => (a.title.slice(0, 120) + (typeof a.due === "string" && a.due ? ` (due ${a.due.slice(0, 10)})` : "")))
+      .slice(0, 6);
+    if (num(c.topicsDue) > 0) due.push(`${c.topicsDue} topic${c.topicsDue === 1 ? "" : "s"} to review`);
+    const question = text(c.question) || text(c.openQuestion);
+    return { should, at, due, question };
+  }
+  // </thread-pure>
+
+  window.botThread = (() => {
+    const T = {
+      on: false,
+      msgs: new Map(), // id -> message
+      nodes: new Map(), // id -> its element (a question's whole group, or an answer's holder)
+      groups: new Map(), // question id (or an orphan answer's id) -> group element
+      answersOf: new Map(), // question id -> [answer ids]
+      days: new Map(), // day key -> { box, body, head, count }
+      courses: new Map(),
+      jobs: new Map(), // running jobs: job id -> job
+      cards: new Map(), // job id -> { root, step, partial, elapsed, ... }
+      hasMore: false,
+      oldest: null,
+      busy: false,
+      polling: false,
+      timer: null,
+      ticker: null,
+      offset: 0,
+      ready: null, // the newest answer that arrived out of sight
+      lastRefresh: 0,
+    };
+    const scroller = () => $("thread");
+    const nearBottom = () => { const t = scroller(); return t.scrollHeight - t.scrollTop - t.clientHeight < 140; };
+    const toBottom = () => { const t = scroller(); t.scrollTop = t.scrollHeight; };
+    const api = async (url, options) => {
+      const res = await fetch(url, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(data.error || "server answered " + res.status), { status: res.status });
+      return data;
+    };
+    const small = (text, cls) => { const p = el("p", cls || "sub", text); p.dir = "auto"; return p; };
+
+    // ---- days and groups ----
+    function dayFor(key) {
+      let d = T.days.get(key);
+      if (d) return d;
+      const box = el("section", "tday");
+      box.dataset.day = key;
+      const head = el("button", "tdayhead ghost");
+      head.type = "button";
+      const label = el("span", "tdaylabel");
+      const count = el("span", "tdaycount sub");
+      head.append(label, count);
+      const body = el("div", "tdaybody");
+      const open = tDayOpen(key, Date.now());
+      body.hidden = !open;
+      head.setAttribute("aria-expanded", String(open));
+      head.addEventListener("click", () => { body.hidden = !body.hidden; head.setAttribute("aria-expanded", String(!body.hidden)); });
+      box.append(head, body);
+      d = { box, body, head, label, count, n: 0 };
+      label.textContent = tDayLabel(key, Date.now());
+      const holder = $("tdays");
+      const after = [...holder.children].reverse().find((c) => c.dataset.day < key); // keep the days in order
+      if (after) after.after(box); else holder.prepend(box);
+      T.days.set(key, d);
+      return d;
+    }
+    function countDay(key) {
+      const d = T.days.get(key);
+      if (!d) return;
+      d.n = d.body.querySelectorAll(".tmsg").length;
+      d.count.textContent = ` ${d.n} message${d.n === 1 ? "" : "s"}`;
+    }
+    function groupFor(rootId, at) {
+      let g = T.groups.get(rootId);
+      if (g) return g;
+      const key = tDayKey(at);
+      const d = dayFor(key);
+      g = el("div", "tgroup");
+      g.dataset.at = String(at);
+      g.dataset.day = key;
+      const later = [...d.body.children].reverse().find((c) => Number(c.dataset.at) <= at);
+      if (later) later.after(g); else d.body.prepend(g);
+      T.groups.set(rootId, g);
+      return g;
+    }
+
+    // ---- one message ----
+    function deleteButton(m, node) {
+      const del = el("button", "ghost tdel", "Delete");
+      del.type = "button";
+      del.setAttribute("aria-label", "Delete this message (kept 30 days in the trash)");
+      del.addEventListener("click", async () => {
+        del.disabled = true;
+        try {
+          await api("/api/thread/" + m.id, { method: "DELETE" });
+          trashedNode(m, node);
+        } catch (error) { del.disabled = false; toast("Not deleted: " + error.message); }
+      });
+      return del;
+    }
+    // A deleted message is replaced by one line with a Restore button (the server keeps it 30 days).
+    function trashedNode(m, node) {
+      const line = el("div", "ttrash");
+      line.append(el("span", "sub", "Message deleted. Kept for 30 days."));
+      const back = el("button", "ghost", "Restore");
+      back.type = "button";
+      back.addEventListener("click", async () => {
+        back.disabled = true;
+        try {
+          await api(`/api/thread/${m.id}/restore`, { method: "POST" });
+          const fresh = m.role === "user" ? questionNode(m) : answerNode(m);
+          line.replaceWith(fresh);
+          T.nodes.set(m.id, fresh);
+          if (m.role === "user") { const g = T.groups.get(m.id); if (g) g.q = fresh; }
+        } catch (error) { back.disabled = false; toast("Not restored: " + error.message); }
+      });
+      line.appendChild(back);
+      node.replaceWith(line);
+      T.nodes.set(m.id, line);
+    }
+    // Tap a message to show its Delete button (it stays out of the way otherwise).
+    function revealOnTap(node) {
+      node.addEventListener("click", (e) => { if (e.target.closest("button, a, summary, input, select, textarea, details")) return; node.classList.toggle("sel"); });
+    }
+    function questionNode(m) {
+      const node = el("div", "msg tmsg tq");
+      node.dataset.id = m.id;
+      const bubble = el("div", "me", m.text);
+      bubble.dir = "auto";
+      node.append(bubble, deleteButton(m, node));
+      revealOnTap(node);
+      return node;
+    }
+    function answerNode(m) {
+      const node = el("div", "msg tmsg ta");
+      node.dataset.id = m.id;
+      const route = tRoute(m, T.courses);
+      const row = el("div", "troute");
+      const chip = el("span", "badge route", route.label);
+      chip.dir = "auto";
+      row.appendChild(chip);
+      const question = m.replyTo && T.msgs.get(m.replyTo);
+      if (route.wrong && question && question.role === "user") {
+        const again = el("button", "ghost tagain", "Wrong? Ask again normally");
+        again.type = "button";
+        again.addEventListener("click", async () => {
+          again.disabled = true;
+          try { await ask(tAskAgainText(question.text), null, false); again.replaceWith(el("span", "sub", "Asked again.")); } catch (error) { again.disabled = false; toast("Not sent: " + error.message); }
+        });
+        row.appendChild(again);
+      }
+      node.appendChild(row);
+      if (m.log && m.log.length) node.appendChild(logDetails(m.log).details);
+      if (m.error) node.appendChild(errorCard(String(m.text || "").replace(/^Something went wrong: /, "")));
+      else if (m.result && m.result.mode === "study") node.appendChild(studyCard(m));
+      else if (m.result && m.result.rule === "asked you a question") node.appendChild(questionCard(m));
+      else node.appendChild(m.result ? renderResult(m.result) : botCard([["Answer"]], renderText(m.text)));
+      const proposal = m.result && (m.result.proposal || (m.result.study && m.result.study.proposal));
+      if (proposal && proposal.id) node.appendChild(proposalButtons(proposal));
+      node.appendChild(deleteButton(m, node));
+      revealOnTap(node);
+      return node;
+    }
+    // Bot asks YOU something: a card with a button that puts the cursor in the box.
+    function questionCard(m) {
+      const body = el("div");
+      body.appendChild(renderText(m.text));
+      const actions = el("div", "actions");
+      const reply = el("button", "", "Answer");
+      reply.type = "button";
+      reply.addEventListener("click", () => { $("task").focus(); });
+      actions.appendChild(reply);
+      body.appendChild(actions);
+      return botCard([["Bot asks you"]], body);
+    }
+    // A study answer: the text, and (when Bot proposes something) the buttons come from proposalButtons.
+    function studyCard(m) {
+      const r = m.result;
+      const head = [["Answer"]];
+      if (r.model) head.push([String(r.model), "badge"]);
+      if (r.seconds) head.push([`${r.seconds}s`, "badge"]);
+      const card = botCard(head, renderText(m.text || r.answer || ""));
+      if (r.sources && r.sources.length && r.courseId) {
+        const src = el("div", "sources");
+        r.sources.forEach((s) => {
+          if (!s || !s.fileId) return;
+          const chip = el("button", "ghost chip", `${s.file}, p.${s.page}`);
+          chip.type = "button";
+          chip.addEventListener("click", () => window.studyOpenSource && window.studyOpenSource(r.courseId, s.fileId, s.file, s.page));
+          src.appendChild(chip);
+        });
+        if (src.children.length) card.appendChild(src);
+      }
+      return card;
+    }
+    // A proposal from Bot (an assignment to save, a lecture to attach). Nothing is saved before a tap; a tap just sends the
+    // plain words "yes" / "no" as your next message, which Bot reads as the answer to its own question.
+    function proposalButtons(proposal) {
+      const actions = el("div", "actions tproposal");
+      const yes = el("button", "", "Yes, save it");
+      const no = el("button", "ghost", "No, drop it");
+      for (const b of [yes, no]) b.type = "button";
+      const send = (text) => async () => {
+        yes.disabled = no.disabled = true;
+        try { await ask(text, null, false); actions.replaceChildren(el("span", "sub", "Sent.")); } catch (error) { yes.disabled = no.disabled = false; toast("Not sent: " + error.message); }
+      };
+      yes.addEventListener("click", send("Yes, save it."));
+      no.addEventListener("click", send("No, drop it."));
+      actions.append(yes, no);
+      return actions;
+    }
+
+    // Adds one message to the page (does nothing if it is already there). Returns its element.
+    function add(m) {
+      if (!m || typeof m.id !== "string" || T.msgs.has(m.id)) return null;
+      T.msgs.set(m.id, m);
+      if (m.role === "user") {
+        const g = groupFor(m.id, m.at);
+        const node = questionNode(m);
+        g.prepend(node);
+        g.q = node;
+        T.nodes.set(m.id, node);
+        // answers that were loaded before their question (an older page came later) move under it now
+        for (const aid of T.answersOf.get(m.id) || []) {
+          const old = T.groups.get(aid);
+          const an = T.nodes.get(aid);
+          if (old && an && old !== g) { g.appendChild(an); old.remove(); T.groups.delete(aid); }
+        }
+        countDay(tDayKey(m.at));
+        return node;
+      }
+      const qid = m.replyTo && T.msgs.has(m.replyTo) ? m.replyTo : null;
+      if (m.replyTo) { const list = T.answersOf.get(m.replyTo) || []; list.push(m.id); T.answersOf.set(m.replyTo, list); }
+      const node = answerNode(m);
+      T.nodes.set(m.id, node);
+      const g = qid && T.groups.get(qid) ? T.groups.get(qid) : groupFor(m.id, m.at);
+      // before the "working" card of the same group, if there is one
+      const card = g.querySelector(".twork");
+      if (card) g.insertBefore(node, card); else g.appendChild(node);
+      countDay(g.dataset.day);
+      return node;
+    }
+    function addAll(list) {
+      const added = [];
+      for (const m of list) { const n = add(m); if (n) added.push({ m, n }); }
+      return added;
+    }
+
+    // ---- loading ----
+    async function loadFirst() {
+      const data = await api(`/api/thread?limit=${T_PAGE}`);
+      (data.courses || []).forEach((c) => T.courses.set(c.id, c.name));
+      addAll(data.messages || []);
+      T.hasMore = !!data.hasMore;
+      T.oldest = data.oldest;
+      paintOlder();
+      if (!T.msgs.size) $("tempty").hidden = false;
+      toBottom();
+    }
+    function paintOlder() {
+      $("tolder").hidden = !T.hasMore;
+    }
+    async function loadOlder() {
+      const btn = $("tolder");
+      if (!T.hasMore || btn.disabled) return;
+      btn.disabled = true;
+      try {
+        const t = scroller();
+        const before = t.scrollHeight - t.scrollTop;
+        const data = await api(`/api/thread?limit=${T_PAGE}&before=${T.oldest}`);
+        const added = addAll(data.messages || []);
+        // the days that just arrived open, so what you asked for is visible
+        new Set(added.map((a) => tDayKey(a.m.at))).forEach((k) => { const d = T.days.get(k); if (d) { d.body.hidden = false; d.head.setAttribute("aria-expanded", "true"); } });
+        T.hasMore = !!data.hasMore;
+        if (data.oldest) T.oldest = data.oldest;
+        paintOlder();
+        t.scrollTop = t.scrollHeight - before; // keep what you were reading where it was
+      } catch (error) { toast("Could not load older messages: " + error.message); } finally { btn.disabled = false; }
+    }
+    // The newest page again, adding only what is new. An answer that arrives out of sight gets the "answer ready" chip.
+    async function refreshNewest() {
+      T.lastRefresh = Date.now();
+      let data;
+      try { data = await api(`/api/thread?limit=${T_PAGE}`); } catch (error) { return []; }
+      (data.courses || []).forEach((c) => T.courses.set(c.id, c.name));
+      const wasBottom = nearBottom();
+      const added = addAll(data.messages || []);
+      if (!T.msgs.size) $("tempty").hidden = false; else $("tempty").hidden = true;
+      const answers = added.filter((a) => a.m.role === "assistant");
+      if (wasBottom) toBottom();
+      else if (answers.length) showReady(answers[answers.length - 1].n);
+      else if (added.length) checkReady();
+      return added;
+    }
+    function showReady(node) {
+      T.ready = node;
+      $("tready").hidden = false;
+    }
+    function checkReady() {
+      if (!T.ready) return;
+      const a = T.ready.getBoundingClientRect(), b = scroller().getBoundingClientRect();
+      if (a.top < b.bottom - 40 && a.bottom > b.top + 40 || !document.body.contains(T.ready)) { T.ready = null; $("tready").hidden = true; }
+    }
+
+    // ---- sending ----
+    async function ask(task, image, noPlan) {
+      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(image ? { image } : {}) }) });
+      const job = body.job;
+      T.offset = job.now - Date.now();
+      T.jobs.set(job.id, job);
+      await refreshNewest(); // the question was saved at once, so it is on the page now
+      toBottom();
+      syncCards();
+      speedUp();
+      return job;
+    }
+    // The page's own send(): the composer is never locked. Only the moment the message is on its way is busy.
+    async function threadSend() {
+      const attached = photo;
+      const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
+      if (!task || T.busy) return;
+      T.busy = true;
+      $("send").disabled = true;
+      try {
+        await ask(task, attached ? attached.dataUrl : null, $("noplan").checked);
+        $("task").value = "";
+        clearPhoto();
+        $("tempty").hidden = true;
+      } catch (error) {
+        toast("Not sent: " + error.message); // your text stays in the box
+      } finally {
+        T.busy = false;
+        $("send").disabled = false;
+        if (!session.remote) $("task").focus();
+      }
+    }
+
+    // ---- the working cards ----
+    function workCard(job) {
+      const root = el("div", "msg twork");
+      const box = el("div", "bot think");
+      const head = el("div", "step-head");
+      const title = el("span", "", "Bot is thinking");
+      const elapsed = el("span", "badge elapsed", "0:00");
+      head.append(el("span", "spinner"), title, elapsed);
+      const step = el("div", "think-step", job.step || "Starting");
+      step.dir = "auto";
+      const partial = el("div", "answer partial");
+      partial.dir = "auto";
+      partial.hidden = true;
+      box.append(head, step, partial, el("div", "think-hint", "You can keep writing. The answer appears under its own question."));
+      root.appendChild(box);
+      return { root, title, step, partial, elapsed, text: null };
+    }
+    function syncCards() {
+      // cards for the jobs that run
+      for (const job of T.jobs.values()) {
+        const group = job.messageId && T.groups.get(job.messageId);
+        if (!group) continue;
+        let card = T.cards.get(job.id);
+        if (card && !group.contains(card.root)) { card.root.remove(); T.cards.delete(job.id); card = null; }
+        if (!card) {
+          card = workCard(job);
+          T.cards.set(job.id, card);
+          group.appendChild(card.root);
+          if (nearBottom()) toBottom();
+        }
+        card.title.textContent = job.waiting ? "Waiting for a free slot" : "Bot is thinking";
+        card.step.textContent = (job.waiting ? "Other slow tasks are running; this one starts when one is done." : (job.step || "Working") + "...");
+        const text = job.partial || "";
+        if (card.text !== text) {
+          const stick = nearBottom();
+          card.text = text;
+          fillMarkdown(card.partial, text);
+          card.partial.hidden = !text;
+          if (text && stick) toBottom();
+        }
+        card.elapsed.textContent = clock(Date.now() + T.offset - job.startedAt);
+      }
+      // cards of jobs that are gone
+      for (const [id, card] of T.cards) {
+        if (!T.jobs.has(id)) { card.root.remove(); T.cards.delete(id); }
+      }
+    }
+    function tick() {
+      if (!T.jobs.size) { clearInterval(T.ticker); T.ticker = null; return; }
+      syncCards();
+    }
+    function speedUp() {
+      if (!T.ticker && T.jobs.size) T.ticker = setInterval(tick, 1000);
+      clearTimeout(T.timer);
+      T.timer = setTimeout(poll, 700);
+    }
+
+    // ---- following the jobs ----
+    async function poll() {
+      if (T.polling || !T.on) return;
+      T.polling = true;
+      let nextMs = 10000;
+      try {
+        // "watching" tells Bot a page is open on the thread, so it skips the phone notification
+        const res = await fetch("/api/jobs" + (document.hidden ? "" : "?watching=thread"));
+        if (!res.ok) return;
+        const { jobs } = await res.json();
+        const running = jobs.filter((j) => j.status === "running");
+        const before = new Set(T.jobs.keys());
+        T.jobs = new Map(running.map((j) => [j.id, j]));
+        running.forEach((j) => { T.offset = j.now - Date.now(); });
+        const finished = [...before].filter((id) => !T.jobs.has(id));
+        // A job that ended (or one started on another device): fetch what is new, then show the answers.
+        const unknownRunning = running.some((j) => j.messageId && !T.groups.has(j.messageId));
+        if (finished.length || unknownRunning || Date.now() - T.lastRefresh > 60000) await refreshNewest();
+        syncCards();
+        if (T.jobs.size && !T.ticker) T.ticker = setInterval(tick, 1000);
+        if (finished.length) { loadReminders(); loadQuota(); }
+        const fast = running.some((j) => j.partial || /^Asking |^Reading /.test(j.step || "") || Date.now() + T.offset - j.startedAt < 40000);
+        nextMs = fast ? 600 : running.length ? 2000 : 10000;
+      } catch (error) { /* offline for a moment: the next poll catches up */ } finally {
+        T.polling = false;
+        clearTimeout(T.timer);
+        T.timer = document.hidden ? null : setTimeout(poll, nextMs);
+      }
+    }
+
+    // ---- recall buttons: an old chat opens read-only in the popup, never in the thread ----
+    function oldChatButtons(chats) {
+      const actions = el("div", "actions");
+      for (const chat of chats) {
+        const open = el("button", "ghost", "Look at: " + chat.title);
+        open.dir = "auto";
+        open.type = "button";
+        open.addEventListener("click", async () => {
+          try {
+            const conv = await api("/api/conversations/" + encodeURIComponent(chat.id));
+            $("sourceTitle").textContent = conv.title || chat.title;
+            $("sourceActions").replaceChildren();
+            const box = $("sourceBody");
+            box.replaceChildren();
+            (conv.messages || []).forEach((x) => { const row = el("div", x.role === "user" ? "me" : "answer", x.text); row.dir = "auto"; row.style.marginBottom = "8px"; box.appendChild(row); });
+            if (!$("sourceDialog").open) $("sourceDialog").showModal();
+          } catch (error) { toast("This one is part of the conversation above, not a separate chat."); }
+        });
+        actions.appendChild(open);
+      }
+      return actions;
+    }
+
+    // ---- files from the composer: a picture goes with the message (the page's own photo code); any other file goes into a course ----
+    function fileDialog(file) {
+      const dlg = el("dialog", "popup");
+      dlg.appendChild(el("strong", "", "Add this file to a course"));
+      const name = el("p", "sub", file.name + " (" + Math.max(1, Math.round(file.size / 1024)) + " KB)");
+      name.dir = "auto";
+      dlg.appendChild(name);
+      const pick = el("select");
+      pick.setAttribute("aria-label", "Course");
+      [...T.courses.entries()].forEach(([id, n]) => { const o = el("option", "", n); o.value = id; pick.appendChild(o); });
+      const status = el("p", "sub");
+      const actions = el("div", "actions");
+      const go = el("button", "", "Add to course");
+      const cancel = el("button", "ghost", "Cancel");
+      for (const b of [go, cancel]) b.type = "button";
+      cancel.addEventListener("click", () => { dlg.close(); dlg.remove(); });
+      go.addEventListener("click", async () => {
+        if (!pick.value) return;
+        go.disabled = true;
+        status.textContent = "Uploading...";
+        try {
+          if (file.size > 50 * 1024 * 1024) throw new Error("too big (50 MB at most)");
+          await api(`/api/courses/${pick.value}/files?name=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+          dlg.close(); dlg.remove();
+          toast(`Uploaded to ${T.courses.get(pick.value) || "the course"}. Bot is reading it; the progress is under Study, Files.`);
+        } catch (error) { go.disabled = false; status.textContent = error.message; }
+      });
+      actions.append(go, cancel);
+      if (!T.courses.size) { status.textContent = "There is no course yet. Add one under Study, Files."; go.disabled = true; }
+      dlg.append(pick, status, actions);
+      document.body.appendChild(dlg);
+      dlg.showModal();
+    }
+
+    // ---- the Study page (view only; files live in the old Courses screen) ----
+    let studyData = null;
+    async function showStudy() {
+      const body = $("tstudyBody");
+      body.replaceChildren(el("p", "sub", "Loading..."));
+      let list = null, courseList = [];
+      try { courseList = (await api("/api/courses")).courses || []; } catch (error) { /* the study notebooks may be off */ }
+      let note = null;
+      try {
+        const data = await api("/api/study");
+        list = Array.isArray(data.courses) ? data.courses : null;
+      } catch (error) { note = "Bot's study plan is not connected to this page yet, so only your files are shown."; }
+      const byId = new Map((list || []).map((c) => [c.courseId || c.id, c]));
+      studyData = courseList.map((c) => ({ ...c, study: byId.get(c.id) || null }));
+      for (const [id, c] of byId) if (!courseList.some((x) => x.id === id)) studyData.push({ id, name: c.name || id, files: 0, pages: 0, study: c });
+      body.replaceChildren();
+      if (note) body.appendChild(small(note));
+      if (!studyData.length) body.appendChild(small("No courses yet. Add one under Files."));
+      const grid = el("div", "tstudy-grid");
+      studyData.forEach((c) => grid.appendChild(courseCard(c)));
+      body.appendChild(grid);
+      const row = el("div", "actions");
+      const files = el("button", "ghost", "Add a course or manage files");
+      files.type = "button";
+      files.addEventListener("click", () => { navGo({ view: "study", id: null, course: null }); showView("study"); });
+      row.appendChild(files);
+      body.appendChild(row);
+    }
+    function courseCard(c) {
+      const card = el("section", "card tcourse");
+      const title = el("strong", "", c.name);
+      title.dir = "auto";
+      card.appendChild(title);
+      const lines = c.study ? tStudyLines(c.study) : { should: null, at: null, due: [], question: null };
+      const line = (label, value, fallback) => {
+        const row = el("div", "tline");
+        row.appendChild(el("span", "sub tlabel", label));
+        const v = el("span", value ? "" : "sub", value || fallback);
+        v.dir = "auto";
+        row.appendChild(v);
+        card.appendChild(row);
+      };
+      line("Where you should be", lines.should, "Not known yet");
+      line("Where you are", lines.at, "Tell Bot in the conversation");
+      const dueRow = el("div", "tline");
+      dueRow.appendChild(el("span", "sub tlabel", "Due"));
+      if (lines.due.length) { const ul = el("ul", "tdue"); lines.due.forEach((d) => { const li = el("li", "", d); li.dir = "auto"; ul.appendChild(li); }); dueRow.appendChild(ul); } else dueRow.appendChild(el("span", "sub", "Nothing due"));
+      card.appendChild(dueRow);
+      if (lines.question) {
+        const q = el("div", "tquestion");
+        q.appendChild(el("span", "sub tlabel", "Bot's open question"));
+        const t = el("div", "", lines.question);
+        t.dir = "auto";
+        q.appendChild(t);
+        const reply = el("button", "ghost", "Answer in the conversation");
+        reply.type = "button";
+        reply.addEventListener("click", () => { navGo({ view: "chat", id: null }); showView("chat"); $("task").focus(); });
+        q.appendChild(reply);
+        card.appendChild(q);
+      }
+      card.appendChild(el("div", "sub", `${c.files || 0} file${c.files === 1 ? "" : "s"}, ${c.pages || 0} pages read`));
+      const actions = el("div", "actions");
+      const files = el("button", "ghost", "Files");
+      files.type = "button";
+      files.addEventListener("click", () => { navGo({ view: "study", id: null, course: c.id }); showView("study", c.id); });
+      actions.appendChild(files);
+      card.appendChild(actions);
+      return card;
+    }
+
+    // ---- the first-use notice ----
+    function notice() {
+      let seen = false;
+      try { seen = localStorage.getItem("botThreadNotice") === "1"; } catch (error) { /* private mode: show it again */ }
+      if (seen) return;
+      const box = el("div", "tnotice card");
+      box.appendChild(el("strong", "", "Bot is now one conversation"));
+      [
+        "There is no list of chats any more: everything you write goes into this one conversation, and Bot works out whether it is about a course, your calendar or anything else. You can send a second message while a slow answer is still being written.",
+        "Your old chats are kept: they are at the top of the conversation (tap \"Load older messages\"). Delete removes a message for 30 days first, and you can bring it back.",
+        "To go back to separate chats: put BOT_THREAD=off in the .env file and restart Bot. Nothing is lost.",
+      ].forEach((t) => box.appendChild(small(t)));
+      const ok = el("button", "", "Got it");
+      ok.type = "button";
+      ok.addEventListener("click", () => { try { localStorage.setItem("botThreadNotice", "1"); } catch (error) { /* ignore */ } box.remove(); });
+      box.appendChild(ok);
+      $("tnoticeSlot").appendChild(box);
+    }
+
+    function start() {
+      T.on = true;
+      document.body.classList.add("thread");
+      // the page's old pieces that belong to separate chats are replaced here
+      $("messages").replaceChildren();
+      const top = el("div", "tolderrow");
+      const older = el("button", "ghost", "Load older messages");
+      older.id = "tolder";
+      older.type = "button";
+      older.hidden = true;
+      older.addEventListener("click", loadOlder);
+      top.appendChild(older);
+      const slot = el("div"); slot.id = "tnoticeSlot";
+      const days = el("div"); days.id = "tdays";
+      const empty = el("p", "empty", "Say anything. Bot keeps one conversation going and works out what each message is about.");
+      empty.id = "tempty";
+      empty.hidden = true;
+      $("messages").append(slot, top, days, empty);
+      const ready = el("button", "tready", "Answer ready ↓");
+      ready.id = "tready";
+      ready.type = "button";
+      ready.hidden = true;
+      ready.addEventListener("click", () => {
+        const n = T.ready;
+        if (n) { const g = n.closest(".tday"); if (g) { const d = T.days.get(g.dataset.day); if (d) { d.body.hidden = false; d.head.setAttribute("aria-expanded", "true"); } } n.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        T.ready = null;
+        ready.hidden = true;
+      });
+      scroller().appendChild(ready); // sticky at the bottom of the scrolling area, so it never sits on the box
+      scroller().addEventListener("scroll", checkReady, { passive: true });
+      // take over the page's old chat functions
+      send = threadSend;
+      pollJobs = poll;
+      ensureLiveCard = () => {};
+      updateComposer = () => { $("send").disabled = T.busy; };
+      loadChats = async () => {};
+      showEmpty = () => {};
+      chatButtons = oldChatButtons;
+      updateChatName = () => { $("chatName").textContent = "One conversation"; $("courseBar").hidden = true; $("noplanText").textContent = "Don't split into steps"; };
+      updateChatName();
+      $("new").textContent = "Conversation";
+      $("new").title = "Back to the conversation";
+      $("studyBtn").textContent = "Study";
+      $("studyBtn").title = "Where you are in each course, and your files";
+      $("studyBtn").addEventListener("click", (e) => { e.stopImmediatePropagation(); navGo({ view: "tstudy", id: null }); showView("tstudy"); }, true);
+      $("task").placeholder = matchMedia("(pointer: coarse)").matches ? "Write to Bot..." : "Write to Bot. Enter sends, Shift+Enter adds a new line.";
+      // files: anything that is not a picture goes to a course
+      $("photoInput").accept = "image/*,application/pdf,.pdf,.pptx,.docx,.txt,.md";
+      $("attach").title = "Attach a photo or a file";
+      $("attach").setAttribute("aria-label", "Attach a photo or a file");
+      $("photoInput").addEventListener("change", (e) => {
+        const file = $("photoInput").files[0];
+        if (file && !file.type.startsWith("image/")) { e.stopImmediatePropagation(); $("photoInput").value = ""; fileDialog(file); }
+      }, true);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
+      window.addEventListener("focus", () => { poll(); });
+      window.addEventListener("online", () => { poll(); });
+      notice();
+      loadFirst().catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
+    }
+
+    return { start, showStudy, T };
+  })();
+</script>
 </body>
 </html>
