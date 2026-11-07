@@ -125,3 +125,28 @@ test("one file whose reading throws does not stop the queue or end Bot (an unhan
   assert.strictEqual(seen.length, 2, "the second file was still read");
   assert.strictEqual(routes.idle(), true, "the reader is free again");
 });
+
+// ---- timers must never throw: Bot has no uncaughtException handler ----
+const { createReminders } = require("./reminders");
+
+test("the reminder timer survives a failing save (a locked file) instead of ending Bot", async () => {
+  const file = path.join(tmp(), "reminders.json");
+  const clock = { t: Date.UTC(2026, 10, 1, 12, 0, 0) };
+  const r = createReminders({ file, now: () => clock.t });
+  r.create({ text: "call mum", at: new Date(clock.t + 60000).toISOString(), timezone: "Asia/Jerusalem" });
+  clock.t += 120000; // now it is due
+  fs.mkdirSync(file + ".tmp"); // saving needs this name: a folder in the way makes the write fail, like a locked file
+  const uncaught = [];
+  const onUncaught = (e) => uncaught.push(e.message);
+  process.on("uncaughtException", onUncaught);
+  try {
+    assert.doesNotThrow(() => r.start(5)); // the first check happens inside start()
+    await new Promise((resolve) => setTimeout(resolve, 60)); // several timer ticks
+  } finally {
+    r.stop();
+    process.off("uncaughtException", onUncaught);
+  }
+  assert.deepStrictEqual(uncaught, []);
+  fs.rmSync(file + ".tmp", { recursive: true });
+  assert.strictEqual(r.tick().length, 1, "the reminder was kept and fires once the file can be saved again");
+});

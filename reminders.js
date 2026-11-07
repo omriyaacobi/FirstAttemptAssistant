@@ -207,8 +207,11 @@ function createReminders({ file, notify = () => {}, now = () => Date.now() } = {
   // Starts checking every 30 seconds; the first check happens at once (that is the catch-up).
   function start(intervalMs = TICK_MS) {
     if (timer) return;
-    tick();
-    timer = setInterval(tick, intervalMs);
+    // tick() saves a file; if that fails (a locked file on Windows, a full disk) a throw inside a timer would end Bot, which has no
+    // uncaughtException handler. The reminder stays pending and is tried again at the next check.
+    const safeTick = () => { try { tick(); } catch (error) { console.error("Reminders: check failed, will retry:", String(error.message).slice(0, 120)); } };
+    safeTick();
+    timer = setInterval(safeTick, intervalMs);
     timer.unref(); // do not keep the program alive just for this timer
   }
 
