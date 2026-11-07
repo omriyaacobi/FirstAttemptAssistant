@@ -20,7 +20,6 @@ const { dueFromWords } = require("./due-date");
 const PENDING_MS = 30 * 60 * 1000;
 const MAX_PENDING = 5;
 const MAX_PENDING_BYTES = 400 * 1024 * 1024; // all waiting files together (a waiting zip is held unpacked, in memory)
-const MAX_SHOWN = 8; // lines of "skipped" a zip summary lists; the rest is only counted
 const AFTER_CLASS_MS = 3 * 3600 * 1000;
 // Words of a course name that say nothing about WHICH course it is.
 const GENERIC = new Set(["intro", "introduction", "demo", "course", "class", "advanced", "basic", "basics", "lecture", "with", "from", "that", "this", "and", "the", "for", "part", "level", "semester"]);
@@ -91,17 +90,33 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   const showName = (n) => cleanName(n, "file");
   const pendingBytes = () => [...pending.values()].reduce((n, p) => n + (p.size || 0), 0);
 
+  // Short, in the user's language. A name or a path is English/LTR text: in a Hebrew sentence it is wrapped in isolate marks (LRI ... PDI),
+  // so it cannot scramble the punctuation or the order around it. English text gets no marks.
+  const iso = (lang, s) => (lang === "he" ? `⁦${s}⁩` : s);
+  const inCourse = (c) => (/^[א-ת]/.test(c) ? bet(c) : `ב-⁦${c}⁩`); // "in <course>" (Hebrew)
+  const REASON_HE = { type: "סוג קובץ לא נתמך", name: "שם לא בטוח", link: "קישור סימבולי", nested: "zip בתוך zip לא נפתח", password: "מוגן בסיסמה", compression: "דחיסה לא מוכרת", toomany: "יותר מדי קבצים", codebig: "קובץ קוד גדול מדי", big: "קובץ גדול מדי", damaged: "קובץ פגום", empty: "קובץ ריק", notext: "לא טקסט אמיתי (נראה בינארי)", dup: "כבר בקורס", refused: "הקובץ לא התקבל", other: "לא נתמך" };
+  const MAX_SKIP_LINES = 5;
+  const plural = (n, lang, one, many, oneHe, manyHe) => (lang === "he" ? (n === 1 ? oneHe : `${n} ${manyHe}`) : `${n} ${n === 1 ? one : many}`);
+
   function zipSummary(lang, zipName, filed, skipped, waiting) {
-    const extra = skipped.length > MAX_SHOWN ? skipped.length - MAX_SHOWN : 0;
-    const skipLines = skipped.slice(0, MAX_SHOWN).map((s) => `- ${showName(s.name)}: ${s.reason}`).join("\n");
+    const junk = skipped.filter((s) => s.code === "junk").length; // compiled / tool leftovers: only counted
+    const listed = skipped.filter((s) => s.code !== "junk");
+    const extra = Math.max(0, listed.length - MAX_SKIP_LINES);
+    const skipLines = listed.slice(0, MAX_SKIP_LINES).map((s) => `- ${iso(lang, showName(s.name))}: ${lang === "he" ? REASON_HE[s.code] || REASON_HE.other : s.reason}`).join("\n");
+    const docs = filed.filter((f) => f.group !== "code").length;
+    const code = filed.length - docs;
+    const kinds = [docs ? plural(docs, lang, "document", "documents", "מסמך אחד", "מסמכים") : "", code ? plural(code, lang, "code file", "code files", "קובץ קוד אחד", "קבצי קוד") : ""].filter(Boolean).join(", ");
     const byCourse = new Map();
     for (const f of filed) byCourse.set(f.courseName, (byCourse.get(f.courseName) || 0) + 1);
-    const where = [...byCourse].map(([c, n]) => `${n} ${lang === "he" ? bet(c) : `in ${c}`}`).join(", ");
+    const split = byCourse.size > 1;
+    const whereEn = [...byCourse].map(([c, n]) => `${split ? `${n} ` : ""}in ${c}`).join(", ");
+    const whereHe = [...byCourse].map(([c, n]) => `${split ? `${n} ` : ""}${inCourse(c)}`).join(", ");
     const parts = [];
-    if (filed.length) parts.push(words(lang, `From "${zipName}" I filed ${filed.length} file${filed.length === 1 ? "" : "s"}: ${where}. Bot is reading them now.`, `מתוך "${zipName}" תייקתי ${filed.length} קבצים: ${where}. Bot קורא אותם עכשיו.`));
-    else parts.push(words(lang, `Nothing from "${zipName}" was filed.`, `שום דבר מתוך "${zipName}" לא תויק.`));
+    if (filed.length) parts.push(words(lang, `From "${zipName}" I filed ${plural(filed.length, "en", "file", "files")} (${kinds}) ${whereEn}. Bot is reading them now.`, `מתוך "${iso(lang, zipName)}" תייקתי ${plural(filed.length, "he", "", "", "קובץ אחד", "קבצים")} (${kinds}) ${whereHe}. Bot קורא אותם עכשיו.`));
+    else parts.push(words(lang, `Nothing from "${zipName}" was filed.`, `שום דבר מתוך "${iso(lang, zipName)}" לא תויק.`));
     if (waiting) parts.push(words(lang, `${waiting} more file${waiting === 1 ? "" : "s"} wait for you: which course are they for? Tap one below. Nothing is saved until you choose.`, `עוד ${waiting} קבצים מחכים: לאיזה קורס הם שייכים? אפשר ללחוץ על אחד למטה. שום דבר לא נשמר לפני הבחירה.`));
-    if (skipped.length) parts.push(words(lang, `Skipped ${skipped.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${skipped.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
+    if (listed.length) parts.push(words(lang, `Skipped ${listed.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${listed.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
+    if (junk) parts.push(words(lang, `Also skipped ${junk} compiled/binary file${junk === 1 ? "" : "s"}.`, `בנוסף דולגו ${junk} קבצים מקומפלים/בינאריים.`));
     return parts.join("\n\n");
   }
 
@@ -110,10 +125,16 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     for (const item of items) {
       try {
         courseRoutes.addUpload(courseId, item.bytes, item.name);
-        filed.push({ name: item.name, courseName });
-      } catch (error) { skipped.push({ name: item.name, reason: String(error.message).slice(0, 120) }); }
+        filed.push({ name: item.name, courseName, group: item.group });
+      } catch (error) {
+        skipped.push({ name: item.name, reason: error.status === 409 ? "already in the course" : String(error.message).slice(0, 120), code: error.status === 409 ? "dup" : "refused" });
+      }
     }
   }
+
+  // The name a zip file is filed under. A code file keeps the end of its path (src/parser.c), because many projects have several
+  // files with the same short name (Makefile, main.c). Only shown as text, never a path.
+  const filedName = (item) => (item.group === "code" ? showName(String(item.path || item.name).split("/").slice(-3).join("/")) : showName(item.name));
 
   function receiveZip({ bytes, name, text = "" }) {
     sweep();
@@ -137,9 +158,9 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     const groups = new Map(); // courseId -> { ref, items }
     for (const item of opened.files) {
       const choice = pickCourse({ fileName: `${clean} ${showName(item.name)}`, text, coach, courseList: list, now: now() });
-      if (!choice) { undecided.push({ bytes: item.bytes, name: showName(item.name) }); continue; }
+      if (!choice) { undecided.push({ bytes: item.bytes, name: filedName(item), group: item.group }); continue; }
       const g = groups.get(choice.ref.courseId) || { ref: choice.ref, items: [] };
-      g.items.push({ bytes: item.bytes, name: showName(item.name) });
+      g.items.push({ bytes: item.bytes, name: filedName(item), group: item.group });
       groups.set(choice.ref.courseId, g);
     }
     for (const [courseId, g] of groups) fileMany(courseId, g.ref.name, g.items, filed, skipped);
