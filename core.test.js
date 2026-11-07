@@ -586,3 +586,83 @@ test("recall with nothing found: the thread says course questions ARE searched; 
   assert.match(thread.answer, /including your course questions/);
   assert.doesNotMatch(thread.answer, /Chats inside a course/);
 });
+
+// ---- split path and reminders (QA 2026-11-07, H1) ----
+const realRunPlan = require("./planner").runPlan;
+const splitDeps = (overrides = {}) => fakes({
+  decide: async (t) => /^remind/.test(t)
+    ? { action: "remind", destination: null, answer: "", reason: "r", reminder: { text: "send the form", at: Date.UTC(2026, 10, 13, 7, 0, 0), timezone: "Asia/Jerusalem" } }
+    : { action: "split", destination: null, answer: "", reason: "two jobs" },
+  plan: async () => ({ plannedBy: "fake-planner", subtasks: [
+    { id: 1, task: "what is the capital of Peru", type: "quick", needs: [] },
+    { id: 2, task: "remind me friday 9am to send the form", type: "reminder", needs: [] },
+  ] }),
+  runPlan: realRunPlan,
+  askChain: async () => ({ answer: "Lima.", used }),
+  ...overrides,
+});
+
+test("split: a reminder step is really saved through createReminder, and the step says when", async () => {
+  const saved = [];
+  const deps = splitDeps({ createReminder: (r) => { saved.push(r); return { id: "0123456789abcdef", ...r }; } });
+  const result = await handleTask("capital of peru, and also remind me friday 9am to send the form", { deps });
+  assert.strictEqual(result.mode, "split");
+  assert.strictEqual(saved.length, 1);
+  assert.strictEqual(saved[0].text, "send the form");
+  const step = result.steps.find((s) => s.type === "reminder");
+  assert.match(step.answer, /^Reminder set for .*09:00.*send the form/);
+  assert.ok(!step.error);
+});
+
+test("split: a reminder step that cannot be saved says so and never claims success", async () => {
+  const deps = splitDeps({ createReminder: () => { throw new Error("too many pending reminders (max 100)"); } });
+  const result = await handleTask("capital of peru, and also remind me friday 9am to send the form", { deps });
+  const step = result.steps.find((s) => s.type === "reminder");
+  assert.match(step.error, /too many pending/);
+  assert.ok(!step.answer);
+});
+
+test("split: a reminder step with no usable time is an honest failure, not prose", async () => {
+  const deps = splitDeps({
+    decide: async (t) => /^remind/.test(t)
+      ? { action: "clarify", destination: null, answer: "When?", reason: "no time" }
+      : { action: "split", destination: null, answer: "", reason: "two jobs" },
+    createReminder: () => { throw new Error("no save was expected"); },
+  });
+  const result = await handleTask("capital of peru, and also remind me about the form", { deps });
+  const step = result.steps.find((s) => s.type === "reminder");
+  assert.match(step.error, /did not set a reminder/i);
+});
+
+test("split: when the planner finds ONE reminder job, it is still saved for real", async () => {
+  const saved = [];
+  const deps = splitDeps({
+    plan: async () => ({ plannedBy: "p", subtasks: [{ id: 1, task: "remind me friday 9am to send the form", type: "reminder", needs: [] }] }),
+    createReminder: (r) => { saved.push(r); return { id: "0123456789abcdef", ...r }; },
+  });
+  const result = await handleTask("please, remind me friday 9am to send the form, thanks", { deps });
+  assert.strictEqual(saved.length, 1);
+  assert.strictEqual(result.mode, "split");
+});
+
+// ---- listing reminders (QA 2026-11-07, M8) ----
+test("listReminders: the answer is the real reminder list, no model is asked", async () => {
+  let asked = false;
+  const at = Date.UTC(2026, 10, 13, 7, 0, 0);
+  const deps = fakes({
+    decide: decision("listReminders"),
+    listReminders: () => [{ id: "0123456789abcdef", text: "send the form", at: new Date(at).toISOString(), timezone: "Asia/Jerusalem", status: "pending" }],
+    askChain: async () => { asked = true; },
+  });
+  const result = await handleTask("what reminders do i have?", { deps });
+  assert.strictEqual(result.rule, "list reminders");
+  assert.match(result.answer, /send the form/);
+  assert.match(result.answer, /09:00/);
+  assert.strictEqual(asked, false);
+});
+
+test("listReminders: an empty list says there are none", async () => {
+  const deps = fakes({ decide: decision("listReminders"), listReminders: () => [] });
+  const result = await handleTask("what reminders do i have?", { deps });
+  assert.match(result.answer, /no reminders/i);
+});

@@ -400,14 +400,31 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     return { ...result, courseName: decision.course.name, studyIntent: decision.studyIntent, reason: decision.reason };
   }
 
+  // A reminder step of a split: the front desk reads just that step (no splitting) and the same code as a normal reminder saves it.
+  // If it cannot be turned into a checked reminder, the step fails with an honest message. A model never writes "reminder set" itself.
+  async function runReminder(subtask) {
+    const low = await getLow();
+    let stepDecision;
+    try {
+      stepDecision = await d.decide(subtask.task, { history: "", allowSplit: false, low, about: deskAbout, log });
+    } catch (error) {
+      throw new Error(`Bot did not set a reminder: ${error.message}`);
+    }
+    if (!stepDecision || stepDecision.action !== "remind") throw new Error("Bot did not set a reminder: I could not find a clear time in that part. Ask again with the day and time.");
+    const saved = d.createReminder(stepDecision.reminder); // a failure here becomes the step's error
+    log(`[reminder] saved ${saved.id} (from a split step)`);
+    return { answer: say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל-${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`), used: FRONT_DESK_MODEL };
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     await slow();
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
+      runReminder,
       run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne, onFail: noteLimit }), // web steps get no profile
       chainFor: (type) => quotaChain(d.chainForType(type), low),
-      onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
+      onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${chain.length ? label(chain[0]) : "the reminder code"}`),
       onDone: ({ subtask, result }) =>
         log(`[planner] step ${subtask.id} ${result.error ? "FAILED: " + result.error : "done by " + label(result.used)}`),
     });
@@ -588,7 +605,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     log(`[planner]   ${s.id}. [${s.type}] ${s.task.slice(0, 90)}${needs}  ->  ${chainText(prioritize(d.chainForType(s.type), lowNow).chain)}`);
   }
   if (planOnly) return { mode: "plan", subtasks, plannedBy };
-  if (subtasks.length > 1) return runSplit(subtasks, plannedBy);
+  if (subtasks.length > 1 || subtasks[0].type === "reminder") return runSplit(subtasks, plannedBy);
   log("[planner] only one job found, handling it as one");
   return runSingle({ chain: d.chainForType(subtasks[0].type), rule: subtasks[0].type, reason: "the planner found a single job" });
 }

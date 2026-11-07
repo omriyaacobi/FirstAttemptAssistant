@@ -9,7 +9,7 @@ const { askChain, askAgyStructured } = require("./providers");
 const { chainForType, MODELS } = require("./router");
 
 const MAX_SUBTASKS = 5;
-const TYPES = ["quick", "code", "hard", "google", "general", "web", "research"];
+const TYPES = ["quick", "code", "hard", "google", "general", "web", "research", "reminder"];
 
 // Only Gemini plans, because that quota pool has the most room.
 const PLANNER_MODELS = [MODELS.flashHigh, MODELS.argonLow];
@@ -42,7 +42,7 @@ Rules:
 - If the request refers to earlier messages ("it", "the same thing", "that code"), write each subtask so it makes sense without the conversation.
 - Split only when the request clearly contains separate jobs. If it is a single job, return exactly one subtask whose "task" is the request unchanged.
 - Each subtask must be self-contained: copy into it any text, code or details from the request that it needs.
-- "type" is one of: quick (short factual answer or small rewrite), code (write, fix or explain code), hard (deep reasoning, design, analysis, comparing options), google (about the user's Google Calendar, Gmail, Docs, Drive and similar), web (needs one quick look on the internet), research (needs thorough searching across many websites), general (everything else: writing, summaries, explanations).
+- "type" is one of: quick (short factual answer or small rewrite), code (write, fix or explain code), hard (deep reasoning, design, analysis, comparing options), google (about the user's Google Calendar, Gmail, Docs, Drive and similar), web (needs one quick look on the internet), research (needs thorough searching across many websites), reminder (the user asks to be reminded of something at a future time: copy the whole reminder wish with its time into "task"; it is saved by code, never answered in prose), general (everything else: writing, summaries, explanations).
 - "needs" lists the ids of earlier subtasks whose output this subtask requires. Usually it is empty. Never reference a later id.
 - At most ${MAX_SUBTASKS} subtasks, numbered from 1.
 
@@ -109,7 +109,7 @@ function buildSubtaskPrompt(subtask, originalTask, results, planSize) {
 
 // Step 2: run the sub-tasks. Everything whose needs are finished runs at the same time.
 // If a step fails, steps that needed it are skipped instead of guessing.
-async function runPlan(subtasks, originalTask, { run = askChain, chainFor = chainForType, onStart = () => {}, onDone = () => {} } = {}) {
+async function runPlan(subtasks, originalTask, { run = askChain, runReminder = null, chainFor = chainForType, onStart = () => {}, onDone = () => {} } = {}) {
   const results = new Map();
   let pending = [...subtasks];
 
@@ -128,6 +128,16 @@ async function runPlan(subtasks, originalTask, { run = askChain, chainFor = chai
         let result;
         if (failedNeed) {
           result = { id: subtask.id, error: `skipped because step ${failedNeed} failed` };
+        } else if (subtask.type === "reminder") {
+          // A reminder is never written by a model as prose: the caller saves it through the real reminder code, or the step fails.
+          onStart({ subtask, chain: [] });
+          try {
+            if (!runReminder) throw new Error("Bot did not set a reminder: reminders are not available in this step");
+            const { answer, used } = await runReminder(subtask);
+            result = { id: subtask.id, answer, used, attempts: [] };
+          } catch (error) {
+            result = { id: subtask.id, error: String(error.message).trim() };
+          }
         } else {
           const chain = chainFor(subtask.type); // core.js passes a quota-aware version
           onStart({ subtask, chain });
