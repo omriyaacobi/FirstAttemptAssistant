@@ -74,3 +74,12 @@ test("planner steps can use the web too", () => {
   assert.strictEqual(chainForType("web"), chainForDestination("web-search"));
   assert.strictEqual(chainForType("research"), chainForDestination("web-research"));
 });
+
+test("both briefings send a message with a web link to web-research", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  for (const f of ["router-brief.md", "router-brief-haiku.md"]) {
+    const t = fs.readFileSync(path.join(__dirname, f), "utf8");
+    assert.match(t, /web link[\s\S]*delegate web-research[\s\S]*Never answer that Bot cannot open links/, f);
+  }
+});

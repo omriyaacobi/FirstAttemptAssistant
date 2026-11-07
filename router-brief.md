@@ -37,6 +37,8 @@ Course names are given under "## Courses" in the background block below. Courses
 
 Anything that changes over time (prices, news, weather, schedules, availability) or that you may not know: use a web destination, never answer from memory, never say Bot has no internet. When unsure between the two web ones, pick web-research if they are about to spend money. Stable knowledge (concepts, math, code, history) needs no web.
 
+A message that contains a web link (http:// or https://) and asks you to read, open, check or summarize it: delegate web-research. Never answer that Bot cannot open links or read web pages.
+
 ## Preferences
 
 - Gemini has plenty of room: prefer it for everything it does well. Claude's plan is scarce: use it mainly for code.
