@@ -59,3 +59,38 @@ test("a refused file (the same bytes twice) gets a reply under its message, so i
   assert.match(all[1].text, /already in the course/);
   assert.strictEqual(all[1].error, true);
 });
+
+// ---- the server must not die from one failing route ----
+const http = require("node:http");
+const { createServer } = require("./server");
+const { createStore } = require("./store");
+
+test("a route that throws (a thread file that cannot be read) answers 500 instead of crashing Bot with an unhandled rejection", async () => {
+  const real = createThreadStore(tmp());
+  const broken = { ...real, page: () => { throw new Error("EBUSY: resource busy or locked"); }, trash: () => { throw new Error("EPERM: operation not permitted"); } };
+  const server = createServer({ handle: async () => ({ mode: "single", answer: "x", used: {} }), store: createStore(tmp()), thread: broken });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const unhandled = [];
+  const onRejection = (e) => unhandled.push(e);
+  process.on("unhandledRejection", onRejection);
+  const get = (method, p) => new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, method, path: p, headers: { Host: `localhost:${port}` }, timeout: 2000 }, (res) => { let d = ""; res.on("data", (c) => (d += c)); res.on("end", () => resolve({ status: res.statusCode, body: d })); });
+    req.on("timeout", () => { req.destroy(new Error("no answer")); });
+    req.on("error", reject);
+    req.end();
+  });
+  try {
+    const r = await get("GET", "/api/thread");
+    assert.strictEqual(r.status, 500);
+    assert.match(r.body, /error/);
+    assert.doesNotMatch(r.body, /EBUSY/); // the page gets a plain error, not file-system details
+    const d = await get("DELETE", "/api/thread/m_" + "a".repeat(16));
+    assert.strictEqual(d.status, 500);
+    assert.strictEqual((await get("GET", "/api/jobs")).status, 200); // and the server is still alive
+  } finally {
+    process.off("unhandledRejection", onRejection);
+    await new Promise((r) => server.close(r));
+  }
+  assert.deepStrictEqual(unhandled.map((e) => e.message), []);
+});

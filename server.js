@@ -242,7 +242,9 @@ function createServer({
     },
   });
 
-  const server = http.createServer(async (req, res) => {
+  // Every route runs inside this function. If one throws (a locked or damaged file, a bug), the page gets a plain 500 and Bot keeps running:
+  // an async handler that throws would otherwise be an unhandled rejection, and Node ends the whole program on those.
+  const handleRequest = async (req, res) => {
     const port = server.address().port;
     const me = [`localhost:${port}`, `127.0.0.1:${port}`];
     const host = String(req.headers.host || "").toLowerCase();
@@ -693,6 +695,16 @@ function createServer({
     }
 
     sendJson(res, 404, { error: "not found" });
+  };
+
+  const server = http.createServer((req, res) => {
+    handleRequest(req, res).catch((error) => {
+      console.error("Request failed:", req.method, String(req.url || "").split("?")[0], String(error && error.message).slice(0, 200)); // never the body or the query: they can hold message text
+      try {
+        if (!res.headersSent) sendJson(res, 500, { error: "Bot hit an internal problem with this request" });
+        else res.end();
+      } catch (inner) { /* the connection is gone */ }
+    });
   });
 
   return server;
