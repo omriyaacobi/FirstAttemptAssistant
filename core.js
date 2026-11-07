@@ -11,6 +11,7 @@
 //        remind   -> the time is checked and saved (reminders.js)
 //        remember -> a fact is PROPOSED; the page asks you to Save it (profile.js). Saved at once only when your own
 //                    short message says "remember that ..." (explicitRemember), and then the page offers Undo
+//        listReminders -> code reads the real reminder list (reminders.js)
 //        recall   -> code searches your earlier chats (recall.js), or lists what Bot knows about you
 //   2. If the front desk fails or returns nonsense, Claude Sonnet takes the task.
 //   3. Whatever model runs a task has fallbacks: if it fails, the next one in its chain is tried.
@@ -58,6 +59,7 @@ const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemo
   addCalendarCard: (proposal, opts) => getCards().add(proposal, opts),
   searchChats: (query) => findInChats(createStore(path.join(__dirname, "data", "conversations")), query),
   // Saves a reminder that frontdesk.js already validated. at is milliseconds, reminders.js wants ISO text.
+  listReminders: () => getReminders().list(),
   createReminder: ({ text, at, timezone }) => getReminders().create({ text, at: new Date(at).toISOString(), timezone }) };
 
 // ---- Conversation memory ----
@@ -247,6 +249,23 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     }
   }
 
+  // "What reminders do I have?": the answer is written by code from the real list (never from chat history, which goes stale).
+  function listReminders(decision) {
+    let items;
+    try { items = d.listReminders(); } catch (error) {
+      log(`[reminder] could not read the list: ${error.message}`);
+      return { mode: "single", rule: "list reminders", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: say(lang, `I could not read your reminders: ${error.message}`, `לא הצלחתי לקרוא את התזכורות: ${error.message}`), seconds: seconds(), timing };
+    }
+    const pending = items.filter((r) => r.status === "pending");
+    const line = (r) => "- " + formatWhen(r.at, r.timezone) + ": " + r.text;
+    const body = pending.map(line).join("\n");
+    const answer = pending.length
+      ? say(lang, `You have ${pending.length} pending ${pending.length === 1 ? "reminder" : "reminders"}:\n${body}`, `יש לך ${pending.length} תזכורות ממתינות:\n${body}`)
+      : say(lang, "You have no reminders waiting.", "אין לך תזכורות ממתינות.");
+    log(timingLine());
+    return { mode: "single", rule: "list reminders", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, seconds: seconds(), timing };
+  }
+
   // The user said something worth remembering. The front desk only PROPOSED it (and profile.js checked it):
   // the page shows Save / Don't save, and only a click on Save stores it (POST /api/memory).
   // Add, change or forget: the card shows exactly what will change. The model only gave a NUMBER for the
@@ -400,14 +419,31 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     return { ...result, courseName: decision.course.name, studyIntent: decision.studyIntent, reason: decision.reason };
   }
 
+  // A reminder step of a split: the front desk reads just that step (no splitting) and the same code as a normal reminder saves it.
+  // If it cannot be turned into a checked reminder, the step fails with an honest message. A model never writes "reminder set" itself.
+  async function runReminder(subtask) {
+    const low = await getLow();
+    let stepDecision;
+    try {
+      stepDecision = await d.decide(subtask.task, { history: "", allowSplit: false, low, about: deskAbout, log });
+    } catch (error) {
+      throw new Error(`Bot did not set a reminder: ${error.message}`);
+    }
+    if (!stepDecision || stepDecision.action !== "remind") throw new Error("Bot did not set a reminder: I could not find a clear time in that part. Ask again with the day and time.");
+    const saved = d.createReminder(stepDecision.reminder); // a failure here becomes the step's error
+    log(`[reminder] saved ${saved.id} (from a split step)`);
+    return { answer: say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל-${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`), used: FRONT_DESK_MODEL };
+  }
+
   // Several jobs: run the plan, return every step's result.
   async function runSplit(subtasks, plannedBy) {
     await slow();
     const low = await getLow();
     const steps = await d.runPlan(subtasks, prompt, {
+      runReminder,
       run: (chain, stepPrompt) => d.askChain(chain, personalize(chain, stepPrompt, about), { askOne: d.askOne, onFail: noteLimit }), // web steps get no profile
       chainFor: (type) => quotaChain(d.chainForType(type), low),
-      onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${label(chain[0])}`),
+      onStart: ({ subtask, chain }) => log(`[planner] step ${subtask.id} (${subtask.type}) starting: ${chain.length ? label(chain[0]) : "the reminder code"}`),
       onDone: ({ subtask, result }) =>
         log(`[planner] step ${subtask.id} ${result.error ? "FAILED: " + result.error : "done by " + label(result.used)}`),
     });
@@ -557,6 +593,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   if (decision.action === "calendar") return readCalendar(decision);
   if (decision.action === "addEvent") return addEvent(decision);
   if (decision.action === "recall") return recall(decision);
+  if (decision.action === "listReminders") return listReminders(decision);
   if (decision.action === "course") return courseAnswer(decision);
 
   if (decision.action === "delegate") {
@@ -588,7 +625,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     log(`[planner]   ${s.id}. [${s.type}] ${s.task.slice(0, 90)}${needs}  ->  ${chainText(prioritize(d.chainForType(s.type), lowNow).chain)}`);
   }
   if (planOnly) return { mode: "plan", subtasks, plannedBy };
-  if (subtasks.length > 1) return runSplit(subtasks, plannedBy);
+  if (subtasks.length > 1 || subtasks[0].type === "reminder") return runSplit(subtasks, plannedBy);
   log("[planner] only one job found, handling it as one");
   return runSingle({ chain: d.chainForType(subtasks[0].type), rule: subtasks[0].type, reason: "the planner found a single job" });
 }

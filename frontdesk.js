@@ -55,9 +55,10 @@ const BACKUP_TIMEOUT_MS = 25000;
 // "addEvent" means: the user asks to ADD an event to the calendar. The model only proposes a title, a start, an end and an
 // optional repeat end; validateDecision checks them (calendar-add.js), and core.js turns them into a Confirm card. Nothing
 // reaches the calendar until the user taps Confirm. No model can create an event.
+// "listReminders" means: the user asks which reminders they have. No fields; code reads the real list (reminders.js) and writes the reply.
 // "recall" means: the user asks about an earlier chat, or what Bot knows about them. The model only gives search words;
 // code searches the saved chats (recall.js) or lists the saved facts.
-const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar", "addEvent", "recall"];
+const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", "remember", "forget", "calendar", "addEvent", "recall", "listReminders"];
 // "course" (only when BOT_THREAD is on, see the one-thread design): the message is about studying. The model only PICKS a course
 // name from the list in the prompt and a study intent; validateDecision checks both against the real course list (a model never
 // invents a course), and core.js then answers from that course's notebook exactly like a course chat did.
@@ -266,6 +267,7 @@ function validateDecision(raw, { now = Date.now(), courses = null } = {}) {
     }
   }
 
+  if (raw.action === "listReminders") return { action: "listReminders", destination: null, answer: "", reason };
   if (raw.action === "recall") {
     const query = typeof raw.recallQuery === "string" ? raw.recallQuery.replace(/\s+/g, " ").trim().slice(0, MAX_RECALL_QUERY_CHARS) : "";
     return { action: "recall", destination: null, answer: "", reason, query };
