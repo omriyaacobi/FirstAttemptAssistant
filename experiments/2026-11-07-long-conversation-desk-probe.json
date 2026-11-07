@@ -1,0 +1,182 @@
+[
+ {
+  "kind": "explicit",
+  "msg": "what is my cat's name?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "cat name שם חתול",
+  "remember": "",
+  "seconds": 2.885
+ },
+ {
+  "kind": "explicit",
+  "msg": "מה שם החתול שלי?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "חתול cat",
+  "remember": "",
+  "seconds": 3.794
+ },
+ {
+  "kind": "explicit",
+  "msg": "what did we decide about the OS project language?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "OS project language פרויקט מערכות הפעלה שפה",
+  "remember": "",
+  "seconds": 3.082
+ },
+ {
+  "kind": "explicit",
+  "msg": "remind me what I told you about my sister's wedding",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "sister wedding חתונה אחות",
+  "remember": "",
+  "seconds": 2.935
+ },
+ {
+  "kind": "explicit",
+  "msg": "when is my algorithms exam again?",
+  "action": "recall",
+  "destination": "",
+  "recallQuery": "algorithms exam מבחן אלגוריתמים",
+  "remember": "",
+  "seconds": 4.232
+ },
+ {
+  "kind": "explicit",
+  "msg": "מה אמרתי לך על האלרגיה שלי?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "אלרגיה allergy",
+  "remember": "",
+  "seconds": 2.882
+ },
+ {
+  "kind": "explicit",
+  "msg": "what did we talk about last month about the laptop?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "laptop מחשב נייד",
+  "remember": "",
+  "seconds": 3.284
+ },
+ {
+  "kind": "explicit",
+  "msg": "who is Mr Katz?",
+  "action": "clarify",
+  "destination": "none",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 3.507
+ },
+ {
+  "kind": "explicit",
+  "msg": "where did I say the wedding is?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "wedding חתונה",
+  "remember": "",
+  "seconds": 3.52
+ },
+ {
+  "kind": "explicit",
+  "msg": "what was the thing you suggested for my parrot?",
+  "action": "recall",
+  "destination": "none",
+  "recallQuery": "parrot תוכי",
+  "remember": "",
+  "seconds": 3.577
+ },
+ {
+  "kind": "implicit",
+  "msg": "write a two line poem about my cat",
+  "action": "delegate",
+  "destination": "gemini-flash",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 2.388
+ },
+ {
+  "kind": "implicit",
+  "msg": "suggest a dessert recipe for my guests",
+  "action": "delegate",
+  "destination": "gemini-argon-low",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 2.831
+ },
+ {
+  "kind": "implicit",
+  "msg": "what should I wear to the wedding",
+  "action": "delegate",
+  "destination": "gemini-flash",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 3.194
+ },
+ {
+  "kind": "implicit",
+  "msg": "plan my revision for the algorithms exam",
+  "action": "course",
+  "destination": "none",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 2.815
+ },
+ {
+  "kind": "implicit",
+  "msg": "set up the build for my OS project",
+  "action": "delegate",
+  "destination": "claude-sonnet",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 5.837
+ },
+ {
+  "kind": "implicit",
+  "msg": "how often should I clean the cage",
+  "action": "clarify",
+  "destination": "none",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 3.757
+ },
+ {
+  "kind": "control",
+  "msg": "explain what dijkstra does",
+  "action": "delegate",
+  "destination": "gemini-flash",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 3.298
+ },
+ {
+  "kind": "control",
+  "msg": "how many minutes in 3 hours",
+  "action": "answer",
+  "destination": "none",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 3.227
+ },
+ {
+  "kind": "control",
+  "msg": "translate good morning to French",
+  "action": "answer",
+  "destination": "none",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 2.741
+ },
+ {
+  "kind": "control",
+  "msg": "what is a pointer in C",
+  "action": "delegate",
+  "destination": "claude-sonnet",
+  "recallQuery": "",
+  "remember": "",
+  "seconds": 3.364
+ }
+]
