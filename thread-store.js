@@ -65,6 +65,20 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     fs.renameSync(file + ".tmp", file);
   }
 
+  // Appends text to a day file. If a crash left the last line half written (no newline at the end), a newline goes first, so the
+  // damaged line stays alone and the NEW line is not glued to it (a glued line fails to parse and the new message would be lost).
+  function appendText(file, text) {
+    let prefix = "";
+    try {
+      const fd = fs.openSync(file, "r");
+      try {
+        const size = fs.fstatSync(fd).size;
+        if (size > 0) { const last = Buffer.alloc(1); fs.readSync(fd, last, 0, 1, size - 1); if (last[0] !== 10) prefix = "\n"; }
+      } finally { fs.closeSync(fd); }
+    } catch (error) { /* no file yet: nothing to repair */ }
+    fs.appendFileSync(file, prefix + text);
+  }
+
   // The raw lines of a day (bad lines are skipped, never fatal).
   function lines(day) {
     let text;
@@ -132,7 +146,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
   function append(raw) {
     const message = clean(raw, { now });
     const day = dayOf(message.at);
-    fs.appendFileSync(fileFor(day), JSON.stringify(message) + "\n");
+    appendText(fileFor(day), JSON.stringify(message) + "\n");
     dayOfId.set(message.id, day);
     refreshDay(day);
     return message;
@@ -153,7 +167,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
       const fresh = messages.filter((m) => !have.has(m.id) && have.add(m.id));
       skipped += messages.length - fresh.length;
       if (fresh.length) {
-        fs.appendFileSync(fileFor(day), fresh.map((m) => JSON.stringify(m)).join("\n") + "\n");
+        appendText(fileFor(day), fresh.map((m) => JSON.stringify(m)).join("\n") + "\n");
         fresh.forEach((m) => dayOfId.set(m.id, day));
         added += fresh.length;
         refreshDay(day);
@@ -229,7 +243,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     const day = dayOf(message.at);
     fs.mkdirSync(trashDir, { recursive: true });
     writeAtomic(path.join(trashDir, id + ".json"), JSON.stringify({ message, day, trashedAt: now() }));
-    fs.appendFileSync(fileFor(day), JSON.stringify({ type: "trash", id, at: now() }) + "\n");
+    appendText(fileFor(day), JSON.stringify({ type: "trash", id, at: now() }) + "\n");
     refreshDay(day);
     return true;
   }
@@ -245,7 +259,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     const file = path.join(trashDir, id + ".json");
     let item;
     try { item = JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { return false; }
-    fs.appendFileSync(fileFor(item.day), JSON.stringify({ type: "restore", id, at: now() }) + "\n");
+    appendText(fileFor(item.day), JSON.stringify({ type: "restore", id, at: now() }) + "\n");
     fs.rmSync(file, { force: true });
     refreshDay(item.day);
     return true;
