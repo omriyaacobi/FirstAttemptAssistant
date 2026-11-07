@@ -576,3 +576,11 @@ What Omri touches first, made nicer. All in the page, `tutor.js`, `study-coach.j
 - **First-open notice** is 4 short lines, friendly, ends with an invitation to say where you are in each course, and has "Got it" and "Open Study".
 - Checked at 375 px with screenshots: conversation (Hebrew), sidebar, Study page (Hebrew RTL), notice, composer. No sideways scroll. Fixed: the composer placeholder said "Type a task..." in thread mode.
 - Tests: `polish.test.js` (11).
+
+## 2026-11-07 morning: where things stand
+- **Live:** the new Bot is on `main`, with `BOT_THREAD=on` in `.env`. One conversation, Study page, study coach, tutor, daily summaries, nudges in the morning brief, files in the conversation.
+- **Undo:** remove the `BOT_THREAD=on` line from `.env` and press Restart Bot: old Bot, old chats unchanged. Tag `before-new-bot` is the code before the night. Safety copy of `data/`: `C:\Claude Code Project\bot-data-copy-2026-11-07`.
+- **Checked for real:** 841 tests, import of 76 messages verified, a real calendar read through the live Bot, the page at PC and 375 px width, tutor on real Argon on a copy.
+- **Not checked for real:** a real S23, Confirm against Google in the new page, a real upload in the live Bot, real streaming from Argon, a morning brief firing at its time.
+- **Known limits:** long chat sentences from the coach stay English apart from dates; messages with the same millisecond could be skipped when loading older ones; up to 5 waiting uploads stay in memory until the next upload; a failed daily summary retries on every message.
+- **Next:** Omri tells Bot where they are in each course, tries the tutor, sets the backup values in `.env`, presses Read again on Calculus, and answers the night questions in the `experiments/2026-11-07-night-decisions*.md` files.
