@@ -553,3 +553,6 @@ Built on top of the thread core and the study coach (`claude/night-integrate`). 
 **Tests:** `thread-page.test.js` (9 tests: helpers run on their own, no innerHTML, switch-off guard, 44 px rules, Study lines, route chips). Full suite result is in the report.
 
 **Not done / needs the server (see the decisions file):** `GET /api/study` (the Study page shows only files until it exists), a way to list the trash, an optional `route` for "ask again normally", a confirm route for study proposals (the buttons send "yes"/"no" in words instead), upload proposals from the study coach, "reading lecture 5" text in the job step. Not checked: the phone camera and the file dialog on a real phone, a real Bot with real models, live updates from a second device.
+
+## Night check of the whole thread Bot (2026-11-07, branch `claude/night-check-424ecd`, NOT merged)
+Tested end to end on a private server (port 3101, a throwaway copy of `data/` without the Google token and push subscriptions, real models through agy). Read `experiments/2026-11-07-night-decisions-check.md` first: it lists 11 bugs found and fixed (the big one: "teach me" and quizzes ended as an empty answer), all journeys with what was seen, and what was NOT tested (the real Google read and Confirm). Left open: several study places in one message, noisy summary suggestions.
