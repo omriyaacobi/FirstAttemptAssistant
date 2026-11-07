@@ -493,7 +493,6 @@
         </div>
         <textarea id="task" dir="auto" aria-label="Your message" placeholder="Type a task. Enter sends, Shift+Enter adds a new line."></textarea>
         <div class="row">
-          <label><input type="checkbox" id="noplan"> <span id="noplanText">Don't split into steps</span></label>
           <select id="micLang" aria-label="Speech language" hidden><option value="en-US">English</option><option value="he-IL">עברית</option></select>
           <span class="status" id="status" role="status"></span>
         </div>
@@ -1466,7 +1465,7 @@
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, noPlan: $("noplan").checked, conversationId: currentId, ...(currentCourse ? { deeper: $("noplan").checked, ...(currentId ? {} : { courseId: currentCourse.id }) } : {}), ...(attached ? { image: attached.dataUrl } : {}) }),
+        body: JSON.stringify({ task, noPlan: false, conversationId: currentId, ...(currentCourse ? { deeper: false, ...(currentId ? {} : { courseId: currentCourse.id }) } : {}), ...(attached ? { image: attached.dataUrl } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `server answered ${res.status}`);
@@ -1573,7 +1572,6 @@
     $("courseBar").hidden = !currentCourse;
     if (currentCourse) $("courseName").textContent = currentCourse.name;
     if (window.studyBarChanged) window.studyBarChanged(currentCourse && currentCourse.id, currentId);
-    $("noplanText").textContent = currentCourse ? "Think harder (slower, stronger model)" : "Don't split into steps";
   }
 
   function setSide(open) {
@@ -3015,7 +3013,7 @@
       T.busy = true;
       $("send").disabled = true;
       try {
-        await ask(task, attached ? attached.dataUrl : null, $("noplan").checked);
+        await ask(task, attached ? attached.dataUrl : null, false);
         clearSentText(sentRaw);
         clearPhoto();
         $("tempty").hidden = true;
@@ -3442,7 +3440,7 @@
       loadChats = async () => {};
       showEmpty = () => {};
       chatButtons = oldChatButtons;
-      updateChatName = () => { $("chatName").textContent = "One conversation"; $("courseBar").hidden = true; $("noplanText").textContent = "Don't split into steps"; };
+      updateChatName = () => { $("chatName").textContent = "One conversation"; $("courseBar").hidden = true; };
       updateChatName();
       $("new").textContent = "Conversation";
       $("new").title = "Back to the conversation";
