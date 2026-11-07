@@ -95,3 +95,21 @@ test("c) the file's 'due next Sunday' reaches the coach as a computed date (the 
   await files.onFileReady({ courseId: r.courseId, fileId: r.fileId });
   assert.match(prompts[0], /2026-11-08/);
 });
+
+test("d) L5: no Google client reads as plain words, not as jargon", () => {
+  const { friendlyError } = require("./calendar-chat");
+  const text = friendlyError(new Error("No Google client found: put the file in the data folder"));
+  assert.match(text, /not connected/i);
+  assert.doesNotMatch(text, /client file/i);
+  assert.match(text, /calendar-setup\.md/);
+});
+
+test("d) L9: a text file named like a PDF is refused (the name must match what is inside)", () => {
+  const coach = makeCoach();
+  const thread = createThreadStore(tmp());
+  const files = createThreadFiles({ thread, courseRoutes: fakeRoutes(), coach, now: () => NOW });
+  assert.throws(() => files.receive({ bytes: Buffer.from("just some made-up words"), name: "check.pdf", text: "" }), (e) => e.status === 415 && /pdf/i.test(e.message));
+  assert.throws(() => files.receive({ bytes: Buffer.from("just some made-up words"), name: "slides.pptx", text: "" }), (e) => e.status === 415);
+  assert.strictEqual([...thread.all()].length, 0, "nothing is written to the thread");
+  assert.strictEqual(files.receive({ bytes: Buffer.from("made-up notes about loops"), name: "loops notes.txt", text: "for the programming course" }).status, "filed");
+});

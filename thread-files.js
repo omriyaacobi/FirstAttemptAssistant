@@ -167,7 +167,10 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   // The file with its message. Everything is checked here BEFORE anything is written. Returns { status: "filed" | "asking", ... }.
   function receive({ bytes, name, text = "" }) {
     if (looksLikeZip(bytes) && !sniffOffice(bytes)) return receiveZip({ bytes, name, text }); // a folder of files; a Word or PowerPoint file is ONE file
-    sniffFile(bytes); // the real type; throws a 400 / 415
+    const sniffed = sniffFile(bytes); // the real type; throws a 400 / 415
+    // A name that promises a PDF / Word / PowerPoint / image but the bytes are plain text: refuse, do not file it as notes.
+    const said = /\.(pdf|docx|pptx|png|jpe?g|webp)$/i.exec(String(name || ""));
+    if (said && sniffed.kind === "text") throw Object.assign(new Error(`"${cleanName(name)}" is named like a ${said[1].toUpperCase()} file but it is only plain text, so it may be damaged or renamed. Send the real file, or rename it .txt if it is plain text.`), { status: 415 });
     sweep();
     const clean = cleanName(name);
     const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", at: now() });
