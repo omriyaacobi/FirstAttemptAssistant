@@ -619,3 +619,9 @@ All in `public/index.html` (no server file changed). Tested on a private server 
 
 ## Manager handoff (2026-11-07)
 - The manager role moved to a fresh Sonnet chat to save Claude quota. `HANDOFF.md` has how we work, where things stand, the first jobs and the QA plan.
+
+## Zip upload (2026-11-07, branch claude/zip-upload-de24b4, not merged yet)
+- Send a `.zip` (paperclip, also on the phone) with a message: `unzip.js` opens it in memory, each PDF / pptx / docx / txt / md / picture inside is filed like a single upload, and Bot writes one summary (what was filed where, what was skipped and why). If no rule knows the course, ONE question with the course buttons covers all the leftover files.
+- No new package: the project has no `package.json`, and `office.js` already reads zips with `node:zlib`, so `unzip.js` does the same. Limits (constants at the top of `unzip.js`): 200 MB zip, 300 MB unpacked, 50 MB per file, 200 files, 2000 entries.
+- Files from a zip are read like any course file, but the study coach does not propose a lecture/assignment per file (that would be one card each). Ask Bot about a lecture afterwards.
+- Tests: `unzip.test.js` (zips built in the test: normal, zip-slip, bomb, too many files, nested, unsupported, empty, corrupt, whole road, route). Needs a real phone: picking a big zip and the upload over Tailscale.
