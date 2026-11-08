@@ -666,3 +666,16 @@ test("listReminders: an empty list says there are none", async () => {
   const result = await handleTask("what reminders do i have?", { deps });
   assert.match(result.answer, /no reminders/i);
 });
+
+// QA round 2: a Hebrew reminder answer is Hebrew all the way, with a date that reads as Hebrew ("ליום ב׳", no stray hyphen).
+test("remind: a Hebrew message gets a Hebrew sentence with a Hebrew date", async () => {
+  const at = Date.UTC(2026, 10, 9, 18, 0, 0);
+  const deps = fakes({
+    decide: decision("remind", { reminder: { text: "להתקשר לדני", at, timezone: "Asia/Jerusalem" } }),
+    createReminder: (r) => ({ id: "0123456789abcdef", ...r }),
+  });
+  const result = await handleTask("תזכיר לי מחר בערב להתקשר לדני", { deps });
+  assert.match(result.answer, /^התזכורת נקבעה ליום/);
+  assert.match(result.answer, /20:00/);
+  assert.doesNotMatch(result.answer, /\b(Mon|Nov)\b/);
+});
