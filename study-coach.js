@@ -235,6 +235,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // the student did not name a lecture of a timetable that has lecture material.
   function notesCourse(ref, v = notesView(ref)) {
     if (!v.chunks.length) return false;
+    // notes made of "Lecture N" headings, for a course with a timetable, are taught by the lecture road (timetable lectures), not as free chunks
+    if (tracked(ref) && v.outline.files.some((f) => f.sections.some((s) => s.kind === "lecture"))) return false;
     const files = v.outline.files, total = files.reduce((n, f) => n + f.chars, 0), big = Math.max(...files.map((f) => f.chars));
     return files.length === 1 || big * 2 >= total;
   }
@@ -328,6 +330,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   }
   function catchupPlan(text, list = refs()) {
     const budget = catchup.parseBudget(text) || catchup.DEFAULT_BUDGET;
+    for (const r of list) maybeAlign(r); // notes of "Lecture N" headings are matched to the timetable lectures first
     const active = list.filter((r) => (tracker.progress(r).position || {}).mode !== "paused");
     const items = active.flatMap(planItems);
     const noExam = active.filter((r) => !(tracker.progress(r).position || {}).examDate);

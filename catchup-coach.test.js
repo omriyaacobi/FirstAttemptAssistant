@@ -208,3 +208,9 @@ test("a sentence with only an exam date (no 'I') still reaches the exam card", a
   const r = await say(coach, "the exam in Systems Programming is on 22 December", "update");
   assert.ok(r.proposal && r.proposal.kind === "exam" && r.proposal.date === "2026-12-22", r.answer);
 });
+
+test("notes made of 'Lecture N' headings in a course with a timetable use the lecture road, not free chunks", async () => {
+  const LEC = [{ fileId: "l1", fileName: "lectures.txt", page: 1, text: ["Lecture 1: Intro", filler("one", 30), "Lecture 2: Graphs", filler("two", 30)].join("\n") }];
+  const { coach } = make({ courseList: [SP], docs: { [SP.id]: LEC } });
+  assert.strictEqual(coach.teachesFromNotes(SP.id), false);
+});

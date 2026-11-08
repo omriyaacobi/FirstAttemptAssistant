@@ -90,3 +90,10 @@ test("parseBudget", () => {
   assert.strictEqual(cu.parseBudget("what should I do"), null);
   assert.strictEqual(cu.parseBudget("20 hours a day"), 360);
 });
+
+test("buildSchedule: a day is filled with the first item that still fits, not left half empty", () => {
+  const mk = (course, label, minutes) => ({ course, kind: "chunk", label, minutes, say: "x", deadline: null, concepts: false, focus: false });
+  const s = cu.buildSchedule([mk("A", "big", 80), mk("A", "big2", 80), mk("B", "small", 10)], { today: "2026-11-08", budget: 90 });
+  assert.deepStrictEqual(s.grid[0].items.map((i) => i.label), ["big", "small"]);
+  assert.deepStrictEqual(s.grid[1].items.map((i) => i.label), ["big2"]);
+});

@@ -169,12 +169,18 @@ function buildSchedule(items, { today, budget = DEFAULT_BUDGET, days = HORIZON_D
   const ordered = orderItems(items, today);
   const grid = Array.from({ length: days }, (_, i) => ({ date: plan.addDays(today, i), items: [], minutes: 0 }));
   const left = [];
-  let d = 0;
-  for (const it of ordered) {
-    while (d < days && grid[d].items.length && grid[d].minutes + it.minutes > budget) d++;
-    if (d >= days) { left.push(it); continue; }
-    grid[d].items.push(it); grid[d].minutes += it.minutes;
+  // each day takes the first item (in priority order) that still fits into its minutes; an empty day always takes the first one
+  const rest = ordered.slice();
+  for (let d = 0; d < days && rest.length; d++) {
+    for (;;) {
+      let i = rest.findIndex((it) => grid[d].minutes + it.minutes <= budget);
+      if (i < 0 && !grid[d].items.length) i = 0;
+      if (i < 0) break;
+      const [it] = rest.splice(i, 1);
+      grid[d].items.push(it); grid[d].minutes += it.minutes;
+    }
   }
+  left.push(...rest);
   const late = [];
   for (const g of grid) for (const it of g.items) if (it.deadline && g.date > it.deadline) late.push({ it, date: g.date });
   for (const it of left) if (it.deadline) late.push({ it, date: null });
