@@ -44,7 +44,7 @@ function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
     if (!slots.length) { // no timetable: no counts, but a saved position and saved assignments still show
       const open = p.assignments.map((a) => ({ title: a.title, due: a.due || null, status: a.status }));
       const due = p.assignments.filter((a) => a.due).map((a) => ({ title: a.title, due: a.due, status: a.status, daysLeft: plan.daysBetween(today, a.due) }));
-      out.push({ id: ref.courseId, name: ref.name, tracked: false, shouldBe: null, you: p.positionKnown ? { positionKnown: true, position: { seenThrough: null, note: p.position.note || "" }, withMaterial: 0, understood: 0 } : null, behind: [], due, assignments: open, questions: [] });
+      out.push({ id: ref.courseId, name: ref.name, tracked: false, shouldBe: null, you: p.positionKnown ? { positionKnown: true, position: { seenThrough: null, note: p.position.note || "", said: p.position.said || "" }, withMaterial: 0, understood: 0 } : null, behind: [], due, assignments: open, questions: [] });
       continue;
     }
     const held = slots.filter((s) => plan.isHeld(s, now));
