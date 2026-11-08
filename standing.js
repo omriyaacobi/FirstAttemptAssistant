@@ -195,7 +195,7 @@ const MODE_TEXT = {
   paused: ["not studying for now", "בהפסקה מהלימודים"],
 };
 const PACE_TEXT = { ahead: ["ahead of the pace", "לפני הקצב"], onTrack: ["on pace", "בקצב"], behind: ["behind", "בפיגור"] };
-const GOAL_TEXT = { concepts: ["the goal is the main concepts", "המטרה: להבין את המושגים המרכזיים"], exam: ["the goal is the exam", "המטרה: המבחן"], assignment: ["the goal is the assignment", "המטרה: המטלה"], full: ["the goal is the whole material", "המטרה: כל החומר"] };
+const GOAL_TEXT = { concepts: ["the goal is the main concepts", "המטרה: להבין את המושגים המרכזיים"], exam: ["the goal is the exam", "המטרה: המבחן"], assignment: ["the goal is to learn through the assignment", "המטרה: ללמוד דרך המטלה"], full: ["the goal is the whole material", "המטרה: כל החומר"] };
 const DEPTH_TEXT = { solid: ["you say it sits well", "לפי מה שנכתב, החומר יושב טוב"], shaky: ["you say it does not sit well yet", "לפי מה שנכתב, החומר עוד לא יושב טוב"] };
 const pick = (table, key, lang) => table[key][lang === "he" ? 1 : 0];
 
@@ -234,11 +234,15 @@ function readback({ courseName, fields, notes, dropped = [], exam = null, lang }
   const lost = dropped.length ? say(lang, ` I could not place: ${dropped.map((d) => `${d.what} (${d.why})`).join("; ")}. Your words are kept as you wrote them.`, ` לא הצלחתי למקם: ${dropped.map((d) => `${d.what} (${d.why})`).join("; ")}. המילים שנכתבו נשמרו כמו שהן.`) : "";
   const body = bits.length ? bits.join("; ") : say(lang, "I kept your words", "המילים שנכתבו נשמרו");
   const examLine = exam ? say(lang, ` The exam date ${plan.niceDate(exam.date, "en")} is not saved yet: it changes when I remind you, so tap Confirm on the card if it is right.`, ` תאריך המבחן ${plan.niceDate(exam.date, "he")} עוד לא נשמר: הוא משפיע על מועדי התזכורות, אז כדאי ללחוץ Confirm בכרטיס אם הוא נכון.`) : "";
-  return say(lang, `Understood, ${courseName}: ${body}.${lost}${examLine} This says where you are, not what you understood. Say "no" to undo, or tell me what is off.`, `הבנתי, ${courseName}: ${body}.${lost}${examLine} זה אומר איפה עומדים, לא מה הובן. אפשר לכתוב "לא" כדי לבטל, או לתקן אותי.`);
+  const offer = fields.goal === "assignment" ? say(lang, `
+Since you want to learn through the assignment, no need to tell me a lecture. Say "teach me through the assignment" and I will start with the first idea it needs.`, `
+מכיוון שרוצים ללמוד דרך המטלה, אין צורך לומר באיזו הרצאה. אפשר לכתוב "תלמד אותי דרך המטלה" ואתחיל ברעיון הראשון שהיא דורשת.`) : "";
+  return say(lang, `Understood, ${courseName}: ${body}.${lost}${examLine} I only noted where you are. "Understood" comes from my quiz questions, not from what you tell me. Say "no" to undo, or tell me what is off.${offer}`, `הבנתי, ${courseName}: ${body}.${lost}${examLine} רק רשמתי איפה אתם עומדים. "הובן" נקבע לפי שאלות הבדיקה שלי, לא לפי מה שנכתב. אפשר לכתוב "לא" כדי לבטל, או לתקן אותי.${offer}`);
 }
 
 // At most ONE question, only when something that matters is missing. A course with a timetable asks for the lecture; a course with notes only asks how far in the notes.
 function adaptiveQuestion({ fields, notes = {}, dropped = [], ctx, lang }) {
+  if (fields.goal === "assignment") return ""; // the readback offers to teach through the assignment; a lecture number is not needed
   if (fields.mode === "notStarted" || fields.mode === "paused" || fields.mode === "revising") return "";
   if (fields.where && !notes.inProgress) return "";
   if (notes.inProgress) return "";
