@@ -26,7 +26,8 @@ const { createNudges } = require("./study-nudges");
 const tutor = require("./tutor");
 const { lectureIndex, askedLectures } = require("./study");
 const standing = require("./standing");
-const { buildOutline } = require("./outline");
+const outlineLib = require("./outline");
+const { buildOutline } = outlineLib;
 
 const INTENTS = ["teach", "start", "quiz", "answer", "progress", "plan", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
 const PROPOSAL_MS = 12 * 3600 * 1000; // proposals live in memory for 12 hours
@@ -127,7 +128,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       for (const ref of refs().filter(tracked)) {
         const p = tracker.progress(ref);
         const due = p.assignments.filter((a) => a.due && plan.daysBetween(today(), a.due) >= 0 && plan.daysBetween(today(), a.due) <= 7);
-        out.push(`${ref.name}: ${p.held} lectures held, ${p.understood} checked as understood, ${p.behind.length} behind${p.positionKnown ? "" : ", student's position unknown"}${due.length ? `, due soon: ${due.map((a) => `${clean(a.title, 40)} ${a.due}`).join(", ")}` : ""}`);
+        const modeBit = p.position.mode ? `, student says: ${p.position.mode}${p.position.pace ? "/" + p.position.pace : ""}` : "";
+        out.push(`${ref.name}: ${p.held} lectures held, ${p.understood} checked as understood, ${!p.position.mode || p.position.mode === "attending" ? p.behind.length + " behind" : "catch-up count not used"}${modeBit}${p.positionKnown ? "" : ", student's position unknown"}${due.length ? `, due soon: ${due.map((a) => `${clean(a.title, 40)} ${a.due}`).join(", ")}` : ""}`);
       }
       return out.length ? `Study (from the tracker, today ${today()}): ${out.join(" | ")}` : "";
     } catch (error) {
@@ -164,6 +166,50 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return placed ? T(`\n\n(Note: all ${ref.name} lectures are uploaded, so I assumed notebook lecture k is the k-th class by the timetable. If a class was cancelled or the numbers do not match, tell me.)`, `\n\n(הערה: כל ההרצאות של ${ref.name} כבר הועלו, אז הנחתי שהרצאה k במחברת היא השיעור ה-k לפי המערכת. אם שיעור בוטל או שהמספרים לא מתאימים, כדאי לכתוב לי.)`) : "";
   }
 
+  // ---- what the notes hold, and what the student's own record says (position v2, see standing.js) ----
+  const notesOf = (ref) => { const o = buildOutline(ref.courseId ? courses.allPages(ref.courseId) : []); return { outline: o, files: o.files.length, sections: o.files.reduce((n, f) => n + f.sections.length, 0) }; };
+  const asRead = (p) => { const s = standing.standingLine(p.position, curLang); return s ? `  ${T("As I read it", "כך הבנתי")}: ${s}.` : ""; };
+  // The covered range for a quiz, from the student's record: lectures up to the place (minus the ones they missed), or pieces of the notes up to it.
+  // null when there is no v2 record or no place and the course is not being revised (then the quiz is chosen as before).
+  function rangeFor(ref, text) {
+    const pos = tracker.course(ref).position;
+    if (!pos || !pos.v || askedLectures(text).length) return null;
+    const w = pos.where;
+    if (!w && pos.mode !== "revising") return null;
+    const gaps = pos.gaps || [];
+    const skip = gaps.filter((g) => g.kind === "lecture").map((g) => g.n);
+    const shaky = pos.depth === "shaky";
+    if (!w || w.type === "lecture" || w.type === "date") {
+      const slot = w ? (w.type === "lecture" ? tracker.slots(ref.key).find((s) => s.n === w.n) : [...tracker.slots(ref.key)].reverse().find((s) => s.date <= w.date && plan.isHeld(s, now(), timezone))) : null;
+      const maxLecture = slot ? slot.n : null;
+      return { maxLecture, skip, prefer: shaky && maxLecture ? [maxLecture, maxLecture - 1].filter((n) => n >= 1) : [] };
+    }
+    // a place in the notes: the sections from the start up to it, up to 4 pieces (the latest first when the student says it sits badly)
+    const pages = ref.courseId ? courses.allPages(ref.courseId) : [];
+    const o = buildOutline(pages);
+    const f = o.files.slice().sort((a, b) => b.chars - a.chars)[0];
+    if (!f) return null;
+    const here = w.type === "section" ? outlineLib.sectionByName(o, w.name, f.fileId) : w.type === "pages" ? outlineLib.sectionAtPage(o, f.fileId, w.to) : null;
+    const upto = here ? f.sections.findIndex((s) => s.id === here.id) : f.sections.length - 1;
+    const skipNames = new Set(gaps.filter((g) => g.kind === "section").map((g) => g.name));
+    let covered = f.sections.slice(0, upto + 1).filter((s) => !skipNames.has(s.title));
+    if (!covered.length) return null;
+    const pick = shaky ? covered.slice(-4).reverse() : (covered.length <= 4 ? covered : [0, 1, 2, 3].map((i) => covered[Math.round((i * (covered.length - 1)) / 3)]));
+    const extra = pick.map((s, i) => ({ fileId: `${f.fileId}#${i}`, fileName: `${f.fileName} - ${clean(s.title, 60)}`, page: 1, text: outlineLib.sectionText(pages, f.fileId, s) })).filter((x) => x.text.trim());
+    return extra.length ? { extra, label: covered.length === 1 ? clean(covered[0].title, 80) : T(`what you covered so far in ${ref.name}`, `מה שכבר נלמד ${bet(ref.name)}`) } : null;
+  }
+  // The next piece of the notes after the student's place (a section), or the first one when nothing is covered yet. null without notes.
+  function nextChunk(ref, pos) {
+    const o = notesOf(ref).outline;
+    const f = o.files.slice().sort((a, b) => b.chars - a.chars)[0];
+    if (!f || !f.sections.length) return null;
+    const w = pos && pos.where;
+    const here = w ? (w.type === "section" ? outlineLib.sectionByName(o, w.name, f.fileId) : w.type === "pages" ? outlineLib.sectionAtPage(o, f.fileId, w.to) : null) : null;
+    const i = here ? f.sections.findIndex((s) => s.id === here.id) : -1;
+    const next = f.sections.slice(i + 1).find((s) => !here || s.level <= here.level) || null;
+    return next ? { title: next.title, pages: f.realPages ? next.toPage - next.fromPage + 1 : 0 } : null;
+  }
+
   // ---- progress ----
   function courseLines(ref) {
     const p = tracker.progress(ref);
@@ -173,16 +219,26 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       if (!p.positionKnown) lines.push(T("  I do not know where you are in this course yet.", "  עדיין לא ידוע לי איפה עומדים בקורס הזה."));
       else if (p.position.note) lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${clean(noteText(p.position.note), 60)}.`);
       else lines.push(`  ${T("You told me", "כתבת לי")}: "${clean(p.position.said, 140)}".`);
+      if (asRead(p)) lines.push(asRead(p));
+      const n = notesOf(ref);
+      if (n.files) lines.push(T(`  Notes in Bot: ${n.files} file${n.files === 1 ? "" : "s"}, ${n.sections} section${n.sections === 1 ? "" : "s"}.`, `  סיכומים ב-Bot: ${n.files === 1 ? "קובץ אחד" : `${n.files} קבצים`}, ${n.sections === 1 ? "סעיף אחד" : `${n.sections} סעיפים`}.`));
       for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
       return lines.join("\n");
     }
     const lines = [T(`${ref.name}: ${p.held} lecture${p.held === 1 ? "" : "s"} held so far by the timetable${removed ? " (cancelled ones removed)" : ""}.`, `${ref.name}: ${p.held === 1 ? "הרצאה אחת" : `${p.held} הרצאות`} עד עכשיו לפי המערכת${removed ? " (בלי אלה שבוטלו)" : ""}.`)];
-    lines.push(T(`  Material in Bot for ${p.withMaterial} of them. Checked as understood (3+ questions, 70%+): ${p.understood}.`, `  יש ב-Bot חומר ל-${p.withMaterial} מהן. נבדקו כמובנות (3 שאלות ומעלה, 70% ומעלה): ${p.understood}.`));
-    if (p.behind.length) lines.push(`  ${T(`Behind on ${p.behind.length}`, `פיגור ב-${p.behind.length}`)}: ${p.behind.slice(0, 4).map((b) => `${T("lecture", "הרצאה")} ${b.n} (${niceDate(b.date)})${b.hasMaterial || b.topic ? "" : T(", no material yet", ", עדיין בלי חומר")}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
+    // Notes that are not split by lecture ("material for 0 of 6" would be wrong: the notes ARE uploaded) and a student who does not attend: no "behind" counts.
+    const notes = notesOf(ref);
+    const notesOnly = notes.files > 0 && p.withMaterial === 0;
+    const attending = !p.position.mode || p.position.mode === "attending";
+    if (notesOnly) lines.push(T(`  Notes in Bot: ${notes.files} file${notes.files === 1 ? "" : "s"}, ${notes.sections} section${notes.sections === 1 ? "" : "s"} (not split by lecture). Checked as understood (3+ questions, 70%+): ${p.understood}.`, `  סיכומים ב-Bot: ${notes.files === 1 ? "קובץ אחד" : `${notes.files} קבצים`}, ${notes.sections === 1 ? "סעיף אחד" : `${notes.sections} סעיפים`} (לא מחולקים לפי הרצאות). נבדקו כמובנות (3 שאלות ומעלה, 70% ומעלה): ${p.understood}.`));
+    else lines.push(T(`  Material in Bot for ${p.withMaterial} of them. Checked as understood (3+ questions, 70%+): ${p.understood}.`, `  יש ב-Bot חומר ל-${p.withMaterial} מהן. נבדקו כמובנות (3 שאלות ומעלה, 70% ומעלה): ${p.understood}.`));
+    if (!attending || notesOnly) { /* no catch-up count: it would not be true for how this student studies, or the notes cannot be counted by lecture */ }
+    else if (p.behind.length) lines.push(`  ${T(`Behind on ${p.behind.length}`, `פיגור ב-${p.behind.length}`)}: ${p.behind.slice(0, 4).map((b) => `${T("lecture", "הרצאה")} ${b.n} (${niceDate(b.date)})${b.hasMaterial || b.topic ? "" : T(", no material yet", ", עדיין בלי חומר")}`).join("; ")}${p.behind.length > 4 ? "; ..." : ""}.`);
     else if (p.held) lines.push(T("  Nothing behind by the timetable.", "  אין פיגור לפי המערכת."));
     if (!p.positionKnown) lines.push(T("  I do not know where you are in this course yet.", "  עדיין לא ידוע לי איפה עומדים בקורס הזה."));
     else if (!p.position.seenThrough && !p.position.note && p.position.said) lines.push(`  ${T("You told me", "כתבת לי")}: "${clean(p.position.said, 140)}".`);
     else lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${p.position.seenThrough ? niceDate(p.position.seenThrough) : p.position.note ? clean(noteText(p.position.note), 60) : T("a topic", "נושא מסוים")}${p.position.seenThrough && p.position.note ? ` (${clean(noteText(p.position.note), 60)})` : ""}.`);
+    if (asRead(p)) lines.push(asRead(p));
     for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
     return lines.join("\n");
   }
@@ -199,6 +255,14 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const p = tracker.progress(ref);
     const a = p.assignments.find((x) => x.due && plan.daysBetween(today(), x.due) >= 0 && plan.daysBetween(today(), x.due) <= 7);
     if (a) return T(`The next step with a real date: "${clean(a.title, 60)}" is due ${niceDate(a.due)}. Say "help me start" and I check what it needs.`, `הצעד הבא עם תאריך אמיתי: "${clean(a.title, 60)}" להגשה עד ${niceDate(a.due)}. אפשר לכתוב "תעזור לי להתחיל" ואבדוק מה צריך בשביל זה.`);
+    // What the student said about how they study decides the kind of step (their record, not a guess).
+    const mode = p.position.mode;
+    if (mode === "paused") return T(`${ref.name}: you said you are not studying it for now, so I suggest nothing. Tell me when that changes.`, `${ref.name}: נכתב שלא לומדים את זה כרגע, אז אני לא מציע כלום. אפשר לעדכן אותי כשזה משתנה.`);
+    if (mode === "revising") return T(`${ref.name}: you are revising, so the smallest step is a short quiz on what you already covered${p.position.depth === "shaky" ? ", starting with the parts you say sit badly" : ""}. Say "quiz me".`, `${ref.name}: חוזרים על החומר, אז הצעד הקטן הוא חידון קצר על מה שכבר נלמד${p.position.depth === "shaky" ? ", מתחילים בחלקים שלא יושבים טוב" : ""}. אפשר לכתוב "תבחן אותי".`);
+    if (mode === "selfStudy" || mode === "notStarted" || (!tracked(ref) && notesOf(ref).files)) {
+      const c = nextChunk(ref, p.position);
+      if (c) return T(`The next piece of ${ref.name} in your notes: "${clean(c.title, 60)}"${c.pages ? ` (about ${c.pages} page${c.pages === 1 ? "" : "s"})` : ""}. Ask me to explain it, or say "quiz me" after you read it.`, `החלק הבא ${bet(ref.name)} בסיכומים: "${clean(c.title, 60)}"${c.pages ? ` (בערך ${c.pages === 1 ? "עמוד אחד" : `${c.pages} עמודים`})` : ""}. אפשר לבקש שאסביר אותו, או לכתוב "תבחן אותי" אחרי הקריאה.`);
+    }
     const b = p.behind.find((x) => x.hasMaterial || x.topic);
     if (b) return T(`The smallest next step: lecture ${b.n} (${niceDate(b.date)}) of ${ref.name}. "Teach me" and I explain it, or "quiz me" and you try first.`, `הצעד הקטן הבא: הרצאה ${b.n} (${niceDate(b.date)}) ${bet(ref.name)}. "תלמד אותי" ואסביר אותה, או "תבחן אותי" כדי לנסות קודם לבד.`);
     const empty = p.behind.find((x) => !x.hasMaterial && !x.topic);
@@ -572,7 +636,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // teach / quiz / start / answer: the tutor
     if (!ref) return done({ answer: whichCourse() });
     const align = maybeAlign(ref);
-    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText });
+    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null });
     return done({ ...r, mode: "study", answer: r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
