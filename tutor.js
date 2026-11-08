@@ -277,7 +277,7 @@ function summary(session, rec) {
 // Returns { answer, outside, sources, model, mode, done, needs }.
 async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null }) {
   const t0 = Date.now();
-  const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(labelOutside(r.answer, message)) }); // a stray [OUT] tag from the model never reaches the page
+  const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
   const session = tracker.getSession(ref);
   const continuing = session && (intent === "answer" || !intent) && (open(session) || session.mode === "work");
 

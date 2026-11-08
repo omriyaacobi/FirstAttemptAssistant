@@ -246,3 +246,20 @@ test("teach picks the lecture AFTER the place Omri said he is at; quiz still tak
   assert.strictEqual(next("teach").slot.date, "2026-11-01"); // lecture 5
   assert.strictEqual(next("quiz").slot.date, "2026-10-18");
 });
+
+// QA round 2 (L4): a quiz hint is not a "course answer", so the "Outside your files" label is noise there.
+test("a quiz hint never carries the 'Outside your files' label, but a lesson still does", async () => {
+  const s = setup();
+  const base = fake();
+  const askChain = async (chain, prompt) => {
+    const r = await base.askChain(chain, prompt);
+    return /needs a hint/.test(prompt) ? { ...r, answer: "[OUT] Think about the address." } : r;
+  };
+  const f = { askChain, calls: base.calls };
+  await run(s, f, "quiz me on lecture 1", "quiz");
+  const wrong = await run(s, f, "no idea", "answer");
+  assert.match(wrong.answer, /Hint 1 of 3/);
+  assert.doesNotMatch(wrong.answer, /Outside your files|\[OUT\]/);
+  const lesson = await run(setup(), fake(), "teach me lecture 1", "teach");
+  assert.match(lesson.answer, /Outside your files: Extra from general knowledge/);
+});
