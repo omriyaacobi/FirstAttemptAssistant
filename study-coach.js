@@ -298,13 +298,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
 
   // A file arrived. files: [{ fileId, fileName, pages }]; text: the file text or message (for assignments); dateText: what the student wrote about the date.
-  async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto" }) {
+  async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto", dueHint = null }) {
     curLang = langOf(`${dateText}`.replace(/\S+\.\w{2,4}\b/g, "")); // the words that came with the file, not its file name
     const ref = refs().find((r) => r.courseId === courseId);
     if (!ref) return { answer: whichCourse() };
     const asAssignment = kind === "assignment" || (kind === "auto" && /assignment|exercise|homework|\bhw\b|due\b|submit|תרגיל|מטלה|הגשה|עבודה\s+להגשה/i.test(`${dateText} ${text.slice(0, 2000)}`));
     if (asAssignment) {
-      const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log });
+      const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log, dueHint });
       if (!r.ok) return { answer: r.answer };
       const p = addProposal({ kind: "assignment", ref, fields: r.proposal });
       return { answer: T(`I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, `הבנתי שזו מטלה ${bet(ref.name)}: "${p.fields.title}", ${p.fields.due ? `להגשה עד ${niceDate(p.fields.due)}` : "לא מצאתי תאריך הגשה"}${p.fields.needs.length ? `, צריך בשבילה: ${p.fields.needs.join(", ")}` : ""}. זה נכון? אחרי אישור אשמור; לפני כן שום דבר לא נשמר.`), proposal: card(p) };

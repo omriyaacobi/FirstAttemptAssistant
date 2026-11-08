@@ -113,3 +113,16 @@ test("d) L9: a text file named like a PDF is refused (the name must match what i
   assert.strictEqual([...thread.all()].length, 0, "nothing is written to the thread");
   assert.strictEqual(files.receive({ bytes: Buffer.from("made-up notes about loops"), name: "loops notes.txt", text: "for the programming course" }).status, "filed");
 });
+
+// QA round 2: the real model ignored the worked-out date in the prompt and answered "due: null". Code now fills it in.
+test("e) a due date worked out by code is kept even when the model says null", async () => {
+  const coach = makeCoach();
+  const routes = fakeRoutes(COURSES, "Homework 1\nExercises on loops. Due next Sunday.");
+  const thread = createThreadStore(tmp());
+  const files = createThreadFiles({ thread, courseRoutes: routes, coach, now: () => NOW });
+  const r = files.receive({ bytes: pdf(7), name: "hw1.pdf", text: "homework for the programming course" });
+  await files.onFileReady({ courseId: r.courseId, fileId: r.fileId });
+  const card = [...thread.all()].map((m) => m.result && m.result.proposal).filter(Boolean)[0];
+  assert.ok(card, "a proposal card was made");
+  assert.strictEqual(card.due, "2026-11-08");
+});

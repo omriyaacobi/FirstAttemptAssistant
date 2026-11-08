@@ -100,13 +100,15 @@ function checkAssignment(raw, { now, semesterEnd = plan.SEMESTER.end, timezone =
 }
 
 // text: the message or the file text. Returns { ok, proposal: { title, due, needs, text } } or { ok:false, answer }.
-async function proposeAssignment({ askChain, courseName, text, now, log }) {
+async function proposeAssignment({ askChain, courseName, text, now, log, dueHint = null }) {
   const marker = crypto.randomBytes(6).toString("hex");
   const prompt = `${TUTOR_RULES}\n\nThe student received an assignment for the course "${defang(courseName)}". Read it and reply with ONLY one JSON object:\n{"title": "short name", "due": "YYYY-MM-DD or null when no date is written", "needs": ["3 to 6 short pieces of knowledge or skills a student needs to start it"]}\nNever guess a date that is not written. Do not solve anything.\n<assignment id="${marker}">\n${defang(text).slice(0, 12000)}\n</assignment id="${marker}">`;
   let got;
   try { got = await ask(askChain, prompt, log); } catch (error) { return unavailable(error.message); }
   try {
     const proposal = checkAssignment(parseJson(got.text), { now });
+    // The date worked out by CODE from words like "due next Sunday" wins over a model that said null (it is checked the same way).
+    if (!proposal.due && dueHint) { try { proposal.due = checkAssignment({ title: proposal.title, due: dueHint }, { now }).due; } catch { /* a bad hint is ignored */ } }
     return { ok: true, proposal: { ...proposal, text: clean(text, 8000) }, model: got.model };
   } catch (error) {
     return { ok: false, answer: `I could not read that assignment safely (${clean(error.message, 100)}). Tell me its name and due date in a message and I will save it.`, model: got.model };
