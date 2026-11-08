@@ -15,6 +15,7 @@ const plan = require("./study-plan");
 const { sniffFile, cleanName } = require("./upload");
 const { unzip, looksLikeZip } = require("./unzip");
 const { sniffOffice } = require("./office");
+const { zipSummary, fileMany: fileManyWith, filedName, showName } = require("./zip-filing");
 const { dueFromWords } = require("./due-date");
 
 const PENDING_MS = 30 * 60 * 1000;
@@ -87,54 +88,9 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   // with its reason and the others go on. Bot answers with ONE summary message. Files from a zip are read like any course file,
   // but the study coach is not asked about each one (that would be one card per file): ask Bot about a lecture afterwards.
   // What is inside the zip is untrusted data: names are only shown as text, never used as paths, never read as instructions.
-  const showName = (n) => cleanName(n, "file");
   const pendingBytes = () => [...pending.values()].reduce((n, p) => n + (p.size || 0), 0);
 
-  // Short, in the user's language. A name or a path is English/LTR text: in a Hebrew sentence it is wrapped in isolate marks (LRI ... PDI),
-  // so it cannot scramble the punctuation or the order around it. English text gets no marks.
-  const iso = (lang, s) => (lang === "he" ? `⁦${s}⁩` : s);
-  const inCourse = (c) => (/^[א-ת]/.test(c) ? bet(c) : `ב-⁦${c}⁩`); // "in <course>" (Hebrew)
-  const REASON_HE = { type: "סוג קובץ לא נתמך", name: "שם לא בטוח", link: "קישור סימבולי", nested: "zip בתוך zip לא נפתח", password: "מוגן בסיסמה", compression: "דחיסה לא מוכרת", toomany: "יותר מדי קבצים", codebig: "קובץ קוד גדול מדי", big: "קובץ גדול מדי", damaged: "קובץ פגום", empty: "קובץ ריק", notext: "לא טקסט אמיתי (נראה בינארי)", dup: "כבר בקורס", refused: "הקובץ לא התקבל", other: "לא נתמך" };
-  const MAX_SKIP_LINES = 5;
-  const plural = (n, lang, one, many, oneHe, manyHe) => (lang === "he" ? (n === 1 ? oneHe : `${n} ${manyHe}`) : `${n} ${n === 1 ? one : many}`);
-
-  function zipSummary(lang, zipName, filed, skipped, waiting) {
-    const junk = skipped.filter((s) => s.code === "junk").length; // compiled / tool leftovers: only counted
-    const listed = skipped.filter((s) => s.code !== "junk");
-    const extra = Math.max(0, listed.length - MAX_SKIP_LINES);
-    const skipLines = listed.slice(0, MAX_SKIP_LINES).map((s) => `- ${iso(lang, showName(s.name))}: ${lang === "he" ? REASON_HE[s.code] || REASON_HE.other : s.reason}`).join("\n");
-    const docs = filed.filter((f) => f.group !== "code").length;
-    const code = filed.length - docs;
-    const kinds = [docs ? plural(docs, lang, "document", "documents", "מסמך אחד", "מסמכים") : "", code ? plural(code, lang, "code file", "code files", "קובץ קוד אחד", "קבצי קוד") : ""].filter(Boolean).join(", ");
-    const byCourse = new Map();
-    for (const f of filed) byCourse.set(f.courseName, (byCourse.get(f.courseName) || 0) + 1);
-    const split = byCourse.size > 1;
-    const whereEn = [...byCourse].map(([c, n]) => `${split ? `${n} ` : ""}in ${c}`).join(", ");
-    const whereHe = [...byCourse].map(([c, n]) => `${split ? `${n} ` : ""}${inCourse(c)}`).join(", ");
-    const parts = [];
-    if (filed.length) parts.push(words(lang, `From "${zipName}" I filed ${plural(filed.length, "en", "file", "files")} (${kinds}) ${whereEn}. Bot is reading them now.`, `מתוך "${iso(lang, zipName)}" תייקתי ${plural(filed.length, "he", "", "", "קובץ אחד", "קבצים")} (${kinds}) ${whereHe}. Bot קורא אותם עכשיו.`));
-    else parts.push(words(lang, `Nothing from "${zipName}" was filed.`, `שום דבר מתוך "${iso(lang, zipName)}" לא תויק.`));
-    if (waiting) parts.push(words(lang, `${waiting} more file${waiting === 1 ? "" : "s"} wait for you: which course are they for? Tap one below. Nothing is saved until you choose.`, `עוד ${waiting} קבצים מחכים: לאיזה קורס הם שייכים? אפשר ללחוץ על אחד למטה. שום דבר לא נשמר לפני הבחירה.`));
-    if (listed.length) parts.push(words(lang, `Skipped ${listed.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${listed.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
-    if (junk) parts.push(words(lang, `Also skipped ${junk} compiled/binary file${junk === 1 ? "" : "s"}.`, `בנוסף דולגו ${junk} קבצים מקומפלים/בינאריים.`));
-    return parts.join("\n\n");
-  }
-
-  // Files from a zip, into one course. Adds to `filed` and `skipped`. The coach is not told (see above).
-  function fileMany(courseId, courseName, items, filed, skipped) {
-    for (const item of items) {
-      try {
-        courseRoutes.addUpload(courseId, item.bytes, item.name);
-        filed.push({ name: item.name, courseName, group: item.group });
-      } catch (error) {
-        skipped.push({ name: item.name, reason: error.status === 409 ? "already in the course" : String(error.message).slice(0, 120), code: error.status === 409 ? "dup" : "refused" });
-      }
-    }
-  }
-
-  // The name a zip file is filed under. A code file keeps the end of its path (src/parser.c), because many projects have several
-  // files with the same short name (Makefile, main.c). Only shown as text, never a path.
-  const filedName = (item) => (item.group === "code" ? showName(String(item.path || item.name).split("/").slice(-3).join("/")) : showName(item.name));
+  const fileMany = (...args) => fileManyWith(courseRoutes.addUpload, ...args);
 
   function receiveZip({ bytes, name, text = "" }) {
     sweep();

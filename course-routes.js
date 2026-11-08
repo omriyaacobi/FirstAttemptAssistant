@@ -8,7 +8,7 @@
 //   GET    /api/courses/<id>                     the course, its files and the list of its chats
 //   POST   /api/courses/<id>/rename {name}
 //   DELETE /api/courses/<id>
-//   POST   /api/courses/<id>/files?name=...      upload one file (raw bytes, up to 50 MB)
+//   POST   /api/courses/<id>/files?name=...      upload one file (raw bytes, up to 50 MB), or a .zip (up to 200 MB; unzip.js opens it, each file is added to this course)
 //   DELETE /api/courses/<id>/files/<fid>
 //   POST   /api/courses/<id>/files/<fid>/retry   read a failed file again
 //   POST   /api/courses/<id>/files/<fid>/use {use: true|false}   tick or untick a file for the chats of the course
@@ -23,6 +23,9 @@ const fs = require("node:fs");
 const { validId } = require("./courses");
 const { openPdf } = require("./pdfcut");
 const { sniffFile, readRawBody, cleanName } = require("./upload");
+const { unzip, looksLikeZip, MAX_ZIP_BYTES } = require("./unzip");
+const { sniffOffice } = require("./office");
+const { zipSummary, fileMany, filedName } = require("./zip-filing");
 
 const { MODELS } = require("./router");
 
@@ -82,6 +85,18 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     const file = courses.addFile(courseId, { bytes, kind, ext, name: cleanName(name) });
     enqueue(courseId, file.id);
     return file;
+  }
+  // A zip sent to a course page: the course is already known, so no picking and no questions. unzip.js opens it (all its limits live
+  // there; a zip that must be refused whole throws a status error with a plain reason), then each file takes the single-upload road
+  // (addUpload). Returns what the page shows on the row of the zip: counts and the same short summary as the chat (in English: the
+  // page has no message to take a language from). The study coach is not asked about each file.
+  function addZip(courseId, courseName, bytes, name) {
+    const clean = cleanName(name, "archive.zip");
+    const opened = unzip(bytes);
+    const filed = [];
+    const skipped = [...opened.skipped];
+    fileMany(addUpload, courseId, courseName, opened.files.map((f) => ({ bytes: f.bytes, name: filedName(f), group: f.group })), filed, skipped);
+    return { name: clean, filedCount: filed.length, skippedCount: skipped.length, summary: zipSummary("en", clean, filed, skipped, 0) };
   }
   // What the coach needs after a file was read: the entry and the start of its text.
   const fileInfo = (courseId, fileId, maxChars = 4000) => {
@@ -149,9 +164,15 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
       // Raw bytes, not JSON. A web page on another site cannot send this type without a CORS preflight, which we never allow.
       if (!String(req.headers["content-type"] || "").startsWith("application/octet-stream")) return sendJson(res, 415, { error: "send the file as application/octet-stream" }), true;
       try {
-        const bytes = await readRawBody(req);
+        const name = url.searchParams.get("name");
+        // A zip may be bigger than one file (its files are unpacked and checked one by one in unzip.js); anything else keeps the 50 MB limit.
+        const isZipName = /\.zip$/i.test(String(name || ""));
+        const bytes = await readRawBody(req, isZipName ? MAX_ZIP_BYTES : undefined);
+        // A zip is a folder of files for THIS course (a Word or PowerPoint file is also a zip inside, but it is ONE file). Only a name ending
+        // in .zip counts: a zip sent as "x.docx" keeps its old refusal, and the 200 MB limit above is only for .zip names too.
+        if (isZipName && looksLikeZip(bytes) && !sniffOffice(bytes)) return sendJson(res, 201, { zip: addZip(id, course.name, bytes, name) }), true;
         const { kind, ext } = sniffFile(bytes);
-        const file = courses.addFile(id, { bytes, kind, ext, name: url.searchParams.get("name") });
+        const file = courses.addFile(id, { bytes, kind, ext, name });
         enqueue(id, file.id);
         return sendJson(res, 201, { file }), true;
       } catch (error) {
