@@ -310,7 +310,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (notesCourse(ref, v) && !(tracked(ref) && p.withMaterial > 0)) {
       const state = catchup.notesState(tracker, ref);
       const at = state.cursor ? v.chunks.findIndex((c) => c.key === state.cursor) : -1;
-      let rest = v.chunks.slice(at + 1).filter((c) => !state.taught.includes(c.key));
+      let rest = v.chunks.slice(at + 1).filter((c) => !state.taught.includes(c.key)).filter((c) => !(c.kind === "lecture" && tracked(ref) && c.lecture > p.held)); // a lecture that has not been held yet is not catch-up work
       // a student who goes to the lectures: only the part the lecturer has reached (their own place), the rest is not taught yet
       const w = pos.where;
       if (attending && w) {

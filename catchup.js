@@ -64,7 +64,7 @@ function chunksOf(outline, pages, fileId) {
       if (to > from) pieces.push(text.slice(from, to));
       from = to;
     }
-    pieces.forEach((t, i) => out.push({ key: `${u.title}#${i + 1}`, sectionId: u.id, title: u.title, part: i + 1, parts: pieces.length, text: t, fromPage: u.fromPage, toPage: u.toPage, realPages: f.realPages, fileId: f.fileId, fileName: f.fileName }));
+    pieces.forEach((t, i) => out.push({ key: `${u.title}#${i + 1}`, sectionId: u.id, title: u.title, part: i + 1, parts: pieces.length, text: t, fromPage: u.fromPage, toPage: u.toPage, realPages: f.realPages, fileId: f.fileId, fileName: f.fileName, kind: u.kind, lecture: u.lecture || null }));
   }
   return out;
 }
@@ -171,7 +171,7 @@ function buildSchedule(items, { today, budget = DEFAULT_BUDGET, days = HORIZON_D
   const left = [];
   let d = 0;
   for (const it of ordered) {
-    while (d < days && grid[d].items.length && grid[d].minutes + it.minutes > budget + 10) d++;
+    while (d < days && grid[d].items.length && grid[d].minutes + it.minutes > budget) d++;
     if (d >= days) { left.push(it); continue; }
     grid[d].items.push(it); grid[d].minutes += it.minutes;
   }

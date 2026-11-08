@@ -236,7 +236,7 @@ const visibleWork = (text) => String(text || "").slice(0, 900);
 // style "screen": one phone screen of teaching from ONE piece of the notes (about 130 words, 3 steps), for a student who sat in the lecture and did not follow.
 // style "concept": one idea that an assignment needs, taught WITHOUT the assignment (its text is never in this prompt), with an example of the teacher's own.
 const STYLES = {
-  screen: "Teach in 3 short steps, about 130 words in total, as if to a student who sat in the lecture but did not follow: start from the core idea, assume nothing, and use one tiny example (code in a code block when the notes have code). Say in one short line where this piece sits (for example 'part 2 of 3').",
+  screen: "Teach in 3 short steps, about 130 words in total, as if to a student who sat in the lecture but did not follow: start from the core idea, assume nothing, and use one tiny example (code in a code block when the notes have code). Use short bold step titles, never the words 'Part 1 of 3'.",
   concept: "Teach this ONE idea in 3 short steps, about 130 words in total, with one tiny example of your own that has nothing to do with any assignment. Never write code or a result that solves a task; teach the idea only.",
 };
 async function teachText({ askChain, courseName, topic, material, message, lang = "en", log, onText = null, style = null }) {
@@ -273,7 +273,7 @@ const TX = {
 };
 const tx = (s) => TX[s && s.lang === "he" ? "he" : "en"];
 const currentQuestion = (s) => s.questions.find((q) => q.state === "open");
-const showQuestion = (s) => { const q = currentQuestion(s); const i = s.questions.indexOf(q) + 1; return tx(s).question(i, s.questions.length, q.q); };
+const showQuestion = (s) => { const q = currentQuestion(s); const i = s.questions.indexOf(q) + 1; return s.questions.length === 1 ? q.q : tx(s).question(i, s.questions.length, q.q); };
 
 function summary(session, rec) {
   if (session.fromTeach) return [tx(session).checked, session.fromNotes ? tx(session).nextPart : "", session.target.type === "assignment" ? tx(session).workNext : ""].filter(Boolean).join("\n");
@@ -370,7 +370,8 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
         tracker.setSession(ref, newSession("quiz", { type: "lecture", date: null, n: null }, { lang, questions: [{ id: "q1", q: t.question.q, key: t.question.key, topic: clean(c.title, 80), attempts: 0, hints: 0, state: "open", verdict: null, revealed: false }], fromTeach: true, fromNotes: true }));
         tail = "\n\n" + tx({ lang }).back(t.question.q);
       }
-      return finish({ answer: t.text + tail, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: /\[OUT\]/.test(t.text), target: { type: "notes", key: c.key } });
+      const head = `**${clean(c.title, 80)}**${c.parts > 1 ? ` (${c.part}/${c.parts})` : ""}\n`; // code names the piece of the notes, so the student knows where it comes from
+      return finish({ answer: head + t.text + tail, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: /\[OUT\]/.test(t.text), target: { type: "notes", key: c.key } });
     } catch (error) { return finish(unavailable(error.message, langOf(message))); }
   }
   if (intent === "start" && through && through.assignment) {
