@@ -48,6 +48,7 @@ function clean(raw, { now }) {
   if (raw.result && typeof raw.result === "object") message.result = raw.result;
   if (Array.isArray(raw.log)) message.log = raw.log.map(String);
   if (raw.error === true) message.error = true;
+  if (raw.ack === true) message.ack = true; // "I got it, the answer comes later" (not an answer: see markUnanswered)
   if (raw.imported && typeof raw.imported === "object") message.imported = raw.imported;
   return message;
 }
@@ -219,7 +220,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
   // it gets one plain reply saying so, so nothing is lost silently and the page shows an answer under it. Imported messages are never touched.
   function markUnanswered({ since = 24 * 3600 * 1000, text = "Bot was restarted (or stopped) before it finished this message, so there is no answer. Please send it again." } = {}) {
     const recentMessages = page({ limit: 200 }).messages;
-    const answered = new Set(recentMessages.filter((m) => m.role === "assistant" && m.replyTo).map((m) => m.replyTo));
+    const answered = new Set(recentMessages.filter((m) => m.role === "assistant" && m.replyTo && !m.ack).map((m) => m.replyTo));
     for (const t of trashList()) if (t.message && t.message.replyTo) answered.add(t.message.replyTo); // an answer you deleted was still an answer
     const marked = [];
     for (const m of recentMessages) {

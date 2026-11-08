@@ -37,7 +37,7 @@ function labelOf(message, courseName) {
 // busy: ids of the user messages that are still being answered (they are shown as pending lines, not as turns).
 function buildHistory(store, { entryOf, courseName = null, busy = [], pending = [], notes = "", maxChars = RECENT_CHARS } = {}) {
   const hide = new Set(busy);
-  const usable = (m) => !m.error && typeof m.text === "string" && m.text.trim() && !hide.has(m.id);
+  const usable = (m) => !m.error && !m.ack &&typeof m.text === "string" && m.text.trim() && !hide.has(m.id);
   const recent = store.page({ limit: SCAN_MESSAGES }).messages.filter(usable);
 
   const entries = [];

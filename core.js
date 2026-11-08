@@ -141,7 +141,7 @@ async function handleTask(task, options = {}) {
 
 // courses (thread only): the real course list [{ id, name }] and studyState (one line per course, written by code). With a list, the front
 // desk may choose the action "course"; without it (BOT_THREAD off) that action does not exist and nothing below changes.
-async function runTask(task, { route = null, noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false, gate = null } = {}) {
+async function runTask(task, { route = null, noPlan = false, planOnly = false, forced = null, history = [], image = null, log = () => {}, onPartial = null, deps = {}, speculation = {}, courses = null, studyState = "", deeper = false, gate = null, notify = null } = {}) {
   const d = { ...defaultDeps, ...deps };
   const lang = langOf(task); // the language of Bot's own fixed sentences in this answer
   // gate (thread only, given by jobs.js): called ONCE, right before slow work starts (a model answer, a plan, a course answer, a photo).
@@ -397,7 +397,48 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   const COACH_INTENT = { quiz: "quiz", exercises: "quiz", teach: "teach", start: "start", answer: "answer", progress: "progress", open: "progress", plan: "plan", update: "update", assignment: "assignment", motivate: "motivate", pause: "pause", resume: "resume", confirm: "confirm", cancel: "cancel" };
   const TEACH_ME = /^\s*(?:please\s+)?teach\s+me\b|^\s*(?:תלמד|תלמדי|תלמדו)\s+אותי/i;
   const MODEL_INTENTS = new Set(["quiz", "teach", "start", "answer", "assignment"]); // these call Argon; the others are code only (fast lane)
+  // WAIT FOR THE FILES (thread only). If a file of this course is still queued or being read, an answer now would be built from the OLD
+  // material and could say "that file is not in the course". So code (the state of the files, no model, no phrase in the user's words)
+  // says ONE short line (notify: jobs.js posts it as a message under the question), then waits WITHOUT a slow slot (the gate comes after)
+  // until the files are read, failed, or waitTimeoutMs passes. The returned note is put in front of the answer when a read failed or timed out.
+  const WAITS_FOR_FILES = new Set(["ask", "summary", "quiz", "exercises", "teach", "start", "assignment"]);
+  const FILE_BUSY = new Set(["queued", "reading"]);
+  async function waitForFiles(course) {
+    if (!d.courseFiles || !course) return null;
+    const read = () => { try { return (d.courseFiles(course.id) || {}).files || []; } catch (error) { return []; } };
+    const first = read().filter((f) => FILE_BUSY.has(f.status));
+    if (!first.length) return null;
+    const ids = new Set(first.map((f) => f.id));
+    const pagesLeft = first.reduce((a, f) => a + Math.max(1, (f.pagesTotal || Math.ceil((f.bytes || 0) / 60000)) - (f.pages || 0)), 0);
+    const minutes = Math.min(15, Math.max(1, Math.ceil(pagesLeft / 20))); // a rough guess: about 20 pages a minute
+    log("[queue] waiting for the file to be read");
+    if (notify) {
+      try { notify(say(lang, `The file is still being read; I will answer when it is done (about ${minutes} min).`, `הקובץ עדיין נקרא. התשובה תגיע כשהקריאה תסתיים (בערך ${minutes} דקות).`)); } catch (error) { /* a missing note never blocks the answer */ }
+    }
+    const pollMs = d.waitPollMs || 2000;
+    const limit = d.waitTimeoutMs || 15 * 60 * 1000;
+    const t0 = Date.now();
+    let now = first;
+    while (Date.now() - t0 < limit) {
+      await new Promise((r) => setTimeout(r, pollMs));
+      now = read().filter((f) => ids.has(f.id)); // a file removed meanwhile is simply gone
+      if (!now.some((f) => FILE_BUSY.has(f.status))) break;
+    }
+    const names = (list) => list.map((f) => `"${f.name}"`).join(", ");
+    const failed = now.filter((f) => f.status === "failed");
+    const late = now.filter((f) => FILE_BUSY.has(f.status));
+    const notes = [];
+    if (failed.length) notes.push(say(lang, `I could not read ${names(failed)}, so this answer uses only the material that was already in the course.`, `לא הצלחתי לקרוא את ${names(failed)}, אז התשובה הזאת מבוססת רק על החומר שכבר היה בקורס.`));
+    if (late.length) notes.push(say(lang, `Bot has not finished reading ${names(late)} yet, so this answer uses only the material that was already in the course.`, `הקריאה של ${names(late)} עדיין לא הסתיימה, אז התשובה הזאת מבוססת רק על החומר שכבר היה בקורס.`));
+    return notes.length ? notes.join("\n") : null;
+  }
+  const withNote = (result, note) => (note && result && typeof result.answer === "string" ? { ...result, answer: note + "\n\n" + result.answer } : result);
+
   async function courseAnswer(decision) {
+    const fileNote = decision.course && (!decision.studyIntent || WAITS_FOR_FILES.has(decision.studyIntent)) ? await waitForFiles(decision.course) : null;
+    return withNote(await courseAnswerNow(decision), fileNote);
+  }
+  async function courseAnswerNow(decision) {
     let coachIntent = COACH_INTENT[decision.studyIntent];
     // "teach me X" is a request to be taught, whatever label the desk gave it, but only for a course taught from its notes (the coach says so); a lecture course keeps its notebook answer.
     if (decision.studyIntent === "ask" && d.studyCanTeach && decision.course && TEACH_ME.test(task) && d.studyCanTeach(decision.course.id)) coachIntent = "teach";

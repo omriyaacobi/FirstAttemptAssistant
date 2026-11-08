@@ -62,6 +62,7 @@ function describeProgress(lines) {
     else if (/^\[tutor\] asking /.test(line)) text = "The tutor model is writing (this can take 20 seconds)";
     else if (/^\[queue\] waiting for a free slot/.test(line)) text = "Waiting for a free slot: Bot is busy with other tasks";
     else if (/^\[queue\] waiting for an earlier question/.test(line)) text = "Waiting for your earlier question about the same course to finish";
+    else if (/^\[queue\] waiting for the file to be read/.test(line)) text = "Waiting for the file to be read (Bot answers when it is done)";
     else if (/^\[queue\] started/.test(line)) text = "Starting";
     if (m && /^\[planner\] step/.test(line)) {
       const n = total || started.size;
@@ -119,7 +120,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
       now: now(),
       step: job.status === "running" ? describeProgress(job.log) : job.status === "done" ? "Done" : "Failed",
     };
-    if (job.messageId) { out.messageId = job.messageId; out.waiting = job.waiting === true; } // the thread: which question this job answers
+    if (job.messageId) { out.messageId = job.messageId; out.waiting = job.waiting === true; if (job.acked) out.acked = true; } // acked: a line was saved under the question, so the page fetches it now // the thread: which question this job answers
     if (job.status === "running" && job.partial) out.partial = job.partial; // the answer so far (streaming); gone once the job ends
     if (job.status === "error") out.error = job.error;
     if (withLog) out.log = job.log;
@@ -315,7 +316,10 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
         };
         const list = courses();
-        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job) });
+        // notify: one short line written by code (core.js), saved under the question as a message marked `ack`. It is not the answer: the
+        // restart check does not count it as one, the model's memory skips it, and no push is sent for it (onFinish runs only for the answer).
+        const notify = (text) => { try { job.acked = true; thread.append({ role: "assistant", text: String(text).slice(0, 500), replyTo: question.id, topic: "general", ack: true, at: now() }); } catch (error) { /* the line is a courtesy; the answer still comes */ } };
+        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify });
         const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);
         // An empty answer is a failure, not a reply: the page must never show a blank bubble.
         if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");

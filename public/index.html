@@ -3100,7 +3100,11 @@
         const finished = [...before].filter((id) => !T.jobs.has(id));
         // A job that ended (or one started on another device): fetch what is new, then show the answers.
         const unknownRunning = running.some((j) => j.messageId && !T.groups.has(j.messageId));
-        if (finished.length || unknownRunning || Date.now() - T.lastRefresh > 60000) await refreshNewest();
+        // a job that saved a short line under its question (for example "the file is still being read") is fetched once, at once
+        T.acked = T.acked || new Set();
+        const newAck = running.filter((j) => j.acked && !T.acked.has(j.id));
+        newAck.forEach((j) => T.acked.add(j.id));
+        if (finished.length || unknownRunning || newAck.length || Date.now() - T.lastRefresh > 60000) await refreshNewest();
         syncCards();
         if (T.jobs.size && !T.ticker) T.ticker = setInterval(tick, 1000);
         if (finished.length) { loadReminders(); loadQuota(); }
