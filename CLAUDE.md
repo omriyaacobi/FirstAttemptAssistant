@@ -27,6 +27,7 @@
 - **Language:** JavaScript (Node.js).
 - **GitHub:** public repo. Commit and push after every step, so never commit secrets (`.env` stays in `.gitignore`).
 - **Keep it simple:** small and easy to understand beats clever.
+- **Layout (2026-11-08):** code stays flat in the project root on purpose (`server.js`, `selfedit.js`, `store.js`, `gitops.js`, `auth.js`, `preview.js`, `start-web.cmd` are protected by NAME and `improve-watch.js` is run by name by a scheduled task, so do not move them). Tests are in `tests/` (they `require("../x")`; the helper `testzip.js` is there too), lab scripts and their notes in `experiments/` (see its README), and `README.md` is the map. A new test goes in `tests/`. Do not add a build step or packages (see experiments/2026-11-08-react-verdict.md).
 
 ## Bot design (agreed with me)
 

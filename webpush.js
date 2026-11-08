@@ -11,7 +11,7 @@
 //
 // The two standards used:
 //   - RFC 8291 + RFC 8188 ("aes128gcm"): the encryption. ECDH key agreement -> HKDF -> AES-128-GCM.
-//     webpush.test.js checks our code against the official test vector in RFC 8291, appendix A.
+//     tests/webpush.test.js checks our code against the official test vector in RFC 8291, appendix A.
 //   - RFC 8292 (VAPID): the "this is from Bot" token, an ES256-signed JWT.
 //
 // The VAPID private key is created on first use and saved in data/vapid.json (git-ignored).

@@ -1,6 +1,6 @@
 "use strict";
 // Test helper (not a test): runs the answer-drawing part of public/index.html (math, Markdown) against a tiny fake DOM,
-// so markdown.test.js and math.test.js can look at the elements it builds without a browser.
+// so tests/markdown.test.js and tests/math.test.js can look at the elements it builds without a browser.
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
