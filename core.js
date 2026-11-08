@@ -238,7 +238,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   function setReminder(decision) {
     try {
       const saved = d.createReminder(decision.reminder);
-      const answer = say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל-${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`);
+      const answer = say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל${formatWhen(saved.at, saved.timezone, "he")} (${saved.timezone}): ${saved.text}`);
       log(`[reminder] saved ${saved.id}`);
       log(timingLine());
       return { mode: "single", rule: "set a reminder", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer, reminder: saved, seconds: seconds(), timing };
@@ -257,7 +257,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
       return { mode: "single", rule: "list reminders", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: say(lang, `I could not read your reminders: ${error.message}`, `לא הצלחתי לקרוא את התזכורות: ${error.message}`), seconds: seconds(), timing };
     }
     const pending = items.filter((r) => r.status === "pending");
-    const line = (r) => "- " + formatWhen(r.at, r.timezone) + ": " + r.text;
+    const line = (r) => "- " + formatWhen(r.at, r.timezone, lang) + ": " + r.text;
     const body = pending.map(line).join("\n");
     const answer = pending.length
       ? say(lang, `You have ${pending.length} pending ${pending.length === 1 ? "reminder" : "reminders"}:\n${body}`, `יש לך ${pending.length} תזכורות ממתינות:\n${body}`)
@@ -432,7 +432,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     if (!stepDecision || stepDecision.action !== "remind") throw new Error("Bot did not set a reminder: I could not find a clear time in that part. Ask again with the day and time.");
     const saved = d.createReminder(stepDecision.reminder); // a failure here becomes the step's error
     log(`[reminder] saved ${saved.id} (from a split step)`);
-    return { answer: say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל-${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`), used: FRONT_DESK_MODEL };
+    return { answer: say(lang, `Reminder set for ${formatWhen(saved.at, saved.timezone)} (${saved.timezone}): ${saved.text}`, `התזכורת נקבעה ל${formatWhen(saved.at, saved.timezone, "he")} (${saved.timezone}): ${saved.text}`), used: FRONT_DESK_MODEL };
   }
 
   // Several jobs: run the plan, return every step's result.

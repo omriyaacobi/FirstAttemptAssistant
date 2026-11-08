@@ -199,7 +199,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     // "Due next Sunday" in the message or the file: CODE turns it into a real date and tells the coach (a model never works out dates).
     const due = dueFromWords(`${ctx.text}\n${String(info.text || "").slice(0, 20000)}`, now());
     try {
-      r = await coach.onUpload({ courseId, files: [{ fileId, fileName: info.fileName, pages: info.pages }], text: info.text, dateText: `${ctx.text} ${info.fileName}${due ? ` (due date worked out by Bot from the calendar: ${due})` : ""}` });
+      r = await coach.onUpload({ courseId, files: [{ fileId, fileName: info.fileName, pages: info.pages }], text: info.text, dueHint: due, dateText: `${ctx.text} ${info.fileName}${due ? ` (due date worked out by Bot from the calendar: ${due})` : ""}` });
     } catch (error) {
       log(`[files] the coach failed: ${error.message}`);
       r = { answer: words(langOf(ctx.text), `"${info.fileName}" is read (${info.pages} pages). I could not decide where it belongs: ${String(error.message).slice(0, 120)}.`, `"${info.fileName}" נקרא (${info.pages} עמודים). לא הצלחתי להחליט לאן הוא שייך: ${String(error.message).slice(0, 120)}.`) };

@@ -95,8 +95,8 @@ function parseWhen(iso, timezone, now = Date.now()) {
 }
 
 // A readable time for messages, in the reminder's own zone: "Mon, 2 Nov, 09:00".
-function formatWhen(at, timezone) {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatWhen(at, timezone, lang = "en") {
+  return new Intl.DateTimeFormat(lang === "he" ? "he-IL" : "en-GB", {
     timeZone: timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).format(new Date(at));
 }

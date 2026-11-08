@@ -239,7 +239,9 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   function assignmentList(ref) {
     const list = ref ? [ref] : refs();
     const rows = list.flatMap((r) => tracker.course(r).assignments.filter((a) => a.status !== "done").map((a) => T(`"${clean(a.title, 60)}" in ${r.name} (${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"})`, `"${clean(a.title, 60)}" ${bet(r.name)} (${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"})`)));
-    return rows.length ? `${T("Saved assignments:", "המטלות השמורות:")}\n- ${rows.join("\n- ")}` : T("I have no assignment saved yet. Send me the file or paste the text of the assignment, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה. אפשר לשלוח את הקובץ או להדביק את הטקסט של המטלה, ואציע אותה לאישור.");
+    const w = latestProposal();
+    const waiting = w && w.kind === "assignment" ? T(`\nWaiting for your Confirm (not saved yet): "${clean(w.fields.title, 60)}" in ${w.ref.name}${w.fields.due ? `, due ${niceDate(w.fields.due)}` : ""}. Tap Confirm on its card to save it.`, `\nמחכה לאישור שלך (עוד לא נשמרה): "${clean(w.fields.title, 60)}" ${bet(w.ref.name)}${w.fields.due ? `, להגשה עד ${niceDate(w.fields.due)}` : ""}. אפשר ללחוץ על Confirm בכרטיס שלה כדי לשמור.`) : "";
+    return rows.length ? `${T("Saved assignments:", "המטלות השמורות:")}\n- ${rows.join("\n- ")}${waiting}` : waiting ? waiting.trim() : T("I have no assignment saved yet. Send me the file or paste the text of the assignment, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה. אפשר לשלוח את הקובץ או להדביק את הטקסט של המטלה, ואציע אותה לאישור.");
   }
 
   // ---- several courses in one message ("calc lecture 4, algo I'm up to date, systems I haven't started") ----
@@ -298,13 +300,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
 
   // A file arrived. files: [{ fileId, fileName, pages }]; text: the file text or message (for assignments); dateText: what the student wrote about the date.
-  async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto" }) {
+  async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto", dueHint = null }) {
     curLang = langOf(`${dateText}`.replace(/\S+\.\w{2,4}\b/g, "")); // the words that came with the file, not its file name
     const ref = refs().find((r) => r.courseId === courseId);
     if (!ref) return { answer: whichCourse() };
     const asAssignment = kind === "assignment" || (kind === "auto" && /assignment|exercise|homework|\bhw\b|due\b|submit|תרגיל|מטלה|הגשה|עבודה\s+להגשה/i.test(`${dateText} ${text.slice(0, 2000)}`));
     if (asAssignment) {
-      const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log });
+      const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log, dueHint });
       if (!r.ok) return { answer: r.answer };
       const p = addProposal({ kind: "assignment", ref, fields: r.proposal });
       return { answer: T(`I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, `הבנתי שזו מטלה ${bet(ref.name)}: "${p.fields.title}", ${p.fields.due ? `להגשה עד ${niceDate(p.fields.due)}` : "לא מצאתי תאריך הגשה"}${p.fields.needs.length ? `, צריך בשבילה: ${p.fields.needs.join(", ")}` : ""}. זה נכון? אחרי אישור אשמור; לפני כן שום דבר לא נשמר.`), proposal: card(p) };
