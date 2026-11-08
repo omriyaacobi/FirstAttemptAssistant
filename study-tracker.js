@@ -13,6 +13,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const plan = require("./study-plan");
+const { normalizePosition, normalizePending } = require("./position-record");
 
 const KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 const BOX_DAYS = [1, 2, 4, 8, 16]; // Leitner boxes: how many days until the next review, by box
@@ -88,6 +89,9 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     const c = { ...base, ...(saved || {}) };
     if (ref.courseId) c.courseId = ref.courseId;
     if (ref.name) c.name = clean(ref.name, 100);
+    // Position v2: an old record (known, seenThrough, note, at) loads exactly as it was; the optional v2 fields are kept only when valid.
+    c.position = normalizePosition(c.position);
+    c.pendingQuestion = normalizePending(saved, c.position);
     return c;
   }
   const save = (c) => writeJson(fileOf(c.key), c);
@@ -120,9 +124,32 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     const { said: oldWords, ...before } = c.position; // an older sentence never stays next to a newer position
     c.position = { ...before, known: true, seenThrough: seenThrough ? seenThrough.date : c.position.seenThrough, note: clean(note || c.position.note, 200), at: now() };
     if (clean(said, SAID_MAX)) c.position.said = clean(said, SAID_MAX);
+    c.pendingQuestion = null; // answered
     save(c);
     return c.position;
   }
+
+  // The v2 position in one go: a reading of the student's words (see position-record.js). `fields` is checked field by field; invalid ones are
+  // dropped. A lecture or a date in `where` must be a HELD lecture of the timetable (it also fills seenThrough, so older code keeps working).
+  // It REPLACES the earlier position (a second reading replaces the first). It never touches lectures, checks or "understood".
+  function setStanding(ref, fields = {}) {
+    const c = course(ref);
+    const cand = normalizePosition({ ...fields, known: true, at: now() });
+    cand.seenThrough = null;
+    const w = cand.where;
+    if (w && (w.type === "lecture" || w.type === "date")) {
+      const all = slots(ref.key).filter((s) => plan.isHeld(s, now(), timezone));
+      const slot = w.type === "lecture" ? all.find((s) => s.n === w.n) : [...all].reverse().find((s) => s.date <= w.date);
+      if (!slot) throw new Error(w.type === "lecture" ? "there is no held lecture with that number" : "no held lecture on or before that date");
+      cand.seenThrough = slot.date;
+    }
+    if (!(cand.said || cand.mode || cand.where || cand.pace || cand.behindBy || cand.gaps || cand.depth || cand.goal || cand.focus || cand.examDate)) throw new Error("there is nothing to keep");
+    c.position = normalizePosition(cand);
+    c.pendingQuestion = null;
+    save(c);
+    return c.position;
+  }
+  const pendingQuestion = (ref) => course(ref).pendingQuestion;
 
   // ---- material ----
   // material: [{ fileId, from, to, fileName? }]. A date must be a real lecture slot of this course (held or in the future).
@@ -172,7 +199,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
   function markAsked(ref, { dates = [], position = false } = {}) {
     const c = course(ref);
     for (const d of dates) c.askedSlots[d] = now();
-    if (position) c.askedPosition = now();
+    if (position) { c.askedPosition = now(); c.pendingQuestion = { kind: "position", at: now() }; }
     save(c);
   }
 
@@ -259,7 +286,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     };
   }
 
-  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, setPosition, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
+  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, setPosition, setStanding, pendingQuestion, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
 }
 
 module.exports = { createTracker, BOX_DAYS, MIN_QUESTIONS, PASS_SCORE, GRACE_DAYS, clean };

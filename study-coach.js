@@ -76,7 +76,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const PENDING_MS = 24 * 3600 * 1000, NO_REPEAT_MS = 7 * 24 * 3600 * 1000;
   // Courses Bot asked "where are you" about in the last day and has no answer for yet, newest first.
   function pendingRefs() {
-    return refs().map((r) => ({ r, at: tracker.course(r).askedPosition || 0 })).filter((x) => x.at && now() - x.at < PENDING_MS && !tracker.progress(x.r).positionKnown).sort((a, b) => b.at - a.at).map((x) => x.r);
+    return refs().map((r) => ({ r, at: (tracker.pendingQuestion(r) || {}).at || 0 })).filter((x) => x.at && now() - x.at < PENDING_MS).sort((a, b) => b.at - a.at).map((x) => x.r);
   }
   const askedRecently = (ref) => { const at = tracker.course(ref).askedPosition || 0; return !!at && now() - at < NO_REPEAT_MS; };
   // Which course do the student's words belong to? Named in the words, else the course the front desk chose, else the ONE course Bot asked about,
