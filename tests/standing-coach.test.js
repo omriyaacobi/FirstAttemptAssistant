@@ -247,3 +247,20 @@ test("P2: a file for a course with no timetable gets no lecture-date question", 
   assert.strictEqual(r.proposal, undefined);
   void ref;
 });
+
+test("goal 'assignment': no lecture question, an offer to teach through the assignment, and no open question left behind", async () => {
+  const { coach, pos } = make({ replies: { "gap filling": { mode: "attending", depth: "shaky", goal: "assignment" } } });
+  const r = await say(coach, "About Systems Programming: I went to most lectures but did not follow, so I will do gap filling while working on the assignment");
+  assert.match(r.answer, /Understood, Systems Programming: going to the lectures; the goal is to learn through the assignment/);
+  assert.match(r.answer, /teach me through the assignment/);
+  assert.doesNotMatch(r.answer, /which lecture|One question/);
+  assert.ok(!pos(SP).pendingQuestion);
+});
+
+test("Hebrew goal 'assignment': the offer is in Hebrew", async () => {
+  const { coach } = make({ replies: { "השלמת פערים": { mode: "attending", goal: "assignment" } } });
+  const r = await say(coach, "ב-Systems Programming הגעתי לחלק מהשיעורים, ואני צריך השלמת פערים תוך כדי העבודה על התרגיל");
+  assert.match(r.answer, /ללמוד דרך המטלה/);
+  assert.match(r.answer, /תלמד אותי דרך המטלה/);
+  assert.doesNotMatch(r.answer, /שאלה אחת/);
+});
