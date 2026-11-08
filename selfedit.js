@@ -45,7 +45,7 @@ const EDITOR_RULES = `You are improving the source code of a small Node.js proje
 
 Make the change the user asks for. Keep it as small and clear as you can, in the project's existing style (plain-English comments, no new dependencies, only Node's built-in modules).
 
-You can only read and edit files in this folder. You cannot run commands, so add or update tests for what you change (the project uses Node's built-in test runner; test files end in .test.js) and reason carefully about whether they will pass.
+You can only read and edit files in this folder. You cannot run commands, so add or update tests for what you change (the project uses Node's built-in test runner; test files end in .test.js and live in the tests folder) and reason carefully about whether they will pass.
 
 Do not touch these files: server.js, selfedit.js, store.js, gitops.js, .gitignore, start-web.cmd, anything inside data/ or .git/. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
 
