@@ -7,3 +7,4 @@ Finished one-off measurements. Nothing in Bot requires anything from this folder
   They `require("../x")` modules from the project root, so keep them in this folder.
 - `hello-claude.js`, `hello-gemini.js`: the first learning steps (Claude CLI and `agy` "hello"); moved here from the root on 2026-11-08, nothing used them.
 - `one-thread-results/`, `study-notebooks-files/`: raw data for the matching notes.
+- `2026-11-08-wait-for-file.md`, `wait-for-file-live.js`: a course question waits while that course's file is being read (fake models, slow fake reader).

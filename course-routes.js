@@ -232,7 +232,12 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   }
 
   // list(): the real courses as [{ id, name }]. The front desk may only choose from these (thread; see frontdesk.js).
-  return { handle, answer, addUpload, fileInfo, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  // The files of one course with their reading state, for the thread (core.js waits while any is queued or reading). Names are shown to the user.
+  const courseFiles = (courseId) => {
+    const c = courses.get(courseId);
+    return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
+  };
+  return { handle, answer, addUpload, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };
