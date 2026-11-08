@@ -28,6 +28,8 @@ const { lectureIndex, askedLectures } = require("./study");
 const standing = require("./standing");
 const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
+const catchup = require("./catchup");
+const { MODELS } = require("./router");
 
 const INTENTS = ["teach", "start", "quiz", "answer", "progress", "plan", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
 const PROPOSAL_MS = 12 * 3600 * 1000; // proposals live in memory for 12 hours
@@ -150,7 +152,16 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const byName = all.find((r) => r.name && probe.toLowerCase().includes(r.name.toLowerCase()));
     if (byName) return byName;
     const withSession = all.filter((r) => tracker.getSession(r));
-    return withSession.length === 1 ? withSession[0] : null;
+    if (withSession.length === 1) return withSession[0];
+    return fitCourse(text);
+  }
+  // No course named and no open session: the ONE course that fits. The only course there is, or the only course whose notes have a section title
+  // that shares words with the message (code only, never a guess between several).
+  function fitCourse(text) {
+    const all = refs();
+    if (all.length === 1) return all[0];
+    const hits = all.filter((r) => r.courseId && catchup.tokens(text).length && catchup.matchSections(buildOutline(courses.allPages(r.courseId)), text).length);
+    return hits.length === 1 ? hits[0] : null;
   }
   const whichCourse = () => T(`Which course do you mean? ${refs().map((r) => r.name).join(", ")}.`, `לאיזה קורס הכוונה? ${refs().map((r) => r.name).join(", ")}.`);
 
@@ -172,6 +183,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // The covered range for a quiz, from the student's record: lectures up to the place (minus the ones they missed), or pieces of the notes up to it.
   // null when there is no v2 record or no place and the course is not being revised (then the quiz is chosen as before).
   function rangeFor(ref, text) {
+    const byNotes = notesRange(ref, text);
+    if (byNotes) return byNotes;
     const pos = tracker.course(ref).position;
     if (!pos || !pos.v || askedLectures(text).length) return null;
     const w = pos.where;
@@ -208,6 +221,141 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const i = here ? f.sections.findIndex((s) => s.id === here.id) : -1;
     const next = f.sections.slice(i + 1).find((s) => !here || s.level <= here.level) || null;
     return next ? { title: next.title, pages: f.realPages ? next.toPage - next.fromPage + 1 : 0 } : null;
+  }
+
+  // ---- teaching from notes that are not split by lecture (catchup.js) ----
+  const NEXT_WORDS = /\bnext\b|\bcontinue\b|keep\s+going|\bmore\b|הבא|המשך|תמשיך|עוד/i;
+  const THROUGH = /teach|explain|through|concept|walk\s+me|learn|from\s+scratch|prerequisite|תלמד|תסביר|דרך|מושג|רעיונות|מאפס/i;
+  function notesView(ref) {
+    const pages = ref.courseId ? courses.allPages(ref.courseId) : [];
+    const outline = buildOutline(pages);
+    return { pages, outline, chunks: catchup.chunksOf(outline, pages) };
+  }
+  // A course whose teaching comes from its notes: it has a big notes file (one file, or one file holding at least half of the text) and
+  // the student did not name a lecture of a timetable that has lecture material.
+  function notesCourse(ref, v = notesView(ref)) {
+    if (!v.chunks.length) return false;
+    const files = v.outline.files, total = files.reduce((n, f) => n + f.chars, 0), big = Math.max(...files.map((f) => f.chars));
+    return files.length === 1 || big * 2 >= total;
+  }
+  const withoutName = (ref, text) => { const own = new Set(catchup.tokens(ref.name)); return catchup.tokens(text).filter((w) => !own.has(w)); };
+  const piece = (c, i = 0) => ({ fileId: `${c.fileId}#${c.key}`, fileName: `${c.fileName} - ${clean(c.title, 60)}`, page: c.realPages ? c.fromPage : 1, text: c.text });
+  const nameList = (v, n = 8) => { const t = catchup.unitsOf(v.outline).map((u) => clean(u.title, 50)); return t.slice(0, n).join("; ") + (t.length > n ? "; ..." : ""); };
+  // The units a message names: a number ("section 2.1"), else the title words, else (only when there are topic words) ONE Argon call that picks ids from the real list.
+  async function namedUnits(ref, v, text, useModel = true) {
+    const byNumber = catchup.sectionByNumber(v.outline, text);
+    if (byNumber.length) return byNumber;
+    const topic = withoutName(ref, text);
+    if (!topic.length) return [];
+    const byWords = catchup.matchSections(v.outline, topic.join(" "), undefined, v.pages);
+    if (byWords.length || !useModel) return byWords;
+    return catchup.chooseByModel({ askChain, chain: [MODELS.argonLow], outline: v.outline, pages: v.pages, text, log });
+  }
+  // The teaching turn from the notes: null when this is not a notes course (the lecture road is used), else an answer or { chunk }.
+  async function notesPick(ref, text) {
+    const v = notesView(ref);
+    if (!notesCourse(ref, v)) return null;
+    if (askedLectures(text).length && tracked(ref)) return null;
+    if (tracked(ref) && tracker.progress(ref).withMaterial > 0 && !catchup.sectionByNumber(v.outline, text).length && !catchup.matchSections(v.outline, withoutName(ref, text).join(" ")).length) return null; // a timetable course with lecture material keeps the lecture road
+    const state = catchup.notesState(tracker, ref);
+    let from = [];
+    const topic = withoutName(ref, text);
+    if (catchup.sectionByNumber(v.outline, text).length || (topic.length && !(NEXT_WORDS.test(text) && !catchup.matchSections(v.outline, topic.join(" ")).length))) from = await namedUnits(ref, v, text, !NEXT_WORDS.test(text));
+    const asked = catchup.sectionByNumber(v.outline, text).length > 0 || (topic.length > 0 && !NEXT_WORDS.test(text));
+    if (!from.length && asked) {
+      return { say: T(`I could not find that in the notes of ${ref.name}, and I will not guess. The parts I see: ${nameList(v)}. Which one? Or say "teach me the next part".`, `לא מצאתי את זה בסיכומים ${bet(ref.name)}, ולא אנחש. החלקים שאני רואה: ${nameList(v)}. איזה מהם? או לכתוב "תלמד אותי את החלק הבא".`) };
+    }
+    const chunk = catchup.nextChunk(v.chunks, state, from.length ? from : null);
+    if (!chunk) return { say: T(`We went through all the parts of the ${ref.name} notes. Say "quiz me on what we covered" to check yourself, or name a part to go over again.`, `עברנו על כל חלקי הסיכומים ${bet(ref.name)}. אפשר לכתוב "תבחן אותי על מה שלמדנו", או לציין חלק לחזרה.`) };
+    return { chunk, onTaught: (c) => catchup.markTaught(tracker, ref, c) };
+  }
+  // Pieces of the notes for a quiz: the part the student names, else what Bot has taught from the notes (the last four, the latest first).
+  function notesRange(ref, text) {
+    const v = notesView(ref);
+    if (!notesCourse(ref, v)) return null;
+    const named = catchup.sectionByNumber(v.outline, text).length ? catchup.sectionByNumber(v.outline, text) : catchup.matchSections(v.outline, withoutName(ref, text).join(" "), undefined, v.pages);
+    let chunks;
+    if (named.length) { const titles = new Set(named.map((u) => u.title)); chunks = v.chunks.filter((c) => titles.has(c.title)).slice(0, 4); }
+    else chunks = catchup.taughtChunks(v.chunks, catchup.notesState(tracker, ref)).slice(-4).reverse();
+    if (!chunks.length) return null;
+    const titles = [...new Set(chunks.map((c) => clean(c.title, 60)))];
+    return { extra: chunks.map(piece), label: titles.length === 1 ? titles[0] : T(`what we covered so far in ${ref.name}`, `מה שלמדנו עד עכשיו ${bet(ref.name)}`) };
+  }
+  // "Teach me through the assignment": the next idea the assignment needs, with pieces of the notes about it. null when there is no assignment with ideas saved.
+  function throughArgs(ref, text) {
+    if (!THROUGH.test(text)) return null;
+    const a = tutor.pickAssignment({ tracker, ref, message: text });
+    if (!a || !a.needs.length) return null;
+    const idx = Math.max(0, Number(((tracker.course(ref).pathIdx || {})[a.id]) || 0));
+    const concept = a.needs[idx];
+    let extra;
+    if (concept) { const v = notesView(ref); const units = catchup.matchSections(v.outline, concept, undefined, v.pages); const titles = new Set(units.map((u) => u.title)); const cs = v.chunks.filter((c) => titles.has(c.title)).slice(0, 2); if (cs.length) extra = cs.map(piece); }
+    return { assignment: a, concept, index: idx, total: a.needs.length, concepts: a.needs, extra, onTaught: () => { const c = tracker.course(ref); tracker.save({ ...c, pathIdx: { ...(c.pathIdx || {}), [a.id]: idx + 1 } }); } };
+  }
+
+  // ---- the catch-up plan across all courses ----
+  const ALL_BEHIND = /\b(?:behind|lost|drowning|nothing)\b[^.\n]{0,30}\b(?:everything|all\s+(?:of\s+)?(?:my\s+)?(?:courses|classes)|every\s+(?:course|class))\b|\beverything\b[^.\n]{0,20}\bbehind\b|(?:בפיגור|מאחור|אבוד|אבודה)\s+(?:ב)?(?:הכל|כל\s+הקורסים)|בהכל\s+(?:מאחור|בפיגור|אבוד)|בכל\s+הקורסים/i;
+  const WEEK_WORDS = /\bweek\b|שבוע/i, TODAY_WORDS = /\btoday\b|היום/i;
+  const dayLabel = (iso) => plan.niceDate(iso, curLang);
+  function planItems(ref) {
+    const p = tracker.progress(ref), pos = p.position || {};
+    const out = [];
+    const exam = pos.confirmed && pos.examDate && pos.examDate >= today() ? pos.examDate : null;
+    const dl = exam ? plan.addDays(exam, -1) : null;
+    const concepts = pos.goal === "concepts";
+    const base = { course: ref.name, deadline: dl, concepts, focus: false };
+    const attending = !pos.mode || pos.mode === "attending";
+    if (tracked(ref) && attending) for (const b of p.behind.filter((x) => x.hasMaterial || x.topic).slice(0, 5)) out.push({ ...base, kind: "lecture", label: `${ref.name} ${T("lecture", "הרצאה")} ${b.n}`, minutes: catchup.MINUTES.lecture, say: T(`teach me ${ref.name} lecture ${b.n}`, `תלמד אותי ${ref.name} הרצאה ${b.n}`) });
+    const v = notesView(ref);
+    if (notesCourse(ref, v) && !(tracked(ref) && p.withMaterial > 0)) {
+      const state = catchup.notesState(tracker, ref);
+      const at = state.cursor ? v.chunks.findIndex((c) => c.key === state.cursor) : -1;
+      let rest = v.chunks.slice(at + 1).filter((c) => !state.taught.includes(c.key));
+      // a student who goes to the lectures: only the part the lecturer has reached (their own place), the rest is not taught yet
+      const w = pos.where;
+      if (attending && w) {
+        const f = v.outline.files.slice().sort((a, b) => b.chars - a.chars)[0];
+        const here = w.type === "section" ? outlineLib.sectionByName(v.outline, w.name, f.fileId) : w.type === "pages" ? outlineLib.sectionAtPage(v.outline, f.fileId, w.to) : w.type === "fraction" ? outlineLib.sectionAtFraction(v.outline, w.value, f.fileId) : null;
+        if (here) rest = rest.filter((c) => { const u = f.sections.find((s) => s.id === c.sectionId); return u && u.start < here.end; });
+      }
+      const focusTitles = pos.focus ? new Set(catchup.matchSections(v.outline, pos.focus, undefined, v.pages).map((u) => u.title)) : new Set();
+      for (const c of rest.slice(0, 10)) out.push({ ...base, kind: "chunk", focus: focusTitles.has(c.title), label: `${ref.name}: "${clean(c.title, 50)}"${c.parts > 1 ? ` ${c.part}/${c.parts}` : ""}`, minutes: catchup.MINUTES.chunk, say: T(`teach me the next part of ${ref.name}`, `תלמד אותי את החלק הבא ${bet(ref.name)}`) });
+    }
+    for (const a of p.assignments) out.push({ ...base, kind: "assignment", deadline: a.due || null, label: `${ref.name}: ${T("assignment", "מטלה")} "${clean(a.title, 40)}"`, minutes: catchup.MINUTES.assignment, say: T("teach me through the assignment", "תלמד אותי דרך המטלה") });
+    if (exam && plan.daysBetween(today(), exam) <= 14) out.push({ ...base, kind: "review", label: `${ref.name}: ${T("review before the exam", "חזרה לפני המבחן")}`, minutes: catchup.MINUTES.review, say: T(`quiz me on ${ref.name}`, `תבחן אותי ${bet(ref.name)}`) });
+    return out;
+  }
+  function catchupPlan(text, list = refs()) {
+    const budget = catchup.parseBudget(text) || catchup.DEFAULT_BUDGET;
+    const active = list.filter((r) => (tracker.progress(r).position || {}).mode !== "paused");
+    const items = active.flatMap(planItems);
+    const noExam = active.filter((r) => !(tracker.progress(r).position || {}).examDate);
+    const lines = [];
+    if (!items.length) {
+      const empty = T("I do not have anything to plan from yet: no notes with sections, no lecture material and no assignment saved. Send the notes or the slides (a file or a zip) and I will plan around them.", "אין לי עדיין ממה לתכנן: אין סיכומים עם סעיפים, אין חומר להרצאות ואין מטלה שמורה. אפשר לשלוח את הסיכומים או את השקפים (קובץ או קובץ דחוס) ואתכנן לפיהם.");
+      return empty + examQuestion(noExam);
+    }
+    const s = catchup.buildSchedule(items, { today: today(), budget });
+    const first = s.grid[0].items[0];
+    lines.push(T(`A realistic plan, about ${budget} minutes a day (today is ${dayLabel(today())}). It changes when you tell me more.`, `תוכנית ריאלית, בערך ${budget} דקות ביום (היום ${dayLabel(today())}). היא משתנה כשמספרים לי עוד.`));
+    lines.push(T(`Start with: ${first.label} (${first.minutes} min). Say: "${first.say}".`, `מתחילים מ: ${first.label} (${first.minutes} דקות). לכתוב: "${first.say}".`));
+    if (active.some((r) => (tracker.progress(r).position || {}).goal === "concepts")) lines.push(T("Concepts first, as you said: the exercises come after.", "קודם מושגים, כמו שנכתב: התרגילים אחר כך."));
+    const onlyToday = TODAY_WORDS.test(text) && !WEEK_WORDS.test(text);
+    const rows = (onlyToday ? s.grid.slice(0, 1) : s.grid).map((g) => `${g.date === today() ? T("Today", "היום") : dayLabel(g.date)} (${g.minutes} ${T("min", "דק'")}): ${g.items.map((i) => i.label).join(" + ")}`);
+    lines.push(...rows);
+    if (onlyToday && s.grid.length > 1) lines.push(T('For the whole week say "plan for the week".', 'לתוכנית של כל השבוע: "תוכנית לשבוע".'));
+    const more = s.left.length;
+    if (more) lines.push(T(`Not planned yet: ${more} more piece${more === 1 ? "" : "s"} (about ${Math.round(s.left.reduce((n, i) => n + i.minutes, 0) / 60 * 10) / 10} hours). I add them as days free up.`, `עוד לא מתוכננים: ${more} חלקים (בערך ${Math.round(s.left.reduce((n, i) => n + i.minutes, 0) / 60 * 10) / 10} שעות). אוסיף אותם כשיתפנו ימים.`));
+    for (const l of s.late.slice(0, 2)) lines.push(T(`Tight: ${l.it.label} is due ${niceDate(l.it.deadline)}, and the plan only reaches it ${l.date ? "on " + niceDate(l.date) : "after this week"}. If you can do more minutes a day, tell me ("2 hours a day").`, `לחוץ: ${l.it.label} להגשה עד ${niceDate(l.it.deadline)}, והתוכנית מגיעה אליה רק ${l.date ? "ב" + niceDate(l.date) : "אחרי השבוע הזה"}. אם אפשר יותר דקות ביום, אפשר לכתוב ("שעתיים ביום").`));
+    return lines.join("\n") + examQuestion(noExam);
+  }
+  // ONE question about what the plan lacks (exam dates), at most once a week. The answer goes through the usual reader and becomes a Confirm card.
+  function examQuestion(noExam) {
+    const ask = noExam.filter((r) => { const at = tracker.course(r).askedExam || 0; return !at || now() - at >= NO_REPEAT_MS; });
+    if (!ask.length) return "";
+    for (const r of ask) tracker.save({ ...tracker.course(r), askedExam: now() });
+    const names = ask.map((r) => r.name).join(", ");
+    return T(`\n\nOne thing I do not know: when are the exams (${names})? I plan only around dates I am told. Write one, for example "the exam in ${ask[0].name} is on 22 December", and I show it on a card to confirm before I use it.`, `\n\nדבר אחד שאני לא יודע: מתי המבחנים (${names})? אני מתכנן רק לפי תאריכים שנאמרו לי. אפשר לכתוב אחד, למשל "המבחן ${bet(ask[0].name)} ב-22 בדצמבר", ואציג אותו בכרטיס לאישור לפני שאשתמש בו.`);
   }
 
   // ---- progress ----
@@ -616,6 +764,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // Bot just asked "where are you": the next message ANSWERS it, whatever label the front desk gave it, unless it is clearly another question.
     if (intent === "progress" && pendingRefs().length && !WHERE_Q.test(text) && !(IS_QUESTION.test(text) && !FIRST_PERSON.test(text))) intent = "update";
 
+    // "I'm behind in everything" or "what should I do today/this week" with no course named: one realistic plan across ALL courses (code only).
+    if (intent === "plan" && !refInText(text) && !(courseId && refs().some((r) => r.courseId === courseId) && refs().length > 1 && !ALL_BEHIND.test(text))) return done({ answer: catchupPlan(text) });
+    if ((intent === "update" || intent === "progress" || intent === "motivate") && ALL_BEHIND.test(text) && !refInText(text)) return done({ answer: catchupPlan(text) });
+
     if ((intent === "update" || intent === "progress") && MISSED.test(text) && !SKIP_WORDS.test(text) && !(CAUGHT.test(text) && !/\?/.test(text)) && !(DURATION.test(text) && !/\?/.test(text))) return done({ answer: missedAnswer(text) });
 
     if (intent === "update") {
@@ -670,7 +822,14 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // teach / quiz / start / answer: the tutor
     if (!ref) return done({ answer: whichCourse() });
     const align = maybeAlign(ref);
-    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null });
+    let notes = null, through = null;
+    if (intent === "teach") {
+      const pick = await notesPick(ref, text);
+      if (pick && pick.say) return done({ answer: pick.say });
+      notes = pick;
+    }
+    if (intent === "start") through = throughArgs(ref, text);
+    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes, through });
     return done({ ...r, mode: "study", answer: r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
