@@ -395,9 +395,12 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   // The coach's intents (study-coach.js). The desk's older names map onto them: a quiz or exercises is a quiz, "open" shows progress.
   // "ask" and "summary" stay a plain question to the notebook.
   const COACH_INTENT = { quiz: "quiz", exercises: "quiz", teach: "teach", start: "start", answer: "answer", progress: "progress", open: "progress", plan: "plan", update: "update", assignment: "assignment", motivate: "motivate", pause: "pause", resume: "resume", confirm: "confirm", cancel: "cancel" };
+  const TEACH_ME = /^\s*(?:please\s+)?teach\s+me\b|^\s*(?:תלמד|תלמדי|תלמדו)\s+אותי/i;
   const MODEL_INTENTS = new Set(["quiz", "teach", "start", "answer", "assignment"]); // these call Argon; the others are code only (fast lane)
   async function courseAnswer(decision) {
-    const coachIntent = COACH_INTENT[decision.studyIntent];
+    let coachIntent = COACH_INTENT[decision.studyIntent];
+    // "teach me X" is a request to be taught, whatever label the desk gave it, but only for a course taught from its notes (the coach says so); a lecture course keeps its notebook answer.
+    if (decision.studyIntent === "ask" && d.studyCanTeach && decision.course && TEACH_ME.test(task) && d.studyCanTeach(decision.course.id)) coachIntent = "teach";
     if (d.studyAnswer && coachIntent) {
       if (MODEL_INTENTS.has(coachIntent)) await slow({ course: decision.course ? decision.course.id : undefined });
       log(`[study] ${coachIntent}${decision.course ? " in " + decision.course.name : ""}`);

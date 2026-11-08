@@ -440,3 +440,15 @@ async function startServer({ thread = null, coach = null, summaries = null, thre
   const json = (method, p, body) => raw(method, p, body ? { "Content-Type": "application/json" } : {}, body ? JSON.stringify(body) : undefined);
   return { raw, json, close: () => server.close() };
 }
+
+test("COACH: 'teach me X' labelled ask is teaching for a course taught from its notes, and stays a notebook answer otherwise", async () => {
+  const seen = [];
+  let notebook = 0;
+  const mk = (canTeach) => fakes({ decide: desk(COURSES[0], "ask"), studyCanTeach: () => canTeach, studyAnswer: async (a) => { seen.push(a.studyIntent); return { mode: "study", answer: "ok", sources: [] }; }, courseAnswer: async () => { notebook++; return { mode: "course", courseId: IDS.calc, answer: "from the notes", sources: [] }; } });
+  assert.strictEqual((await handleTask("teach me about pointers", { deps: mk(true), courses: COURSES })).mode, "study");
+  assert.strictEqual((await handleTask("תלמד אותי על מצביעים", { deps: mk(true), courses: COURSES })).mode, "study");
+  assert.deepStrictEqual(seen, ["teach", "teach"]);
+  assert.strictEqual((await handleTask("teach me about pointers", { deps: mk(false), courses: COURSES })).mode, "course", "a lecture course keeps its notebook answer");
+  assert.strictEqual((await handleTask("what is a pointer", { deps: mk(true), courses: COURSES })).mode, "course", "a plain question is not teaching");
+  assert.strictEqual(notebook, 2);
+});
