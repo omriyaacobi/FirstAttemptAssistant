@@ -9,6 +9,7 @@
 // Nothing in this file touches the disk.
 
 const zlib = require("node:zlib");
+const crypto = require("node:crypto");
 const { sniffFile, MAX_TEXT_BYTES } = require("./upload");
 const { htmlBytesToText } = require("./html-text");
 
@@ -19,7 +20,13 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;       // one unpacked file: the same li
 const MAX_FILES = 200;                         // files we keep from one zip (a course's lectures fit comfortably)
 const MAX_ENTRIES = 2000;                      // entries we even look at (folders, junk): above this the zip is refused as a whole
 const MAX_NAME_CHARS = 200;                    // a longer name is suspicious
-const MIN_IMAGE_BYTES = 20 * 1024;             // a picture smaller than this is an icon, a bullet or a formula fragment (a Word "saved as web page" has hundreds): skipped and only COUNTED, never read by a model
+// IMAGES (a Word "saved as web page" comes with hundreds: bullets, line pieces, blank frames, labels). Decided in CODE from the picture's
+// real header and bytes (judgeImage), never by a model. A picture is skipped, and only COUNTED, when it is:
+const MIN_IMAGE_SIDE = 60;                     //   too thin or too small: its short side is under this many pixels (lines, bullets, icons)
+const MIN_IMAGE_AREA = 20000;                  //   under this many pixels in all (about 140 x 140): a label or a formula fragment
+const MIN_IMAGE_DENSITY = 0.03;                //   nearly empty: fewer than this many compressed bytes per pixel (a blank frame, a flat colour box)
+const MIN_IMAGE_BYTES = 20 * 1024;             //   only when the size cannot be read from the header: smaller than this many bytes
+//                                             //   (and a picture with the SAME bytes as one already kept from this zip is skipped too)
 const MAX_CODE_BYTES = 1024 * 1024;            // one source-code / project text file (real code files are small; a bigger one is usually data)
 
 const MAX_HTML_BYTES = 10 * 1024 * 1024;       // one web page (a Word file "saved as web page" holds ALL its text in one big .html); its TEXT must then fit MAX_TEXT_BYTES
@@ -127,6 +134,46 @@ function kindOf(name, group) {
   return "text";
 }
 
+// The pixel size of a PNG, JPEG or WebP, read from its header (no package). Returns { w, h } or null when it cannot be read.
+function imageSize(b) {
+  try {
+    if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b.toString("latin1", 12, 16) === "IHDR") return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+    if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) { // JPEG: hop from marker to marker until the "start of frame", which holds the size
+      let i = 2;
+      while (i + 9 < b.length) {
+        if (b[i] !== 0xff) return null;
+        const m = b[i + 1];
+        if (m === 0xff) { i++; continue; } // padding
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5) };
+        i += m === 0x01 || (m >= 0xd0 && m <= 0xd9) ? 2 : 2 + b.readUInt16BE(i + 2); // a few markers have no length
+      }
+      return null;
+    }
+    if (b.length > 30 && b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WEBP") {
+      const kind = b.toString("latin1", 12, 16);
+      if (kind === "VP8X") return { w: 1 + b.readUIntLE(24, 3), h: 1 + b.readUIntLE(27, 3) };
+      if (kind === "VP8L") { const v = b.readUInt32LE(21); return { w: 1 + (v & 0x3fff), h: 1 + ((v >>> 14) & 0x3fff) }; }
+      if (kind === "VP8 ") return { w: b.readUInt16LE(26) & 0x3fff, h: b.readUInt16LE(28) & 0x3fff };
+    }
+  } catch (error) { /* a cut-off header */ }
+  return null;
+}
+
+// Is this picture worth keeping for studying? Returns null (keep) or { reason, code } to skip it (counted only). `seen` holds the
+// fingerprints of the pictures already kept from this zip. Easy to read on purpose: size and bytes only, never what the picture shows.
+function judgeImage(data, seen) {
+  const size = imageSize(data);
+  if (!size) { if (data.length < MIN_IMAGE_BYTES) return { reason: "a small image (icon or formula fragment)", code: "small" }; }
+  else {
+    if (Math.min(size.w, size.h) < MIN_IMAGE_SIDE || size.w * size.h < MIN_IMAGE_AREA) return { reason: "a small or thin image (icon, line or formula fragment)", code: "small" };
+    if (data.length / (size.w * size.h) < MIN_IMAGE_DENSITY) return { reason: "a nearly empty image (blank frame or flat box)", code: "small" };
+  }
+  const print = crypto.createHash("sha1").update(data).digest("hex");
+  if (seen.has(print)) return { reason: "the same image again", code: "small" };
+  seen.add(print);
+  return null;
+}
+
 // Unpacks the zip. Returns { files: [{ name, path, group, bytes }], skipped: [{ name, reason, code }] }.
 // group is "doc" or "code". path is the name inside the zip (shown only, never used as a path). code is a short stable key for the
 // reason, so the summary can be written in the user's language; "junk" ones are only counted there.
@@ -137,6 +184,7 @@ function unzip(bytes) {
   const entries = readDirectory(bytes);
   const files = [];
   const skipped = [];
+  const seenImages = new Set(); // fingerprints of the pictures kept so far
   let total = 0; // bytes REALLY unpacked so far
   for (const e of entries) {
     const shown = e.name.replace(/[\u0000-\u001f\u007f<>]+/g, " ").slice(0, 80); // safe to show; never used as a path
@@ -149,11 +197,11 @@ function unzip(bytes) {
     if (/\.zip$/i.test(e.name)) { skip("a zip inside a zip is not opened", "nested"); continue; }
     const group = classify(e.name);
     if (group === "junk") { skip("compiled or tool leftover", "junk"); continue; }
-    if (!group) { skip("this type is not supported", "type"); continue; }
+    const extless = !group && !e.name.split("/").pop().includes("."); // no extension at all (an executable named like the project): its BYTES decide below
+    if (!group && !extless) { skip("this type is not supported", "type"); continue; }
     if (e.flags & 1) { skip("password-protected", "password"); continue; }
     if (e.method !== 0 && e.method !== 8) { skip("unknown compression", "compression"); continue; }
     if (files.length >= MAX_FILES) { skip(`more than ${MAX_FILES} files: the rest are left out`, "toomany"); continue; }
-    if (group === "doc" && kindOf(e.name, group) === "image" && e.size < MIN_IMAGE_BYTES) { skip("a small image (icon or formula fragment)", "small"); continue; }
     if (group === "code" && e.size > MAX_CODE_BYTES) { skip(`a code file over ${Math.round(MAX_CODE_BYTES / 1048576)} MB`, "codebig"); continue; }
     if (group === "html" && e.size > MAX_HTML_BYTES) { skip(`a web page over ${Math.round(MAX_HTML_BYTES / 1048576)} MB`, "big"); continue; }
     if (e.size > MAX_FILE_BYTES) { skip(`over ${Math.round(MAX_FILE_BYTES / 1048576)} MB`, "big"); continue; }
@@ -175,6 +223,11 @@ function unzip(bytes) {
     }
     if (data.length !== e.size) { skip("damaged (the size does not match)", "damaged"); continue; }
     if (data.length === 0) { skip("empty file", "empty"); continue; }
+    if (group === "doc" && kindOf(e.name, group) === "image") { const no = judgeImage(data, seenImages); if (no) { skip(no.reason, no.code); continue; } }
+    if (extless) { // text without an extension is not filed (unknown type); anything else (NUL bytes, not UTF-8) is a compiled leftover
+      if (looksLikeText(data)) skip("this type is not supported", "type"); else skip("compiled or tool leftover", "junk");
+      continue;
+    }
     if (group === "code" && !looksLikeText(data)) { skip("not really text (it looks like a binary file)", "notext"); continue; }
     const base = e.name.split("/").pop();
     if (group === "html") { // the text of the page, as plain UTF-8 bytes (the page itself is never kept)
@@ -191,4 +244,4 @@ function unzip(bytes) {
   return { files, skipped };
 }
 
-module.exports = { unzip, looksLikeZip, classify, MAX_HTML_BYTES, MIN_IMAGE_BYTES, MAX_CODE_BYTES, MAX_ZIP_BYTES, MAX_TOTAL_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_ENTRIES };
+module.exports = { unzip, looksLikeZip, classify, MAX_HTML_BYTES, MIN_IMAGE_BYTES, MIN_IMAGE_SIDE, MIN_IMAGE_AREA, MIN_IMAGE_DENSITY, imageSize, judgeImage, MAX_CODE_BYTES, MAX_ZIP_BYTES, MAX_TOTAL_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_ENTRIES };

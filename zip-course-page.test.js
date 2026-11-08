@@ -140,8 +140,9 @@ test("COURSE ZIP: a file already in the course, or twice in the zip, is skipped 
     ]));
     assert.strictEqual(r.status, 201);
     assert.strictEqual(r.json.zip.filedCount, 1);
-    assert.match(r.json.zip.summary, /Skipped 2:/);
-    assert.match(r.json.zip.summary, /already in the course/);
+    assert.match(r.json.zip.summary, /\n\n2 were already in the course\./); // ONE counted line, not listed one by one
+    assert.doesNotMatch(r.json.zip.summary, /Skipped \d+:|copy\.pdf|new-again/);
+    assert.match(r.json.zip.summary, /That is 3 files in the zip in all\./);
     await s.waitIdle();
     assert.strictEqual((await s.files()).length, 2);
   } finally { s.close(); }
