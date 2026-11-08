@@ -669,7 +669,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const target = targetFor(text, courseId, courseName, text);
       if (!target) return null;
       const pending = pendingRefs().some((r) => r.key === target.key);
-      const plainFact = (askedLectures(text).length || parseDay(text, "past")) && !standing.isStateStatement(text);
+      const plainFact = (askedLectures(text).length || parseDay(text, "past")) && !standing.isStateStatement(text) && !/\bexam\b|מבחן/i.test(text);
       if (plainFact || !standing.shouldRead({ text, pending, declared: true })) return null;
       jobs.push({ target, seg: text });
     }
@@ -852,7 +852,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
-  return { studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
+  // Is this course taught from its notes (one big notes file, no lecture material attached)? Used by core.js to treat "teach me X" as teaching.
+  function teachesFromNotes(courseId) {
+    const ref = refs().find((r) => r.courseId === courseId);
+    return !!ref && notesCourse(ref) && !(tracked(ref) && tracker.progress(ref).withMaterial > 0);
+  }
+
+  return { teachesFromNotes, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };

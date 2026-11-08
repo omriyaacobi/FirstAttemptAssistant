@@ -195,3 +195,16 @@ test("a single check question after a lesson can be skipped, and a request for t
   assert.match(s.answer, /^I will not write the full solution of an assignment/);
   assert.doesNotMatch(prompts.filter((p) => /Teach this ONE idea|working on an assignment/.test(p)).join("\n"), /made-up|SECRET/, "no assignment text in teaching prompts");
 });
+
+test("teachesFromNotes: true for one big notes file, false without notes and for a timetable course with lecture material", async () => {
+  const { coach, ref } = make({ courseList: [DB, CO] });
+  assert.strictEqual(coach.teachesFromNotes(DB.id), true);
+  assert.strictEqual(coach.teachesFromNotes(CO.id), false, "no notes");
+  assert.strictEqual(coach.teachesFromNotes("0".repeat(16)), false, "unknown course");
+});
+
+test("a sentence with only an exam date (no 'I') still reaches the exam card", async () => {
+  const { coach } = make({ courseList: [SP, DB] });
+  const r = await say(coach, "the exam in Systems Programming is on 22 December", "update");
+  assert.ok(r.proposal && r.proposal.kind === "exam" && r.proposal.date === "2026-12-22", r.answer);
+});
