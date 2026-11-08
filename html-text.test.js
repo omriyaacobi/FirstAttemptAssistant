@@ -6,7 +6,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const zlib = require("node:zlib");
 const { htmlToText, htmlBytesToText } = require("./html-text");
-const { unzip, classify, MAX_CODE_BYTES, MIN_IMAGE_BYTES } = require("./unzip");
+const { unzip, classify, imageSize, MAX_CODE_BYTES, MIN_IMAGE_BYTES } = require("./unzip");
 const { zipSummary } = require("./zip-filing");
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
@@ -129,4 +129,46 @@ test("ZIP small images: a picture under MIN_IMAGE_BYTES is skipped and only coun
   assert.match(en, /Skipped 3 small images \(icons, formulas\)\./);
   assert.doesNotMatch(en, /image001|image002|slide\.jpg|Skipped 3:/); // counted, not listed
   assert.match(zipSummary("he", "n.zip", filed, r.skipped, 0), /דולגו 3 תמונות קטנות \(אייקונים, נוסחאות\)\./);
+});
+
+// ---- The image rule (judgeImage in unzip.js): pixels, emptiness and repeats, read from the real header. All pictures here are made up. ----
+// A PNG with a real header (width x height) and a body of `bytes` bytes: enough for the rule, which never decodes the picture.
+function pngOf(w, h, bytes, fill = 7) {
+  const head = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(head, 0);
+  head.writeUInt32BE(13, 8); head.write("IHDR", 12, "latin1"); head.writeUInt32BE(w, 16); head.writeUInt32BE(h, 20);
+  return Buffer.concat([head, Buffer.alloc(Math.max(0, bytes - 33), fill)]);
+}
+function jpegOf(w, h) { // SOI, one APP0 segment, then a "start of frame" with the size, then some body
+  const app = Buffer.concat([Buffer.from([0xff, 0xe0, 0x00, 0x10]), Buffer.alloc(14, 1)]);
+  const sof = Buffer.from([0xff, 0xc0, 0x00, 0x11, 8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
+  return Buffer.concat([Buffer.from([0xff, 0xd8]), app, sof, Buffer.alloc(40000, 9)]);
+}
+
+test("IMAGE size: read from a PNG, a JPEG and a WebP header; unreadable bytes give null", () => {
+  assert.deepStrictEqual(imageSize(pngOf(640, 480, 100)), { w: 640, h: 480 });
+  assert.deepStrictEqual(imageSize(jpegOf(710, 410)), { w: 710, h: 410 });
+  const webp = Buffer.alloc(40); webp.write("RIFF", 0); webp.write("WEBP", 8); webp.write("VP8X", 12); webp.writeUIntLE(799, 24, 3); webp.writeUIntLE(599, 27, 3);
+  assert.deepStrictEqual(imageSize(webp), { w: 800, h: 600 });
+  assert.strictEqual(imageSize(Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2])), null);
+  assert.strictEqual(imageSize(Buffer.from([0xff, 0xd8, 0xff])), null);
+  assert.strictEqual(imageSize(Buffer.from("hello")), null);
+});
+
+test("IMAGE rule: a thin or small picture, a nearly empty one and the same one again are skipped; real-sized ones are kept even when small in bytes", () => {
+  const r = unzip(buildZip([
+    { name: "p/line.png", data: pngOf(679, 2, 3000) },            // too thin
+    { name: "p/bullet.png", data: pngOf(40, 40, 3000) },          // too small
+    { name: "p/label.png", data: pngOf(130, 100, 5000) },         // under 20,000 pixels
+    { name: "p/blank.png", data: pngOf(400, 265, 1059) },         // about 0.01 bytes per pixel: an empty frame
+    { name: "p/code.png", data: pngOf(293, 129, 4740) },          // 4 KB but a real size and not empty: kept (the old 20 KB rule lost it)
+    { name: "p/code-again.png", data: pngOf(293, 129, 4740) },    // the same bytes: skipped
+    { name: "p/code-other.png", data: pngOf(293, 129, 4740, 8) }, // different bytes: kept
+    { name: "p/photo.jpg", data: jpegOf(710, 410) },              // a JPEG, read by its frame header
+    { name: "p/fake.png", data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100, 1)]) }, // no readable size, under 20 KB
+  ]));
+  assert.deepStrictEqual(r.files.map((f) => f.name), ["code.png", "code-other.png", "photo.jpg"]);
+  assert.deepStrictEqual(r.skipped.map((s) => s.code), ["small", "small", "small", "small", "small", "small"]);
+  assert.deepStrictEqual(r.skipped.map((s) => s.name), ["p/line.png", "p/bullet.png", "p/label.png", "p/blank.png", "p/code-again.png", "p/fake.png"]);
+  assert.match(r.skipped[4].reason, /same image again/);
 });
