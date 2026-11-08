@@ -418,17 +418,19 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // At most ONE adaptive question follows, never twice within 7 days (unless asked "where am I"). An exam date is never stored without a Confirm card.
   const UNDO_ONLY = /^\s*(?:undo(?:\s+that)?|בטל|ביטול|תבטל)[.!\s]*$/i;
   const NO_ONLY = /^\s*(?:no|nope|no\s+thanks|wrong|that['’]?s\s+(?:not\s+right|wrong)|לא|לא\s+נכון|זה\s+לא\s+נכון)[.!\s]*$/i;
-  const CAUGHT = /\bcaught\s+up\b|\bbut\b[^.\n]*\b(?:rest|everything|else)\b|השלמתי|אבל/i;
+  const DURATION = /\bweeks?\b|\bmonths?\b|\b\d+\s+days\b|שבוע(?:יים|ות)?|חודש/i; // "I skipped two weeks" describes the student's state, it does not ask what was missed today
+  const CAUGHT =/\bcaught\s+up\b|\bbut\b[^.\n]*\b(?:rest|everything|else)\b|השלמתי|אבל/i;
   const UNDO_MS = 2 * 3600 * 1000;
   const V2_KEYS = ["mode", "where", "pace", "behindBy", "gaps", "depth", "goal", "focus"];
-  let lastUndo = null; // { ref, position, pending, at, proposalId } (memory only: it lives for 2 hours)
+  let lastUndo = null; // { items: [{ ref, position, pending }], proposalIds: [], at } (memory only: it lives for 2 hours)
 
   function undoReading() {
     const u = lastUndo;
     lastUndo = null;
-    tracker.restoreStanding(u.ref, u.position, u.pending);
-    if (u.proposalId) proposals.delete(u.proposalId); // the exam card of that reading goes too
-    return T(`Undone. ${u.ref.name} is back to how it was before. Tell me again in your own words when you want.`, `בוטל. ${u.ref.name} חזר למצב שהיה קודם. אפשר לכתוב שוב במילים שלך מתי שנוח.`);
+    for (const it of u.items) tracker.restoreStanding(it.ref, it.position, it.pending);
+    for (const id of u.proposalIds) proposals.delete(id); // the exam card of that reading goes too
+    const names = u.items.map((it) => it.ref.name).join(", ");
+    return T(`Undone. ${names} ${u.items.length === 1 ? "is" : "are"} back to how ${u.items.length === 1 ? "it was" : "they were"} before. Tell me again in your own words when you want.`, `בוטל. ${names} חזרו למצב שהיה קודם. אפשר לכתוב שוב במילים שלך מתי שנוח.`);
   }
   const heldSlots = (ref) => tracker.slots(ref.key).filter((s) => plan.isHeld(s, now(), timezone));
   function standingContext(ref) {
@@ -436,26 +438,17 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return standing.contextFor({ held: heldSlots(ref).map((s) => ({ n: s.n, date: s.date })), nextSlot: next ? { n: next.n, date: next.date } : null, outline: buildOutline(ref.courseId ? courses.allPages(ref.courseId) : []), today: today(), lang: curLang, tracked: tracked(ref) });
   }
 
-  // Returns { answer, proposal? } when the words were read and stored (or kept with reasons), or null when this path does not apply (the plain rules then try).
-  async function maybeReadStanding({ text, courseId, courseName }) {
-    const pieces = String(text).split(/\n|(?<=[.!?])\s+/);
-    const low = String(text).toLowerCase();
-    const named = new Set([...pieces.map((p) => refInText(p)).filter(Boolean).map((r) => r.key), ...refs().filter((r) => r.name && low.includes(r.name.toLowerCase())).map((r) => r.key)]);
-    if (named.size >= 2) return null; // several courses: the several-course reader
-    const target = targetFor(text, courseId, courseName, text);
-    if (!target) return null;
-    const pending = pendingRefs().some((r) => r.key === target.key);
-    const plainFact = (askedLectures(text).length || parseDay(text, "past")) && !standing.isStateStatement(text);
-    if (!standing.shouldRead({ text, pending }) || (pending && plainFact)) return null;
-
+  // Reads the words for ONE course and stores the result. Returns null when nothing usable came out (the plain rules then keep the words), else
+  // { answer, question, proposal?, undo }. It does not ask anything itself: the caller picks the one question of the message.
+  async function readOne(target, text) {
     const ctx = standingContext(target);
     const lost = standing.isLost(text);
     let raw = null;
     try { raw = await standing.readStanding({ askChain, text: clean(text, standing.MAX_READ_CHARS), courseName: target.name, ctx, log }); } catch (error) { log(`[standing] reader failed: ${error.message}`); }
     const res = standing.checkStanding(raw, ctx);
-    if (!res.any && !res.dropped.length && !res.exam && !lost) return null; // nothing usable: the plain rules keep the words and say so
+    if (!res.any && !res.dropped.length && !res.exam && !lost) return null;
     const words = wordsFor(target, text);
-    const before = { position: tracker.course(target).position, pending: tracker.pendingQuestion(target) };
+    const before = { ref: target, position: tracker.course(target).position, pending: tracker.pendingQuestion(target) };
     const old = before.position;
 
     // A later reading adds to the earlier one; a new place replaces the old place AND what was said about being behind it.
@@ -470,24 +463,63 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       delete merged.where;
       try { tracker.setStanding(target, merged); } catch (e2) { log(`[standing] could not store: ${e2.message}`); return null; }
     }
-    lastUndo = { ref: target, position: before.position, pending: before.pending, at: now(), proposalId: null };
-
-    let proposal;
+    const out = { undo: before, question: "", proposal: undefined, proposalId: null };
     if (res.exam && old.examDate !== res.exam.date) {
       const p = addProposal({ kind: "exam", ref: target, date: res.exam.date });
-      lastUndo.proposalId = p.id;
-      proposal = card(p);
+      out.proposalId = p.id;
+      out.proposal = card(p);
     }
     if (lost && !res.any) {
       tracker.markAsked(target, { where: true }); tracker.save({ ...tracker.course(target), pendingQuestion: null }); // counts as asked for 7 days, and nothing stays open
-      return { answer: T(`${target.name}: I kept your words. Not knowing where you are is fine. If you like, say "quiz me on ${target.name}" for a short quiz and we will see what you already know; I will not ask where you are again for a week. This only tells me where to start: it does not count as understood.`, `${target.name}: שמרתי את מה שכתבת. זה בסדר לא לדעת איפה עומדים. אם בא לך, אפשר לכתוב "תבחן אותי ${bet(target.name)}" ונראה מה כבר ידוע; לא אשאל שוב איפה עומדים במשך שבוע. זה רק אומר לי מאיפה להתחיל, ולא נחשב להבנה.`) };
+      out.answer = T(`${target.name}: I kept your words. Not knowing where you are is fine. If you like, say "quiz me on ${target.name}" for a short quiz and we will see what you already know; I will not ask where you are again for a week. This only tells me where to start: it does not count as understood.`, `${target.name}: שמרתי את מה שכתבת. זה בסדר לא לדעת איפה עומדים. אם בא לך, אפשר לכתוב "תבחן אותי ${bet(target.name)}" ונראה מה כבר ידוע; לא אשאל שוב איפה עומדים במשך שבוע. זה רק אומר לי מאיפה להתחיל, ולא נחשב להבנה.`);
+      return out;
     }
-    let answer = standing.readback({ courseName: target.name, fields: res.fields, notes: res.notes, dropped: res.dropped, exam: res.exam, lang: curLang });
+    out.answer = standing.readback({ courseName: target.name, fields: res.fields, notes: res.notes, dropped: res.dropped, exam: res.exam, lang: curLang });
     const askedAt = tracker.course(target).askedStanding || 0;
-    if (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text)) {
-      const question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
-      if (question) { tracker.markAsked(target, { where: true }); answer += `\n\n${question}`; }
+    if (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text)) out.question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
+    return out;
+  }
+
+  // The free description of one course's state, or (multi) of several courses in one message, each read on its own sentences.
+  // Returns { answer, proposal? } or null when this path does not apply (the plain rules then try). Exactly ONE question is asked per message.
+  async function maybeReadStanding({ text, courseId, courseName, multi = false }) {
+    const namesIn = (s) => { const low = String(s).toLowerCase(); const m = new Map(); for (const r of refs()) if (r.name && low.includes(r.name.toLowerCase())) m.set(r.key, r); const x = refInText(s); if (x) m.set(x.key, x); return m; };
+    // sentences first; a sentence that names several courses is cut at commas / "and", and a piece with no course name stays with the piece before it
+    const pieces = [];
+    for (const sentence of String(text).split(/\n|;|(?<=[.!?])\s+/).map((p) => p.trim()).filter(Boolean)) {
+      if (namesIn(sentence).size < 2) { pieces.push(sentence); continue; }
+      let prev = null;
+      for (const frag of sentence.split(/,|\s+and\s+/).map((p) => p.trim()).filter(Boolean)) {
+        if (!namesIn(frag).size && prev !== null) pieces[prev] += `, ${frag}`;
+        else { pieces.push(frag); prev = pieces.length - 1; }
+      }
     }
+    const named = namesIn(text);
+    for (const p of pieces) for (const [k, r] of namesIn(p)) named.set(k, r);
+    if ((named.size >= 2) !== multi) return null; // several courses: the several-course reader first, then each course on its own words
+    const jobs = [];
+    if (multi) {
+      for (const r of named.values()) {
+        const mine = pieces.filter((p) => { const x = refInText(p); return (x && x.key === r.key) || (r.name && p.toLowerCase().includes(r.name.toLowerCase())); });
+        const seg = mine.join(". ");
+        if (seg && standing.shouldRead({ text: seg, declared: true })) jobs.push({ target: r, seg });
+      }
+    } else {
+      const target = targetFor(text, courseId, courseName, text);
+      if (!target) return null;
+      const pending = pendingRefs().some((r) => r.key === target.key);
+      const plainFact = (askedLectures(text).length || parseDay(text, "past")) && !standing.isStateStatement(text);
+      if (plainFact || !standing.shouldRead({ text, pending, declared: true })) return null;
+      jobs.push({ target, seg: text });
+    }
+    const done = [];
+    for (const j of jobs) { const r = await readOne(j.target, j.seg); if (r) done.push({ ...j, ...r }); }
+    if (!done.length) return null;
+    lastUndo = { items: done.map((d) => d.undo), proposalIds: done.map((d) => d.proposalId).filter(Boolean), at: now() };
+    const first = done.find((d) => d.question);
+    let answer = done.map((d) => d.answer).join("\n\n");
+    if (first) { tracker.markAsked(first.target, { where: true }); answer += `\n\n${first.question}`; }
+    const proposal = (done.find((d) => d.proposal) || {}).proposal;
     return { answer, ...(proposal ? { proposal } : {}) };
   }
 
@@ -571,7 +603,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // "no" / "undo" right after Bot read back a description: the old record comes back (a plain "no" also drops that reading's own exam card).
     if (lastUndo && now() - lastUndo.at < UNDO_MS && intent !== "answer") {
       const w = latestProposal();
-      const free = !w || (lastUndo.proposalId && w.id === lastUndo.proposalId);
+      const free = !w || lastUndo.proposalIds.includes(w.id);
       if (UNDO_ONLY.test(text) || (NO_ONLY.test(text) && free && !refs().some((r) => tracker.getSession(r)))) return done({ answer: undoReading() });
     }
     if (intent === "confirm" || intent === "cancel") {
@@ -584,13 +616,15 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // Bot just asked "where are you": the next message ANSWERS it, whatever label the front desk gave it, unless it is clearly another question.
     if (intent === "progress" && pendingRefs().length && !WHERE_Q.test(text) && !(IS_QUESTION.test(text) && !FIRST_PERSON.test(text))) intent = "update";
 
-    if ((intent === "update" || intent === "progress") && MISSED.test(text) && !SKIP_WORDS.test(text) && !(CAUGHT.test(text) && !/\?/.test(text))) return done({ answer: missedAnswer(text) });
+    if ((intent === "update" || intent === "progress") && MISSED.test(text) && !SKIP_WORDS.test(text) && !(CAUGHT.test(text) && !/\?/.test(text)) && !(DURATION.test(text) && !/\?/.test(text))) return done({ answer: missedAnswer(text) });
 
     if (intent === "update") {
       if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) {
         const reading = await maybeReadStanding({ text, courseId, courseName });
         if (reading) return done(reading);
-        const many = await interpretPositions(text); if (many) return done({ answer: many }); }
+        const many = await interpretPositions(text); if (many) return done({ answer: many });
+        const each = await maybeReadStanding({ text, courseId, courseName, multi: true }); // several courses, but the several-course reader had nothing: each on its own words
+        if (each) return done(each); }
       const { lines, unclear } = interpretUpdate(text, { courseId, courseName });
       if (lines.length || SKIP_WORDS.test(text) || UNDO_WORDS.test(text)) {
         const out = [...lines];

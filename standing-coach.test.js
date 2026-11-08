@@ -165,10 +165,38 @@ test("'I have no idea where I am': the words are kept, the quiz is offered once,
   assert.doesNotMatch(again.answer, /So that I do not guess/);
 });
 
-test("a statement about two courses goes to the several-course reader, not to this one", async () => {
-  const { coach, prompts } = make({ replies: {} });
-  await say(coach, "Systems Programming lecture 2 and Databases Demo I haven't started");
-  assert.ok(!prompts.some((p) => /describes their OWN state in one course/.test(p)));
+test("a message about two courses is read course by course on its own words; ONE question at most; one 'no' undoes both", async () => {
+  const { coach, pos, prompts } = make({ replies: { "I haven't started": { mode: "notStarted" }, "only attending": { mode: "attending" } } });
+  const r = await say(coach, "Databases Demo, I haven't started. Systems Programming, I'm only attending");
+  assert.match(r.answer, /Understood, Databases Demo: not started yet/);
+  assert.match(r.answer, /Understood, Systems Programming: going to the lectures/);
+  assert.strictEqual((r.answer.match(/One question/g) || []).length, 1);
+  assert.strictEqual(pos(DB).position.mode, "notStarted");
+  assert.strictEqual(pos(SP).position.mode, "attending");
+  // each course got only its own sentence
+  const dbPrompt = prompts.find((p) => /Course: Databases Demo/.test(p));
+  assert.doesNotMatch(dbPrompt.split("<message")[1], /Systems Programming/);
+  const u = await say(coach, "undo", "update");
+  assert.match(u.answer, /^Undone\. .*Databases Demo.* are back to how they were before/);
+  assert.match(u.answer, /Systems Programming/);
+  assert.strictEqual(pos(DB).positionKnown, false);
+  assert.strictEqual(pos(SP).positionKnown, false);
+});
+
+test("'I skipped two weeks in the middle' describes the student's state: it is read, not answered as 'what did I miss today'", async () => {
+  const { coach, pos } = make({ replies: { "two weeks": { mode: "attending", gaps: [] } } });
+  const r = await say(coach, "I skipped two weeks in the middle of Systems Programming and then came back");
+  assert.match(r.answer, /Understood, Systems Programming: going to the lectures/);
+  assert.doesNotMatch(r.answer, /By the timetable you missed/);
+  assert.strictEqual(pos(SP).positionKnown, true);
+});
+
+test("a messy sentence without 'I' still reaches the reader when the front desk called it an update", async () => {
+  const { coach, pos } = make({ replies: { "finished through": { mode: "selfStudy", pace: "ahead", where: { type: "fraction", value: 0.6 } } } });
+  const r = await say(coach, "yo basically ahead in Databases Demo, finished through the middle lol");
+  assert.match(r.answer, /Understood, Databases Demo: studying from the notes alone; at "/);
+  assert.match(r.answer, /ahead of the pace/);
+  assert.strictEqual(pos(DB).position.pace, "ahead");
 });
 
 test("Hebrew: the readback, the undo and the question are written in Hebrew (no English-only sentence)", async () => {

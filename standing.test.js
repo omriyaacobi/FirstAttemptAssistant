@@ -114,6 +114,16 @@ test("the exam is only PROPOSED: a date computed by code from 'in N days'; a bad
   assert.strictEqual(check({ examDate: "2026-12-01" }).exam, null); // a date written by the model is not used
 });
 
+test("a missed section that is also the place reached is a contradiction: dropped with a reason; 'at the start' with no notes is not an error", () => {
+  const a = check({ where: { type: "section", name: "Paging" }, gaps: [{ kind: "section", name: "Paging" }, { kind: "section", name: "Files" }] });
+  assert.deepStrictEqual(a.fields.gaps, [{ kind: "section", name: "Files" }]);
+  assert.match(a.dropped[0].why, /both the place you reached and a missed part/);
+  const b = check({ where: { type: "fraction", value: 0 } }, { outline: { files: [] } });
+  assert.deepStrictEqual(b.dropped, []);
+  const c = check({ where: { type: "fraction", value: 0.4 } }, { outline: { files: [] } });
+  assert.strictEqual(c.dropped.length, 1); // a real place with no notes to point at is still said
+});
+
 test("garbage from the model never throws", () => {
   for (const raw of [null, undefined, "text", 5, [], { where: "lecture 4" }, { where: { type: "lecture", n: "four" } }, { where: { type: "pages", from: "a" } }, { behindBy: 3 }, { gaps: "all" }]) assert.doesNotThrow(() => check(raw));
 });
