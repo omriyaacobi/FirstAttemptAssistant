@@ -162,3 +162,12 @@ test("a corrupt file reads as empty instead of crashing", () => {
   r.create({ text: "x", at: "2026-11-02T09:00", timezone: TZ });
   assert.strictEqual(r.list().length, 1);
 });
+
+// QA round 2 (L2): a Hebrew reply gets a Hebrew date, not "Sun 8 Nov".
+test("formatWhen can write the time in Hebrew", () => {
+  const he = formatWhen(Date.UTC(2026, 10, 8, 18, 0, 0), TZ, "he");
+  assert.match(he, /20:00/);
+  assert.match(he, /[\u0590-\u05ff]/);
+  assert.doesNotMatch(he, /Sun|Nov/);
+  assert.match(formatWhen(Date.UTC(2026, 10, 8, 18, 0, 0), TZ), /Sun 8 Nov, 20:00/); // English unchanged
+});
