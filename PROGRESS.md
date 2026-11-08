@@ -638,3 +638,10 @@ All in `public/index.html` (no server file changed). Tested on a private server 
 - Now `POST /api/courses/<id>/files` opens a `.zip` with `unzip.js` and adds each file to THAT course through `addUpload` (same checks, no questions). The summary wording moved into `zip-filing.js`, shared with the chat zip. The page keeps the row of the zip with what was added and skipped (a zip that adds nothing shows in red), and the help text mentions zips (200 MB). A zip refused whole (bomb, damaged, too many entries) shows its plain reason.
 - Only names ending `.zip` get the 200 MB limit and the zip road; a zip sent as `x.docx` is refused as before. The course page summary is in English (no message to take a language from); the study coach is not asked about each file.
 - Tests: `zip-course-page.test.js` (made-up zips: documents + code, slip, bomb, damaged, duplicates, non-zip). Not verified: the real page in a browser, a phone, a really big zip.
+
+## Zip upload: web pages (2026-11-08, same branch)
+- Omri's real zip was a Word file "saved as web page": one big `.html` with ALL the text plus 149 images. The `.html` was skipped as "a code file over 1 MB", so the notes themselves were lost.
+- Now `.html`/`.htm` in a zip is a DOCUMENT: `html-text.js` takes out the text (tags, script, style, head, comments dropped; entities decoded; headings, paragraphs, list items and table cells keep their breaks; Hebrew kept; UTF-8, UTF-16 with BOM, or a page that says windows-1255), and it is filed as a text file under the html's name. Page up to 10 MB (`MAX_HTML_BYTES`), its text up to 2 MB (the text file limit). Never rendered or run. Plain code files keep the 1 MB cap.
+- The summary counts kinds apart: "1 text file, 149 images, 27 code files" (also PDFs, Word/PowerPoint), in the user's language.
+- Real zip, temp folder, fake models, counts only: 1 text file (about 290 KB of text, Hebrew, no tags left, 13 headings) + 149 images filed, 0 skipped. Reading the 149 images takes 149 separate Flash calls, one after the other (about 1.2 MB in total, so they are small pictures); that is the heavy part for quota.
+- Tests: `html-text.test.js`.
