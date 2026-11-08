@@ -19,6 +19,7 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;       // one unpacked file: the same li
 const MAX_FILES = 200;                         // files we keep from one zip (a course's lectures fit comfortably)
 const MAX_ENTRIES = 2000;                      // entries we even look at (folders, junk): above this the zip is refused as a whole
 const MAX_NAME_CHARS = 200;                    // a longer name is suspicious
+const MIN_IMAGE_BYTES = 20 * 1024;             // a picture smaller than this is an icon, a bullet or a formula fragment (a Word "saved as web page" has hundreds): skipped and only COUNTED, never read by a model
 const MAX_CODE_BYTES = 1024 * 1024;            // one source-code / project text file (real code files are small; a bigger one is usually data)
 
 const MAX_HTML_BYTES = 10 * 1024 * 1024;       // one web page (a Word file "saved as web page" holds ALL its text in one big .html); its TEXT must then fit MAX_TEXT_BYTES
@@ -152,6 +153,7 @@ function unzip(bytes) {
     if (e.flags & 1) { skip("password-protected", "password"); continue; }
     if (e.method !== 0 && e.method !== 8) { skip("unknown compression", "compression"); continue; }
     if (files.length >= MAX_FILES) { skip(`more than ${MAX_FILES} files: the rest are left out`, "toomany"); continue; }
+    if (group === "doc" && kindOf(e.name, group) === "image" && e.size < MIN_IMAGE_BYTES) { skip("a small image (icon or formula fragment)", "small"); continue; }
     if (group === "code" && e.size > MAX_CODE_BYTES) { skip(`a code file over ${Math.round(MAX_CODE_BYTES / 1048576)} MB`, "codebig"); continue; }
     if (group === "html" && e.size > MAX_HTML_BYTES) { skip(`a web page over ${Math.round(MAX_HTML_BYTES / 1048576)} MB`, "big"); continue; }
     if (e.size > MAX_FILE_BYTES) { skip(`over ${Math.round(MAX_FILE_BYTES / 1048576)} MB`, "big"); continue; }
@@ -189,4 +191,4 @@ function unzip(bytes) {
   return { files, skipped };
 }
 
-module.exports = { unzip, looksLikeZip, classify, MAX_HTML_BYTES, MAX_CODE_BYTES, MAX_ZIP_BYTES, MAX_TOTAL_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_ENTRIES };
+module.exports = { unzip, looksLikeZip, classify, MAX_HTML_BYTES, MIN_IMAGE_BYTES, MAX_CODE_BYTES, MAX_ZIP_BYTES, MAX_TOTAL_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_ENTRIES };

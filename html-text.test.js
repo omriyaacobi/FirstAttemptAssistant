@@ -6,7 +6,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const zlib = require("node:zlib");
 const { htmlToText, htmlBytesToText } = require("./html-text");
-const { unzip, classify, MAX_CODE_BYTES } = require("./unzip");
+const { unzip, classify, MAX_CODE_BYTES, MIN_IMAGE_BYTES } = require("./unzip");
 const { zipSummary } = require("./zip-filing");
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
@@ -35,7 +35,7 @@ function buildZip(entries) {
   end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...parts, dir, end]);
 }
-const PNG = (tag) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`${tag}`.repeat(20))]);
+const PNG = (tag) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`${tag}`.repeat(25000))]);
 
 const PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Hidden title</title><style>p { color: red }</style>
 <!--[if gte mso 9]><xml>secret conditional</xml><![endif]--></head>
@@ -110,4 +110,23 @@ test("ZIP html: a page over 10 MB, a binary file named .html and a page whose te
   ]));
   assert.strictEqual(r.files.length, 0);
   assert.deepStrictEqual(r.skipped.map((s) => s.code), ["big", "notext", "big"]);
+});
+
+test("ZIP small images: a picture under MIN_IMAGE_BYTES is skipped and only counted (any zip); a bigger one is filed; the summary says so in one line", () => {
+  const small = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("tiny formula fragment")]);
+  const large = Buffer.concat([small.subarray(0, 8), Buffer.alloc(MIN_IMAGE_BYTES + 100, 7)]);
+  const r = unzip(buildZip([
+    { name: "page_files/image001.png", data: small },
+    { name: "page_files/image002.png", data: small },
+    { name: "page_files/image003.png", data: large },
+    { name: "slide.jpg", data: Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from("tiny")]) },
+  ]));
+  assert.deepStrictEqual(r.files.map((f) => f.name), ["image003.png"]);
+  assert.deepStrictEqual(r.skipped.map((s) => s.code), ["small", "small", "small"]);
+  const filed = r.files.map((f) => ({ name: f.name, courseName: "Calculus", group: f.group, kind: f.kind }));
+  const en = zipSummary("en", "n.zip", filed, r.skipped, 0);
+  assert.match(en, /filed 1 file \(1 image\) in Calculus/);
+  assert.match(en, /Skipped 3 small images \(icons, formulas\)\./);
+  assert.doesNotMatch(en, /image001|image002|slide\.jpg|Skipped 3:/); // counted, not listed
+  assert.match(zipSummary("he", "n.zip", filed, r.skipped, 0), /דולגו 3 תמונות קטנות \(אייקונים, נוסחאות\)\./);
 });

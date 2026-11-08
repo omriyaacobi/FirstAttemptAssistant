@@ -22,7 +22,8 @@ const plural = (n, lang, one, many, oneHe, manyHe) => (lang === "he" ? (n === 1 
 
 function zipSummary(lang, zipName, filed, skipped, waiting) {
   const junk = skipped.filter((s) => s.code === "junk").length; // compiled / tool leftovers: only counted
-  const listed = skipped.filter((s) => s.code !== "junk");
+  const small = skipped.filter((s) => s.code === "small").length; // tiny pictures (icons, formula fragments): only counted
+  const listed = skipped.filter((s) => s.code !== "junk" && s.code !== "small");
   const extra = Math.max(0, listed.length - MAX_SKIP_LINES);
   const skipLines = listed.slice(0, MAX_SKIP_LINES).map((s) => `- ${iso(lang, showName(s.name))}: ${lang === "he" ? REASON_HE[s.code] || REASON_HE.other : s.reason}`).join("\n");
   const count = (k) => filed.filter((f) => (f.kind || (f.group === "code" ? "code" : "text")) === k).length;
@@ -44,6 +45,7 @@ function zipSummary(lang, zipName, filed, skipped, waiting) {
   if (waiting) parts.push(words(lang, `${waiting} more file${waiting === 1 ? "" : "s"} wait for you: which course are they for? Tap one below. Nothing is saved until you choose.`, `עוד ${waiting} קבצים מחכים: לאיזה קורס הם שייכים? אפשר ללחוץ על אחד למטה. שום דבר לא נשמר לפני הבחירה.`));
   if (listed.length) parts.push(words(lang, `Skipped ${listed.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${listed.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
   if (junk) parts.push(words(lang, `Also skipped ${junk} compiled/binary file${junk === 1 ? "" : "s"}.`, `בנוסף דולגו ${junk} קבצים מקומפלים/בינאריים.`));
+  if (small) parts.push(words(lang, `Skipped ${small} small image${small === 1 ? "" : "s"} (icons, formulas).`, `דולגו ${small} תמונות קטנות (אייקונים, נוסחאות).`));
   return parts.join("\n\n");
 }
 

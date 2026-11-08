@@ -645,3 +645,4 @@ All in `public/index.html` (no server file changed). Tested on a private server 
 - The summary counts kinds apart: "1 text file, 149 images, 27 code files" (also PDFs, Word/PowerPoint), in the user's language.
 - Real zip, temp folder, fake models, counts only: 1 text file (about 290 KB of text, Hebrew, no tags left, 13 headings) + 149 images filed, 0 skipped. Reading the 149 images takes 149 separate Flash calls, one after the other (about 1.2 MB in total, so they are small pictures); that is the heavy part for quota.
 - Tests: `html-text.test.js`.
+- Small images (same branch): in every zip, a picture under `MIN_IMAGE_BYTES` (20 KB, top of `unzip.js`) is skipped and only counted in one line ("Skipped N small images (icons, formulas)", also in Hebrew); no model reads it. Bigger pictures are filed as before. Test in `html-text.test.js`.

@@ -51,7 +51,7 @@ function buildZip(entries, { cut = 0 } = {}) {
 }
 
 const PDF = (tag) => Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.from(`made-up ${tag} `.repeat(5))]);
-const PNG = (tag) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`${tag}`.repeat(20))]);
+const PNG = (tag) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`${tag}`.repeat(25000))]);
 const names = (r) => r.files.map((f) => f.name);
 
 // ---------------------------------------------------------------- unzip.js
