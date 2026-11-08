@@ -182,7 +182,7 @@ test("ZIP upload: files named after a course are filed there, the bad ones are s
   const msgs = [...thread.all()];
   assert.deepStrictEqual(msgs.map((m) => m.role), ["user", "assistant"]); // one question, ONE answer
   assert.match(msgs[0].text, /^\(file attached: week1\.zip\)/);
-  assert.match(msgs[1].text, /filed 2 files \(2 documents\) in Calculus 2/);
+  assert.match(msgs[1].text, /filed 2 files \(2 PDFs\) in Calculus 2/);
   assert.match(msgs[1].text, /Skipped 2:/);
   assert.match(msgs[1].text, /Also skipped 1 compiled\/binary file\./); // run.exe is a build leftover: counted, not listed
   assert.ok(!/run\.exe/.test(msgs[1].text));
@@ -204,7 +204,7 @@ test("ZIP upload: when no rule knows the course Bot asks ONCE for all the files;
   assert.strictEqual(done.filedCount, 3);
   assert.deepStrictEqual(routes.added.map((a) => a.courseId), [IDS.sp, IDS.sp, IDS.sp]);
   const last = [...thread.all()].pop();
-  assert.match(last.text, /filed 3 files \(3 documents\) in Systems Programming/);
+  assert.match(last.text, /filed 3 files \(3 PDFs\) in Systems Programming/);
   assert.throws(() => files.assign(r.pendingId, IDS.sp), (e) => e.status === 404); // used once
 });
 
@@ -307,7 +307,7 @@ test("ZIP code upload (English): documents and code are counted apart, junk is O
   assert.strictEqual(r.filedCount, 6);
   assert.deepStrictEqual(routes.added.map((a) => a.name).sort(), ["guide.pdf", "notes.md", "proj/Makefile", "proj/src/parser.c", "proj/src/parser.h", "proj/tests/Makefile"].sort());
   const text = [...thread.all()].pop().text;
-  assert.match(text, /I filed 6 files \(2 documents, 4 code files\) in Systems Programming\./);
+  assert.match(text, /I filed 6 files \(1 text file, 1 PDF, 4 code files\) in Systems Programming\./);
   assert.match(text, /Also skipped 5 compiled\/binary files\./);
   assert.match(text, /Skipped 4:/);
   assert.match(text, /fake\.c: not really text/);
@@ -320,7 +320,7 @@ test("ZIP code upload (Hebrew): the reasons are Hebrew, names sit inside isolate
   const { thread, files } = codeSetup();
   files.receive({ bytes: codeZip(), name: "Systems Programming proj.zip", text: "שלום, זה הפרויקט של Systems Programming" });
   const text = [...thread.all()].pop().text;
-  assert.match(text, /תייקתי 6 קבצים \(2 מסמכים, 4 קבצי קוד\)/);
+  assert.match(text, /תייקתי 6 קבצים \(קובץ טקסט אחד, קובץ PDF אחד, 4 קבצי קוד\)/);
   assert.match(text, /בנוסף דולגו 5 קבצים מקומפלים\/בינאריים\./);
   assert.match(text, /דולגו 4:/);
   assert.match(text, /\u2066[^\n]*fake\.c\u2069: לא טקסט אמיתי/);

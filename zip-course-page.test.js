@@ -100,7 +100,7 @@ test("COURSE ZIP: documents and code files go into THIS course, with a short sum
     assert.strictEqual(r.status, 201);
     assert.strictEqual(r.json.zip.filedCount, 4);
     assert.strictEqual(r.json.zip.skippedCount, 3);
-    assert.match(r.json.zip.summary, /From "lecture-notes\.docx\.zip" I filed 4 files \(2 documents, 2 code files\) in Systems Programming/);
+    assert.match(r.json.zip.summary, /From "lecture-notes\.docx\.zip" I filed 4 files \(1 text file, 1 PDF, 2 code files\) in Systems Programming/);
     assert.match(r.json.zip.summary, /movie\.mp4: this type is not supported/);
     assert.match(r.json.zip.summary, /Also skipped 2 compiled\/binary files/);
     assert.doesNotMatch(r.json.zip.summary, /main\.o|node_modules/); // counted, not listed

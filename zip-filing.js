@@ -25,9 +25,14 @@ function zipSummary(lang, zipName, filed, skipped, waiting) {
   const listed = skipped.filter((s) => s.code !== "junk");
   const extra = Math.max(0, listed.length - MAX_SKIP_LINES);
   const skipLines = listed.slice(0, MAX_SKIP_LINES).map((s) => `- ${iso(lang, showName(s.name))}: ${lang === "he" ? REASON_HE[s.code] || REASON_HE.other : s.reason}`).join("\n");
-  const docs = filed.filter((f) => f.group !== "code").length;
-  const code = filed.length - docs;
-  const kinds = [docs ? plural(docs, lang, "document", "documents", "מסמך אחד", "מסמכים") : "", code ? plural(code, lang, "code file", "code files", "קובץ קוד אחד", "קבצי קוד") : ""].filter(Boolean).join(", ");
+  const count = (k) => filed.filter((f) => (f.kind || (f.group === "code" ? "code" : "text")) === k).length;
+  const kinds = [
+    [count("text"), "text file", "text files", "קובץ טקסט אחד", "קבצי טקסט"],
+    [count("pdf"), "PDF", "PDFs", "קובץ PDF אחד", "קבצי PDF"],
+    [count("office"), "Word/PowerPoint file", "Word/PowerPoint files", "קובץ Word/PowerPoint אחד", "קבצי Word/PowerPoint"],
+    [count("image"), "image", "images", "תמונה אחת", "תמונות"],
+    [count("code"), "code file", "code files", "קובץ קוד אחד", "קבצי קוד"],
+  ].filter(([n]) => n).map(([n, one, many, oneHe, manyHe]) => plural(n, lang, one, many, oneHe, manyHe)).join(", ");
   const byCourse = new Map();
   for (const f of filed) byCourse.set(f.courseName, (byCourse.get(f.courseName) || 0) + 1);
   const split = byCourse.size > 1;
@@ -47,7 +52,7 @@ function fileMany(addUpload, courseId, courseName, items, filed, skipped) {
   for (const item of items) {
     try {
       addUpload(courseId, item.bytes, item.name);
-      filed.push({ name: item.name, courseName, group: item.group });
+      filed.push({ name: item.name, courseName, group: item.group, kind: item.kind });
     } catch (error) {
       skipped.push({ name: item.name, reason: error.status === 409 ? "already in the course" : String(error.message).slice(0, 120), code: error.status === 409 ? "dup" : "refused" });
     }

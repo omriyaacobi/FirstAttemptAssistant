@@ -95,7 +95,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     const opened = unzip(bytes);
     const filed = [];
     const skipped = [...opened.skipped];
-    fileMany(addUpload, courseId, courseName, opened.files.map((f) => ({ bytes: f.bytes, name: filedName(f), group: f.group })), filed, skipped);
+    fileMany(addUpload, courseId, courseName, opened.files.map((f) => ({ bytes: f.bytes, name: filedName(f), group: f.group, kind: f.kind })), filed, skipped);
     return { name: clean, filedCount: filed.length, skippedCount: skipped.length, summary: zipSummary("en", clean, filed, skipped, 0) };
   }
   // What the coach needs after a file was read: the entry and the start of its text.

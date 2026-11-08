@@ -114,9 +114,9 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     const groups = new Map(); // courseId -> { ref, items }
     for (const item of opened.files) {
       const choice = pickCourse({ fileName: `${clean} ${showName(item.name)}`, text, coach, courseList: list, now: now() });
-      if (!choice) { undecided.push({ bytes: item.bytes, name: filedName(item), group: item.group }); continue; }
+      if (!choice) { undecided.push({ bytes: item.bytes, name: filedName(item), group: item.group, kind: item.kind }); continue; }
       const g = groups.get(choice.ref.courseId) || { ref: choice.ref, items: [] };
-      g.items.push({ bytes: item.bytes, name: filedName(item), group: item.group });
+      g.items.push({ bytes: item.bytes, name: filedName(item), group: item.group, kind: item.kind });
       groups.set(choice.ref.courseId, g);
     }
     for (const [courseId, g] of groups) fileMany(courseId, g.ref.name, g.items, filed, skipped);

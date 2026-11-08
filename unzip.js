@@ -9,7 +9,8 @@
 // Nothing in this file touches the disk.
 
 const zlib = require("node:zlib");
-const { sniffFile } = require("./upload");
+const { sniffFile, MAX_TEXT_BYTES } = require("./upload");
+const { htmlBytesToText } = require("./html-text");
 
 // ---- Limits. Each one is here so a mistake or a hostile zip cannot fill the memory or the disk of the PC. ----
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;       // the zip itself, as uploaded (the page and the server check this too)
@@ -20,12 +21,16 @@ const MAX_ENTRIES = 2000;                      // entries we even look at (folde
 const MAX_NAME_CHARS = 200;                    // a longer name is suspicious
 const MAX_CODE_BYTES = 1024 * 1024;            // one source-code / project text file (real code files are small; a bigger one is usually data)
 
+const MAX_HTML_BYTES = 10 * 1024 * 1024;       // one web page (a Word file "saved as web page" holds ALL its text in one big .html); its TEXT must then fit MAX_TEXT_BYTES
+
 // DOCUMENTS (the same as the single-file upload, upload.js). The REAL type is still checked later by sniffFile on the unpacked
 // bytes, so a ".pdf" that is not a PDF is refused there.
 const DOC_EXT = /\.(pdf|pptx|docx|txt|md|jpe?g|png|webp)$/i;
 // SOURCE CODE and project text files, taken as plain TEXT (a zip from a programming course). They are data: never run, never read as
 // instructions. Each one must really BE text (checkCodeBytes), whatever its name says.
-const CODE_EXT = /\.(c|h|cc|cpp|cxx|hpp|hh|py|js|mjs|ts|java|cs|go|rs|sh|asm|s|sql|json|csv|yaml|yml|toml|html|css|tex|mk|cmake|ini|cfg)$/i;
+const CODE_EXT = /\.(c|h|cc|cpp|cxx|hpp|hh|py|js|mjs|ts|java|cs|go|rs|sh|asm|s|sql|json|csv|yaml|yml|toml|css|tex|mk|cmake|ini|cfg)$/i;
+// A web page is a DOCUMENT, not code: its text is taken out (html-text.js) and filed like a text file. It is never rendered or run.
+const HTML_EXT = /.html?$/i;
 const CODE_NAMES = new Set(["makefile", "readme", "license", "dockerfile"]); // extensionless names, any case
 // Compiled / binary leftovers and tool folders: never read, and only COUNTED in the summary (not listed one by one).
 const JUNK_EXT = /\.(o|a|so|dll|exe|obj|class|pyc|pyo|lib|dylib|elf|out|bin|dSYM|jar)$/i;
@@ -87,13 +92,15 @@ function badName(name) {
   return null;
 }
 
-// "junk" = compiled or tool leftovers (counted only); "code" = a source/project text file; "doc" = a document; null = unknown type.
+// "junk" = compiled or tool leftovers (counted only); "code" = a source/project text file; "doc" = a document; "html" = a web page
+// (its text is taken out); null = unknown type.
 function classify(name) {
   const parts = name.split("/");
   const base = parts[parts.length - 1];
   if (parts.slice(0, -1).some((p) => JUNK_DIRS.has(p) || /^cmake-build-/i.test(p))) return "junk";
   if (JUNK_EXT.test(base)) return "junk";
   if (DOC_EXT.test(base)) return "doc";
+  if (HTML_EXT.test(base)) return "html";
   if (CODE_EXT.test(base) || CODE_NAMES.has(base.toLowerCase())) return "code";
   return null;
 }
@@ -107,6 +114,16 @@ function looksLikeText(data) {
   const odd = (text.match(/[\u0001-\u0008\u000b\u000e-\u001f\u007f]/g) || []).length;
   if (odd > Math.max(2, text.length / 100)) return false;
   try { return sniffFile(data).kind === "text"; } catch (error) { return false; }
+}
+
+// What a document is, for the summary ("1 text file, 149 images, 27 code files"). Decided from the name only; sniffFile checks the real bytes.
+function kindOf(name, group) {
+  if (group === "code") return "code";
+  if (group === "html") return "text";
+  if (/.pdf$/i.test(name)) return "pdf";
+  if (/.(pptx|docx)$/i.test(name)) return "office";
+  if (/.(jpe?g|png|webp)$/i.test(name)) return "image";
+  return "text";
 }
 
 // Unpacks the zip. Returns { files: [{ name, path, group, bytes }], skipped: [{ name, reason, code }] }.
@@ -136,6 +153,7 @@ function unzip(bytes) {
     if (e.method !== 0 && e.method !== 8) { skip("unknown compression", "compression"); continue; }
     if (files.length >= MAX_FILES) { skip(`more than ${MAX_FILES} files: the rest are left out`, "toomany"); continue; }
     if (group === "code" && e.size > MAX_CODE_BYTES) { skip(`a code file over ${Math.round(MAX_CODE_BYTES / 1048576)} MB`, "codebig"); continue; }
+    if (group === "html" && e.size > MAX_HTML_BYTES) { skip(`a web page over ${Math.round(MAX_HTML_BYTES / 1048576)} MB`, "big"); continue; }
     if (e.size > MAX_FILE_BYTES) { skip(`over ${Math.round(MAX_FILE_BYTES / 1048576)} MB`, "big"); continue; }
     if (e.offset + 30 > bytes.length || bytes.readUInt32LE(e.offset) !== 0x04034b50) throw fail(400, "this zip is damaged");
     const start = e.offset + 30 + bytes.readUInt16LE(e.offset + 26) + bytes.readUInt16LE(e.offset + 28);
@@ -156,9 +174,19 @@ function unzip(bytes) {
     if (data.length !== e.size) { skip("damaged (the size does not match)", "damaged"); continue; }
     if (data.length === 0) { skip("empty file", "empty"); continue; }
     if (group === "code" && !looksLikeText(data)) { skip("not really text (it looks like a binary file)", "notext"); continue; }
-    files.push({ name: e.name.split("/").pop(), path: shown, group, bytes: data });
+    const base = e.name.split("/").pop();
+    if (group === "html") { // the text of the page, as plain UTF-8 bytes (the page itself is never kept)
+      const text = htmlBytesToText(data);
+      if (text === null) { skip("not really text (it does not look like a web page)", "notext"); continue; }
+      if (!text) { skip("a web page with no text", "empty"); continue; }
+      const out = Buffer.from(text, "utf8");
+      if (out.length > MAX_TEXT_BYTES) { skip(`the text of this page is over ${Math.round(MAX_TEXT_BYTES / 1048576)} MB`, "big"); continue; }
+      files.push({ name: base, path: shown, group: "doc", kind: "text", bytes: out });
+      continue;
+    }
+    files.push({ name: base, path: shown, group, kind: kindOf(e.name, group), bytes: data });
   }
   return { files, skipped };
 }
 
-module.exports = { unzip, looksLikeZip, classify, MAX_CODE_BYTES, MAX_ZIP_BYTES, MAX_TOTAL_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_ENTRIES };
+module.exports = { unzip, looksLikeZip, classify, MAX_HTML_BYTES, MAX_CODE_BYTES, MAX_ZIP_BYTES, MAX_TOTAL_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_ENTRIES };
