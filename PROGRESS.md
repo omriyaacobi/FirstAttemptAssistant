@@ -632,3 +632,9 @@ All in `public/index.html` (no server file changed). Tested on a private server 
 - The notebook (`ingest.js`) now puts the file name into each text piece's search words, so "what does parser.c do" finds it; code files are filed as `src/parser.c` (end of the path), shown and cited by that name.
 - `thread-files.js`: the summary is in the message's language, shows documents and code files apart, lists at most 5 skipped files and counts the junk in one line.
 - Real zip (counts only, temp folder, no model): 28 documents + 27 code files filed, 24 compiled files counted, 1 unknown file listed. Tests: `unzip.test.js` (made-up zips). Not verified: the real Bot on screen, a real model answering a question about code.
+
+## Zip upload: the course page (2026-11-08, branch claude/zip-course-page-4faec6, not merged yet)
+- Omri dropped a zip on a course page and got "this file type is not supported". The first zip version only covered the chat route and missed the course page route.
+- Now `POST /api/courses/<id>/files` opens a `.zip` with `unzip.js` and adds each file to THAT course through `addUpload` (same checks, no questions). The summary wording moved into `zip-filing.js`, shared with the chat zip. The page keeps the row of the zip with what was added and skipped (a zip that adds nothing shows in red), and the help text mentions zips (200 MB). A zip refused whole (bomb, damaged, too many entries) shows its plain reason.
+- Only names ending `.zip` get the 200 MB limit and the zip road; a zip sent as `x.docx` is refused as before. The course page summary is in English (no message to take a language from); the study coach is not asked about each file.
+- Tests: `zip-course-page.test.js` (made-up zips: documents + code, slip, bomb, damaged, duplicates, non-zip). Not verified: the real page in a browser, a phone, a really big zip.
