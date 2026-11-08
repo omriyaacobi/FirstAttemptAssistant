@@ -239,7 +239,9 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   function assignmentList(ref) {
     const list = ref ? [ref] : refs();
     const rows = list.flatMap((r) => tracker.course(r).assignments.filter((a) => a.status !== "done").map((a) => T(`"${clean(a.title, 60)}" in ${r.name} (${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"})`, `"${clean(a.title, 60)}" ${bet(r.name)} (${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"})`)));
-    return rows.length ? `${T("Saved assignments:", "המטלות השמורות:")}\n- ${rows.join("\n- ")}` : T("I have no assignment saved yet. Send me the file or paste the text of the assignment, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה. אפשר לשלוח את הקובץ או להדביק את הטקסט של המטלה, ואציע אותה לאישור.");
+    const w = latestProposal();
+    const waiting = w && w.kind === "assignment" ? T(`\nWaiting for your Confirm (not saved yet): "${clean(w.fields.title, 60)}" in ${w.ref.name}${w.fields.due ? `, due ${niceDate(w.fields.due)}` : ""}. Tap Confirm on its card to save it.`, `\nמחכה לאישור שלך (עוד לא נשמרה): "${clean(w.fields.title, 60)}" ${bet(w.ref.name)}${w.fields.due ? `, להגשה עד ${niceDate(w.fields.due)}` : ""}. אפשר ללחוץ על Confirm בכרטיס שלה כדי לשמור.`) : "";
+    return rows.length ? `${T("Saved assignments:", "המטלות השמורות:")}\n- ${rows.join("\n- ")}${waiting}` : waiting ? waiting.trim() : T("I have no assignment saved yet. Send me the file or paste the text of the assignment, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה. אפשר לשלוח את הקובץ או להדביק את הטקסט של המטלה, ואציע אותה לאישור.");
   }
 
   // ---- several courses in one message ("calc lecture 4, algo I'm up to date, systems I haven't started") ----

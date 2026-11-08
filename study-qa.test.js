@@ -147,3 +147,16 @@ test("b), the same question classed as 'progress' by the front desk also answers
   assert.match(r.answer, /Homework 1.*Linear Algebra Demo/);
   assert.strictEqual(coach.pendingProposal(), null);
 });
+
+// QA round 2: a file was filed and its assignment card waits for Confirm. Asking "which homework do I have?" must mention it.
+test("r2), a question about homework mentions the card that waits for Confirm (no dead end)", async () => {
+  const { coach } = make();
+  const ref = coach.tracker.refsFor(COURSES)[0];
+  const up = await coach.onUpload({ courseId: ref.courseId, files: [{ fileId: "f1", fileName: "hw1.txt", pages: 1 }], text: "Homework 1. Write a function.", dateText: "this is the homework" });
+  assert.ok(up.proposal, "a card is waiting");
+  const r = await coach.answerStudy({ studyIntent: "progress", text: "Which course do I have a homework for?" });
+  assert.match(r.answer, /Invented title/);
+  assert.match(r.answer, /Confirm/i);
+  assert.match(r.answer, /Linear Algebra Demo/);
+  assert.ok(coach.pendingProposal(), "the card is still there, nothing was saved or created");
+});
