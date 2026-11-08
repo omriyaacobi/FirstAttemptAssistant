@@ -128,9 +128,16 @@ function dateFromMessage(text, tracker, ref, now) {
 }
 // Which lecture is meant: one the message names (number or day), else the earliest held lecture that is not understood yet and has
 // something to work with (material or a topic), else the earliest not understood one (the tutor then asks for material).
-function pickLecture({ tracker, ref, message, now, intent = null }) {
+// range (optional, from the student's own words about where they are; study-coach.js): { maxLecture, skip: [n], prefer: [n] }. A lecture the student
+// did not name is only picked from the covered range (no later than maxLecture, none they said they missed); "prefer" (the parts they say sit badly) goes
+// first. It changes what is asked, never what counts as understood.
+function pickLecture({ tracker, ref, message, now, intent = null, range = null }) {
   const c = tracker.course(ref);
-  const held = tracker.slots(ref.key).filter((s) => plan.isHeld(s, now));
+  let held = tracker.slots(ref.key).filter((s) => plan.isHeld(s, now));
+  if (range && !askedLectures(message).length) {
+    held = held.filter((s) => (!range.maxLecture || s.n <= range.maxLecture) && !(range.skip || []).includes(s.n));
+    if (range.prefer && range.prefer.length) held = [...range.prefer.map((n) => held.find((s) => s.n === n)).filter(Boolean), ...held.filter((s) => !range.prefer.includes(s.n))];
+  }
   const named = askedLectures(message);
   if (named.length) { const s = held.find((x) => x.n === named[0]); return s ? { slot: s, why: "named" } : { slot: null, why: "none-held", n: named[0] }; }
   const day = dateFromMessage(message, tracker, ref, now);
@@ -277,7 +284,8 @@ function summary(session, rec) {
 // The one entry point. ctx: { tracker, ref, pages, courseName, askChain, now, log }.
 // intent: "teach" | "quiz" | "start" | "answer" | null (null: continue the open session if there is one).
 // Returns { answer, outside, sources, model, mode, done, needs }.
-async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null }) {
+// range: see pickLecture, or { extra: [page-like pieces of the notes the student has covered], label } for a course whose notes are not split by lecture.
+async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null }) {
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
   const session = tracker.getSession(ref);
@@ -355,16 +363,17 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   }
 
   // teach and quiz: a lecture
-  let pick = pickLecture({ tracker, ref, message, now, intent });
+  const byNotes = range && Array.isArray(range.extra) && range.extra.length && intent === "quiz" && !askedLectures(message).length;
+  let pick = byNotes ? { slot: { date: null, n: null }, why: "range" } : pickLecture({ tracker, ref, message, now, intent, range });
   // The student uploaded the lecture themself: let them work on it even when the timetable does not (or cannot) say it was held.
   // Practice only: with no timetable date the check is kept as topic practice and is never counted as "understood".
   const up = !pick.slot && (askedLectures(message)[0] || !tracker.slots(ref.key).length) ? uploadedLecture(pages, askedLectures(message)[0] || null) : null;
   if (up) pick = { slot: { date: null, n: up.lecture }, why: "uploaded", material: up.refs };
   if (!pick.slot) return finish({ answer: pick.why === "none-held" ? `Lecture ${pick.n} has not been held yet by the timetable. If a class was cancelled, tell me ("no lecture on <date>") and the numbers will move.` : "I do not see a held lecture that still needs work. Tell me about a new one: a topic, a date, or send the slides.", needs: "lecture" });
-  const lec = pick.why === "uploaded" ? { material: pick.material, topic: "" } : tracker.course(ref).lectures[pick.slot.date];
+  const lec = pick.why === "uploaded" ? { material: pick.material, topic: "" } : pick.why === "range" ? { material: [], topic: String(range.label || "").slice(0, 120) || "what you covered" } : tracker.course(ref).lectures[pick.slot.date];
   const topic = (lec && lec.topic) || "";
   if (!(lec && lec.material.length) && !topic) return finish({ answer: say(langOf(message), `I have nothing about the lecture of ${plan.niceDate(pick.slot.date)} yet. What was it about, or can you send the slides? With only a topic I can still teach it from general knowledge, and I will say so.`, `עדיין אין לי כלום על ההרצאה מ${plan.niceDate(pick.slot.date, "he")}. על מה היא הייתה, או שאפשר לשלוח את השקפים? גם עם נושא בלבד אפשר ללמד מידע כללי, ואציין את זה.`), needs: "material", target: { type: "lecture", date: pick.slot.date } });
-  const mat = materialFor(pages, lec ? lec.material : []);
+  const mat = materialFor(pages, lec ? lec.material : [], pick.why === "range" ? range.extra : []);
   const label = topic || (isHebrew(message) ? `הרצאה ${pick.slot.n}` : `lecture ${pick.slot.n}`);
   const lang = isHebrew(message) ? "he" : "en";
   try {

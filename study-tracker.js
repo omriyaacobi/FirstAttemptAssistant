@@ -136,6 +136,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     const c = course(ref);
     const cand = normalizePosition({ ...fields, known: true, at: now() });
     cand.seenThrough = null;
+    if (c.position.examDate && c.position.confirmed) { cand.examDate = c.position.examDate; cand.confirmed = true; } // a confirmed exam date is not lost by a later reading
     const w = cand.where;
     if (w && (w.type === "lecture" || w.type === "date")) {
       const all = slots(ref.key).filter((s) => plan.isHeld(s, now(), timezone));
@@ -150,6 +151,22 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     return c.position;
   }
   const pendingQuestion = (ref) => course(ref).pendingQuestion;
+  // Undo of a reading: put back exactly what was there (the position and the open question). Nothing else is touched.
+  function restoreStanding(ref, position, pending) {
+    const c = course(ref);
+    c.position = normalizePosition(position);
+    c.pendingQuestion = pending && typeof pending === "object" ? normalizePending({ pendingQuestion: pending }, c.position) : null;
+    save(c);
+    return c.position;
+  }
+  // The exam date: only after the student confirmed it (a Confirm card). It drives dates, so it must be a real date that has not passed.
+  function setExamDate(ref, date) {
+    if (!plan.isIsoDate(date) || date < today()) throw new Error("that is not a date I can use for an exam");
+    const c = course(ref);
+    c.position = normalizePosition({ ...c.position, examDate: date, confirmed: true });
+    save(c);
+    return c.position;
+  }
 
   // ---- material ----
   // material: [{ fileId, from, to, fileName? }]. A date must be a real lecture slot of this course (held or in the future).
@@ -196,10 +213,11 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     return slots(ref.key).filter((x) => plan.isHeld(x, now(), timezone) && x.attends && !(c.lectures[x.date] && (c.lectures[x.date].material.length || c.lectures[x.date].topic)) && !c.askedSlots[x.date]);
   }
   const goodTimeToAsk = () => !plan.inQuietHours(now(), state().settings.quiet, timezone) && !plan.inClass(timetable(), now(), timezone);
-  function markAsked(ref, { dates = [], position = false } = {}) {
+  function markAsked(ref, { dates = [], position = false, where = false } = {}) {
     const c = course(ref);
     for (const d of dates) c.askedSlots[d] = now();
     if (position) { c.askedPosition = now(); c.pendingQuestion = { kind: "position", at: now() }; }
+    if (where) { c.askedStanding = now(); c.pendingQuestion = { kind: "where", at: now() }; } // the one follow-up question after a reading
     save(c);
   }
 
@@ -286,7 +304,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     };
   }
 
-  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, setPosition, setStanding, pendingQuestion, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
+  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, setPosition, setStanding, pendingQuestion, restoreStanding, setExamDate, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
 }
 
 module.exports = { createTracker, BOX_DAYS, MIN_QUESTIONS, PASS_SCORE, GRACE_DAYS, clean };

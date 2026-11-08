@@ -164,4 +164,11 @@ function sectionAtPage(outline, fileId, page) {
   return hit ? { ...hit, fileId: f.fileId } : null;
 }
 
-module.exports = { buildOutline, sectionByName, sectionAtFraction, sectionAtPage, validPages, MAX_SECTIONS };
+// The text of one section (the same page-joining as buildOutline), cut at `max` characters. pages: the same list that built the outline.
+function sectionText(pages, fileId, section, max = 6000) {
+  const list = (Array.isArray(pages) ? pages : []).filter((p) => p && p.fileId === fileId && Number.isFinite(p.page));
+  if (!list.length || !section) return "";
+  return fileText(list).text.slice(section.start, Math.min(section.end, section.start + max));
+}
+
+module.exports = { buildOutline, sectionByName, sectionAtFraction, sectionAtPage, validPages, sectionText, MAX_SECTIONS };

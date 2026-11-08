@@ -13,6 +13,7 @@
 //     proposal: the Confirm card waiting (or null) }
 
 const plan = require("./study-plan");
+const standing = require("./standing");
 const { GRACE_DAYS } = require("./study-tracker");
 
 const nice = (date) => plan.niceDate(date, "he" === curLang ? "he" : "en");
@@ -32,6 +33,14 @@ function keepingUp({ slots, positionKnown, seenThrough, today, now }) {
   return ahead > 0 ? { state: "ahead", n: ahead } : { state: "on_track", n: 0 };
 }
 
+// The student's own reading (position v2) in one code-written line, for the page's "you are" cell. Empty object when there is none.
+function youAreOf(p, he) {
+  const line = p.positionKnown ? standing.standingLine(p.position, he ? "he" : "en") : "";
+  if (!line) return {};
+  const done = p.understood ? (he ? (p.understood === 1 ? "הרצאה אחת נבדקה והובנה" : `${p.understood} הרצאות נבדקו והובנו`) : `${p.understood} lecture${p.understood === 1 ? "" : "s"} checked as understood`) : "";
+  return { youAre: line + (done ? `. ${done}` : ""), yourWords: p.position.said || "" };
+}
+
 function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
   const he = lang === "he";
   const tracker = coach.tracker;
@@ -44,7 +53,7 @@ function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
     if (!slots.length) { // no timetable: no counts, but a saved position and saved assignments still show
       const open = p.assignments.map((a) => ({ title: a.title, due: a.due || null, status: a.status }));
       const due = p.assignments.filter((a) => a.due).map((a) => ({ title: a.title, due: a.due, status: a.status, daysLeft: plan.daysBetween(today, a.due) }));
-      out.push({ id: ref.courseId, name: ref.name, tracked: false, shouldBe: null, you: p.positionKnown ? { positionKnown: true, position: { seenThrough: null, note: p.position.note || "", said: p.position.said || "" }, withMaterial: 0, understood: 0 } : null, behind: [], due, assignments: open, questions: [] });
+      out.push({ id: ref.courseId, name: ref.name, tracked: false, shouldBe: null, you: p.positionKnown ? { positionKnown: true, position: { seenThrough: null, note: p.position.note || "", said: p.position.said || "" }, withMaterial: 0, understood: 0 } : null, behind: [], due, assignments: open, questions: [], ...youAreOf(p, he) });
       continue;
     }
     const held = slots.filter((s) => plan.isHeld(s, now));
@@ -60,7 +69,7 @@ function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
       shouldBe: { held: p.held, lastLecture: last ? { n: last.n, date: last.date } : null, nextLecture: next ? { n: next.n, date: next.date } : null },
       you: { positionKnown: p.positionKnown, position: p.positionKnown ? { seenThrough: p.position.seenThrough || null, note: p.position.note || "" } : null, withMaterial: p.withMaterial, understood: p.understood },
       keepingUp: keepingUp({ slots, positionKnown: p.positionKnown, seenThrough: p.positionKnown ? p.position.seenThrough || null : null, today, now }),
-      behind: p.behind.slice(0, 8), due, assignments: open, questions,
+      behind: p.behind.slice(0, 8), due, assignments: open, questions, ...youAreOf(p, he),
     });
   }
   return { today, courses: out, proposal: coach.pendingProposal() };

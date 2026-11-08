@@ -12,6 +12,7 @@ const IGNORED_LIMIT = 2;
 const JUDGE_AFTER_MS = 24 * 3600 * 1000;
 const DUE_SOON_DAYS = 3;
 const BEHIND_AFTER_DAYS = 3;
+const EXAM_SOON_DAYS = 7;
 
 function createNudges({ tracker, courseList, now = () => Date.now(), timezone = plan.TIMEZONE }) {
   const today = () => plan.parts(now(), timezone).date;
@@ -73,7 +74,13 @@ function createNudges({ tracker, courseList, now = () => Date.now(), timezone = 
           out.push({ kind: "assignment", rank: 1, ref: ref.key, date: a.due, text: `"${clean(a.title, 80)}" (${ref.name}) is due ${d === 0 ? "today" : d === 1 ? "tomorrow" : `${plan.niceDate(a.due)}, in ${d} days`}. Say "help me start ${clean(a.title, 40)}" and I will check you have what it needs.` });
         }
       }
-      const stale = p.behind.find((b) => (b.hasMaterial || b.topic) && plan.daysBetween(b.date, t) >= BEHIND_AFTER_DAYS);
+      // The student's own words (position v2): a confirmed exam date within a week is a real date; revising or paused means no catch-up nudge.
+      const mode = p.position.mode;
+      if (p.position.examDate && p.position.confirmed && p.position.examDate >= t && plan.daysBetween(t, p.position.examDate) <= EXAM_SOON_DAYS) {
+        const d = plan.daysBetween(t, p.position.examDate);
+        out.push({ kind: "exam", rank: 1, ref: ref.key, date: p.position.examDate, text: `${ref.name}: the exam is ${d === 0 ? "today" : d === 1 ? "tomorrow" : `${plan.niceDate(p.position.examDate)}, in ${d} days`}. Say "quiz me on ${ref.name}" for a short round on what you covered.` });
+      }
+      const stale = mode === "revising" || mode === "paused" ? null : p.behind.find((b) => (b.hasMaterial || b.topic) && plan.daysBetween(b.date, t) >= BEHIND_AFTER_DAYS);
       if (stale) out.push({ kind: "lecture", rank: 2, ref: ref.key, date: stale.date, text: `${ref.name}: the lecture of ${plan.niceDate(stale.date)} is not checked yet. Say "quiz me on ${ref.name}" for 3 questions, or "teach me" and I explain it first.` });
       if (p.topicsDue) out.push({ kind: "review", rank: 3, ref: ref.key, date: t, text: `${ref.name}: ${p.topicsDue} topic${p.topicsDue === 1 ? " is" : "s are"} due for review today. Say "quiz me" for a short round.` });
       if (tracker.goodTimeToAsk()) {

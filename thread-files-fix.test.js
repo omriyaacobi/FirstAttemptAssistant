@@ -61,16 +61,32 @@ test("a) ambiguity: two courses share the word, so Bot asks; the more specific m
 });
 
 test("b) three files in a row: every 'which date' question names its file", async () => {
-  const coach = makeCoach();
-  const routes = fakeRoutes(COURSES, "Week 2 slides");
+  const TT = [{ id: IDS.prog, name: "Calculus 2" }, COURSES[1]]; // a course WITH a timetable (a course without one gets no date question, see the next test)
+  const coach = makeCoach(TT);
+  const routes = fakeRoutes(TT, "Week 2 slides");
   const thread = createThreadStore(tmp());
   const files = createThreadFiles({ thread, courseRoutes: routes, coach, now: () => NOW });
+  const calc = coach.tracker.refsFor(TT)[0];
+  for (const s of coach.tracker.slots(calc.key).filter((x) => x.date <= "2026-11-07")) coach.tracker.attachMaterial(calc, s.date, [{ fileId: "old", from: 1, to: 1 }]); // every held lecture already has material: Bot cannot suggest a slot
   const names = ["notes-a.pdf", "notes-b.pdf", "notes-c.pdf"];
-  const rs = names.map((n, i) => files.receive({ bytes: pdf(i), name: n, text: "for the programming course" }));
+  const rs = names.map((n, i) => files.receive({ bytes: pdf(i), name: n, text: "for Calculus 2" }));
   for (const r of rs) await files.onFileReady({ courseId: r.courseId, fileId: r.fileId });
   const asks = [...thread.all()].filter((m) => m.role === "assistant" && /Which date was it/.test(m.text));
   assert.strictEqual(asks.length, 3);
   names.forEach((n, i) => assert.ok(asks[i].text.includes(n), `question ${i} names ${n}: ${asks[i].text}`));
+});
+
+test("b2) a file for a course with NO timetable gets no date question: it says it is filed and how to start", async () => {
+  const coach = makeCoach();
+  const routes = fakeRoutes(COURSES, "Week 2 slides");
+  const thread = createThreadStore(tmp());
+  const files = createThreadFiles({ thread, courseRoutes: routes, coach, now: () => NOW });
+  const r = files.receive({ bytes: pdf(0), name: "notes-a.pdf", text: "for the programming course" });
+  await files.onFileReady({ courseId: r.courseId, fileId: r.fileId });
+  const replies = [...thread.all()].filter((m) => m.role === "assistant").map((m) => m.text).join(" ");
+  assert.doesNotMatch(replies, /Which date was it/);
+  assert.match(replies, /no timetable/);
+  assert.match(replies, /teach me/);
 });
 
 test("c) 'due next Sunday' becomes a real date computed by code (Sat 2026-11-07 -> Sun 2026-11-08)", () => {
