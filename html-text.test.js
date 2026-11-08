@@ -126,9 +126,9 @@ test("ZIP small images: a picture under MIN_IMAGE_BYTES is skipped and only coun
   const filed = r.files.map((f) => ({ name: f.name, courseName: "Calculus", group: f.group, kind: f.kind }));
   const en = zipSummary("en", "n.zip", filed, r.skipped, 0);
   assert.match(en, /filed 1 file \(1 image\) in Calculus/);
-  assert.match(en, /Skipped 3 small images \(icons, formulas\)\./);
+  assert.match(en, /Skipped 3 small, empty or repeated images \(icons, lines, formulas\)\./);
   assert.doesNotMatch(en, /image001|image002|slide\.jpg|Skipped 3:/); // counted, not listed
-  assert.match(zipSummary("he", "n.zip", filed, r.skipped, 0), /דולגו 3 תמונות קטנות \(אייקונים, נוסחאות\)\./);
+  assert.match(zipSummary("he", "n.zip", filed, r.skipped, 0), /דולגו 3 תמונות קטנות, ריקות או כפולות \(אייקונים, קווים, נוסחאות\)\./);
 });
 
 // ---- The image rule (judgeImage in unzip.js): pixels, emptiness and repeats, read from the real header. All pictures here are made up. ----

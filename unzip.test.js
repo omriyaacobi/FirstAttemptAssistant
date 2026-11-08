@@ -329,6 +329,70 @@ test("ZIP code upload (Hebrew): the reasons are Hebrew, names sit inside isolate
   assert.ok(!/parser\.o|libx\.a/.test(text));
 });
 
+// ---- the summary adds up: filed + already in the course + leftovers + small images + other skipped = every file in the zip ----
+function mixedZip() {
+  const exe = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2, 3]), Buffer.alloc(60)]); // an executable named like the project: no extension
+  const entries = [
+    { name: "proj/Calculus 2 a.pdf", data: PDF("a") },
+    { name: "proj/Calculus 2 copy of a.pdf", data: PDF("a") },   // same bytes: already in the course after the first
+    { name: "proj/Calculus 2 copy 2 of a.pdf", data: PDF("a") }, // and again
+    { name: "proj/Calculus 2 b.pdf", data: PDF("b") },
+    { name: "proj/main.c", data: CODE("main") },
+    { name: "proj/main2.c", data: CODE("main") },                // same bytes as main.c
+    { name: "proj/project", data: exe },                          // extensionless binary: a compiled leftover, counted only
+    { name: "proj/tool.o", data: ELF_LIKE },
+    { name: "proj/notes", data: "plain text with no extension\n" }, // extensionless TEXT is an unknown type, listed
+    { name: "proj/tiny.png", data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]) }, // a small image: counted only
+  ];
+  for (let i = 1; i <= 7; i++) entries.push({ name: `proj/odd${i}.weird`, data: `who knows ${i}` }); // seven unsupported: only 5 are listed
+  return buildZip(entries);
+}
+const numbers = (text) => ({ // the counts, read back out of the English summary
+  filed: Number(/I filed (\d+) file/.exec(text)[1]),
+  dup: Number(/(\d+) were already in the course/.exec(text)[1]),
+  junk: Number(/Also skipped (\d+) compiled/.exec(text)[1]),
+  small: Number(/Skipped (\d+) small/.exec(text)[1]),
+  other: Number(/Skipped (\d+):/.exec(text)[1]),
+  all: Number(/That is (\d+) files in the zip in all/.exec(text)[1]),
+});
+
+test("ZIP summary (English): duplicates are ONE line, leftovers ONE line, unsupported files a capped list, and the numbers add up", () => {
+  const { thread, routes, files } = codeSetup();
+  files.receive({ bytes: mixedZip(), name: "proj.zip", text: "for Calculus 2" });
+  const text = [...thread.all()].pop().text;
+  const n = numbers(text);
+  // filed: a.pdf, b.pdf, main.c | dup: 2 pdf copies + main2.c | junk: project + tool.o | small: tiny.png | other: notes + 7 odd
+  assert.deepStrictEqual(n, { filed: 3, dup: 3, junk: 2, small: 1, other: 8, all: 17 });
+  assert.strictEqual(n.filed + n.dup + n.junk + n.small + n.other, n.all);
+  assert.strictEqual(routes.added.length, 3);
+  assert.ok(!/copy of a|copy 2|main2/.test(text), "duplicates are never listed one by one");
+  assert.ok(!/tool\.o|proj\/project|tiny\.png/.test(text), "leftovers and small images are only counted");
+  assert.strictEqual((text.match(/^- /gm) || []).length, 5); // the list is capped at 5
+  assert.match(text, /\.\.\.and 3 more/);
+  assert.match(text, /notes: this type is not supported/);
+});
+
+test("ZIP summary (Hebrew): the same lines and the same numbers, no English reasons", () => {
+  const { thread, files } = codeSetup();
+  files.receive({ bytes: mixedZip(), name: "proj.zip", text: "שלום, זה בשביל Calculus 2" });
+  const text = [...thread.all()].pop().text;
+  assert.match(text, /תייקתי 3 קבצים/);
+  assert.match(text, /3 קבצים כבר היו בקורס\./);
+  assert.match(text, /דולגו 8:/);
+  assert.match(text, /בנוסף דולגו 2 קבצים מקומפלים\/בינאריים\./);
+  assert.match(text, /תמונה אחת קטנה, ריקה או כפולה דולגה\./);
+  assert.match(text, /בסך הכול 17 קבצים ב-zip\./);
+  assert.ok(!/copy of a|main2|already in|not supported/.test(text));
+  assert.strictEqual((text.match(/^- /gm) || []).length, 5);
+});
+
+test("ZIP extensionless files: a program with no extension is a compiled leftover by its bytes; text with no extension is only an unknown type", () => {
+  const exe = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2, 3]), Buffer.alloc(60)]);
+  const r = unzip(buildZip([{ name: "operation", data: exe }, { name: "a/notes", data: "just text\n" }, { name: "a/empty", data: "" }, { name: "Makefile", data: "all:\n" }]));
+  assert.deepStrictEqual(r.files.map((f) => f.name), ["Makefile"]);
+  assert.deepStrictEqual(r.skipped.map((s) => [s.name, s.code]), [["operation", "junk"], ["a/notes", "type"], ["a/empty", "empty"]]);
+});
+
 test("ZIP code upload: a made-up code file reaches the course as plain text and a question about its name finds it (real courses + ingest + search)", async () => {
   const { createCourses } = require("./courses");
   const { ingestFile } = require("./ingest");

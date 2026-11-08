@@ -3,7 +3,9 @@
 // upload (course-routes.js), so the wording and the rules are in ONE place:
 //   fileMany    each file takes the single-upload road (addUpload: real first bytes, 50 MB, course size, no duplicate); one that fails is
 //               SKIPPED with its reason and the others go on.
-//   zipSummary  ONE short message, in the user's language. Compiled leftovers are only counted, at most 5 skipped files are listed.
+//   zipSummary  ONE short message, in the user's language. The numbers add up: filed + already in the course + compiled leftovers +
+//               small images + other skipped (+ waiting) = every file seen, and the last line says that total. Only the "other
+//               skipped" files are listed (at most 5); duplicates, leftovers and small images are each ONE counted line.
 //   filedName   the name a file is filed under (a code file keeps the end of its path).
 // Names from a zip are untrusted: only ever shown as text, never used as paths.
 
@@ -22,8 +24,9 @@ const plural = (n, lang, one, many, oneHe, manyHe) => (lang === "he" ? (n === 1 
 
 function zipSummary(lang, zipName, filed, skipped, waiting) {
   const junk = skipped.filter((s) => s.code === "junk").length; // compiled / tool leftovers: only counted
-  const small = skipped.filter((s) => s.code === "small").length; // tiny pictures (icons, formula fragments): only counted
-  const listed = skipped.filter((s) => s.code !== "junk" && s.code !== "small");
+  const small = skipped.filter((s) => s.code === "small").length; // tiny, blank or repeated pictures: only counted
+  const dup = skipped.filter((s) => s.code === "dup").length; // already in the course: only counted
+  const listed = skipped.filter((s) => s.code !== "junk" && s.code !== "small" && s.code !== "dup");
   const extra = Math.max(0, listed.length - MAX_SKIP_LINES);
   const skipLines = listed.slice(0, MAX_SKIP_LINES).map((s) => `- ${iso(lang, showName(s.name))}: ${lang === "he" ? REASON_HE[s.code] || REASON_HE.other : s.reason}`).join("\n");
   const count = (k) => filed.filter((f) => (f.kind || (f.group === "code" ? "code" : "text")) === k).length;
@@ -43,9 +46,12 @@ function zipSummary(lang, zipName, filed, skipped, waiting) {
   if (filed.length) parts.push(words(lang, `From "${zipName}" I filed ${plural(filed.length, "en", "file", "files")} (${kinds}) ${whereEn}. Bot is reading them now.`, `מתוך "${iso(lang, zipName)}" תייקתי ${plural(filed.length, "he", "", "", "קובץ אחד", "קבצים")} (${kinds}) ${whereHe}. Bot קורא אותם עכשיו.`));
   else parts.push(words(lang, `Nothing from "${zipName}" was filed.`, `שום דבר מתוך "${iso(lang, zipName)}" לא תויק.`));
   if (waiting) parts.push(words(lang, `${waiting} more file${waiting === 1 ? "" : "s"} wait for you: which course are they for? Tap one below. Nothing is saved until you choose.`, `עוד ${waiting} קבצים מחכים: לאיזה קורס הם שייכים? אפשר ללחוץ על אחד למטה. שום דבר לא נשמר לפני הבחירה.`));
+  if (dup) parts.push(words(lang, `${dup} ${dup === 1 ? "was" : "were"} already in the course.`, dup === 1 ? "קובץ אחד כבר היה בקורס." : `${dup} קבצים כבר היו בקורס.`));
   if (listed.length) parts.push(words(lang, `Skipped ${listed.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${listed.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
   if (junk) parts.push(words(lang, `Also skipped ${junk} compiled/binary file${junk === 1 ? "" : "s"}.`, `בנוסף דולגו ${junk} קבצים מקומפלים/בינאריים.`));
-  if (small) parts.push(words(lang, `Skipped ${small} small image${small === 1 ? "" : "s"} (icons, formulas).`, `דולגו ${small} תמונות קטנות (אייקונים, נוסחאות).`));
+  if (small) parts.push(words(lang, `Skipped ${small} small, empty or repeated image${small === 1 ? "" : "s"} (icons, lines, formulas).`, small === 1 ? "תמונה אחת קטנה, ריקה או כפולה דולגה." : `דולגו ${small} תמונות קטנות, ריקות או כפולות (אייקונים, קווים, נוסחאות).`));
+  const all = filed.length + waiting + skipped.length; // everything the zip held that Bot looked at
+  if (skipped.length) parts.push(words(lang, `That is ${all} files in the zip in all.`, `בסך הכול ${all} קבצים ב-zip.`));
   return parts.join("\n\n");
 }
 

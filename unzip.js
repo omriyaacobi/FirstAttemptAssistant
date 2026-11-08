@@ -197,7 +197,8 @@ function unzip(bytes) {
     if (/\.zip$/i.test(e.name)) { skip("a zip inside a zip is not opened", "nested"); continue; }
     const group = classify(e.name);
     if (group === "junk") { skip("compiled or tool leftover", "junk"); continue; }
-    if (!group) { skip("this type is not supported", "type"); continue; }
+    const extless = !group && !e.name.split("/").pop().includes("."); // no extension at all (an executable named like the project): its BYTES decide below
+    if (!group && !extless) { skip("this type is not supported", "type"); continue; }
     if (e.flags & 1) { skip("password-protected", "password"); continue; }
     if (e.method !== 0 && e.method !== 8) { skip("unknown compression", "compression"); continue; }
     if (files.length >= MAX_FILES) { skip(`more than ${MAX_FILES} files: the rest are left out`, "toomany"); continue; }
@@ -223,6 +224,10 @@ function unzip(bytes) {
     if (data.length !== e.size) { skip("damaged (the size does not match)", "damaged"); continue; }
     if (data.length === 0) { skip("empty file", "empty"); continue; }
     if (group === "doc" && kindOf(e.name, group) === "image") { const no = judgeImage(data, seenImages); if (no) { skip(no.reason, no.code); continue; } }
+    if (extless) { // text without an extension is not filed (unknown type); anything else (NUL bytes, not UTF-8) is a compiled leftover
+      if (looksLikeText(data)) skip("this type is not supported", "type"); else skip("compiled or tool leftover", "junk");
+      continue;
+    }
     if (group === "code" && !looksLikeText(data)) { skip("not really text (it looks like a binary file)", "notext"); continue; }
     const base = e.name.split("/").pop();
     if (group === "html") { // the text of the page, as plain UTF-8 bytes (the page itself is never kept)
