@@ -594,6 +594,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     let raw = null;
     try { raw = await standing.readStanding({ askChain, text: clean(text, standing.MAX_READ_CHARS), courseName: target.name, ctx, log }); } catch (error) { log(`[standing] reader failed: ${error.message}`); }
     const res = standing.checkStanding(raw, ctx);
+    // A written exam date ("the exam is on 22 December"): the reader only knows "in N days", so code reads the date itself (a real date, in the future, within a year).
+    if (!res.exam && /\bexam\b|\btest\b|מבחן/i.test(text) && /\d/.test(text)) {
+      const d = (parseDay(text, "week") || {}).date;
+      if (d && d > today() && plan.daysBetween(today(), d) <= standing.EXAM_MAX_DAYS) res.exam = { date: d };
+    }
     if (!res.any && !res.dropped.length && !res.exam && !lost) return null;
     const words = wordsFor(target, text);
     const before = { ref: target, position: tracker.course(target).position, pending: tracker.pendingQuestion(target) };
@@ -626,6 +631,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const askedAt = tracker.course(target).askedStanding || 0;
     if (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text)) out.question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
     return out;
+  }
+
+  // After a break: where to restart from. For a course with lectures a number or a day, for notes a part or a page.
+  function breakQuestion(target) {
+    return tracked(target)
+      ? T(`One question so that I start from the right place in ${target.name}: what is the last lecture you went through properly? A number ("lecture 3"), a day, or "none".`, `שאלה אחת כדי להתחיל מהמקום הנכון ${bet(target.name)}: מה ההרצאה האחרונה שעברו עליה כמו שצריך? מספר ("הרצאה 3"), יום, או "אף אחת".`)
+      : T(`One question so that I start from the right place in ${target.name}: what is the last part of the notes you went through properly? A section name, a page, or "none".`, `שאלה אחת כדי להתחיל מהמקום הנכון ${bet(target.name)}: מה החלק האחרון בסיכומים שעברו עליו כמו שצריך? שם של סעיף, עמוד, או "אף אחד".`);
   }
 
   // The free description of one course's state, or (multi) of several courses in one message, each read on its own sentences.
@@ -780,6 +792,11 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const { lines, unclear } = interpretUpdate(text, { courseId, courseName });
       if (lines.length || SKIP_WORDS.test(text) || UNDO_WORDS.test(text)) {
         const out = [...lines];
+        // "I skipped two weeks and came back": the words are kept above; ONE useful question follows (what is the last part gone through properly).
+        if (MISSED.test(text) && DURATION.test(text) && lines.length && !SKIP_WORDS.test(text)) {
+          const target = targetFor(text, courseId, courseName, text);
+          if (target && !askedRecently(target)) { out.push(breakQuestion(target)); tracker.markAsked(target, { position: true }); }
+        }
         const left = unclear.filter((u) => !(IS_QUESTION.test(u) && lines.length)); // "Is that okay?" after kept words needs no help text
         if (left.length) out.push(helpLine(left));
         return done({ answer: out.join("\n") || T("Tell me what changed.", "מה השתנה?") });

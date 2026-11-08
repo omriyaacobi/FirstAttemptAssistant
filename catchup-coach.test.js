@@ -159,3 +159,25 @@ test("Hebrew: the sentences written by code use no gendered 'you'", async () => 
   const he = tutor.slice(tutor.indexOf("  he: {"), tutor.indexOf("const tx ="));
   assert.doesNotMatch(he, /(?<![א-ת])(?:אתה|ענה|תראה|בקש|כתוב|תכתוב)(?![א-ת])/, "no masculine commands in the tutor's Hebrew sentences");
 });
+
+const SP = { id: "a".repeat(16), name: "Systems Programming" }; // has the default timetable
+
+test("'I skipped two weeks and came back' keeps the words and asks ONE useful question, once", async () => {
+  const { coach } = make({ courseList: [SP, DB] });
+  const r = await say(coach, "דילגתי על שבועיים באמצע ב-Systems Programming ואז חזרתי", "update");
+  assert.match(r.answer, /שמרתי את מה שכתבת/);
+  assert.strictEqual((r.answer.match(/שאלה אחת כדי להתחיל/g) || []).length, 1);
+  assert.match(r.answer, /מה ההרצאה האחרונה/);
+  const again = await say(coach, "I skipped two weeks of Systems Programming and came back", "update");
+  assert.doesNotMatch(again.answer, /One question so that I start/, "not asked again within a week");
+});
+
+test("a written exam date becomes a Confirm card (not saved before), computed by code", async () => {
+  const { coach, ref } = make({ courseList: [SP, DB] });
+  const r = await say(coach, "I'm revising Systems Programming, the exam is on 22 December", "update");
+  assert.ok(r.proposal && r.proposal.kind === "exam", JSON.stringify(r.proposal));
+  assert.strictEqual(r.proposal.date, "2026-12-22");
+  assert.ok(!coach.tracker.progress(ref(SP)).position.examDate, "not saved before the tap");
+  coach.confirmProposal(r.proposal.id);
+  assert.strictEqual(coach.tracker.progress(ref(SP)).position.examDate, "2026-12-22");
+});
