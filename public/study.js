@@ -215,7 +215,7 @@
     const zone = el("div", "dropzone");
     zone.id = "dropZone";
     zone.appendChild(button("Choose files", () => picker.click(), "primary"));
-    zone.appendChild(el("p", "sub", "or drop files here (several at once). PDF, PowerPoint (.pptx), Word (.docx), photos and text files, up to 50 MB each. Hebrew and scans are fine. A long PDF takes a few minutes to read, in the background."));
+    zone.appendChild(el("p", "sub", "or drop files here (several at once). PDF, PowerPoint (.pptx), Word (.docx), photos and text files, up to 50 MB each. A .zip (up to 200 MB) works too: Bot unpacks it and checks the files one by one. Hebrew and scans are fine. A long PDF takes a few minutes to read, in the background."));
     return zone;
   }
 
@@ -233,9 +233,11 @@
       const text = el("div", "body");
       const name = el("strong", "name", u.name);
       name.dir = "auto";
-      text.append(name, el("div", u.bad ? "sub err" : "sub", u.text));
+      const line = el("div", u.bad ? "sub err" : "sub", u.text);
+      if (u.keep) line.style.whiteSpace = "pre-line"; // the summary of a zip has one line per skipped file
+      text.append(name, line);
       li.appendChild(text);
-      if (u.bad) li.appendChild(button("Dismiss", () => { uploads = uploads.filter((x) => x !== u); paintUploads(); }));
+      if (u.bad || u.keep) li.appendChild(button("Dismiss", () => { uploads = uploads.filter((x) => x !== u); paintUploads(); }));
       list.appendChild(li);
     });
   }
@@ -324,9 +326,17 @@
       paintUploads();
       note(`Sending file ${i + 1} of ${files.length}...`);
       try {
-        await upload(courseId, file, (text) => { row.text = text; paintUploads(); });
-        uploads = uploads.filter((x) => x !== row); // it now shows in the list below, with its reading status
-        sent++;
+        const data = await upload(courseId, file, (text) => { row.text = text; paintUploads(); });
+        if (data && data.zip) { // a zip: its row stays with what was added and what was skipped, until dismissed
+          row.text = data.zip.summary;
+          row.keep = true;
+          row.bad = data.zip.filedCount === 0;
+          paintUploads();
+          if (data.zip.filedCount) sent += data.zip.filedCount; else continue;
+        } else {
+          uploads = uploads.filter((x) => x !== row); // it now shows in the list below, with its reading status
+          sent++;
+        }
       } catch (error) {
         row.text = "not added: " + error.message;
         row.bad = true;
@@ -387,7 +397,8 @@
   // XMLHttpRequest instead of fetch only because it can report upload progress (big files, phone network).
   function upload(courseId, file, say) {
     return new Promise((resolve, reject) => {
-      if (file.size > 50 * 1024 * 1024) return reject(new Error("too big (50 MB at most)"));
+      const isZip = /\.zip$/i.test(file.name); // a zip may be bigger: its files are unpacked and checked one by one on the server
+      if (file.size > (isZip ? 200 : 50) * 1024 * 1024) return reject(new Error(`too big (${isZip ? 200 : 50} MB at most)`));
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/api/courses/${courseId}/files?name=${encodeURIComponent(file.name)}`);
       xhr.setRequestHeader("Content-Type", "application/octet-stream");
