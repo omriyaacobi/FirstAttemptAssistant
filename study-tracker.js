@@ -22,6 +22,7 @@ const GRACE_DAYS = 2; // a lecture held in the last 2 days is "fresh", not "behi
 const MAX_ASSIGNMENTS = 40;
 const MAX_TEXT = 8000;
 const MAX_NOTES = 5;
+const SAID_MAX = 300;
 const clean = (s, n = 200) => String(s == null ? "" : s).replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, n);
 
 function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE } = {}) {
@@ -102,7 +103,9 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
 
   // ---- where the student is ----
   // Only these three facts are ever accepted: a date (a real lecture date), a lecture number, or a topic note.
-  function setPosition(ref, { date, n, note } = {}) {
+  // `said` is the student's own words (control characters removed, 300 characters at most). It is kept next to whatever code could place.
+  // Alone it still makes the position "known" (so Bot does not ask the same question again), but it never places anything by itself.
+  function setPosition(ref, { date, n, note, said } = {}) {
     const c = course(ref);
     const all = slots(ref.key);
     let seenThrough = null;
@@ -113,8 +116,10 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     } else if (n !== undefined) {
       seenThrough = all.find((s) => s.n === Number(n) && plan.isHeld(s, now(), timezone));
       if (!seenThrough) throw new Error("there is no held lecture with that number");
-    } else if (!note) throw new Error("say a date, a lecture number or a topic");
-    c.position = { known: true, seenThrough: seenThrough ? seenThrough.date : c.position.seenThrough, note: clean(note || c.position.note, 200), at: now() };
+    } else if (!note && !clean(said, SAID_MAX)) throw new Error("say a date, a lecture number or a topic");
+    const { said: oldWords, ...before } = c.position; // an older sentence never stays next to a newer position
+    c.position = { ...before, known: true, seenThrough: seenThrough ? seenThrough.date : c.position.seenThrough, note: clean(note || c.position.note, 200), at: now() };
+    if (clean(said, SAID_MAX)) c.position.said = clean(said, SAID_MAX);
     save(c);
     return c.position;
   }

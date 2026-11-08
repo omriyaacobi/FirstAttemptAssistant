@@ -91,7 +91,7 @@ test("telling where you are: a weekday, a number, per course on separate lines",
   assert.strictEqual(p.positionKnown, true);
   assert.strictEqual(p.understood, 0); // telling is never understanding
   const bad = await coach.answerStudy({ studyIntent: "update", text: "Algorithms: I'm at lecture 99" });
-  assert.match(bad.answer, /no held lecture/);
+  assert.match(bad.answer, /I kept your words.*6 held so far.*could not place lecture 99/); // kept, not dropped
 });
 
 test("a notebook with more lectures than classes held is lined up once, and says it is an assumption", async () => {
