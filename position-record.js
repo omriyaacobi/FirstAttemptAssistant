@@ -80,6 +80,8 @@ function normalizePosition(raw) {
 function normalizePending(saved, position) {
   const p = saved && saved.pendingQuestion;
   const known = position && position.known;
+  // A follow-up question (kind "where") is asked AFTER a reading was stored, so it stays open although the position is known.
+  if (p && typeof p === "object" && p.kind === "where" && Number.isFinite(p.at) && p.at > 0) return { kind: "where", at: p.at };
   if (known) return null;
   if (p && typeof p === "object" && p.kind === "position" && Number.isFinite(p.at) && p.at > 0) return { kind: "position", at: p.at };
   const at = saved && Number(saved.askedPosition);

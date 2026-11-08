@@ -212,7 +212,7 @@ function createServer({
   const studyState = () => {
     if (!coach) return "";
     try {
-      const lines = [coach.studyLine()];
+      const lines = [coach.questionLine(), coach.studyLine()];
       const card = coach.pendingProposal();
       if (card) lines.push(`A confirmation card is waiting for the user's yes or no (${card.kind} for ${card.course}).`);
       for (const ref of coach.tracker.refsFor(courseRoutes ? courseRoutes.list() : [])) {

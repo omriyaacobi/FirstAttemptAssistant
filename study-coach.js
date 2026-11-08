@@ -25,6 +25,8 @@ const { checkPositions, proposePositions } = require("./study-positions");
 const { createNudges } = require("./study-nudges");
 const tutor = require("./tutor");
 const { lectureIndex, askedLectures } = require("./study");
+const standing = require("./standing");
+const { buildOutline } = require("./outline");
 
 const INTENTS = ["teach", "start", "quiz", "answer", "progress", "plan", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
 const PROPOSAL_MS = 12 * 3600 * 1000; // proposals live in memory for 12 hours
@@ -54,12 +56,26 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const hits = all.filter((r) => { const w = sigWords(r.name); return w.length && w.every((x) => low.includes(x)); });
     return hits.length === 1 ? hits[0] : null;
   }
-  // The course Bot itself just asked "where are you" about (within a day), else the only course there is.
+  // The course Bot itself just asked about (within a day): an open position question, or a file card that asks "which date was it". It is the NEWEST one,
+  // and, when `strict`, only when that is clear (two questions asked at the same moment, like one report that asks about three courses, are not a clear
+  // answer for free text; the older plain "last lecture" facts keep taking the first of them).
+  function lastAsked(strict = true) {
+    const found = refs().map((r) => ({ r, at: (tracker.pendingQuestion(r) || {}).at || 0 })).filter((x) => x.at && now() - x.at < PENDING_MS);
+    for (const p of proposals.values()) if (p.kind === "material" && p.question && p.expiresAt >= now() && now() - p.createdAt < PENDING_MS) found.push({ r: p.ref, at: p.createdAt });
+    found.sort((a, b) => b.at - a.at);
+    if (!found.length || (strict && found[1] && found[1].at === found[0].at && found[1].r.key !== found[0].r.key)) return null;
+    return found[0].r;
+  }
+  // The course Bot itself just asked about, else the only course there is.
   function askedCourse() {
+    const asked = lastAsked(false);
+    if (asked) return asked;
     const all = refs();
-    const recent = all.map((r) => ({ r, at: tracker.course(r).askedPosition || 0 })).filter((x) => x.at && now() - x.at < 24 * 3600 * 1000 && !tracker.progress(x.r).positionKnown).sort((a, b) => b.at - a.at);
-    if (recent.length) return recent[0].r;
     return all.length === 1 ? all[0] : null;
+  }
+  // One line for the front desk prompt (code-written data): the answer to Bot's own question belongs to THAT course, not to the course of the last chat.
+  function questionLine() {
+    try { const r = lastAsked(); return r ? `Bot just asked the user a question about the course ${r.name}: the user's next message is probably the answer and belongs to ${r.name} (studyIntent update, course ${r.name}).` : ""; } catch (error) { return ""; }
   }
   const courseNames = () => refs().map((r) => r.name).join(", ");
   const DUE_WORDS = /\b(?:homework|assignment|exercise|hw|due|submit|submission|deadline|exam|test|quiz)\b|מטלה|תרגיל|הגשה|מבחן|בוחן/i;
@@ -84,10 +100,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   function targetFor(seg, courseId, courseName, text) {
     const named = refInText(seg);
     if (named) return named;
+    const asked = lastAsked(); // an answer to Bot's own question belongs to the course Bot ASKED about, whatever the last chat was about
+    if (asked) return asked;
     const desk = resolveRef(text, courseId, courseName);
     if (desk) return desk;
-    const pending = pendingRefs();
-    if (pending.length === 1) return pending[0];
     const all = refs();
     return all.length === 1 ? all[0] : null;
   }
@@ -173,6 +189,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   function positionQuestion(list) {
     const unknown = list.filter((r) => !tracker.progress(r).positionKnown);
     if (!unknown.length) return "";
+    if (unknown.every((r) => !tracked(r))) { // no lectures to point at: ask how far in the notes instead
+      const names = unknown.map((r) => r.name).join(", ");
+      return T(`\n\nSo that I do not guess: where are you in ${names}? I have no timetable for ${unknown.length === 1 ? "it" : "them"}, so tell me how far you are in the notes: a section name, a page, or about what part (a third, half...), or just describe it in your own words. I will not mark anything as understood from this: that only happens when you answer my questions.`, `\n\nכדי שלא אנחש: איפה עומדים ${bet(names)}? אין לי מערכת שעות, אז אפשר לכתוב עד איפה הגעת בסיכומים: שם של סעיף, עמוד, או בערך איזה חלק (שליש, חצי...), או פשוט לתאר במילים שלך. זה לא מסמן שום דבר כמובן: זה קורה רק אחרי תשובות לשאלות שלי.`);
+    }
     return T(`\n\nSo that I do not guess: ${unknown.length === 1 ? "where are you in " + unknown[0].name : "where are you in " + unknown.map((r) => r.name).join(", ")}? Tell me the last lecture you went through: a date ("Thursday"), a number ("lecture 4") or a topic, or just describe it in your own words ("I'm at page 40, only reading the notes"). I will not mark anything as understood from this: that only happens when you answer my questions.`, `\n\nכדי שלא אנחש: איפה עומדים ${bet(unknown.map((r) => r.name).join(", "))}? אפשר לכתוב לי מה ההרצאה האחרונה שעברת עליה: תאריך ("יום חמישי"), מספר ("הרצאה 4") או נושא, או פשוט לתאר במילים שלך ("אני בעמוד 40, רק קורא את הסיכומים"). זה לא מסמן שום דבר כמובן: זה קורה רק אחרי תשובות לשאלות שלי.`);
   }
   function nextStep(ref) {
@@ -329,6 +349,84 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return [T(`Here is exactly what I stored (today is ${niceDate(today())}):`, `הנה בדיוק מה ששמרתי (היום ${niceDate(today())}):`), ...lines, ...problems, T("If one is wrong, tell me that course again, for example \"Calculus lecture 5\". This only says where you are, not what you understood.", "אם משהו לא נכון, אפשר לכתוב לי שוב על הקורס הזה, למשל \"חדו\"א הרצאה 5\". זה רק אומר איפה עומדים, לא מה הובן.")].join("\n");
   }
 
+  // ---- the student's free description of their state (standing.js) ----
+  // A model PROPOSES a reading, code checks it against the timetable and the notes, Bot reads back what it stored, and "no" / "undo" puts the old record back.
+  // At most ONE adaptive question follows, never twice within 7 days (unless asked "where am I"). An exam date is never stored without a Confirm card.
+  const UNDO_ONLY = /^\s*(?:undo(?:\s+that)?|בטל|ביטול|תבטל)[.!\s]*$/i;
+  const NO_ONLY = /^\s*(?:no|nope|no\s+thanks|wrong|that['’]?s\s+(?:not\s+right|wrong)|לא|לא\s+נכון|זה\s+לא\s+נכון)[.!\s]*$/i;
+  const CAUGHT = /\bcaught\s+up\b|\bbut\b[^.\n]*\b(?:rest|everything|else)\b|השלמתי|אבל/i;
+  const UNDO_MS = 2 * 3600 * 1000;
+  const V2_KEYS = ["mode", "where", "pace", "behindBy", "gaps", "depth", "goal", "focus"];
+  let lastUndo = null; // { ref, position, pending, at, proposalId } (memory only: it lives for 2 hours)
+
+  function undoReading() {
+    const u = lastUndo;
+    lastUndo = null;
+    tracker.restoreStanding(u.ref, u.position, u.pending);
+    if (u.proposalId) proposals.delete(u.proposalId); // the exam card of that reading goes too
+    return T(`Undone. ${u.ref.name} is back to how it was before. Tell me again in your own words when you want.`, `בוטל. ${u.ref.name} חזר למצב שהיה קודם. אפשר לכתוב שוב במילים שלך מתי שנוח.`);
+  }
+  const heldSlots = (ref) => tracker.slots(ref.key).filter((s) => plan.isHeld(s, now(), timezone));
+  function standingContext(ref) {
+    const next = tracker.slots(ref.key).find((s) => !plan.isHeld(s, now(), timezone)) || null;
+    return standing.contextFor({ held: heldSlots(ref).map((s) => ({ n: s.n, date: s.date })), nextSlot: next ? { n: next.n, date: next.date } : null, outline: buildOutline(ref.courseId ? courses.allPages(ref.courseId) : []), today: today(), lang: curLang, tracked: tracked(ref) });
+  }
+
+  // Returns { answer, proposal? } when the words were read and stored (or kept with reasons), or null when this path does not apply (the plain rules then try).
+  async function maybeReadStanding({ text, courseId, courseName }) {
+    const pieces = String(text).split(/\n|(?<=[.!?])\s+/);
+    const low = String(text).toLowerCase();
+    const named = new Set([...pieces.map((p) => refInText(p)).filter(Boolean).map((r) => r.key), ...refs().filter((r) => r.name && low.includes(r.name.toLowerCase())).map((r) => r.key)]);
+    if (named.size >= 2) return null; // several courses: the several-course reader
+    const target = targetFor(text, courseId, courseName, text);
+    if (!target) return null;
+    const pending = pendingRefs().some((r) => r.key === target.key);
+    const plainFact = (askedLectures(text).length || parseDay(text, "past")) && !standing.isStateStatement(text);
+    if (!standing.shouldRead({ text, pending }) || (pending && plainFact)) return null;
+
+    const ctx = standingContext(target);
+    const lost = standing.isLost(text);
+    let raw = null;
+    try { raw = await standing.readStanding({ askChain, text: clean(text, standing.MAX_READ_CHARS), courseName: target.name, ctx, log }); } catch (error) { log(`[standing] reader failed: ${error.message}`); }
+    const res = standing.checkStanding(raw, ctx);
+    if (!res.any && !res.dropped.length && !res.exam && !lost) return null; // nothing usable: the plain rules keep the words and say so
+    const words = wordsFor(target, text);
+    const before = { position: tracker.course(target).position, pending: tracker.pendingQuestion(target) };
+    const old = before.position;
+
+    // A later reading adds to the earlier one; a new place replaces the old place AND what was said about being behind it.
+    const merged = {};
+    for (const k of V2_KEYS) if (old[k] !== undefined) merged[k] = old[k];
+    if (res.fields.where) { delete merged.pace; delete merged.behindBy; }
+    Object.assign(merged, res.fields);
+    if (!merged.where && old.seenThrough) merged.where = { type: "date", date: old.seenThrough }; // the older lecture-based place stays
+    if (old.note) merged.note = old.note;
+    merged.said = words;
+    try { tracker.setStanding(target, merged); } catch (error) {
+      delete merged.where;
+      try { tracker.setStanding(target, merged); } catch (e2) { log(`[standing] could not store: ${e2.message}`); return null; }
+    }
+    lastUndo = { ref: target, position: before.position, pending: before.pending, at: now(), proposalId: null };
+
+    let proposal;
+    if (res.exam && old.examDate !== res.exam.date) {
+      const p = addProposal({ kind: "exam", ref: target, date: res.exam.date });
+      lastUndo.proposalId = p.id;
+      proposal = card(p);
+    }
+    if (lost && !res.any) {
+      tracker.markAsked(target, { where: true }); tracker.save({ ...tracker.course(target), pendingQuestion: null }); // counts as asked for 7 days, and nothing stays open
+      return { answer: T(`${target.name}: I kept your words. Not knowing where you are is fine. If you like, say "quiz me on ${target.name}" for a short quiz and we will see what you already know; I will not ask where you are again for a week. This only tells me where to start: it does not count as understood.`, `${target.name}: שמרתי את מה שכתבת. זה בסדר לא לדעת איפה עומדים. אם בא לך, אפשר לכתוב "תבחן אותי ${bet(target.name)}" ונראה מה כבר ידוע; לא אשאל שוב איפה עומדים במשך שבוע. זה רק אומר לי מאיפה להתחיל, ולא נחשב להבנה.`) };
+    }
+    let answer = standing.readback({ courseName: target.name, fields: res.fields, notes: res.notes, dropped: res.dropped, exam: res.exam, lang: curLang });
+    const askedAt = tracker.course(target).askedStanding || 0;
+    if (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text)) {
+      const question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
+      if (question) { tracker.markAsked(target, { where: true }); answer += `\n\n${question}`; }
+    }
+    return { answer, ...(proposal ? { proposal } : {}) };
+  }
+
   // ---- proposals (model proposes, code checks, the student confirms) ----
   function addProposal(p) {
     const id = `p${++proposalCounter}${now().toString(36)}`;
@@ -348,6 +446,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         const a = tracker.addAssignment(p.ref, p.fields);
         return { ok: true, answer: T(`Saved "${a.title}" for ${p.ref.name}${a.due ? `, due ${niceDate(a.due)}` : " (no due date)"}. ${a.needs.length ? `It needs: ${a.needs.join(", ")}.` : ""} Say "help me start" when you want to begin.`, `שמרתי את "${a.title}" ${bet(p.ref.name)}${a.due ? `, להגשה עד ${niceDate(a.due)}` : " (בלי תאריך הגשה)"}. ${a.needs.length ? `צריך בשבילה: ${a.needs.join(", ")}.` : ""} כדי להתחיל אפשר לכתוב "תעזור לי להתחיל".`) };
       }
+      if (p.kind === "exam") {
+        tracker.setExamDate(p.ref, p.date);
+        return { ok: true, answer: T(`Saved the ${p.ref.name} exam on ${niceDate(p.date)}. I only use it in the morning brief, when it is within a week (one note a day at most). It says nothing about what you understood.`, `שמרתי את המבחן ${bet(p.ref.name)} ב${niceDate(p.date)}. אני משתמש בו רק בסיכום הבוקר, כשהוא בתוך שבוע (הערה אחת ביום לכל היותר). זה לא אומר כלום על מה שהובן.`) };
+      }
       if (p.kind === "material") {
         tracker.attachMaterial(p.ref, p.date, p.refs, { topic: p.topic || "" });
         return { ok: true, answer: T(`Attached it to the ${p.ref.name} lecture of ${niceDate(p.date)}. Say "teach me" or "quiz me" when you are ready.`, `צירפתי את זה להרצאה ${bet(p.ref.name)} מ${niceDate(p.date)}. כשיהיה נוח אפשר לכתוב "תלמד אותי" או "תבחן אותי".`) };
@@ -356,7 +458,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { ok: false, answer: T("Unknown proposal.", "הצעה לא מוכרת.") };
   }
   function cancelProposal(id) { const p = proposals.get(id); if (p) curLang = p.lang || "en"; return { ok: proposals.delete(id), answer: T("Dropped. Nothing was saved.", "בוטל. שום דבר לא נשמר.") }; }
-  const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
+  const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : p.kind === "exam" ? { date: p.date } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
 
   // A file arrived. files: [{ fileId, fileName, pages }]; text: the file text or message (for assignments); dateText: what the student wrote about the date.
   async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto", dueHint = null }) {
@@ -372,6 +474,9 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     }
     const refsList = files.filter((f) => f && f.fileId && f.pages >= 1).map((f) => ({ fileId: f.fileId, from: 1, to: f.pages, fileName: f.fileName }));
     if (!refsList.length) return { answer: T("I could not find readable pages in that file yet.", "עדיין לא מצאתי דפים קריאים בקובץ הזה.") };
+    if (!tracked(ref)) { // no timetable: there is no lecture date to match, so no date question; say it is filed and how to start
+      return { answer: T(`Filed in ${ref.name}. I have no timetable for this course, so I do not match it to a lecture date. To start, say "teach me" or "quiz me" and I use the files you uploaded.`, `הקובץ נשמר ב-${ref.name}. אין לי מערכת שעות לקורס הזה, אז אני לא משייך אותו לתאריך של הרצאה. כדי להתחיל אפשר לכתוב "תלמד אותי" או "תבחן אותי" ואשתמש בקבצים שהועלו.`) };
+    }
     const named = parseDay(dateText || "", "past");
     let slot = null, how = "";
     if (named && named.date) {
@@ -399,6 +504,12 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       return done({ answer: T(`Study reminders are paused${s.pausedUntil ? ` until ${niceDate(s.pausedUntil)}` : " until you say resume"}. Your progress is kept. Nothing is lost while you are away.`, `תזכורות הלימוד מושהות${s.pausedUntil ? ` עד ${niceDate(s.pausedUntil)}` : " עד שיתקבל ממך אישור להמשיך"}. ההתקדמות נשמרת, ושום דבר לא הולך לאיבוד בינתיים.`) });
     }
     if (intent === "resume") { nudges.resume(); return done({ answer: T("Study reminders are on again. Welcome back: say \"where am I\" and I will show the real numbers, with no guilt.", "תזכורות הלימוד חזרו לפעול. טוב שחזרת: אפשר לשאול \"מה המצב שלי\" ואראה את המספרים האמיתיים, בלי רגשות אשם.") }); }
+    // "no" / "undo" right after Bot read back a description: the old record comes back (a plain "no" also drops that reading's own exam card).
+    if (lastUndo && now() - lastUndo.at < UNDO_MS && intent !== "answer") {
+      const w = latestProposal();
+      const free = !w || (lastUndo.proposalId && w.id === lastUndo.proposalId);
+      if (UNDO_ONLY.test(text) || (NO_ONLY.test(text) && free && !refs().some((r) => tracker.getSession(r)))) return done({ answer: undoReading() });
+    }
     if (intent === "confirm" || intent === "cancel") {
       const p = latestProposal();
       if (!p) return done({ answer: T("There is nothing waiting for confirmation.", "אין כרגע שום דבר שמחכה לאישור.") });
@@ -409,10 +520,13 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // Bot just asked "where are you": the next message ANSWERS it, whatever label the front desk gave it, unless it is clearly another question.
     if (intent === "progress" && pendingRefs().length && !WHERE_Q.test(text) && !(IS_QUESTION.test(text) && !FIRST_PERSON.test(text))) intent = "update";
 
-    if ((intent === "update" || intent === "progress") && MISSED.test(text) && !SKIP_WORDS.test(text)) return done({ answer: missedAnswer(text) });
+    if ((intent === "update" || intent === "progress") && MISSED.test(text) && !SKIP_WORDS.test(text) && !(CAUGHT.test(text) && !/\?/.test(text))) return done({ answer: missedAnswer(text) });
 
     if (intent === "update") {
-      if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) { const many = await interpretPositions(text); if (many) return done({ answer: many }); }
+      if (!SKIP_WORDS.test(text) && !UNDO_WORDS.test(text)) {
+        const reading = await maybeReadStanding({ text, courseId, courseName });
+        if (reading) return done(reading);
+        const many = await interpretPositions(text); if (many) return done({ answer: many }); }
       const { lines, unclear } = interpretUpdate(text, { courseId, courseName });
       if (lines.length || SKIP_WORDS.test(text) || UNDO_WORDS.test(text)) {
         const out = [...lines];
@@ -462,7 +576,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return done({ ...r, mode: "study", answer: r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
-  return { studyLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
+  return { studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };
