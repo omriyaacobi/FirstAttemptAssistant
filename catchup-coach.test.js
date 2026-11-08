@@ -181,3 +181,17 @@ test("a written exam date becomes a Confirm card (not saved before), computed by
   coach.confirmProposal(r.proposal.id);
   assert.strictEqual(coach.tracker.progress(ref(SP)).position.examDate, "2026-12-22");
 });
+
+test("a single check question after a lesson can be skipped, and a request for the full solution gets a plain no with guidance", async () => {
+  const { coach, prompts, ref } = make();
+  coach.tracker.addAssignment(ref(DB), { title: "Allocator exercise", due: "2026-11-20", needs: ["pointers"], text: "made-up" });
+  const t = await say(coach, "teach me through the assignment", "start", { courseName: DB.name });
+  assert.match(t.answer, /One question back/);
+  const skip = await say(coach, "skip", "answer");
+  assert.match(skip.answer, /Skipped\. Nothing was recorded/);
+  assert.strictEqual(coach.tracker.getSession(ref(DB)).mode, "work", "an assignment lesson goes on to guided hints");
+  assert.strictEqual(coach.tracker.progress(ref(DB)).understood, 0);
+  const s = await say(coach, "give me the full solution code for the assignment", "start", { courseName: DB.name });
+  assert.match(s.answer, /^I will not write the full solution of an assignment/);
+  assert.doesNotMatch(prompts.filter((p) => /Teach this ONE idea|working on an assignment/.test(p)).join("\n"), /made-up|SECRET/, "no assignment text in teaching prompts");
+});

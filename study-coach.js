@@ -295,6 +295,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
 
   // ---- the catch-up plan across all courses ----
   const ALL_BEHIND = /\b(?:behind|lost|drowning|nothing)\b[^.\n]{0,30}\b(?:everything|all\s+(?:of\s+)?(?:my\s+)?(?:courses|classes)|every\s+(?:course|class))\b|\beverything\b[^.\n]{0,20}\bbehind\b|(?:בפיגור|מאחור|אבוד|אבודה)\s+(?:ב)?(?:הכל|כל\s+הקורסים)|בהכל\s+(?:מאחור|בפיגור|אבוד)|בכל\s+הקורסים/i;
+  const SOLUTION_ASK = /\b(?:full|whole|complete|entire)\s+(?:solution|code|answer)\b|\bsolution\s+(?:code|for)\b|\bsolve\s+(?:it|the\s+(?:assignment|exercise|homework))\s+for\s+me\b|פתרון\s+מלא|תפתור\s+(?:לי|את)/i;
   const WEEK_WORDS = /\bweek\b|שבוע/i, TODAY_WORDS = /\btoday\b|היום/i;
   const dayLabel = (iso) => plan.niceDate(iso, curLang);
   function planItems(ref) {
@@ -846,8 +847,9 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       notes = pick;
     }
     if (intent === "start") through = throughArgs(ref, text);
+    const noSolution = SOLUTION_ASK.test(text) ? T("I will not write the full solution of an assignment: that is the part that teaches the most. I can guide step by step, so here is how.\n\n", "פתרון מלא של מטלה אני לא כותב: זה החלק שהכי מלמד. אפשר ללוות צעד אחר צעד, אז הנה איך.\n\n") : "";
     const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes, through });
-    return done({ ...r, mode: "study", answer: r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
+    return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
   return { studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
