@@ -107,3 +107,24 @@ Suggested way to work: one fresh chat for step 1 (Sonnet is enough, plan first i
 - Mobile SSO launch flow: https://tracker-old.moodle.org/browse/MDL-56905
 - Token file URLs: https://tracker-old.moodle.org/browse/MDL-58800 , https://tracker-old.moodle.org/browse/MDL-58823
 - BGU Moodle (search result pages only, direct fetch blocked): https://moodle.bgu.ac.il/
+
+## Update 2026-11-09 (evening): what Omri's own tests showed
+
+Omri's goal is bigger than deadlines: files, assignments and lecture summaries. He does not mind the account risk.
+
+Tests done by Omri in his browser:
+- Calendar export works (iCal link exists), but it only gives deadlines. Not enough.
+- Preferences > Security keys shows ONLY the RSS key. No "Moodle mobile web service" row.
+- `admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=12345&urlscheme=moodlemobile` returns a red error, in Hebrew roughly "the plugin is not defined or not available" (my translation, not certain). Read as: the mobile login is not offered at BGU. So routes (a), (b) and the Security-keys token are probably closed unless BGU IT enables them.
+
+Still open / unverified: whether the login is one Moodle form or a redirect (SSO), whether a script on his PC gets 403 (my fetch tool did; a permission rule stopped a retry that faked a browser User-Agent, so test with a plain `curl` by Omri himself).
+
+Lecture recordings, from a search of BGU pages (snippets only, the PDF and Moodle pages could not be fetched):
+- Zoom meetings started from a course are auto-published to the "Course Media" block. A lecturer guide says students get viewing without a download option. Which video platform sits behind it is NOT confirmed.
+- If a platform is Kaltura, captions can sometimes be fetched by API; Panopto's API is more limited (forum posts, may be dated). Neither applies until we know the platform.
+- So summarising lectures is the weakest part: possible only if Bot can get a transcript, or audio/video, from the page Omri's browser sees.
+
+Revised recommendation:
+1. Files and assignments: a tiny Chrome extension (plain JS, no packages) in his own logged-in Chrome sends course lists, files and assignment text to Bot at localhost. Works with SSO/2FA and avoids server blocking of scripts. Read-only, results are untrusted data, Confirm card for anything that changes his data.
+2. Direct password login from a script: possible only if the login is a plain form and BGU does not block scripts; the password would sit in `.env` and likely unlocks more than Moodle. Try only after the two checks above.
+3. Lectures: look at one real lecture page first (domain, player, any caption or download option); then decide between transcript capture, audio capture in the browser, or "not possible".
