@@ -875,7 +875,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         if (up && up.proposal) {
           // The student also asked something ("explain section 3.3"): answer it from the notes as a teach turn, then add the card line below it.
           let taught = null;
-          try { taught = await tutor.turn({ tracker, ref, intent: "teach", message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: null, through: null }); } catch (error) { log(`[assignment-file] teach failed: ${error.message}`); }
+          try { taught = await tutor.teachTopic({ askChain, courseName: ref.name, message: text, pages: courses.allPages(ref.courseId), log, onText }); } catch (error) { log(`[assignment-file] teach failed: ${error.message}`); }
           const lead = taught && taught.answer ? taught.answer + "\n\n---\n" : "";
           return done({ ...(taught || r), mode: "study", answer: lead + up.answer, proposal: up.proposal, study: { course: ref.name, mode: (taught || r).mode, done: false } });
         }

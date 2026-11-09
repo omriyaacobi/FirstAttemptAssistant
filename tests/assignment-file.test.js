@@ -26,6 +26,7 @@ test("no saved assignment but an assignment file is in the course: it is propose
   assert.match(r.answer, /I read this as an assignment for Systems Programming: "Assignment 1 - Demo"/);
   assert.ok(r.proposal && r.proposal.kind === "assignment");
   assert.doesNotMatch(r.answer, /Send me the file/);
+  assert.match(r.answer, /---/); // the question itself was answered first (teaching text), the card line comes after it
 });
 
 test("the message names the file: that file wins; a lecture file is never taken for an assignment", async () => {
