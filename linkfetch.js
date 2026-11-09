@@ -21,6 +21,7 @@ const dns = require("node:dns");
 const net = require("node:net");
 const { say } = require("./lang");
 const { MAX_ZIP_BYTES, MAX_FILE_BYTES } = require("./unzip");
+const { htmlBytesToText } = require("./html-text");
 
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 5 * 60 * 1000; // the whole download of one file (a 200 MB zip on a slow line)
@@ -241,6 +242,53 @@ async function fetchLink(link, { get = httpGet } = {}) {
   return { bytes: r.bytes, name: target.name, expectZip: target.expectZip, source: host, repo: c.type === "repo" ? `${c.owner}/${c.repo}` : null };
 }
 
+// ---- LOOK: read a page, save nothing ------------------------------------------------------------------------------------------------
+// The same safe fetching, but the result is TEXT for the user (or for a model as untrusted data), never a file in a course.
+const MAX_PAGE_BYTES = 2 * 1024 * 1024;
+const MAX_PAGE_CHARS = 60000;
+const noControl = (t) => String(t).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, " ");
+async function fetchPage(link, { get = httpGet } = {}) {
+  const c = classify(link);
+  // a repo is "looked at" through its README
+  const url = c.type === "repo" ? `https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch ? encodeURIComponent(c.branch) : "HEAD"}/README.md` : c.url;
+  const github = c.type === "repo" ? true : c.github;
+  const r = await fetchChecked(url, { get, maxBytes: MAX_PAGE_BYTES, github });
+  if (r.status !== 200) throw statusError(r.status, r.headers, github);
+  const b = r.bytes;
+  if (!b.length) throw fail("empty", "the page is empty");
+  const type = String((r.headers && r.headers["content-type"]) || "").toLowerCase();
+  const binary = b.subarray(0, 5).toString("latin1") === "%PDF-" || (b[0] === 0x50 && b[1] === 0x4b) || (b[0] === 0x89 && b[1] === 0x50) || (b[0] === 0xff && b[1] === 0xd8) || b.subarray(0, 4096).includes(0);
+  if (binary || /^(?:image|audio|video)\//.test(type)) throw fail("notpage", "that link is a file, not a page");
+  let text;
+  let title = "";
+  if (/html/.test(type) || /^\s*<(?:!doctype|html|head|body)/i.test(b.subarray(0, 600).toString("utf8"))) {
+    text = htmlBytesToText(b);
+    if (text === null) throw fail("notpage", "that link is a file, not a page");
+    const m = /<title[^>]*>([\s\S]{0,300}?)<\/title>/i.exec(b.subarray(0, 200000).toString("utf8"));
+    title = m ? m[1].replace(/\s+/g, " ").trim() : "";
+  } else {
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(b); } catch (error) { throw fail("notpage", "that link is a file, not a page"); }
+  }
+  text = noControl(text).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) throw fail("empty", "the page has no readable text");
+  if (!title) title = (text.split("\n").find((l) => l.trim()) || "").replace(/^#+\s*/, "").trim().slice(0, 100);
+  return { text: text.slice(0, MAX_PAGE_CHARS), title: noControl(title).slice(0, 120), source: new URL(r.finalUrl).hostname, url: r.finalUrl, cut: text.length > MAX_PAGE_CHARS };
+}
+
+// Many addresses from a text (the text of a file): https only, no repeats, at most `max`. http links are counted, never used.
+const MAX_BATCH = 50;
+function httpsUrls(text, max = MAX_BATCH) {
+  const urls = [];
+  let notHttps = 0;
+  let more = 0;
+  for (const u of extractUrls(text)) {
+    if (!/^https:\/\//i.test(u)) { notHttps++; continue; }
+    if (urls.length >= max) { more++; continue; }
+    urls.push(u);
+  }
+  return { urls, notHttps, more };
+}
+
 // ---- the words for the user, in the language of his message ---------------------------------------------------------------------------
 function explain(lang, error) {
   const code = error && error.code;
@@ -257,10 +305,11 @@ function explain(lang, error) {
     redirects: ["The link bounces between too many addresses, so I stopped.", "הקישור מפנה בין יותר מדי כתובות ולכן עצרתי."],
     webpage: ["That link is a web page, not a file (it may be a login page). I only download files.", "הקישור הזה הוא דף אינטרנט ולא קובץ (אולי דף התחברות). אני מוריד רק קבצים."],
     empty: ["The file at that link is empty.", "הקובץ בקישור ריק."],
+    notpage: ["That link is a file, not a page I can read. Say \"download\" if you want it saved in a course.", "הקישור הזה הוא קובץ ולא דף שאפשר לקרוא. אם רוצים לשמור אותו בקורס, כתבו \"תוריד\"."],
     network: ["I could not download it: the server did not answer properly.", "לא הצלחתי להוריד: השרת לא ענה כראוי."],
   };
   const row = T[code] || T.network;
   return say(lang, row[0], row[1]);
 }
 
-module.exports = { fetchLink, fetchChecked, classify, checkUrl, extractUrls, isPublicIp, makeLookup, httpGet, explain, MAX_REDIRECTS, GITHUB_HOSTS };
+module.exports = { fetchPage, httpsUrls, MAX_BATCH, MAX_PAGE_BYTES, fetchLink, fetchChecked, classify, checkUrl, extractUrls, isPublicIp, makeLookup, httpGet, explain, MAX_REDIRECTS, GITHUB_HOSTS };
