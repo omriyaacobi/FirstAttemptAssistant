@@ -64,7 +64,7 @@ const ACTIONS = ["answer", "clarify", "delegate", "split", "improve", "remind", 
 // invents a course), and core.js then answers from that course's notebook exactly like a course chat did.
 const COURSE_ACTION = "course";
 // The first six are the old ones; the rest are the study coach's own intents (study-coach.js answerStudy). core.js maps them.
-const STUDY_INTENTS = ["ask", "quiz", "exercises", "summary", "plan", "open", "teach", "start", "answer", "progress", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
+const STUDY_INTENTS = ["ask", "quiz", "exercises", "summary", "plan", "open", "teach", "start", "answer", "progress", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel", "link"];
 const MAX_ANSWER_CHARS = 8000;
 const MAX_RECALL_QUERY_CHARS = 200;
 

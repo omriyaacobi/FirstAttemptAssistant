@@ -206,7 +206,7 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Thread jobs (BOT_THREAD=on) pass the real course list; only then is the course action possible, and the answer comes from the notebook.
   const threadHandle = (task, options = {}) => (options.courses && courseRoutes
-    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), courseFiles: (id) => courseRoutes.courseFiles(id), ...(coach ? { studyChat: coach.studyChat, studyAnswer: (args) => coach.answerStudy(args), studyCanTeach: (courseId) => coach.teachesFromNotes(courseId) } : {}), ...(threadDeps ? threadDeps() : {}) } })
+    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), courseFiles: (id) => courseRoutes.courseFiles(id), fetchLink: (id, url, lang) => courseRoutes.addLink(id, url, lang), ...(coach ? { studyChat: coach.studyChat, studyAnswer: (args) => coach.answerStudy(args), studyCanTeach: (courseId) => coach.teachesFromNotes(courseId) } : {}), ...(threadDeps ? threadDeps() : {}) } })
     : handle(task, options));
   // One short block of study state for the front desk (written by code from the tracker; data, never instructions).
   const studyState = () => {

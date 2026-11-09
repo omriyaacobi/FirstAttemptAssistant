@@ -27,6 +27,7 @@ const { getLowPools, refreshQuota, noteFailure, prioritize, describeLow } = requ
 const { getReminders, formatWhen } = require("./reminders");
 const { aboutBlock, personalize, pickFacts, bestMatches, explicitRemember, createMemory } = require("./profile");
 const { readCalendar: readCalendarEvents, friendlyError } = require("./calendar-chat");
+const { extractUrls } = require("./linkfetch");
 const { wantsCalendarAdd, photoCalendarNote, checkPhotoEvents, getCards } = require("./calendar-add");
 const { createStore } = require("./store");
 const { findInChats, listFound, recallPrompt } = require("./recall");
@@ -443,7 +444,24 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   }
   const withNote = (result, note) => (note && result && typeof result.answer === "string" ? { ...result, answer: note + "\n\n" + result.answer } : result);
 
+  // The user gave a LINK to download into a course (studyIntent "link", thread only). Code does everything: the URL is taken from the user's
+  // OWN message here (never from the model's reply), linkfetch.js downloads it safely, and the course's normal upload road files it. The
+  // course the desk named was checked against the real list; with none named, a single course is used, else Bot asks. No model is called.
+  async function linkAnswer(decision) {
+    const urls = extractUrls(task);
+    const reply = (text, extra = {}) => { log(timingLine()); return { mode: "single", rule: "download from a link", reason: decision.reason, chain: [FRONT_DESK_MODEL], used: FRONT_DESK_MODEL, answer: text, seconds: seconds(), timing, topic: "study", ...extra }; };
+    if (!urls.length) return reply(say(lang, "I did not find a link in your message. Send the full link (starting with https://) and the course it is for.", "לא מצאתי קישור בהודעה. אפשר לשלוח את הקישור המלא (מתחיל ב-https://) ואת הקורס."));
+    let course = decision.course;
+    if (!course && (courses || []).length === 1) course = courses[0];
+    if (!course) return reply(say(lang, `Which course should I file it in? Your courses: ${(courses || []).map((c) => c.name).join(", ")}. Send the link again with the course name.`, `באיזה קורס לתייק את זה? הקורסים שלך: ${(courses || []).map((c) => c.name).join(", ")}. אפשר לשלוח שוב את הקישור עם שם הקורס.`));
+    const extraLinks = urls.length > 1 ? say(lang, `\n\nYou sent ${urls.length} links; I took the first one. Send the others one at a time.`, `\n\nשלחת ${urls.length} קישורים; לקחתי את הראשון. אפשר לשלוח את האחרים אחד אחד.`) : "";
+    log(`[link] downloading for ${course.name}`);
+    const r = await d.fetchLink(course.id, urls[0], lang);
+    return reply(r.text + extraLinks, { courseId: course.id, courseName: course.name, studyIntent: "link" });
+  }
+
   async function courseAnswer(decision) {
+    if (decision.studyIntent === "link" && d.fetchLink) return linkAnswer(decision);
     const fileNote = decision.course && (!decision.studyIntent || WAITS_FOR_FILES.has(decision.studyIntent)) ? await waitForFiles(decision.course) : null;
     return withNote(await courseAnswerNow(decision), fileNote);
   }
