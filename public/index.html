@@ -2769,6 +2769,7 @@
       const proposal = m.result && (m.result.proposal || (m.result.study && m.result.study.proposal));
       if (proposal && proposal.id) node.appendChild(proposalButtons(proposal));
       if (m.result && m.result.fileChoice && m.result.fileChoice.id) node.appendChild(fileChoiceButtons(m.result.fileChoice));
+      if (m.result && m.result.linkBatch && m.result.linkBatch.id) node.appendChild(linkBatchButtons(m.result.linkBatch));
       node.appendChild(deleteButton(m, node));
       revealOnTap(node);
       return node;
@@ -3250,6 +3251,31 @@
         if (f) f.xhr = null;
       }
     }
+    // Under Bot's list of links found in a file: Confirm fetches them (once; the list waits 15 minutes), Cancel drops it. Nothing is fetched before Confirm.
+    function linkBatchButtons(batch) {
+      const box = el("div", "tfilechoice");
+      const note = el("p", "sub", "");
+      const waiting = batch.expiresAt && Date.now() > batch.expiresAt;
+      const go = el("button", "", batch.mode === "save" ? "Confirm: download " + batch.count + " links" : "Confirm: look at " + batch.count + " links");
+      const no = el("button", "ghost", "Cancel");
+      for (const b of [go, no]) { b.type = "button"; b.disabled = !!waiting; }
+      const call = async (what, doneText) => {
+        go.disabled = no.disabled = true;
+        try {
+          await api("/api/thread/links/" + encodeURIComponent(batch.id) + "/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          box.replaceChildren(el("span", "sub", doneText));
+        } catch (error) {
+          if (error.status === 404) box.replaceChildren(el("span", "sub", "This list is no longer waiting (15 minutes pass). Ask again."));
+          else { go.disabled = no.disabled = false; note.textContent = "Not done: " + error.message; }
+        }
+      };
+      go.addEventListener("click", () => call("confirm", "Working on it. Bot will write one summary here when it is done."));
+      no.addEventListener("click", () => call("cancel", "Cancelled. Nothing was fetched."));
+      box.append(go, no, note);
+      if (waiting) note.textContent = "This list is no longer waiting. Ask again.";
+      return box;
+    }
+
     // Under Bot's question "Which course is this file for?": one big button per course. Nothing is saved until you tap one (and it waits 30 minutes).
     function fileChoiceButtons(choice) {
       const box = el("div", "tfilechoice");

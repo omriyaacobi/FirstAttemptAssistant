@@ -192,6 +192,7 @@ function createServer({
   push = createPush({ dir: path.join(__dirname, "data") }),
   coach = null, // the study coach (study-coach.js), only with the thread
   summaries = null, // the daily summaries (thread-summary.js), only with the thread
+  linkBatches = null, // many links from a file of addresses, shown first and fetched after one Confirm (link-batch.js), only with the thread
   threadFiles = null, // files that arrive with a message (thread-files.js), only with the thread
   thread = null, // the ONE conversation (thread-store.js); off unless given (BOT_THREAD=on), so with it off every route is exactly as before
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
@@ -206,7 +207,7 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Thread jobs (BOT_THREAD=on) pass the real course list; only then is the course action possible, and the answer comes from the notebook.
   const threadHandle = (task, options = {}) => (options.courses && courseRoutes
-    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), courseFiles: (id) => courseRoutes.courseFiles(id), fetchLink: (id, url, lang) => courseRoutes.addLink(id, url, lang), ...(coach ? { studyChat: coach.studyChat, studyAnswer: (args) => coach.answerStudy(args), studyCanTeach: (courseId) => coach.teachesFromNotes(courseId) } : {}), ...(threadDeps ? threadDeps() : {}) } })
+    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), courseFiles: (id) => courseRoutes.courseFiles(id), fetchLink: (id, url, lang) => courseRoutes.addLink(id, url, lang), linkFiles: (id) => courseRoutes.linkFiles(id), ...(linkBatches ? { proposeLinks: (a) => linkBatches.propose(a) } : {}),...(coach ? { studyChat: coach.studyChat, studyAnswer: (args) => coach.answerStudy(args), studyCanTeach: (courseId) => coach.teachesFromNotes(courseId) } : {}), ...(threadDeps ? threadDeps() : {}) } })
     : handle(task, options));
   // One short block of study state for the front desk (written by code from the tracker; data, never instructions).
   const studyState = () => {
@@ -466,6 +467,15 @@ function createServer({
       } catch (error) {
         return sendJson(res, error.status || 500, { error: error.message });
       }
+    }
+    // The Confirm / Cancel of a list of links (link-batch.js). Works once; Confirm answers at once and the work ends with one message in the thread.
+    const batchRoute = url.pathname.match(/^\/api\/thread\/links\/([a-f0-9]{16})\/(confirm|cancel)$/);
+    if (thread && linkBatches && batchRoute && req.method === "POST") {
+      try {
+        if (batchRoute[2] === "cancel") return sendJson(res, 200, linkBatches.cancel(batchRoute[1]));
+        const { started, count } = linkBatches.confirm(batchRoute[1]);
+        return sendJson(res, 202, { started, count });
+      } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
     }
     const assignRoute = url.pathname.match(/^\/api\/thread\/file\/([a-f0-9]{16})\/assign$/);
     if (thread && threadFiles && assignRoute && req.method === "POST") {
@@ -732,7 +742,8 @@ if (require.main === module) {
     purge();
     setInterval(purge, 6 * 3600 * 1000).unref();
   }
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles });
+  const linkBatches = thread ? require("./link-batch").createLinkBatches({ thread, courseRoutes, log: console.log }) : null;
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;

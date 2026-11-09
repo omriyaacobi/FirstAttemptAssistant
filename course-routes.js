@@ -133,6 +133,21 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
       return { ok: false, text: words(lang, `I downloaded it but could not file it: ${why}`, `הורדתי אבל לא הצלחתי לתייק: ${why}`) };
     }
   }
+  // The files of a course whose TEXT holds https links (a reading list, a txt of addresses, notes). Links are found by code (linkfetch.httpsUrls),
+  // never by a model. Newest first. Used for "download / look at the links in that file" (link-batch.js).
+  function linkFiles(courseId) {
+    const course = courses.get(courseId);
+    if (!course) return [];
+    const out = [];
+    for (const f of course.files) {
+      if (f.status !== "ready" && !f.pages) continue;
+      let text = "";
+      try { text = courses.getPages(courseId, f.id).map((p) => p.text).join("\n").slice(0, 2000000); } catch (error) { continue; }
+      const found = linkfetch.httpsUrls(text);
+      if (found.urls.length) out.push({ id: f.id, name: f.name, added: f.added || 0, ...found });
+    }
+    return out.sort((a, b) => b.added - a.added);
+  }
   // What the coach needs after a file was read: the entry and the start of its text.
   const fileInfo = (courseId, fileId, maxChars = 4000) => {
     const file = courses.getFile(courseId, fileId);
@@ -283,7 +298,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     const c = courses.get(courseId);
     return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
   };
-  return { handle, answer, addUpload, addLink, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  return { handle, answer, addUpload, addLink, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };

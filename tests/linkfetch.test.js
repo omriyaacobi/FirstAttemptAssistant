@@ -226,19 +226,19 @@ test("COURSE PAGE: POST /api/courses/<id>/link files the download and returns th
 const COURSES = [{ id: "aaaaaaaaaaaaaaa1", name: "Calculus 2" }, { id: "aaaaaaaaaaaaaaa2", name: "Systems Programming" }];
 const deps = (extra = {}) => ({ chainForDestination: () => [{ provider: "agy", model: "fake" }], chainForType: () => [], lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null, about: () => "", facts: () => [], addFact: () => { throw new Error("no"); },
   askChain: async () => { throw new Error("no model may be called for a download"); }, ...extra });
-const deskSaying = (course) => async () => ({ action: "course", destination: null, answer: "", reason: "r", course, studyIntent: "link" });
+const deskSaying = (course) => async () => ({ action: "course", destination: null, answer: "", reason: "r", course, studyIntent: "linksave" });
 
 test("front desk: 'link' is a known study intent and the course is still checked against the real list", () => {
-  assert.ok(STUDY_INTENTS.includes("link"));
-  const d = validateDecision({ action: "course", course: "systems programming", studyIntent: "link", reason: "r" }, { courses: COURSES });
+  assert.ok(STUDY_INTENTS.includes("linksave"));
+  const d = validateDecision({ action: "course", course: "systems programming", studyIntent: "linksave", reason: "r" }, { courses: COURSES });
   assert.deepStrictEqual(d.course, COURSES[1]);
-  assert.strictEqual(d.studyIntent, "link");
-  assert.strictEqual(validateDecision({ action: "course", course: "Made Up", studyIntent: "link", reason: "r" }, { courses: COURSES }), null);
+  assert.strictEqual(d.studyIntent, "linksave");
+  assert.strictEqual(validateDecision({ action: "course", course: "Made Up", studyIntent: "linksave", reason: "r" }, { courses: COURSES }), null);
 });
 
 test("chat: the URL is taken from the user's words by code (a model-proposed URL is ignored), no model is called, the reply is in the message's language", async () => {
   const seen = [];
-  const decide = async () => ({ action: "course", destination: null, answer: "", reason: "r", course: COURSES[1], studyIntent: "link", url: "https://evil.example.org/hijack" });
+  const decide = async () => ({ action: "course", destination: null, answer: "", reason: "r", course: COURSES[1], studyIntent: "linksave", url: "https://evil.example.org/hijack" });
   const out = await handleTask("download https://github.com/octocat/Hello-World into my systems course", { deps: deps({ decide, fetchLink: async (id, url, lang) => { seen.push({ id, url, lang }); return { ok: true, text: "Downloaded the GitHub repository." }; } }), courses: COURSES });
   assert.deepStrictEqual(seen, [{ id: COURSES[1].id, url: "https://github.com/octocat/Hello-World", lang: "en" }]);
   assert.strictEqual(out.answer, "Downloaded the GitHub repository.");
