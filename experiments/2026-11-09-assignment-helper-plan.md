@@ -160,6 +160,11 @@ Made-up course "Intro C++ Demo", assignment "Assignment 0: Library Manager" (an 
 
 Build Option A in this order: (1) check PDF quality on the real assignment; (2) context builder + briefing + Coach level + routing; (3) pasted code and zip code; (4) linked folder only if Omri wants it after trying 1-3. Keep Option B as a later "deep mode", and add Option C's pack as a free by-product.
 
+## 10b. Built so far (2026-11-09, branch claude/study-chat-build-e867fb)
+The first build is the STUDY CHAT for ALL courses (`study-chat.js`, `study-brief.md`), see `2026-11-09-study-chat-results.md`.
+- **TODO (not built yet):** linking a project folder (`workfolder.js`), and using the code files of an uploaded zip as context. Pasted code in the message works now.
+- Not built either: a "back to the course" button (the words work), Option B, the handoff pack.
+
 ## 11. Questions for Omri
 1. **Honesty level (section 4):** Coach as default (explains fully, reads and fixes small things, no whole functions unprompted), Strict, or something else?
 2. **Code access:** are pasted code and a project zip enough for the first version, or do you want the linked folder from the start (+1 day)?

@@ -44,6 +44,14 @@ const SPECULATIVE_MODEL = MODELS.flashMedium; // the first model of the "gemini-
 const WARM_ANSWER_MODELS = new Set([MODELS.flashMedium.model]);
 const answerPool = createWarmAgy({ keepReady: true });
 const prewarmAnswer = () => { for (const model of WARM_ANSWER_MODELS) answerPool.warmUp(model, null); };
+// The study chat (study-chat.js) answers with Argon at low effort. Its process is started ONLY when a message looks like study talk (see
+// runTask), because a spare costs some memory and a message of another kind would never use it. It expires by itself after 8 minutes.
+const studyPool = createWarmAgy({ keepReady: false });
+const prewarmStudy = () => studyPool.warmUp(MODELS.argonLow.model, null);
+function askStudyWarm(provider, model, question, onText) {
+  if (provider === "agy" && model === MODELS.argonLow.model) return studyPool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
+  return ask(provider, model, question, onText);
+}
 function askOneWarm(provider, model, question, onText) {
   if (provider === "agy" && WARM_ANSWER_MODELS.has(model)) return answerPool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
   return ask(provider, model, question, onText);
@@ -52,7 +60,7 @@ function askOneWarm(provider, model, question, onText) {
 // deps lets tests swap in fakes for the real models.
 // lowPools says which quota pools are nearly empty: it reads a flag in memory and never waits (see quota.js).
 // refreshQuota updates that flag in the background AFTER each answer, for the next message.
-const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, noteFailure, prewarmAnswer, askOne: askOneWarm,
+const defaultDeps = { about: (opts) => aboutBlock(opts), facts: () => createMemory().list(), addFact: (text) => createMemory().add(text), decide, plan, runPlan, askChain, askImage: askAgyWithImage, chainForType, chainForDestination, lowPools: getLowPools, refreshQuota, noteFailure, prewarmAnswer, askOne: askOneWarm, prewarmStudy, askStudy: askStudyWarm,
   // The answer model started alongside the front desk (null = off). It uses the pre-warmed pool, so it is killed with its signal.
   speculate: SPECULATE_ANSWER ? (question, { signal, onText }) => answerPool.askText(question, SPECULATIVE_MODEL.model, onText, { signal, timeoutMs: timeoutFor(SPECULATIVE_MODEL.model) }) : null, readCalendar: readCalendarEvents,
   // A Confirm card for checked events (calendar-add.js). Bot only DRAFTS here: creating events needs the Confirm tap in server.js.
@@ -149,6 +157,7 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
   let slotTaken = false;
   const slow = async (info = {}) => { if (!gate || slotTaken) return; slotTaken = true; await gate(info); };
   try { d.prewarmAnswer(); } catch (error) { /* a missing spare only means the answer starts agy itself */ }
+  try { if (d.studyChat && d.studyChat.likely(task)) d.prewarmStudy(); } catch (error) { /* a missing spare only means the study chat starts agy itself */ }
   const started = Date.now();
   const secondsSince = (t0) => Number(((Date.now() - t0) / 1000).toFixed(1));
   const seconds = () => secondsSince(started);
@@ -439,6 +448,17 @@ async function runTask(task, { route = null, noPlan = false, planOnly = false, f
     return withNote(await courseAnswerNow(decision), fileNote);
   }
   async function courseAnswerNow(decision) {
+    // THE STUDY CHAT (study-chat.js): decided by code. When it is on, ONE big-context call answers; no card, no due date, no position question.
+    if (d.studyChat && decision.course) {
+      const sc = d.studyChat.check({ text: task, courseId: decision.course.id, courseName: decision.course.name, studyIntent: decision.studyIntent });
+      log(`[study-chat] ${sc.on ? "on" : "off"}: ${sc.why}`);
+      if (sc.on) {
+        await slow({ course: decision.course.id });
+        const r = await d.studyChat.answer({ text: task, courseId: decision.course.id, courseName: decision.course.name, history, about, onText: onPartial || null, askOne: d.askStudy });
+        log(timingLine());
+        return { ...r, courseId: decision.course.id, courseName: decision.course.name, studyIntent: decision.studyIntent, reason: decision.reason };
+      }
+    }
     let coachIntent = COACH_INTENT[decision.studyIntent];
     // "teach me X" is a request to be taught, whatever label the desk gave it, but only for a course taught from its notes (the coach says so); a lecture course keeps its notebook answer.
     if (decision.studyIntent === "ask" && d.studyCanTeach && decision.course && TEACH_ME.test(task) && d.studyCanTeach(decision.course.id)) coachIntent = "teach";
