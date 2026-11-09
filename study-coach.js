@@ -750,6 +750,21 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { answer: q, proposal: card(p) };
   }
 
+  // An uploaded file of this course whose NAME looks like an assignment (assignment, exercise, homework, hw, ex3, תרגיל, מטלה). Code only: the text is read as data, never as instructions.
+  // A file the message names (by its name) wins. Returns { fileName, text } or null.
+  function assignmentFileIn(ref, message) {
+    if (!ref.courseId) return null;
+    const byFile = new Map();
+    for (const p of courses.allPages(ref.courseId)) { if (!p || !p.fileName) continue; if (!byFile.has(p.fileName)) byFile.set(p.fileName, []); byFile.get(p.fileName).push(String(p.text || "")); }
+    const looks = (n) => /assign|exercis|homework|\bhw\b|(^|[^a-z])ex[ _-]?\d|תרגיל|מטלה|עבודה/i.test(n);
+    const low = String(message || "").toLowerCase();
+    const named = [...byFile.keys()].filter((n) => { const base = n.replace(/\.\w{2,4}$/, "").toLowerCase(); return base.length >= 4 && low.includes(base); });
+    const pool = named.length ? named : [...byFile.keys()].filter(looks);
+    if (!pool.length) return null;
+    const fileName = pool.sort().reverse()[0]; // the latest-named one (Assignment_2 before Assignment_1)
+    return { fileName, text: byFile.get(fileName).join(" ").slice(0, 8000) };
+  }
+
   // ---- the answer to a message the front desk marked with a studyIntent ----
   async function answerStudy({ studyIntent, text = "", courseId = null, courseName = null, onText = null }) {
     const t0 = Date.now();
@@ -852,6 +867,20 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (intent === "start") through = throughArgs(ref, text);
     const noSolution = SOLUTION_ASK.test(text) ? T("I will not write the full solution of an assignment: that is the part that teaches the most. I can guide step by step, so here is how.\n\n", "פתרון מלא של מטלה אני לא כותב: זה החלק שהכי מלמד. אפשר ללוות צעד אחר צעד, אז הנה איך.\n\n") : "";
     const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes, through });
+    // No assignment saved, but the course already holds a file that looks like one (the student uploaded it earlier): propose it for a Confirm card instead of asking for the file again.
+    if (r.needs === "assignment") {
+      const found = assignmentFileIn(ref, text);
+      if (found) {
+        const up = await onUpload({ courseId: ref.courseId, text: found.text, dateText: text, kind: "assignment" });
+        if (up && up.proposal) {
+          // The student also asked something ("explain section 3.3"): answer it from the notes as a teach turn, then add the card line below it.
+          let taught = null;
+          try { taught = await tutor.turn({ tracker, ref, intent: "teach", message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: null, through: null }); } catch (error) { log(`[assignment-file] teach failed: ${error.message}`); }
+          const lead = taught && taught.answer ? taught.answer + "\n\n---\n" : "";
+          return done({ ...(taught || r), mode: "study", answer: lead + up.answer, proposal: up.proposal, study: { course: ref.name, mode: (taught || r).mode, done: false } });
+        }
+      }
+    }
     return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
