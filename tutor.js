@@ -449,4 +449,12 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   } catch (error) { return finish(unavailable(error.message, langOf(message))); }
 }
 
-module.exports = { STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS };
+// Explain what the student asked about, from the course files that match their words (no lecture or assignment needs to be saved). If the files do not cover it, teachText says so and uses general knowledge.
+async function teachTopic({ askChain, courseName, message, pages, log, onText = null }) {
+  const lang = isHebrew(message) ? "he" : "en";
+  const mat = materialFor(pages, [], pickPages(pages, message, { k: 4 }));
+  const t = await teachText({ askChain, courseName, topic: clean(message, 160), material: mat, message, lang, log, onText, style: "concept" });
+  return { answer: t.text, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: !mat.picked.length || /\[OUT\]/.test(t.text) };
+}
+
+module.exports = { teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS };
