@@ -2790,6 +2790,7 @@
       const r = m.result;
       const head = [["Answer"]];
       if (r.model) head.push([String(r.model), "badge"]);
+      if (r.chat && r.chat.label) head.splice(1, 0, [String(r.chat.label), "badge"]); // "Study chat (Coach)": which mode and level answered
       if (r.seconds) head.push([`${r.seconds}s`, "badge"]);
       const card = botCard(head, renderText(m.text || r.answer || ""));
       if (r.sources && r.sources.length && r.courseId) {

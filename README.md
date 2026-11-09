@@ -11,6 +11,7 @@ Run all checks with `node --test` (about 1000 tests, about 45 s; they find the `
 | `core.js`, `frontdesk.js`, `router.js`, `router-brief*.md`, `planner.js`, `providers.js`, `jobs.js` | how a message is routed to a model and answered |
 | `calendar*.js`, `reminders.js`, `morning.js` | Google Calendar, reminders, the morning brief |
 | `courses.js`, `course-routes.js`, `study*.js`, `tutor.js`, `catchup.js`, `standing.js`, `outline.js`, `position-record.js` | courses, notebooks and the study coach |
+| `study-chat.js`, `study-brief.md` | the study chat: one big-context call for assignment and study talk (edit `study-brief.md` to change how it behaves) |
 | `thread*.js`, `unzip.js`, `zip-filing.js`, `upload.js`, `office.js`, `pdfcut.js`, `photo.js` | the one conversation, file and zip upload, reading files |
 | `selfedit.js`, `preview.js`, `pagesandbox.js`, `gitops.js`, `improve-watch.js` | Improve Bot (self edit) and its safety checks |
 | `backup.js`, `auth.js`, `store.js`, `quota.js`, `webpush.js`, `warmagy.js` | backup, login, chat storage, quota, phone pushes, the pre-warmed `agy` |

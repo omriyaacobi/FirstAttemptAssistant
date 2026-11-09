@@ -29,6 +29,7 @@ const standing = require("./standing");
 const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
 const catchup = require("./catchup");
+const { createStudyChat } = require("./study-chat");
 const { MODELS } = require("./router");
 
 const INTENTS = ["teach", "start", "quiz", "answer", "progress", "plan", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
@@ -915,7 +916,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return !!ref && notesCourse(ref) && !(tracked(ref) && tracker.progress(ref).withMaterial > 0);
   }
 
-  return { teachesFromNotes, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
+  // The study chat (study-chat.js): one big-context call for assignment and study talk. It is asked by core.js BEFORE answerStudy.
+  const studyChat = createStudyChat({ tracker, courses, refs, resolveRef, askChain, now, log });
+
+  return { studyChat, teachesFromNotes, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };
