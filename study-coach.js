@@ -730,7 +730,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${dateText}\n${text}`, now: now(), log, dueHint });
       if (!r.ok) return { answer: r.answer };
       const p = addProposal({ kind: "assignment", ref, fields: r.proposal });
-      return { answer: T(`I read this as an assignment for ${ref.name}: "${p.fields.title}", ${p.fields.due ? `due ${niceDate(p.fields.due)}` : "no due date found"}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, `הבנתי שזו מטלה ${bet(ref.name)}: "${p.fields.title}", ${p.fields.due ? `להגשה עד ${niceDate(p.fields.due)}` : "לא מצאתי תאריך הגשה"}${p.fields.needs.length ? `, צריך בשבילה: ${p.fields.needs.join(", ")}` : ""}. זה נכון? אחרי אישור אשמור; לפני כן שום דבר לא נשמר.`), proposal: card(p) };
+      return { answer: T(`I read this as an assignment for ${ref.name}: "${p.fields.title}"${p.fields.due ? `, due ${niceDate(p.fields.due)}` : ""}${p.fields.needs.length ? `, needing: ${p.fields.needs.join(", ")}` : ""}. Is that right? Confirm and I save it; nothing is saved before.`, `הבנתי שזו מטלה ${bet(ref.name)}: "${p.fields.title}"${p.fields.due ? `, להגשה עד ${niceDate(p.fields.due)}` : ""}${p.fields.needs.length ? `, צריך בשבילה: ${p.fields.needs.join(", ")}` : ""}. זה נכון? אחרי אישור אשמור; לפני כן שום דבר לא נשמר.`), proposal: card(p) };
     }
     const refsList = files.filter((f) => f && f.fileId && f.pages >= 1).map((f) => ({ fileId: f.fileId, from: 1, to: f.pages, fileName: f.fileName }));
     if (!refsList.length) return { answer: T("I could not find readable pages in that file yet.", "עדיין לא מצאתי דפים קריאים בקובץ הזה.") };
@@ -750,13 +750,35 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { answer: q, proposal: card(p) };
   }
 
+  const looksLikeAssignmentName = (n) => /assign|exercis|homework|\bhw\b|(^|[^a-z])ex[ _-]?\d|תרגיל|מטלה|עבודה/i.test(n);
+  // Files sent from the course page (Study tab) into THIS course, read, and named like an assignment: saved here by code, with no Confirm card (the student chose the course and the upload).
+  // Chat uploads keep the card. A due date is not needed. Returns the titles saved now (usually none).
+  async function autoSavePageAssignments(ref) {
+    if (!ref.courseId || typeof courses.get !== "function" || typeof courses.setFile !== "function") return [];
+    const c = courses.get(ref.courseId);
+    if (!c || !Array.isArray(c.files)) return [];
+    const saved = [];
+    for (const f of c.files) {
+      if (f.via !== "page" || f.asg || f.status !== "ready" || !looksLikeAssignmentName(f.name || "")) continue;
+      const text = courses.allPages(ref.courseId).filter((p) => p && p.fileId === f.id).map((p) => String(p.text || "")).join("\n").slice(0, 8000);
+      if (!text.trim()) continue;
+      try {
+        const r = await tutor.proposeAssignment({ askChain, courseName: ref.name, text: `${f.name}\n${text}`, now: now(), log });
+        if (!r.ok) continue;
+        const a = tracker.addAssignment(ref, { ...r.proposal, due: null, text });
+        courses.setFile(ref.courseId, f.id, { asg: true });
+        saved.push(a.title);
+      } catch (error) { log(`[assignment-file] auto-save failed: ${error.message}`); }
+    }
+    return saved;
+  }
   // An uploaded file of this course whose NAME looks like an assignment (assignment, exercise, homework, hw, ex3, תרגיל, מטלה). Code only: the text is read as data, never as instructions.
   // A file the message names (by its name) wins. Returns { fileName, text } or null.
   function assignmentFileIn(ref, message) {
     if (!ref.courseId) return null;
     const byFile = new Map();
     for (const p of courses.allPages(ref.courseId)) { if (!p || !p.fileName) continue; if (!byFile.has(p.fileName)) byFile.set(p.fileName, []); byFile.get(p.fileName).push(String(p.text || "")); }
-    const looks = (n) => /assign|exercis|homework|\bhw\b|(^|[^a-z])ex[ _-]?\d|תרגיל|מטלה|עבודה/i.test(n);
+    const looks = looksLikeAssignmentName;
     const low = String(message || "").toLowerCase();
     const named = [...byFile.keys()].filter((n) => { const base = n.replace(/\.\w{2,4}$/, "").toLowerCase(); return base.length >= 4 && low.includes(base); });
     const pool = named.length ? named : [...byFile.keys()].filter(looks);
@@ -866,7 +888,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     }
     if (intent === "start") through = throughArgs(ref, text);
     const noSolution = SOLUTION_ASK.test(text) ? T("I will not write the full solution of an assignment: that is the part that teaches the most. I can guide step by step, so here is how.\n\n", "פתרון מלא של מטלה אני לא כותב: זה החלק שהכי מלמד. אפשר ללוות צעד אחר צעד, אז הנה איך.\n\n") : "";
+    const savedNow = await autoSavePageAssignments(ref).catch(() => []);
+    if (intent === "start") through = throughArgs(ref, text); // an assignment saved just now can be taught through at once
     const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes, through });
+    if (savedNow.length) r.answer = T(`I saved "${savedNow.join('", "')}" from the file you uploaded to ${ref.name}.\n\n`, `שמרתי את "${savedNow.join('", "')}" מהקובץ שהעלית ${bet(ref.name)}.\n\n`) + r.answer;
     // No assignment saved, but the course already holds a file that looks like one (the student uploaded it earlier): propose it for a Confirm card instead of asking for the file again.
     if (r.needs === "assignment") {
       const found = assignmentFileIn(ref, text);

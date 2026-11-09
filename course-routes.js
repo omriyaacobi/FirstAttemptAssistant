@@ -173,6 +173,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
         if (isZipName && looksLikeZip(bytes) && !sniffOffice(bytes)) return sendJson(res, 201, { zip: addZip(id, course.name, bytes, name) }), true;
         const { kind, ext } = sniffFile(bytes);
         const file = courses.addFile(id, { bytes, kind, ext, name });
+        courses.setFile(id, file.id, { via: "page" }); // sent from the course page (Study tab): the study coach saves an assignment-looking file without a Confirm card
         enqueue(id, file.id);
         return sendJson(res, 201, { file }), true;
       } catch (error) {
