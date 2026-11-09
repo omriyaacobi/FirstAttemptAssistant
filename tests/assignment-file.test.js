@@ -38,3 +38,24 @@ test("the message names the file: that file wins; a lecture file is never taken 
   assert.ok(!r2.proposal);
   assert.match(r2.answer, /Send me the file/);
 });
+
+test("a file sent from the course page (via: page) is saved by code with no card; a chat file is not; a second question does not save it again", async () => {
+  const files = [{ id: "f1", name: "Assignment_1_Demo_2026.pdf", via: "page", status: "ready" }];
+  const askChain = async () => ({ answer: JSON.stringify({ title: "Assignment 1 - Demo", due: "2026-11-26", needs: ["pointers", "Makefile"] }), used: { model: "fake" } });
+  const courses = { list: () => [SP], allPages: () => PAGES, get: () => ({ files }), setFile: (id, fid, patch) => Object.assign(files.find((f) => f.id === fid), patch) };
+  const coach = createStudyCoach({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-asgpage-")), courses, askChain, now: () => NOW });
+  const ref = coach.tracker.refsFor([SP])[0];
+  const r = await coach.answerStudy({ studyIntent: "start", text: "I am starting my assignment, explain the Makefile part", courseId: SP.id, courseName: SP.name });
+  assert.match(r.answer, /I saved "Assignment 1 - Demo"/);
+  assert.ok(!r.proposal, "no card for a course-page upload");
+  const saved = coach.tracker.course(ref).assignments;
+  assert.strictEqual(saved.length, 1);
+  assert.strictEqual(saved[0].due, null, "the due date is not used");
+  await coach.answerStudy({ studyIntent: "start", text: "help me start", courseId: SP.id, courseName: SP.name });
+  assert.strictEqual(coach.tracker.course(ref).assignments.length, 1);
+  // a file that did not come from the course page is left to the Confirm card
+  files[0] = { id: "f1", name: "Assignment_1_Demo_2026.pdf", status: "ready" };
+  const c2 = createStudyCoach({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-asgchat-")), courses: { ...courses, get: () => ({ files }) }, askChain, now: () => NOW });
+  const r2 = await c2.answerStudy({ studyIntent: "start", text: "I am starting my assignment", courseId: SP.id, courseName: SP.name });
+  assert.ok(r2.proposal && r2.proposal.kind === "assignment");
+});
