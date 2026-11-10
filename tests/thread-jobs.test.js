@@ -206,7 +206,7 @@ test("CAP: one single huge message cannot blow the cap either", () => {
   const thread = createThreadStore(tmp());
   thread.append({ role: "user", text: "y".repeat(2000000) });
   const history = buildHistory(thread, { entryOf: (m) => ({ role: m.role, text: m.text }) });
-  assert.ok(history[0].text.length <= 1500);
+  assert.ok(history[0].text.length <= 2000); // MAX_MESSAGE_CHARS in thread-context.js (raised from 1500 for the brain)
 });
 
 // ---- the newest calendar card stays pinned (phase 5) ----
