@@ -211,11 +211,43 @@
   }
 
   // ---- sources: drop zone, upload rows, the list of files with their tick boxes ----
+  // "Add from link": the address is sent to the PC, which downloads it itself (linkfetch.js: https only, public sites, size limits, no login) and files
+  // it in this course through the same checks as an upload. A GitHub repo, a GitHub file, or a direct link to a PDF / slides / Word / text / zip.
+  function linkBox(courseId) {
+    const wrap = el("div", "linkbox");
+    const input = el("input");
+    input.type = "url";
+    input.placeholder = "Add from link: a GitHub repo or a direct file link (https://...)";
+    input.setAttribute("aria-label", "Link to download into this course");
+    input.maxLength = 2000;
+    input.style.cssText = "width:100%;box-sizing:border-box;margin:8px 0 4px";
+    const go = async () => {
+      const url = input.value.trim();
+      if (!url || go.busy) return;
+      go.busy = true;
+      const row = { name: url.slice(0, 80), text: "downloading...", bad: false };
+      uploads.push(row);
+      paintUploads();
+      try {
+        const data = await post("/api/courses/" + courseId + "/link", { url });
+        row.text = data.link.summary; row.keep = true; row.bad = data.link.filedCount === 0;
+        input.value = "";
+      } catch (error) { row.text = "not added: " + error.message; row.bad = true; row.keep = true; }
+      go.busy = false;
+      paintUploads();
+      if (!view.hidden && current) await refresh().catch(fail);
+      if (panel) await loadPanel().catch(() => {});
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    wrap.append(input, button("Add from link", go, "ghost"), el("p", "sub", "Bot downloads it itself. Public links only: it never logs in anywhere."));
+    return wrap;
+  }
   function dropZone(course) {
     const zone = el("div", "dropzone");
     zone.id = "dropZone";
     zone.appendChild(button("Choose files", () => picker.click(), "primary"));
     zone.appendChild(el("p", "sub", "or drop files here (several at once). PDF, PowerPoint (.pptx), Word (.docx), photos and text files, up to 50 MB each. A .zip (up to 200 MB) works too: Bot unpacks it and checks the files one by one. Hebrew and scans are fine. A long PDF takes a few minutes to read, in the background."));
+    zone.appendChild(linkBox(course.id));
     return zone;
   }
 
@@ -481,6 +513,7 @@
       const zone = el("div", "dropzone");
       zone.id = "panelDropZone";
       zone.append(button("+ Add material", () => picker.click(), "primary add-material"), el("span", "sub", " or drop files on this page"));
+      zone.appendChild(linkBox(barCourse));
       box.appendChild(zone);
       box.appendChild(sourcesList(panel.course, { after: loadPanel }));
     }

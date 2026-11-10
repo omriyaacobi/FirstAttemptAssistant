@@ -9,6 +9,7 @@
 //   POST   /api/courses/<id>/rename {name}
 //   DELETE /api/courses/<id>
 //   POST   /api/courses/<id>/files?name=...      upload one file (raw bytes, up to 50 MB), or a .zip (up to 200 MB; unzip.js opens it, each file is added to this course)
+//   POST   /api/courses/<id>/link {url}           download a file or a GitHub repo from a link the user typed (linkfetch.js) and file it in this course
 //   DELETE /api/courses/<id>/files/<fid>
 //   POST   /api/courses/<id>/files/<fid>/retry   read a failed file again
 //   POST   /api/courses/<id>/files/<fid>/use {use: true|false}   tick or untick a file for the chats of the course
@@ -26,6 +27,8 @@ const { sniffFile, readRawBody, cleanName } = require("./upload");
 const { unzip, looksLikeZip, MAX_ZIP_BYTES } = require("./unzip");
 const { sniffOffice } = require("./office");
 const { zipSummary, fileMany, filedName } = require("./zip-filing");
+const { say: words, bet } = require("./lang");
+const linkfetch = require("./linkfetch");
 
 const { MODELS } = require("./router");
 
@@ -53,7 +56,7 @@ function migrateOldChats(courses, store) {
   }
 }
 
-function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, about = () => "", askChain, expand = null, onFileReady = null, log = () => {} }) {
+function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, about = () => "", askChain, expand = null, onFileReady = null, fetchLink = linkfetch.fetchLink, log = () => {} }) {
   courses.recover();
   migrateOldChats(courses, store);
 
@@ -90,13 +93,60 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   // there; a zip that must be refused whole throws a status error with a plain reason), then each file takes the single-upload road
   // (addUpload). Returns what the page shows on the row of the zip: counts and the same short summary as the chat (in English: the
   // page has no message to take a language from). The study coach is not asked about each file.
-  function addZip(courseId, courseName, bytes, name) {
+  function addZip(courseId, courseName, bytes, name, lang = "en") {
     const clean = cleanName(name, "archive.zip");
     const opened = unzip(bytes);
     const filed = [];
     const skipped = [...opened.skipped];
     fileMany(addUpload, courseId, courseName, opened.files.map((f) => ({ bytes: f.bytes, name: filedName(f), group: f.group, kind: f.kind })), filed, skipped);
-    return { name: clean, filedCount: filed.length, skippedCount: skipped.length, summary: zipSummary("en", clean, filed, skipped, 0) };
+    return { name: clean, filedCount: filed.length, skippedCount: skipped.length, summary: zipSummary(lang, clean, filed, skipped, 0) };
+  }
+  // A file that came from a LINK (linkfetch.js fetched the bytes; they are untrusted like any upload). The SAME roads as above: a zip is opened
+  // by addZip (unzip.js limits), anything else by addUpload (real first bytes, 50 MB, course size, no duplicate). Throws a status error when
+  // refused. Returns what to tell the user, in `lang`.
+  function fileFetched(courseId, courseName, { bytes, name, repo = null }, lang = "en") {
+    const clean = cleanName(name, "download");
+    if (/\.zip$/i.test(clean) && looksLikeZip(bytes) && !sniffOffice(bytes)) {
+      const z = addZip(courseId, courseName, bytes, clean, lang);
+      const from = repo ? words(lang, `Downloaded the GitHub repository ${repo}. `, `הורדתי את מאגר הגיטהאב ${repo}. `) : words(lang, "Downloaded the zip from your link. ", "הורדתי את ה-zip מהקישור שלך. ");
+      return { kind: "zip", filedCount: z.filedCount, skippedCount: z.skippedCount, summary: from + z.summary };
+    }
+    const file = addUpload(courseId, bytes, clean);
+    courses.setFile(courseId, file.id, { via: "page" });
+    return { kind: "file", filedCount: 1, skippedCount: 0, fileId: file.id, summary: words(lang, `Downloaded "${file.name}" from your link and filed it in ${courseName}. Bot is reading it now.`, `הורדתי את "${file.name}" מהקישור שלך ותייקתי אותו ${bet(courseName)}. Bot קורא אותו עכשיו.`) };
+  }
+  // The whole job for a link: fetch (safe, linkfetch.js), then file. Never throws: the text is ready to show (plain words, in `lang`).
+  async function addLink(courseId, url, lang = "en") {
+    const course = courses.get(courseId);
+    if (!course) return { ok: false, text: words(lang, "That course was deleted.", "הקורס הזה נמחק.") };
+    let got;
+    try { got = await fetchLink(url); } catch (error) {
+      log(`[link] not downloaded (${error.code || "error"}): ${String(error.message).slice(0, 120)}`);
+      return { ok: false, text: linkfetch.explain(lang, error) };
+    }
+    try {
+      const r = fileFetched(courseId, course.name, got, lang);
+      log(`[link] filed ${r.filedCount} file(s) from ${got.source} into ${course.name}`);
+      return { ok: true, ...r, text: r.summary };
+    } catch (error) {
+      const why = String(error.message).slice(0, 200);
+      return { ok: false, text: words(lang, `I downloaded it but could not file it: ${why}`, `הורדתי אבל לא הצלחתי לתייק: ${why}`) };
+    }
+  }
+  // The files of a course whose TEXT holds https links (a reading list, a txt of addresses, notes). Links are found by code (linkfetch.httpsUrls),
+  // never by a model. Newest first. Used for "download / look at the links in that file" (link-batch.js).
+  function linkFiles(courseId) {
+    const course = courses.get(courseId);
+    if (!course) return [];
+    const out = [];
+    for (const f of course.files) {
+      if (f.status !== "ready" && !f.pages) continue;
+      let text = "";
+      try { text = courses.getPages(courseId, f.id).map((p) => p.text).join("\n").slice(0, 2000000); } catch (error) { continue; }
+      const found = linkfetch.httpsUrls(text);
+      if (found.urls.length) out.push({ id: f.id, name: f.name, added: f.added || 0, ...found });
+    }
+    return out.sort((a, b) => b.added - a.added);
   }
   // What the coach needs after a file was read: the entry and the start of its text.
   const fileInfo = (courseId, fileId, maxChars = 4000) => {
@@ -181,6 +231,16 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
       }
     }
 
+    if (rest === "link" && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return true;
+      // The link is the one the user typed in the box. One link at a time; the checks (https, public address, size, redirects) are in linkfetch.js.
+      const url = typeof input.url === "string" ? input.url.trim() : "";
+      if (!url || url.length > 2000) return sendJson(res, 400, { error: "give one link" }), true;
+      const r = await addLink(id, url);
+      return sendJson(res, r.ok ? 201 : 422, r.ok ? { link: { summary: r.text, filedCount: r.filedCount, skippedCount: r.skippedCount, kind: r.kind } } : { error: r.text }), true;
+    }
+
     const fileRoute = rest.match(/^files\/([^/]+)(?:\/(retry|pages|use|original))?$/);
     if (fileRoute) {
       const [, fid, action] = fileRoute;
@@ -238,7 +298,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     const c = courses.get(courseId);
     return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
   };
-  return { handle, answer, addUpload, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  return { handle, answer, addUpload, addLink, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };
