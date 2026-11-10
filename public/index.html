@@ -384,6 +384,140 @@
   body.thread button.chip { min-height: 44px; }
   body.thread .bot summary, body.thread .msg > details > summary { display: flex; align-items: center; min-height: 44px; }
   body.thread #micLang, body.thread #mic, body.thread .composer .tools button { min-height: 44px; }
+  /* ===== Comfort layer (2026-11-11). A calmer, roomier look for the laptop and the phone. It only OVERRIDES the rules above
+     (same ids and classes, no script depends on it), so removing this block gives the earlier page back.
+     What it does: the message box is one compact bar that grows as you type; Bot's answers read like text, not like boxes, with
+     the small technical line (model, seconds) moved under the answer and dimmed; the sidebar is a short menu; the phone gets a
+     slimmer header and bar, so more of the screen is conversation. ===== */
+  :root[data-theme="midnight"] {
+    --card: #16151d; --text: #ecebf2; --muted: #9692a6; --line: #272531; --accent: #b79cff; --code: #18171f; --mine: #221e30;
+  }
+  body { font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Noto Sans Hebrew", "Arial Hebrew", sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  [data-theme="midnight"] body { letter-spacing: 0; }
+  @media (min-width: 761px) { html, body { font-size: 16.5px; } }
+  ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .inner { max-width: 780px; }
+  #thread { padding: 28px 22px 10px; }
+
+  /* --- sidebar: a short menu first, the settings under it, Improve Bot at the bottom --- */
+  @media (min-width: 761px) { .app { grid-template-columns: 264px 1fr; } }
+  .side { padding: 18px 12px 14px; gap: 2px; }
+  .side > * { order: 5; }
+  .side .side-head { order: 0; padding: 0 8px; margin-bottom: 12px; }
+  .side .side-head .sub { font-size: .78rem; opacity: .8; }
+  .side > #new { order: 1; } .side > #studyBtn { order: 2; } .side > #quotaBtn { order: 3; }
+  .side > nav { order: 4; }
+  .side > #improveBtn { order: 9; margin-top: auto; }
+  .side > #restartSide { order: 10; }
+  [data-theme="midnight"] .side > button:not([class]) { text-align: left; background: transparent; border: 0; border-radius: 10px; padding: 9px 12px; font-weight: 500; font-size: .95rem; color: var(--text); }
+  [data-theme="midnight"] .side > button:not([class]):hover { background: var(--mine); }
+  .side section { border-top: 1px solid var(--line); margin-top: 10px; padding: 12px 8px 2px; }
+  .side section strong { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+  .side section .sub { font-size: .8rem; }
+  .side section .row { margin-top: 6px; gap: 8px; }
+  .side summary { list-style: none; } .side summary::-webkit-details-marker { display: none; }
+  .side summary strong::after { content: " +"; opacity: .7; }
+  .side details[open] summary strong::after { content: " \2212"; }
+  .reminder { padding: 6px 8px; margin: 4px -8px; border-radius: 8px; }
+  .reminder:hover { background: var(--mine); }
+  [data-theme="midnight"] button.improve { padding: 11px 14px; font-size: .95rem; border-radius: 12px; box-shadow: none; margin-bottom: 0; }
+  #restartTop { opacity: .35; transition: opacity .15s; border-radius: 999px; }
+  #restartTop:hover, #restartTop:focus-visible { opacity: 1; }
+
+  /* --- messages --- */
+  .msg { margin-bottom: 14px; }
+  .tgroup { margin-bottom: 26px; }
+  [data-theme="midnight"] .me { border: 0; background: var(--mine); padding: 10px 16px; border-radius: 20px 20px 6px 20px; max-width: 78%; line-height: 1.5; }
+  [data-theme="midnight"] .bot { border-left: 0; padding: 2px 0; display: flex; flex-direction: column; }
+  [data-theme="midnight"] .bot.think { border-left: 0; padding: 12px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; }
+  /* the technical line (which model, how long) sits UNDER the answer, small and dim, until you point at it */
+  .bot > .step-head { order: 20; margin: 8px 0 0; gap: 6px; font-weight: 400; font-size: .72rem; color: var(--muted); opacity: .5; transition: opacity .15s; }
+  .bot:hover > .step-head, .bot:focus-within > .step-head { opacity: 1; }
+  .bot > .step-head .badge { font-size: .68rem; padding: 1px 8px; font-weight: 400; }
+  .answer { line-height: 1.68; }
+  .answer p { margin: 0 0 12px; }
+  .answer ul, .answer ol { margin: 0 0 12px; padding-inline-start: 22px; }
+  .answer li { margin: 4px 0; }
+  .answer li > p { margin: 0 0 4px; }
+  .answer h1, .answer h2, .answer h3 { margin: 20px 0 8px; letter-spacing: -.01em; }
+  .answer h1, .answer h2 { font-size: 1.2em; } .answer h3 { font-size: 1.08em; }
+  .answer strong { color: #fff; font-weight: 600; }
+  .answer a { color: var(--accent); }
+  [data-theme="midnight"] pre { background: #111017; border-radius: 12px; padding: 14px 16px; margin: 10px 0 14px; line-height: 1.55; }
+  code { font-family: "Cascadia Code", "Cascadia Mono", ui-monospace, Consolas, monospace; font-size: .86em; }
+  pre code { font-size: .84rem; }
+  .answer :not(pre) > code { padding: 2px 6px; border-radius: 6px; }
+  .troute { opacity: .55; transition: opacity .15s; margin-bottom: 4px; }
+  .tgroup:hover .troute, .troute:focus-within { opacity: 1; }
+  .msg > details > summary, .bot summary { font-size: .74rem; opacity: .6; }
+  .sources { margin-top: 10px; }
+  [data-theme="midnight"] button.chip { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; font-weight: 400; }
+  [data-theme="midnight"] button.chip:hover { color: var(--text); border-color: var(--accent); }
+  /* a day is a quiet centred label, not a wide button */
+  .tdayhead { width: auto; margin: 4px auto 16px; padding: 4px 14px; border: 0; background: transparent; color: var(--muted); font-size: .76rem; justify-content: center; gap: 8px; border-radius: 999px; }
+  .tdayhead:hover { background: var(--mine); }
+  .tdaylabel { flex: none; font-weight: 600; letter-spacing: .04em; }
+  .calcard, [data-theme="midnight"] .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
+  .calcard { margin-top: 12px; }
+  .actions { gap: 8px; }
+  [data-theme="midnight"] .bot .actions button:not([class]):first-child, [data-theme="midnight"] .calcard .actions button:not([class]):first-child { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+  .tready { background: var(--accent); color: var(--accent-text); border: 0; font-weight: 600; }
+  .empty { margin-top: 22vh; font-size: 1.05rem; }
+
+  /* --- the message box: one bar. Attach on the left, the text in the middle (it grows as you type), Mic and Send on the right --- */
+  #form.composer { padding: 6px 22px 18px; border-top: 0; background: transparent; }
+  #form.composer .inner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 6px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 26px; padding: 6px 8px; transition: border-color .15s, box-shadow .15s; }
+  #form.composer .inner:focus-within { border-color: color-mix(in srgb, var(--accent) 70%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+  #form .photo-chip { grid-column: 1 / -1; grid-row: 1; margin: 6px 6px 4px; }
+  #form textarea#task { grid-column: 2; grid-row: 2; min-height: 44px; height: 44px; max-height: 220px; resize: none; border: 0; border-radius: 0; background: transparent; padding: 11px 4px; outline: none; line-height: 1.4; }
+  #form .row:not(.tools-row) { grid-column: 1 / -1; grid-row: 3; margin: 0; padding: 0 8px; min-height: 0; }
+  #form .row:not(.tools-row) .status { max-width: 100%; white-space: normal; padding: 2px 0 4px; }
+  #form .row:not(.tools-row) .status:empty { display: none; }
+  #form .tools-row { display: contents; }
+  #form .tools-row > .tools:first-child { grid-column: 1; grid-row: 2; gap: 0; }
+  #form .tools-row > .tools:last-child { grid-column: 3; grid-row: 2; gap: 6px; }
+  #form button.attach { width: 40px; height: 44px; border: 0; color: var(--muted); border-radius: 12px; }
+  #form button.attach:hover { color: var(--accent); }
+  #form button.attach svg { width: 21px; height: 21px; }
+  [data-theme="midnight"] #form #send { height: 40px; min-height: 40px; margin-bottom: 2px; padding: 0 20px; border-radius: 999px; background: var(--accent); }
+  #form button.mic { height: 40px; min-height: 40px; margin-bottom: 2px; padding: 0 12px; border-radius: 999px; border: 0; color: var(--muted); font-weight: 500; }
+  #form button.mic.listening { color: #fff; }
+  #form #micLang { margin: 0 0 4px; border-radius: 999px; font-size: .8rem; }
+
+  /* --- other screens --- */
+  .scroll { padding: 28px 22px; }
+  .improve-head { padding: 12px 22px; }
+  [data-theme="midnight"] .course-card { border-radius: 16px; }
+  dialog.popup { padding: 18px 20px; }
+
+  /* --- phone --- */
+  @media (max-width: 760px) {
+    .topbar { gap: 4px; padding: calc(4px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right)) 4px calc(6px + env(safe-area-inset-left)); border-bottom-color: transparent; }
+    [data-theme="midnight"] .topbar { background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); }
+    .topbar .titles strong { font-size: 1rem; }
+    body.thread #chatView .topbar .titles span { display: none; }
+    .iconbtn { background: transparent; border: 0; color: var(--text); }
+    #thread { padding: 14px 14px 6px; }
+    .scroll { padding: 16px 14px; }
+    .tgroup { margin-bottom: 22px; }
+    [data-theme="midnight"] .me { max-width: 88%; }
+    .answer { line-height: 1.62; }
+    pre code { font-size: .8rem; }
+    [data-theme="midnight"] pre { padding: 12px; }
+    .bot > .step-head { opacity: .6; }
+    .troute { opacity: .75; }
+    #form.composer { padding: 4px 10px 8px; }
+    #form.composer .inner { border-radius: 24px; padding: 4px 6px; column-gap: 2px; }
+    #form button.attach { width: 40px; height: 44px; min-height: 44px; }
+    [data-theme="midnight"] #form #send, #form button.mic { height: 44px; min-height: 44px; margin-bottom: 0; }
+    [data-theme="midnight"] #form #send { padding: 0 16px; }
+    .side { inset: 0 18% 0 0; }
+    [data-theme="midnight"] .side > button:not([class]) { padding: 12px; }
+    .bottombar { border-top-color: var(--line); }
+    .bottombar button.tab { min-height: 52px; font-size: .68rem; font-weight: 500; gap: 1px; }
+    .bottombar button.tab svg { width: 22px; height: 22px; }
+    .bottombar button.tab[aria-current="page"] { box-shadow: none; color: var(--accent); }
+  }
 </style>
 </head>
 <body>
@@ -422,7 +556,7 @@
     <div class="side-head">
       <div>
         <h1>Bot</h1>
-        <p class="sub">Picks the best model for each task.</p>
+        <p class="sub">Your personal assistant.</p>
       </div>
       <button class="iconbtn side-close" id="sideClose" aria-label="Close conversations">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -3500,6 +3634,18 @@
     }
 
     return { start, showStudy, T };
+  })();
+</script>
+<script id="comfortScript">
+  // The message box grows with what you type (up to a limit) and shrinks back after sending. Only its height is touched.
+  (() => {
+    const box = document.getElementById("task");
+    if (!box) return;
+    let last = -1;
+    const fit = () => { box.style.height = ""; if (!box.value) return; box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight + 2, 220) + "px"; }; // empty: the one-line height from the style sheet
+    const check = () => { if (box.value.length !== last) { last = box.value.length; fit(); } };
+    box.addEventListener("input", check);
+    setInterval(check, 400); // the page also changes the text itself (after Send, from the microphone)
   })();
 </script>
 </body>
