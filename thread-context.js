@@ -10,8 +10,8 @@
 // and nothing else. Failed answers are never memory. The result is a list of { role, text, label?, note?, noteShort?, cardId? },
 // the same shape jobs.js has always given core.js, so core.js's historyBlock (which has its own cap) can print it.
 
-const RECENT_CHARS = 6000; // the recent turns (the course path already uses 6,000)
-const MAX_MESSAGE_CHARS = 1500; // one long message is cut to this here (core.js cuts again at 3,000)
+const RECENT_CHARS = 9000; // the recent turns (the course path already uses 6,000)
+const MAX_MESSAGE_CHARS = 2000; // one long message is cut to this here (core.js cuts again at 3,000)
 const SCAN_MESSAGES = 80; // how far back to look for the recent turns (a page of the store, never the whole thread)
 const PENDING_CHARS = 60; // "still working on: <first 60 characters>"
 const MAX_PENDING = 5;
@@ -27,7 +27,9 @@ const clip = (text, max) => { const t = String(text); return t.length > max ? t.
 // "course answer: Calculus 2" for an answer that came from a course (written by code, never by a model).
 function labelOf(message, courseName) {
   const r = message.result;
-  if (message.role !== "assistant" || !r || (r.mode !== "course" && r.mode !== "study")) return undefined;
+  if (message.role !== "assistant" || !r) return undefined;
+  if (r.brain && r.mode !== "study") return r.courseName ? `about ${r.courseName}` : undefined; // the brain's answers (brain.js)
+  if (r.mode !== "course" && r.mode !== "study") return undefined;
   const name = r.courseName || (courseName && r.courseId && courseName(r.courseId)) || "";
   const kind = r.mode === "study" ? "study coach" : "course answer";
   return name ? `${kind}: ${name}` : kind;
@@ -53,6 +55,8 @@ function buildHistory(store, { entryOf, courseName = null, busy = [], pending = 
     const entry = { ...entryOf(m), text: clip(m.text, MAX_MESSAGE_CHARS) };
     const label = labelOf(m, courseName);
     if (label) entry.label = label;
+    if (m.result && typeof m.result.courseId === "string") entry.courseId = m.result.courseId; // which course this turn was about
+    entry.at = m.at;
     return entry;
   });
 

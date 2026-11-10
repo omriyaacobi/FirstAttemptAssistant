@@ -192,6 +192,7 @@ function createServer({
   push = createPush({ dir: path.join(__dirname, "data") }),
   coach = null, // the study coach (study-coach.js), only with the thread
   summaries = null, // the daily summaries (thread-summary.js), only with the thread
+  makeBrain = null, // (thread) builds the brain (brain.js) around the old path, which stays as its fallback; null = the old path only
   linkBatches = null, // many links from a file of addresses, shown first and fetched after one Confirm (link-batch.js), only with the thread
   threadFiles = null, // files that arrive with a message (thread-files.js), only with the thread
   thread = null, // the ONE conversation (thread-store.js); off unless given (BOT_THREAD=on), so with it off every route is exactly as before
@@ -206,9 +207,11 @@ function createServer({
   // Tasks run as background jobs (see jobs.js), so they survive the page being closed or reloaded.
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Thread jobs (BOT_THREAD=on) pass the real course list; only then is the course action possible, and the answer comes from the notebook.
-  const threadHandle = (task, options = {}) => (options.courses && courseRoutes
+  const oldThreadHandle = (task, options = {}) => (options.courses && courseRoutes
     ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), courseFiles: (id) => courseRoutes.courseFiles(id), fetchLink: (id, url, lang) => courseRoutes.addLink(id, url, lang), linkFiles: (id) => courseRoutes.linkFiles(id), ...(linkBatches ? { proposeLinks: (a) => linkBatches.propose(a) } : {}),...(coach ? { studyChat: coach.studyChat, studyAnswer: (args) => coach.answerStudy(args), studyCanTeach: (courseId) => coach.teachesFromNotes(courseId) } : {}), ...(threadDeps ? threadDeps() : {}) } })
     : handle(task, options));
+  const brain = makeBrain ? makeBrain({ fallback: oldThreadHandle }) : null;
+  const threadHandle = (task, options = {}) => (brain && options.courses && courseRoutes ? brain.handle(task, options) : oldThreadHandle(task, options));
   // One short block of study state for the front desk (written by code from the tracker; data, never instructions).
   const studyState = () => {
     if (!coach) return "";
@@ -743,7 +746,15 @@ if (require.main === module) {
     setInterval(purge, 6 * 3600 * 1000).unref();
   }
   const linkBatches = thread ? require("./link-batch").createLinkBatches({ thread, courseRoutes, log: console.log }) : null;
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches });
+  // THE BRAIN (brain.js): one model with a toolbox reads every thread message. BOT_BRAIN=off in .env goes back to the front desk menu.
+  const brainOn = thread && !/^(off|0|false|no)$/i.test(String(process.env.BOT_BRAIN ?? (() => { try { return require("./auth").parseEnv(fs.readFileSync(path.join(__dirname, ".env"), "utf8")).BOT_BRAIN; } catch (error) { return ""; } })() ?? "").trim());
+  let brainRef = null;
+  const makeBrain = brainOn ? ({ fallback }) => (brainRef = require("./brain").createBrain({
+    courses: coursesStore, courseRoutes, coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
+    searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }), lowPools: require("./quota").getLowPools, fallback,
+  })) : null;
+  if (brainOn) console.log("The brain is on: one model with a toolbox reads every message (brain.js). BOT_BRAIN=off in .env switches back.");
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches, makeBrain });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
@@ -764,7 +775,8 @@ if (require.main === module) {
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
-    try { require("./frontdesk").warmUpDesk(); } catch (error) { console.error("Could not prepare the front desk:", error.message); } // only makes the first message slower
+    if (brainRef) brainRef.warmUp();
+    try { if (!brainRef) require("./frontdesk").warmUpDesk(); } catch (error) { console.error("Could not prepare the front desk:", error.message); } // only makes the first message slower
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });
 }
