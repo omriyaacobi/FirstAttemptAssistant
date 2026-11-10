@@ -180,7 +180,7 @@ function createBrain({
       try {
         const { files, more } = projectFolder.listFiles(r.projectDir);
         const tree = files.slice(0, 150).map((f) => `${f.rel} (${f.bytes} bytes)`).join("\n") + (more || files.length > 150 ? "\n[... more files]" : "");
-        const newest = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000).slice(0, 2);
+        const newest = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000).slice(0, 3);
         const bodies = newest.map((f) => { try { return `[${f.rel}, changed ${new Date(f.mtime).toISOString().slice(0, 16).replace("T", " ")} UTC]\n${projectFolder.numbered(projectFolder.readFile(r.projectDir, f.rel).text)}`; } catch (error) { return ""; } }).filter(Boolean);
         out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe files Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
       } catch (error) { out.push(`The linked folder ${r.projectDir} could not be read right now (${String(error.message).slice(0, 100)}).`); }

@@ -27,7 +27,7 @@ So:
 To use tools, reply with ONLY tool lines and nothing else, one per line, exactly like this:
 CALL {"tool":"course_search","course":"Calculus 2","query":"partial fractions"}
 
-You may send several CALL lines at once; they run together. You then receive the results and continue. When you have what you need, write the final reply to Omri as normal text (Markdown is fine) with no CALL lines. You get at most 3 rounds of tools per message, so ask for everything you need together. If the context you were given already answers the message, do not call anything.
+You may send several CALL lines at once; they run together. You then receive the results and continue. When you have what you need, write the final reply to Omri as normal text (Markdown is fine) with no CALL lines. You get at most 3 rounds of tools per message, so ask for everything you need together. If the context you were given already answers the message, do not call anything. A course page, a calendar day or a project file that is already shown in the context must not be fetched again.
 
 Shortcut for the tools set_reminder, add_events, remember, forget, course_note, link_folder and improve_bot: when your message has ONLY those calls, write your short reply to Omri right under the CALL lines, worded as if they worked (for a card: say it waits for Omri's tap). Bot shows that reply only if every call really worked; if one failed, you get the results and write again. Never do this together with a lookup tool, because you have not seen its result yet.
 
