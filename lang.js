@@ -4,7 +4,7 @@
 // the one English word has more letters), so an English sentence with one Hebrew course name in it stays English.
 
 const mostlyHebrew = (text) => {
-  const s = String(text);
+  const s = String(text).replace(/https?:\/\/\S+/gi, " "); // a link is not English words: "תוריד את https://example.edu/a.pdf" is Hebrew
   const hebrew = (s.match(/[\u05d0-\u05ea]{2,}/g) || []).length;
   const latin = (s.match(/[A-Za-z]{2,}/g) || []).length;
   return hebrew > 0 && hebrew >= latin;
