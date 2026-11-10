@@ -8,6 +8,7 @@ Run all checks with `node --test` (about 1000 tests, about 45 s; they find the `
 | Folder / file | What it is |
 |---|---|
 | `server.js`, `start-web.cmd` | the web server and the double-click starter. Protected from Improve Bot. |
+| `brain.js`, `brain-brief.md` | THE BRAIN: one model with a toolbox reads every message of the thread and picks the abilities it needs (edit `brain-brief.md` to change how Bot behaves). `BOT_BRAIN=off` in `.env` goes back to the old path below |
 | `core.js`, `frontdesk.js`, `router.js`, `router-brief*.md`, `planner.js`, `providers.js`, `jobs.js` | how a message is routed to a model and answered |
 | `calendar*.js`, `reminders.js`, `morning.js` | Google Calendar, reminders, the morning brief |
 | `courses.js`, `course-routes.js`, `study*.js`, `tutor.js`, `catchup.js`, `standing.js`, `outline.js`, `position-record.js` | courses, notebooks and the study coach |
