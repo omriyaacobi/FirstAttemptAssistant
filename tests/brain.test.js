@@ -38,6 +38,7 @@ function setup(replies, extra = {}) {
     askOne: async (provider, model, prompt) => { seen.prompts.push(prompt); const r = replies[i++]; if (r instanceof Error) throw r; if (r === undefined) throw new Error("no more scripted replies"); return r; },
     chain: [{ provider: "agy", model: "fake-model" }],
     now: () => Date.parse("2026-11-10T12:00:00Z"),
+    folderRules: { system: [] },
     ...extra,
   });
   return { brain, seen };
@@ -185,4 +186,22 @@ test("the course of the last answer stays in focus for a follow-up", async () =>
   const { brain, seen } = setup(["ok"]);
   await run(brain, "and what about the destructor?", { history: [{ role: "user", text: "q" }, { role: "assistant", text: "a", courseId: "c1", at: Date.parse("2026-11-10T11:00:00Z") }] });
   assert.match(seen.prompts[0], /The course this talk is in: Systems Programming/);
+});
+
+test("a folder is linked only when its path is in Omri's own message, and then its code can be read", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-link-"));
+  fs.writeFileSync(path.join(dir, "MemoryBlock.cpp"), "int x = 1;\n");
+  const a = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}`, "I need the path."]);
+  await run(a.brain, "you can see my code now");
+  assert.match(a.seen.prompts[1], /must be written in Omri's own message/);
+  assert.strictEqual(a.seen.notes.length, 0);
+  const b = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, 'CALL {"tool":"project_read","course":"Systems Programming","file":"MemoryBlock.cpp"}', "Line 1 sets x."]);
+  const r = await run(b.brain, `my systems programming assignment folder is ${dir}`);
+  assert.strictEqual(r.answer, "Linked.");
+  assert.strictEqual(b.seen.notes[0].projectDir, fs.realpathSync(dir));
+  await run(b.brain, "what is in MemoryBlock.cpp in Systems Programming?");
+  assert.match(b.seen.prompts[1], /Omri's own project folder for Systems Programming/); // the file list rides along once linked
+  assert.match(b.seen.prompts[1], /1: int x = 1;/); // and the file changed last, with line numbers
+  assert.match(b.seen.prompts[2], /MemoryBlock\.cpp \(line numbers added by Bot\)/);
 });
