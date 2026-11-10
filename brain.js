@@ -34,6 +34,7 @@ const { pickAssignment, fitAssignment, notesFor } = require("./study-chat");
 const { fixMath } = require("./tutor");
 const { prioritize } = require("./quota");
 const linkfetch = require("./linkfetch");
+const projectFolder = require("./project-folder");
 
 const BRIEF_FILE = path.join(__dirname, "brain-brief.md");
 const CHAIN = [MODELS.argonLow, MODELS.flashMedium, MODELS.claudeSonnet]; // Gemini first (Omri's Gemini quota is large); Claude only if both fail
@@ -42,7 +43,7 @@ const MAX_CALLS_PER_ROUND = 6;
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder"]);
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -104,6 +105,7 @@ function createBrain({
   askOne = askWarm,
   lowPools = () => [],
   chain = CHAIN,
+  folderRules = {}, // extra options for project-folder.js checkFolder (tests only)
   now = () => Date.now(),
 }) {
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
@@ -123,6 +125,7 @@ function createBrain({
       const r = record(c);
       const lines = [`- ${c.name}: ${files.length} file(s)` + (asg.length ? `; assignment files: ${asg.slice(0, 4).join(", ")}` : "") + (recent.length ? `; newest other files: ${recent.join(", ")}` : "")];
       if (busy.length) lines.push(`  still being read (not searchable yet): ${busy.slice(0, 3).join(", ")}`);
+      if (r && r.projectDir) lines.push(`  linked folder with Omri's own code (project_files, project_read): ${r.projectDir}`);
       if (r) {
         const said = r.position && r.position.said ? String(r.position.said) : "";
         const notes = Array.isArray(r.brainNotes) ? r.brainNotes.map((n) => n.text) : [];
@@ -172,6 +175,16 @@ function createBrain({
     const rest = asg && asg.fileId ? pages.filter((p) => p.fileId !== asg.fileId) : pages;
     let picked = [];
     try { picked = notesFor({ pages: rest, message: String(task).slice(0, 600), cap: LIMITS.notes }); } catch (error) { picked = []; }
+    // Omri's own code: the file list of the linked folder, and the files changed last (what Omri is working on right now).
+    if (r && r.projectDir) {
+      try {
+        const { files, more } = projectFolder.listFiles(r.projectDir);
+        const tree = files.slice(0, 150).map((f) => `${f.rel} (${f.bytes} bytes)`).join("\n") + (more || files.length > 150 ? "\n[... more files]" : "");
+        const newest = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000).slice(0, 2);
+        const bodies = newest.map((f) => { try { return `[${f.rel}, changed ${new Date(f.mtime).toISOString().slice(0, 16).replace("T", " ")} UTC]\n${projectFolder.numbered(projectFolder.readFile(r.projectDir, f.rel).text)}`; } catch (error) { return ""; } }).filter(Boolean);
+        out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe files Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
+      } catch (error) { out.push(`The linked folder ${r.projectDir} could not be read right now (${String(error.message).slice(0, 100)}).`); }
+    }
     if (picked.length) out.push(`Pages of ${course.name}'s material that best match the message (they may not be what is needed; use course_search for more):\n` + block("course-material", picked.map((p) => `[${p.fileName}, page ${p.page}]\n${p.text}`).join("\n\n")));
     return out.join("\n\n");
   }
@@ -300,6 +313,36 @@ function createBrain({
         const r = await courseRoutes.addLink(c.id, u, lang);
         ctx.course = ctx.course || c;
         return (r.ok ? "DOWNLOADED and filed. " : "NOT downloaded. ") + r.text;
+      },
+      // The folder with Omri's own code. It is linked only when the path is written in Omri's OWN message (a model or a page cannot pick one).
+      link_folder: async ({ course, path: folder }) => {
+        afterWeb("link folders");
+        const c = need(course);
+        const ref = refOf(c);
+        if (!ref) return "The study tracker is off, so the folder was not linked.";
+        const norm = (s) => String(s).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        if (!folder || !norm(task).includes(norm(folder))) throw new Error("the folder path must be written in Omri's own message. Ask Omri to send the full path of the folder.");
+        const real = projectFolder.checkFolder(folder, { forbidden: [__dirname], ...folderRules });
+        const rec = coach.tracker.course(ref);
+        coach.tracker.save({ ...rec, projectDir: real });
+        ctx.course = ctx.course || c;
+        return `Linked ${real} to ${c.name} (read-only): ${projectFolder.listFiles(real).files.length} readable file(s).`;
+      },
+      project_files: async ({ course }) => {
+        const c = need(course);
+        const r = record(c);
+        if (!r || !r.projectDir) return `No folder is linked to ${c.name}. Omri can link one by sending its full path (for example "my assignment folder is C:\\...").`;
+        const { files, more } = projectFolder.listFiles(r.projectDir);
+        ctx.course = ctx.course || c;
+        return files.length ? files.map((f) => `${f.rel} (${f.bytes} bytes, changed ${new Date(f.mtime).toISOString().slice(0, 16).replace("T", " ")} UTC)`).join("\n") + (more ? "\n[... more files]" : "") : "The linked folder has no readable text files.";
+      },
+      project_read: async ({ course, file }) => {
+        const c = need(course);
+        const r = record(c);
+        if (!r || !r.projectDir) return `No folder is linked to ${c.name}. Omri can link one by sending its full path.`;
+        const f = projectFolder.readFile(r.projectDir, file);
+        ctx.course = ctx.course || c;
+        return `${f.rel} (line numbers added by Bot):\n${clip(projectFolder.numbered(f.text), LIMITS.read)}`;
       },
       improve_bot: async ({ request }) => {
         ctx.extras.improve = { request: String(request || task).slice(0, 2000) };
