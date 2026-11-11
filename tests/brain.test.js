@@ -37,6 +37,7 @@ function setup(replies, extra = {}) {
     fallback: async () => { seen.fallbacks++; return { mode: "single", answer: "old path" }; },
     askOne: async (provider, model, prompt) => { seen.prompts.push(prompt); const r = replies[i++]; if (r instanceof Error) throw r; if (r === undefined) throw new Error("no more scripted replies"); return r; },
     chain: [{ provider: "agy", model: "fake-model" }],
+    poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {}, // no real quota lookups in tests
     now: () => Date.parse("2026-11-10T12:00:00Z"),
     folderRules: { system: [] },
     ...extra,
