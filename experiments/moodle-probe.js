@@ -14,7 +14,7 @@ async function look() {
   const r = await httpsSend({ method: "GET", url, headers: { "User-Agent": USER_AGENT, Accept: "*/*" } });
   console.log("GET /moodle/login/index.php ->", r.status, r.headers.location ? `redirect to ${new URL(r.headers.location, url).hostname}` : "");
   const text = r.bytes.toString("utf8");
-  if (r.status === 403 && /edgesuite|Access Denied/i.test(text)) console.log("Blocked by the site's edge (Akamai "Access Denied"): Moodle itself was not reached.");
+  if (r.status === 403 && /edgesuite|Access Denied/i.test(text)) console.log("Blocked by the site's edge (Akamai 'Access Denied'): Moodle itself was not reached.");
   if (r.status === 200) console.log("Login page:", JSON.stringify(describeLoginPage(text, url)));
 }
 
