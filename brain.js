@@ -149,10 +149,13 @@ function createBrain({
     // live: "חדו", "תכנות מערכות"). Two courses matching ("תכנות מערכות עתירות ביצועים" fits two) is not a clear name: nothing is guessed.
     let patterns = [];
     try { patterns = coach ? coach.tracker.timetable().courses || [] : []; } catch (error) { patterns = []; }
-    const named = list.filter((c) => {
+    const hits = list.filter((c) => {
       if (low.includes(String(c.name).toLowerCase())) return true;
       try { const ref = refOf(c); const p = ref && patterns.find((x) => x.key === ref.key); return !!p && new RegExp(p.match, "i").test(task); } catch (error) { return false; }
     });
+    // "Systems Programming" is inside "High-Performance Systems Programming S1": when the longer name is in the message, that is the course.
+    const inner = (a, b) => a !== b && String(b.name).toLowerCase().includes(String(a.name).toLowerCase());
+    const named = hits.filter((a) => !hits.some((b) => inner(a, b)));
     if (named.length === 1) return named[0];
     if (named.length > 1) return null;
     for (let i = history.length - 1; i >= 0; i--) {
@@ -233,13 +236,13 @@ ${text}`; } catch (error) {
         const pages = courses.allPages(c.id);
         if (!pages.length) return `${c.name} has no readable material yet.`;
         const picked = pickPages(pages, String(query || task).slice(0, 400), { k: 5 });
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return picked.length ? picked.map((p) => `[${p.fileName}, page ${p.page}]\n${clip(p.text, LIMITS.page)}`).join("\n\n") : "Nothing in the course material matched that query.";
       },
       course_files: async ({ course }) => {
         const c = need(course);
         const files = filesOf(c);
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return files.length ? files.slice(0, 200).map((f) => `${f.name} (${f.status}${f.pages ? `, ${f.pages} page(s)` : ""})`).join("\n") : "This course has no files.";
       },
       course_read: async ({ course, file, from_page }) => {
@@ -254,7 +257,7 @@ ${text}`; } catch (error) {
         const mine = pages.filter((p) => p.fileName === hit).sort((a, b) => a.page - b.page);
         let text = "", last = from - 1;
         for (const p of mine.filter((p) => p.page >= from)) { if (text.length + p.text.length > LIMITS.read && text) break; text += `\n[page ${p.page}]\n${p.text}`; last = p.page; }
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         const more = last < mine[mine.length - 1].page ? ` There is more: call course_read again with from_page ${last + 1}.` : " That is the end of the file.";
         return `${hit}, pages ${from}-${last} of ${mine[mine.length - 1].page}.${more}\n${clip(text, LIMITS.read + 2000)}`;
       },
@@ -321,7 +324,7 @@ ${text}`; } catch (error) {
         if (text.length < 5) throw new Error("the note is empty");
         const rec = coach.tracker.course(ref);
         coach.tracker.save({ ...rec, brainNotes: [...(Array.isArray(rec.brainNotes) ? rec.brainNotes : []), { at: now(), text }].slice(-LIMITS.notesKept) });
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return `Noted for ${c.name}: "${text}"`;
       },
       save_link: async ({ url, course }) => {
@@ -329,7 +332,7 @@ ${text}`; } catch (error) {
         const u = allowedUrl(url);
         const c = need(course);
         const r = await courseRoutes.addLink(c.id, u, lang);
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return (r.ok ? "DOWNLOADED and filed. " : "NOT downloaded. ") + r.text;
       },
       // The folder with Omri's own code. It is linked only when the path is written in Omri's OWN message (a model or a page cannot pick one).
@@ -343,7 +346,7 @@ ${text}`; } catch (error) {
         const real = projectFolder.checkFolder(folder, { forbidden: [__dirname], ...folderRules });
         const rec = coach.tracker.course(ref);
         coach.tracker.save({ ...rec, projectDir: real });
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return `Linked ${real} to ${c.name} (read-only): ${projectFolder.listFiles(real).files.length} readable file(s).`;
       },
       project_files: async ({ course }) => {
@@ -351,7 +354,7 @@ ${text}`; } catch (error) {
         const r = record(c);
         if (!r || !r.projectDir) return `No folder is linked to ${c.name}. Omri can link one by sending its full path (for example "my assignment folder is C:\\...").`;
         const { files, more } = projectFolder.listFiles(r.projectDir);
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return files.length ? files.map((f) => `${f.rel} (${f.bytes} bytes, changed ${new Date(f.mtime).toISOString().slice(0, 16).replace("T", " ")} UTC)`).join("\n") + (more ? "\n[... more files]" : "") : "The linked folder has no readable text files.";
       },
       project_read: async ({ course, file }) => {
@@ -359,7 +362,7 @@ ${text}`; } catch (error) {
         const r = record(c);
         if (!r || !r.projectDir) return `No folder is linked to ${c.name}. Omri can link one by sending its full path.`;
         const f = projectFolder.readFile(r.projectDir, file);
-        ctx.course = ctx.course || c;
+        ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return `${f.rel} (line numbers added by Bot):\n${clip(projectFolder.numbered(f.text), LIMITS.read)}`;
       },
       moodle_courses: async () => moodleRead(() => moodle.listText(patternFor)),

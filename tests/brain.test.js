@@ -188,6 +188,23 @@ test("the course of the last answer stays in focus for a follow-up", async () =>
   assert.match(seen.prompts[0], /The course this talk is in: Systems Programming/);
 });
 
+test("a course named in the message beats the course of the last answer, and the longer name wins over the name inside it", async () => {
+  const longer = [{ id: "c1", name: "Systems Programming" }, { id: "c2", name: "Calculus 2" }, { id: "c3", name: "High-Performance Systems Programming S1" }];
+  const history = [{ role: "assistant", text: "a", courseId: "c2", at: Date.parse("2026-11-10T11:00:00Z") }];
+  const a = setup(["ok"]);
+  await run(a.brain, "now about systems programming pointers", { history });
+  assert.match(a.seen.prompts[0], /The course this talk is in: Systems Programming/);
+  const b = setup(["ok"]);
+  const r = await run(b.brain, "high-performance systems programming s1 lecture 3", { history, courses: longer });
+  assert.strictEqual(r.courseName, "High-Performance Systems Programming S1");
+});
+
+test("the course a tool really worked on becomes the course of the answer, not the old focus", async () => {
+  const { brain } = setup(['CALL {"tool":"course_files","course":"Systems Programming"}', "Here they are."]);
+  const r = await run(brain, "what files do I have there?", { history: [{ role: "assistant", text: "a", courseId: "c2", at: Date.parse("2026-11-10T11:00:00Z") }] });
+  assert.strictEqual(r.courseId, "c1");
+});
+
 test("a folder is linked only when its path is in Omri's own message, and then its code can be read", async () => {
   const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-link-"));
