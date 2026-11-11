@@ -554,3 +554,12 @@ Background mode (2026-11-11, local only): the night stop of 11 Nov was NOT a cra
 - Tests: tests/moodle.test.js (21: allowlists, login/SSO/CAPTCHA/expiry with a fake Moodle, the bridge, the extension run in Node against a fake Moodle, matching, the 10-file card, the brain with fake models).
 - TO USE IT: Chrome -> chrome://extensions -> Developer mode on -> Load unpacked -> the folder moodle-extension (in Bot's folder). Keep Chrome open and logged in to Moodle. When Moodle logs me out (about an hour idle), Bot says so; I log in again.
 - Not built: background sync, lecture videos (they are on a BGU Kaltura page; captions not checked yet), assignments' full text.
+
+## Quota stretch: the brain when Argon runs low (2026-11-11, branch claude/quota-stretch-dd33af, NOT merged)
+- Why: Argon's weekly pool was at 32% and falling (38 messages in one day, often 2-3 Argon calls each). Omri asked for a way to keep good answers without Flash.
+- Found: Gemini 3.1 Pro is NOT in agy (`agy models` does not list it, `--model gemini-3.1-pro` is refused); it lives only in the Gemini app, and on the API it looks paid-only. agy has a SEPARATE "Claude and GPT models" pool (Claude Sonnet/Opus 5.5, GPT-OSS 120B), not the Claude Pro plan.
+- Measured on the real brain, 7 real-shaped messages per model (experiments/2026-11-11-quota-stretch.md): agy Claude Sonnet low was as correct as Argon, 2-3x faster, best at hints without the solution; about 1% of that pool's week and 2% of its five hours per message (so about 100 messages a week). Opus costs twice as much; GPT-OSS was wrong (weekdays, gave a solution).
+- Built: brain chain Argon low -> agy Sonnet low -> Claude Code Sonnet (Flash removed). Argon reserve 25% for the brain (`RESERVES`, `orderChain` in brain.js, `lowWithReserve` in quota.js); the normal 15% rule still applies to everything; Claude Code Sonnet is always kept last unless everything else is under 15%.
+- Two bugs fixed on the way: the brain never awaited the pool levels (it never saw a low pool), and a non-Argon agy model got the prompt on the command line (`spawn ENAMETOOLONG`); agy prompts in the brain now always go through stdin. The brain also refreshes the pools after each message and reports limit errors to quota.js.
+- Tests: tests/brain-quota.test.js (7); full suite 1141 pass.
+- Not done: other chains still use Flash (study-chat, thread-summary, study-positions, ingest READ_CHAIN); not checked live on Bot (the brain answers through the same code the tests cover).

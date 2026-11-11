@@ -32,12 +32,20 @@ const { listFound } = require("./recall");
 const { pickPages, defang } = require("./study");
 const { pickAssignment, fitAssignment, notesFor } = require("./study-chat");
 const { fixMath } = require("./tutor");
-const { prioritize } = require("./quota");
+const { prioritize, lowWithReserve, describeLow, getPoolLevels, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
 
 const BRIEF_FILE = path.join(__dirname, "brain-brief.md");
-const CHAIN = [MODELS.argonLow, MODELS.flashMedium, MODELS.claudeSonnet]; // Gemini first (Omri's Gemini quota is large); Claude only if both fail
+// Argon first; then Claude Sonnet low INSIDE agy (its own "Claude and GPT models" pool, not the Claude Pro plan); Claude Code
+// Sonnet (the Pro plan) last. Flash is NOT here: it made real math errors, so it never writes the brain's answers.
+// Measured on the real brain (experiments/2026-11-11-quota-stretch.md): agy Sonnet low was as correct as Argon and 2-3x faster;
+// GPT-OSS was rejected (wrong weekdays, gave a solution away).
+const CHAIN = [MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
+// A pool listed here counts as low for the brain EARLIER than the normal 15%. Under 25% Argon steps aside for everyday chat, so
+// its last quarter stays for tutoring and reading big PDFs (they keep using it until 15%). The switch goes by the pool's level, not
+// by the message, so the same model answers for a stretch.
+const RESERVES = { [MODELS.argonLow.pool]: 25 };
 const MAX_TOOL_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 6;
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
@@ -57,7 +65,22 @@ const pool = createWarmAgy({ keepReady: false });
 const warmUp = () => { try { pool.warmUp(MODELS.argonLow.model, null); } catch (error) { /* only makes the first message slower */ } };
 function askWarm(provider, model, question, onText) {
   if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
+  // agy always gets the prompt through stdin (the streaming call). Without onText, ask() would put it on the command line, and the
+  // brain's prompt is far longer than Windows allows ("spawn ENAMETOOLONG"), so every agy model but the warm Argon failed at once.
+  if (provider === "agy") return ask(provider, model, question, onText || (() => {}));
   return ask(provider, model, question, onText);
+}
+
+// The order the models are asked in, from the pool levels. Two steps:
+//   1. The reserve (25% for Argon) only reorders the models BEFORE the last one: a model in its reserve steps behind the others,
+//      but never behind the last resort (Claude Code Sonnet, Omri's Claude Pro plan, which his own coding also needs).
+//   2. The normal 15% rule (prioritize in quota.js) then runs on the whole chain, exactly as everywhere else in Bot.
+// Pure, so tests can check every case.
+function orderChain(chain, levels, reserves = RESERVES) {
+  if (chain.length < 2) return chain.slice();
+  const lastResort = chain[chain.length - 1];
+  const first = [...prioritize(chain.slice(0, -1), lowWithReserve(levels, reserves)).chain, lastResort];
+  return prioritize(first, lowWithReserve(levels, {})).chain;
 }
 
 // ---- small helpers ----
@@ -107,7 +130,10 @@ function createBrain({
   fetchPage = linkfetch.fetchPage,
   fallback, // the old path (core.js), for photos and when every model fails
   askOne = askWarm,
-  lowPools = () => [],
+  poolLevels = getPoolLevels, // every quota pool and the room left in it (quota.js); read from memory, never waits for agy
+  refreshPools = refreshQuota, // after each message: look the pools up again in the background, for the NEXT message
+  notePoolFailure = noteFailure, // a "you've hit your limit" error marks that pool low until its reset
+  reserves = RESERVES,
   chain = CHAIN,
   folderRules = {}, // extra options for project-folder.js checkFolder (tests only)
   now = () => Date.now(),
@@ -456,8 +482,10 @@ ${r.cardText}`; }
     ].filter(Boolean).join("\n\n");
     const tail = `## Omri's new message\n<message>\n${noCtl(task)}\n</message>`;
 
-    const low = (() => { try { const l = lowPools(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
-    const order = prioritize(chain, low).chain;
+    // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
+    const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
+    const order = orderChain(chain, levels, reserves);
+    if (order[0] !== chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
     const attempts = [];
     let used = null;
@@ -478,7 +506,7 @@ ${r.cardText}`; }
       } : undefined;
       let r;
       try {
-        r = await askChain(order, prompt, { askOne, onTry: (m) => log(`[brain] asking ${m.model}`), onFail: (m) => log(`[brain] ${m.model} failed after ${m.seconds} s: ${m.message}`), ...(stream ? { onText: stream } : {}) });
+        r = await askChain(order, prompt, { askOne, onTry: (m) => log(`[brain] asking ${m.model}`), onFail: (m) => { log(`[brain] ${m.model} failed after ${m.seconds} s: ${m.message}`); try { notePoolFailure(m, m.message); } catch (error) { /* quota never breaks an answer */ } }, ...(stream ? { onText: stream } : {}) });
       } catch (error) {
         log(`[brain] no model answered: ${String(error.message).slice(0, 200)}. The old path takes this message.`);
         if (Object.keys(ctx.extras).length || ctx.tools.length) throw error; // something was already done: do not run the message twice
@@ -529,7 +557,12 @@ ${r.cardText}`; }
     throw new Error("the model did not finish"); // not reachable: the last round always answers
   }
 
-  return { handle, warmUp };
+  // After every message (answered or not), the pools are looked up again in the background for the next one. Never awaited.
+  async function handleAndRefresh(task, options) {
+    try { return await handle(task, options); } finally { try { Promise.resolve(refreshPools()).catch(() => {}); } catch (error) { /* never breaks an answer */ } }
+  }
+
+  return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, CHAIN, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, CHAIN, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

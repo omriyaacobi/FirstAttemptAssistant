@@ -370,6 +370,7 @@ function brainWith(replies, bridge = fakeBridge()) {
     fallback: async () => ({ answer: "old path" }),
     askOne: async (p, m, prompt) => { prompts.push(prompt); const r = replies[i++]; if (r === undefined) throw new Error("no more replies"); return r; },
     chain: [{ provider: "agy", model: "fake" }],
+    poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {}, // no real quota lookups in tests
     now: () => Date.parse("2026-11-11T12:00:00Z"),
   });
   return { brain, prompts, reminders, filed };
