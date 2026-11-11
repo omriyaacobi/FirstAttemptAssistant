@@ -29,6 +29,7 @@ const MODELS = {
   claudeOpus: { provider: "claude", model: "opus", pool: [CLAUDE_PLAN, CLAUDE_OPUS_WEEK] },
   claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the backup front desk (frontdesk.js)
   claudeInAgy: { provider: "agy", model: "claude-sonnet-5-5-medium", pool: "Claude and GPT models" }, // smallest quota: last resort only
+  sonnetInAgy: { provider: "agy", model: "claude-sonnet-5-5-low", pool: CLAUDE_AGY }, // the brain's 2nd model: agy's own Claude pool, NOT the Claude Pro plan (experiments/2026-11-11-quota-stretch.md)
   webFlash: { provider: "web", model: "gemini-3.8-flash-medium", pool: GEMINI },
   webFlashHigh: { provider: "web", model: "gemini-3.8-flash-high", pool: GEMINI },
   webClaude: { provider: "web", model: "claude-sonnet-5-5-medium", pool: CLAUDE_AGY },

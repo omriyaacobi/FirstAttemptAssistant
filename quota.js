@@ -199,6 +199,16 @@ function prioritize(chain, low) {
   return { chain: reordered, moved: changed ? poor : [], allLow: false };
 }
 
+// Pure. Like lowPools, but some pools count as low EARLIER: reserves maps a pool name to its own threshold.
+// levels: [{ pool, remaining }] for every known pool (levels() in createQuota). Example: { "Gemini 4 Argon": 25 } lets the brain
+// step away from Argon at 25%, so the last quarter stays for the jobs Argon is kept for (tutoring, reading big PDFs), while every
+// other chain still uses the normal 15%. A reserve can only make a pool low sooner, never later.
+function lowWithReserve(levels, reserves = {}, threshold = LOW_THRESHOLD) {
+  return (levels || [])
+    .filter((p) => p && Number.isFinite(p.remaining) && p.remaining < Math.max(threshold, Number(reserves[p.pool]) || 0))
+    .map(({ pool, remaining }) => ({ pool, remaining }));
+}
+
 // "Gemini 4 Argon 4% left, Claude plan 0% left"
 const describeLow = (low) => low.map((p) => `${p.pool} ${p.remaining}% left`).join(", ");
 
@@ -257,6 +267,10 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
   async function get() {
     return lowPools(allRows(), threshold, now());
   }
+  // Every known pool with the room left in its lowest window, low or not (for lowWithReserve).
+  async function levels() {
+    return lowPools(allRows(), Infinity, now());
+  }
 
   // A model's call failed. If it was a limit error, mark that model's pool low until the reset time in the message.
   function noteFailure(model, message) {
@@ -300,7 +314,7 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
     }
     return Promise.all([pendingAgy, pendingClaude]).then(() => {});
   }
-  return { get, refresh, noteFailure, noteClaudeInfo };
+  return { get, levels, refresh, noteFailure, noteClaudeInfo };
 }
 
 // The one shared instance Bot uses.
@@ -308,6 +322,6 @@ const quota = createQuota();
 onClaudeRateLimit(quota.noteClaudeInfo);
 
 module.exports = {
-  parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, prioritize, describeLow, createQuota,
-  getLowPools: quota.get, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
+  parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, lowWithReserve, prioritize, describeLow, createQuota,
+  getLowPools: quota.get, getPoolLevels: quota.levels, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
 };
