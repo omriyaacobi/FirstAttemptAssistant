@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Bot Moodle reader",
+  "version": "1.0",
+  "description": "Lets Bot (on this PC) READ Omri's BGU Moodle through this browser's own login. Read-only.",
+  "permissions": ["alarms"],
+  "host_permissions": [
+    "https://moodle.bgu.ac.il/*",
+    "http://localhost:3000/*",
+    "http://localhost:3100/*"
+  ],
+  "background": { "service_worker": "background.js" }
+}
