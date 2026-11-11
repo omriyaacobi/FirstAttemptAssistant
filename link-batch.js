@@ -35,13 +35,20 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
   const sweep = () => { for (const [id, p] of pending) if (now() - p.at > PENDING_MS) pending.delete(id); };
 
   // The text of Bot's own message: the list to confirm. Returns { text, card }.
-  function propose({ courseId, courseName, urls, mode, lang = "en", source = "", questionId = null, notHttps = 0, more = 0 }) {
+  // mode "moodle" (moodle-tools.js): `urls` are file labels and `runOne(label)` downloads one; the same card, Confirm and summary.
+  function propose({ courseId, courseName, urls, mode, lang = "en", source = "", questionId = null, notHttps = 0, more = 0, runOne = null }) {
     sweep();
     if (!urls.length) throw Object.assign(new Error("no links"), { status: 400 });
+    if (mode === "moodle" && typeof runOne !== "function") throw new Error("a Moodle list needs its downloader");
     const id = crypto.randomBytes(8).toString("hex");
-    pending.set(id, { courseId, courseName, urls: [...urls], mode, lang, source, questionId, at: now() });
+    pending.set(id, { courseId, courseName, urls: [...urls], mode, lang, source, questionId, runOne: mode === "moodle" ? runOne : null, at: now() });
     while (pending.size > MAX_PENDING) pending.delete(pending.keys().next().value);
-    const shown = urls.slice(0, 15).map((u) => `- ${iso(lang, shortUrl(u))}`).join("\n");
+    const shown = urls.slice(0, 15).map((u) => `- ${iso(lang, mode === "moodle" ? oneLine(u, 120) : shortUrl(u))}`).join("\n");
+    if (mode === "moodle") {
+      const more15 = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
+      const text = words(lang, `${urls.length} files${source ? ` from ${source}` : ""}:\n${shown}${more15}\nShall I download them into ${courseName}? Nothing is downloaded until you tap Confirm.`, `${urls.length} קבצים${source ? ` מתוך ${source}` : ""}:\n${shown}${more15}\nלהוריד אותם ${bet(courseName)}? שום דבר לא יורד לפני שתלחץ על אישור.`);
+      return { text, card: { id, mode, count: urls.length, courseName, expiresAt: now() + PENDING_MS } };
+    }
     const rest = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
     const verb = mode === "save" ? words(lang, `download these ${urls.length} links into ${courseName}`, `להוריד ${urls.length} קישורים ${bet(courseName)}`) : words(lang, `look at these ${urls.length} links (nothing is saved)`, `להסתכל על ${urls.length} הקישורים (שום דבר לא נשמר)`);
     const extra = [];
@@ -52,6 +59,7 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
   }
 
   async function one(p, url) {
+    if (p.mode === "moodle") return p.runOne(url);
     if (p.mode === "save") {
       const r = await courseRoutes.addLink(p.courseId, url, p.lang);
       if (r.ok && r.filedCount > 0) return { ok: true, filed: r.filedCount };
@@ -71,7 +79,9 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
     const good = results.filter((r) => r.res.ok);
     const bad = results.filter((r) => !r.res.ok);
     const out = [];
-    if (mode === "save") {
+    if (mode === "moodle") {
+      out.push(words(lang, `Done: ${good.length} of ${results.length} Moodle file${results.length === 1 ? "" : "s"} saved in ${p.courseName}. Bot is reading them now.`, `סיימתי: ${good.length} מתוך ${results.length} קבצים מהמודל נשמרו ${bet(p.courseName)}. Bot קורא אותם עכשיו.`));
+    } else if (mode === "save") {
       const files = good.reduce((n, r) => n + (r.res.filed || 0), 0);
       out.push(words(lang, `Done: ${good.length} of ${results.length} link${results.length === 1 ? "" : "s"} saved in ${p.courseName} (${files} file${files === 1 ? "" : "s"}). Bot is reading them now.`, `סיימתי: ${good.length} מתוך ${results.length} קישורים נשמרו ${bet(p.courseName)} (${files} קבצים). Bot קורא אותם עכשיו.`));
     } else {
@@ -82,7 +92,7 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
     }
     if (bad.length) {
       out.push(words(lang, `Failed (${bad.length}):`, `נכשלו (${bad.length}):`));
-      out.push(...bad.slice(0, MAX_FAIL_LINES).map((r) => `- ${iso(lang, shortUrl(r.url))}: ${r.res.why}`));
+      out.push(...bad.slice(0, MAX_FAIL_LINES).map((r) => `- ${iso(lang, mode === "moodle" ? oneLine(r.url, 120) : shortUrl(r.url))}: ${r.res.why}`));
       if (bad.length > MAX_FAIL_LINES) out.push(words(lang, `...and ${bad.length - MAX_FAIL_LINES} more.`, `...ועוד ${bad.length - MAX_FAIL_LINES}.`));
     }
     return out.join("\n");

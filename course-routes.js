@@ -298,7 +298,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     const c = courses.get(courseId);
     return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
   };
-  return { handle, answer, addUpload, addLink, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  return { handle, answer, addUpload, addLink, fileFetched, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };
