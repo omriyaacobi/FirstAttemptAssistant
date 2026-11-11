@@ -126,7 +126,7 @@ const REPLY_FORMAT = "\n\nReply with ONLY one JSON object, nothing before or aft
 const REPLY_FORMAT_COURSE = "\n\nReply with ONLY one JSON object, nothing before or after it, no markdown. It must have exactly these keys, all with string values (use \"\" for the ones the action does not need): " + SCHEMA_COURSE.required.join(", ") + ".";
 
 // One pre-warmed agy waits for the next message (warmagy.js).
-const warm = createWarmAgy({ keepReady: true });
+const warm = createWarmAgy({ keepReady: false }); // no background process while idle (see brain.js)
 // Called when Bot starts, so the first message is warm too.
 const warmUpDesk = () => warm.warmUp(FRONT_DESK_MODEL.model, null);
 

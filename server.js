@@ -712,6 +712,8 @@ module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNI
 
 // Start listening only when run directly ("node server.js"), not when a test imports this file.
 if (require.main === module) {
+  // Everything Bot prints also goes to data/bot.log, and a crash is written there with its reason (botlog.js).
+  require("./botlog").startLog(path.join(__dirname, "data", "bot.log"));
   const push = createPush({ dir: path.join(__dirname, "data"), log: console.log });
   const auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) });
   const store = createStore(path.join(__dirname, "data", "conversations")); // the course chats live here too

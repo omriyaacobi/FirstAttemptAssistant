@@ -50,7 +50,10 @@ const CALENDAR_WAIT_MS = 2500;
 const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, notes: 10000, link: 14000, note: 300, notesKept: 6 };
 
 // One Argon process waits ready, so the answer does not pay agy's 2-3 s start-up (warmagy.js; a waiting process uses no quota).
-const pool = createWarmAgy({ keepReady: true });
+// keepReady is OFF on purpose: a spare is started after each answer and thrown away after 8 idle minutes, so an idle Bot starts
+// nothing in the background (a fresh agy every 8 minutes, all day, was a likely cause of short freezes in a game). The first message
+// after a pause just pays the 2-3 s start-up.
+const pool = createWarmAgy({ keepReady: false });
 const warmUp = () => { try { pool.warmUp(MODELS.argonLow.model, null); } catch (error) { /* only makes the first message slower */ } };
 function askWarm(provider, model, question, onText) {
   if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });

@@ -43,7 +43,7 @@ const chainText = (chain) => chain.map(label).join("  ->  ");
 const SPECULATE_ANSWER = true; // the one-line switch for the speculative answer (see runTask)
 const SPECULATIVE_MODEL = MODELS.flashMedium; // the first model of the "gemini-flash" destination
 const WARM_ANSWER_MODELS = new Set([MODELS.flashMedium.model]);
-const answerPool = createWarmAgy({ keepReady: true });
+const answerPool = createWarmAgy({ keepReady: false }); // no background process while idle (see brain.js)
 const prewarmAnswer = () => { for (const model of WARM_ANSWER_MODELS) answerPool.warmUp(model, null); };
 // The study chat (study-chat.js) answers with Argon at low effort. Its process is started ONLY when a message looks like study talk (see
 // runTask), because a spare costs some memory and a message of another kind would never use it. It expires by itself after 8 minutes.
