@@ -192,6 +192,7 @@ function createServer({
   push = createPush({ dir: path.join(__dirname, "data") }),
   coach = null, // the study coach (study-coach.js), only with the thread
   summaries = null, // the daily summaries (thread-summary.js), only with the thread
+  moodleBridge = null, // the waiting list the Bot Moodle extension (moodle-extension/) takes read jobs from (moodle-bridge.js)
   makeBrain = null, // (thread) builds the brain (brain.js) around the old path, which stays as its fallback; null = the old path only
   linkBatches = null, // many links from a file of addresses, shown first and fetched after one Confirm (link-batch.js), only with the thread
   threadFiles = null, // files that arrive with a message (thread-files.js), only with the thread
@@ -259,6 +260,14 @@ function createServer({
     // Is this the phone (or any other device) coming in through Tailscale?
     const remote = phoneHost || PROXY_HEADERS.some((h) => req.headers[h] !== undefined);
     if (remote && !auth.enabled) return sendJson(res, 403, { error: "phone access is off (see auth.js)" });
+
+    // The Bot Moodle extension in Chrome on THIS PC (moodle-bridge.js). Only it, never the phone, never a web page.
+    if (String(req.url).startsWith("/api/moodle/")) {
+      if (!moodleBridge) return sendJson(res, 404, { error: "Moodle access is off" });
+      if (remote || !require("./moodle-bridge").fromExtension(req)) return sendJson(res, 403, { error: "only the Bot Moodle extension on this PC" });
+      await moodleBridge.handle(req, res, new URL(req.url, `http://${req.headers.host}`), { sendJson, readBody });
+      return;
+    }
 
     // CHECK 2 - browsers say which site a request came from. Refuse anything not from this page.
     // This blocks other websites you have open from sending tasks to this server.
@@ -751,12 +760,13 @@ if (require.main === module) {
   // THE BRAIN (brain.js): one model with a toolbox reads every thread message. BOT_BRAIN=off in .env goes back to the front desk menu.
   const brainOn = thread && !/^(off|0|false|no)$/i.test(String(process.env.BOT_BRAIN ?? (() => { try { return require("./auth").parseEnv(fs.readFileSync(path.join(__dirname, ".env"), "utf8")).BOT_BRAIN; } catch (error) { return ""; } })() ?? "").trim());
   let brainRef = null;
+  const moodleBridge = require("./moodle-bridge").createBridge(); // only fills when the Chrome extension is installed and Omri asks about Moodle
   const makeBrain = brainOn ? ({ fallback }) => (brainRef = require("./brain").createBrain({
-    courses: coursesStore, courseRoutes, coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
+    courses: coursesStore, courseRoutes, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }), lowPools: require("./quota").getLowPools, fallback,
   })) : null;
   if (brainOn) console.log("The brain is on: one model with a toolbox reads every message (brain.js). BOT_BRAIN=off in .env switches back.");
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches, makeBrain });
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches, makeBrain, moodleBridge });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
