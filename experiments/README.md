@@ -8,3 +8,4 @@ Finished one-off measurements. Nothing in Bot requires anything from this folder
 - `hello-claude.js`, `hello-gemini.js`: the first learning steps (Claude CLI and `agy` "hello"); moved here from the root on 2026-11-08, nothing used them.
 - `one-thread-results/`, `study-notebooks-files/`: raw data for the matching notes.
 - `2026-11-08-wait-for-file.md`, `wait-for-file-live.js`: a course question waits while that course's file is being read (fake models, slow fake reader).
+- `2026-11-12-always-up.md`: keeping Bot up (login task + watchdog), what was checked on the laptop and Tailscale, phone steps, and whether Bot can run with the laptop off.
