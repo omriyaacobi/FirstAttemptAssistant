@@ -97,7 +97,7 @@ function createMorning({ file, store, reminders, push, study = null, thread = nu
     const result = { mode: "single", rule: "morning brief", reason: "you turned on the morning brief", chain: [], used: { provider: "code", model: "no model" }, answer: text, seconds: 0 };
     let saved;
     if (thread) {
-      // The one conversation (BOT_THREAD=on): the brief is ONE message in the thread, not a new chat. recall.js skips it (rule "morning brief").
+      // The one conversation: the brief is ONE message in the thread, not a new chat. recall.js skips it (rule "morning brief").
       saved = { messageId: thread.append({ role: "assistant", text, result, topic: "general", at: now() }).id };
     } else {
       const chat = store.create(`Morning brief, ${today()}`);

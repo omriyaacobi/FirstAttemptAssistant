@@ -225,33 +225,6 @@ function askAgyStructured(question, model, schema, { signal, timeoutMs } = {}) {
   });
 }
 
-// The same idea through the Claude CLI: the reply must match a JSON schema. claude prints one JSON object
-// ("--output-format json"); the checked reply is in "structured_output". claude reports problems such as a used-up
-// plan or an expired login INSIDE that object (is_error), so those become errors here too and the caller can fall back.
-// The schema is a constant of ours (never user text), so putting it in the command line is safe once its quotes are escaped.
-// systemFile (optional): a file that REPLACES Claude Code's own long system prompt (the front desk's briefing goes
-// there, so the message only holds what changes). It is a path of ours, never user text.
-function askClaudeStructured(question, model, schema, { signal, timeoutMs, systemFile } = {}) {
-  const system = systemFile ? ` --system-prompt-file "${systemFile}"` : "";
-  const command = `${claudeCommand(model)} --output-format json --json-schema "${JSON.stringify(schema).replace(/"/g, '\\"')}"${system}`;
-  return new Promise((resolve, reject) => {
-    const child = exec(command, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
-      let envelope = null;
-      try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: handled below */ }
-      if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message) || "claude gave no output").trim().slice(0, 200)));
-      if (envelope.is_error) return reject(new Error(String(envelope.result || "claude reported an error").slice(0, 200)));
-      try {
-        resolve(envelope.structured_output ?? JSON.parse(envelope.result));
-      } catch (resultError) {
-        reject(new Error("claude did not return valid structured output"));
-      }
-    });
-    withTimeout(child, timeoutMs || timeoutFor(model), reject, model);
-    killOnAbort(child, signal, reject);
-    child.stdin.end(question);
-  });
-}
-
 // Deletes a private work folder. On Windows the delete can fail (EPERM/EBUSY) for a moment while agy or a child of it still has the
 // folder open. That must NEVER replace the real result: a throw inside a "finally" would turn a good answer into this error. So it
 // retries a few times, never throws, and says what it could not delete (removeStaleWorkDirs, below, tries again at the next start).
@@ -289,24 +262,8 @@ function removeStaleWorkDirs({ dir = os.tmpdir(), maxAgeMs = 60 * 60 * 1000, now
 // (experiments/2026-11-06-photo-calendar-timing.md): a good answer needs 12-35 s, Flash medium stuck for 135 s. So 90 s for Flash, 150 s for Argon;
 // after that the process tree is killed and askChain tries the next model.
 const imageTimeoutFor = (model) => Math.min(timeoutFor(model), /argon/.test(model) ? 150 * 1000 : 90 * 1000);
-async function askAgyWithImage(model, question, imagePath, { timeoutMs = imageTimeoutFor(model) } = {}) {
-  checkModelName(model);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
-  try {
-    fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
-    return await new Promise((resolve, reject) => {
-      const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 1e7 }, (error, stdout, stderr) => {
-        if (error) return reject(new Error(stderr || error.message));
-        resolve(stdout.trim());
-      });
-      withTimeout(child, timeoutMs, reject, model);
-    });
-  } finally {
-    cleanWorkDir(dir);
-  }
-}
 
-// Gemini reading one course file (PDF, photo). Same idea as askAgyWithImage: the file is copied into a brand-new
+// Gemini reading one course file (PDF, photo). Same idea as askAgyStreamWithImage: the file is copied into a brand-new
 // EMPTY folder under a FIXED name (never the uploaded name), agy runs there, the folder is deleted afterwards.
 // A long PDF takes minutes (120 pages: 266 s in my test), so this has its own generous timeout.
 // content (optional): the bytes to use instead of the file itself, for a piece cut out of it (pdfcut.js).
@@ -442,5 +399,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };

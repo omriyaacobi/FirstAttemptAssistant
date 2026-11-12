@@ -1,5 +1,5 @@
 // thread-context.js
-// Builds the SMALL memory a message carries in the one-conversation thread (BOT_THREAD=on).
+// Builds the SMALL memory a message carries in the one-conversation thread.
 //
 // Why small? The thread never ends, but a model that gets the whole history answers slower and, past about 200,000 characters,
 // answers NOTHING (measured, experiments/2026-11-06-one-conversation-in-bot.md section 5). So code decides what goes in, with a
@@ -8,17 +8,17 @@
 //   - the NEWEST calendar card's note, always (even when it is older than the recent turns; see pinnedCard below),
 //   - one line per message that is still being worked on ("Bot is still working on: ..."),
 // and nothing else. Failed answers are never memory. The result is a list of { role, text, label?, note?, noteShort?, cardId? },
-// the same shape jobs.js has always given core.js, so core.js's historyBlock (which has its own cap) can print it.
+// the same shape jobs.js has always given the answering code, so history.js's historyBlock (which has its own cap) can print it.
 
 const RECENT_CHARS = 9000; // the recent turns (the course path already uses 6,000)
-const MAX_MESSAGE_CHARS = 2000; // one long message is cut to this here (core.js cuts again at 3,000)
+const MAX_MESSAGE_CHARS = 2000; // one long message is cut to this here (history.js cuts again at 3,000)
 const SCAN_MESSAGES = 80; // how far back to look for the recent turns (a page of the store, never the whole thread)
 const PENDING_CHARS = 60; // "still working on: <first 60 characters>"
 const MAX_PENDING = 5;
 const CARD_SCAN_DAYS = 14; // how far back the newest calendar card is looked for
 
 // The most that buildHistory can ever return, in characters of text and notes (used by the tests). Roughly: the recent turns,
-// one pinned card with its full note (core.js refuses a note that does not fit its own cap), and the pending lines.
+// one pinned card with its full note (history.js refuses a note that does not fit its own cap), and the pending lines.
 const NOTES_CHARS = 2400; // the last 3 daily notes (thread-summary.js), already capped there
 const MAX_CONTEXT_CHARS = RECENT_CHARS + 6000 + NOTES_CHARS + MAX_PENDING * (PENDING_CHARS + 80);
 

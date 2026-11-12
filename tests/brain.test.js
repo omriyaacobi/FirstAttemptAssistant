@@ -325,3 +325,16 @@ test("a folder is linked only when its path is in Omri's own message, and then i
   assert.match(b.seen.prompts[1], /1: int x = 1;/); // and the file changed last, with line numbers
   assert.match(b.seen.prompts[2], /MemoryBlock\.cpp \(line numbers added by Bot\)/);
 });
+
+test("save_links: the links of a course file become ONE list with a Confirm card; nothing is fetched by the brain", async () => {
+  const proposed = [];
+  const linkBatches = { propose: (a) => { proposed.push(a); return { text: "list", card: { id: "b1", mode: a.mode, count: a.urls.length, courseName: a.courseName } }; } };
+  const { brain, seen } = setup(['CALL {"tool":"save_links","course":"Systems Programming","file":"Assignment_1"}\nThe list is waiting for your Confirm.'], { linkBatches });
+  const r = await run(brain, "download all the links in the assignment file");
+  assert.strictEqual(proposed.length, 1);
+  assert.deepStrictEqual(proposed[0].urls, ["https://github.com/bguspl/demo-skeleton"]);
+  assert.strictEqual(proposed[0].mode, "save");
+  assert.strictEqual(r.linkBatch.id, "b1");
+  assert.strictEqual(seen.saved.length, 0, "nothing is downloaded before the tap");
+  assert.strictEqual(r.answer, "The list is waiting for your Confirm.");
+});

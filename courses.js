@@ -201,4 +201,18 @@ function createCourses(dir) {
   return { list, get, create, rename, remove, addFile, setFile, getFile, removeFile, originalPath, savePages, getPages, allPages, legacyChat, retireLegacyChat, recover };
 }
 
-module.exports = { createCourses, validId, ID_PATTERN, MAX_PAGE_CHARS, MAX_COURSES, MAX_COURSE_BYTES };
+// Finds the real course a model named. The model's text is only a hint: it must be a course that exists. Order: the exact id, the
+// exact name (any case), then a name that contains or is contained in the text, but only if exactly one course fits.
+function matchCourse(text, courses) {
+  const wanted = String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!wanted) return null;
+  const byId = courses.find((c) => String(c.id).toLowerCase() === wanted);
+  if (byId) return byId;
+  const norm = (c) => String(c.name).replace(/\s+/g, " ").trim().toLowerCase();
+  const exact = courses.filter((c) => norm(c) === wanted);
+  if (exact.length === 1) return exact[0];
+  const loose = courses.filter((c) => norm(c).includes(wanted) || wanted.includes(norm(c)));
+  return loose.length === 1 ? loose[0] : null;
+}
+
+module.exports = { createCourses, matchCourse, validId, ID_PATTERN, MAX_PAGE_CHARS, MAX_COURSES, MAX_COURSE_BYTES };

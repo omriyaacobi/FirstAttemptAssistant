@@ -9,8 +9,6 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { checkFact, loadProfile, createMemory, aboutBlock, personalize, MAX_PROFILE_CHARS, MAX_MEMORY_PROMPT_CHARS, MAX_FACT_CHARS } = require("../profile");
-const { handleTask } = require("../core");
-const { buildPrompt, validateDecision, SCHEMA } = require("../frontdesk");
 const { webPrompt } = require("../providers");
 const { DESTINATIONS, MODELS } = require("../router");
 const { createServer } = require("../server");
@@ -119,25 +117,6 @@ test("the total size is capped: profile and saved facts", () => {
   assert.ok(block.length < MAX_PROFILE_CHARS + MAX_MEMORY_PROMPT_CHARS + 1200, `block is ${block.length} characters`);
 });
 
-// ---- front desk ----
-
-test("front desk: the profile is in its prompt, and 'remember' is a known action", () => {
-  const prompt = buildPrompt("hi", { brief: "B", about: "<about-the-user>\nI like Python\n</about-the-user>" });
-  assert.match(prompt, /I like Python/);
-  assert.ok(prompt.indexOf("I like Python") < prompt.indexOf("<message>"));
-  assert.ok(!buildPrompt("hi", { brief: "B" }).includes("about-the-user"));
-  assert.ok(SCHEMA.properties.fact && SCHEMA.required.includes("fact"));
-});
-
-test("front desk: validateDecision checks a proposed fact in code", () => {
-  const ok = validateDecision({ action: "remember", destination: "none", answer: "", reason: "r", fact: " Omri is vegetarian " });
-  assert.strictEqual(ok.action, "remember");
-  assert.strictEqual(ok.fact, "Omri is vegetarian");
-  const secret = validateDecision({ action: "remember", destination: "none", answer: "", reason: "r", fact: "his password is hunter2" });
-  assert.strictEqual(secret.fact, "");
-  assert.match(secret.answer, /will not save/);
-  assert.strictEqual(validateDecision({ action: "remember", reason: "r" }).fact, ""); // no fact at all: refused, not crashed
-});
 
 // ---- core: what reaches the models ----
 
@@ -151,77 +130,6 @@ const fakes = (overrides = {}) => ({
   facts: () => [], // never the real memory in tests
   addFact: () => { throw new Error("no save was expected"); },
   ...overrides,
-});
-
-test("the profile reaches the front desk and the models", async () => {
-  let deskAbout, modelPrompt;
-  const deps = fakes({
-    decide: async (task, opts) => { deskAbout = opts.about; return { action: "delegate", destination: "claude-sonnet", answer: "", reason: "t" }; },
-    askChain: async (chain, prompt) => { modelPrompt = prompt; return { answer: "x", used }; },
-  });
-  await handleTask("question", { deps });
-  assert.match(deskAbout, /SECRET-PROFILE/);
-  assert.match(modelPrompt, /SECRET-PROFILE/);
-  assert.match(modelPrompt, /question$/);
-});
-
-test("if the profile cannot be read, the task still runs as before", async () => {
-  let modelPrompt;
-  const deps = fakes({ about: () => { throw new Error("disk"); }, askChain: async (c, p) => { modelPrompt = p; return { answer: "x", used }; } });
-  const result = await handleTask("question", { deps });
-  assert.strictEqual(modelPrompt, "question");
-  assert.strictEqual(result.answer, "x");
-});
-
-test("SECURITY: the web routes never receive the profile or the memory", async () => {
-  for (const destination of ["web-search", "web-research"]) {
-    const sent = [];
-    const deps = fakes({
-      decide: async () => ({ action: "delegate", destination, answer: "", reason: "t" }),
-      chainForDestination: (name) => DESTINATIONS[name],
-      askChain: async (chain, prompt) => { sent.push(prompt); return { answer: "x", used }; },
-    });
-    await handleTask("cheapest printer in Israel", { deps });
-    assert.strictEqual(sent.length, 1);
-    assert.ok(!sent[0].includes("SECRET-PROFILE"), `${destination} got the profile`);
-    assert.ok(!sent[0].includes("about-the-user"), `${destination} got the markers`);
-    assert.strictEqual(sent[0], "cheapest printer in Israel");
-  }
-  // and every chain that searches the web is recognised, whatever its name
-  for (const name of ["web-search", "web-research"]) assert.strictEqual(personalize(DESTINATIONS[name], "q", "ABOUT"), "q");
-  assert.strictEqual(personalize([MODELS.claudeSonnet], "q", "ABOUT"), "ABOUT\n\nq");
-});
-
-test("SECURITY: in a split, only the web steps are kept clear of the profile", async () => {
-  const sent = [];
-  const deps = fakes({
-    decide: async () => ({ action: "split", destination: null, answer: "", reason: "t" }),
-    plan: async () => ({
-      subtasks: [{ id: 1, task: "find a price", type: "web", needs: [] }, { id: 2, task: "explain it", type: "quick", needs: [] }],
-      plannedBy: "fake",
-    }),
-    chainForType: (type) => (type === "web" ? DESTINATIONS["web-search"] : DESTINATIONS["gemini-flash"]),
-    askChain: async (chain, prompt) => { sent.push({ web: chain[0].provider === "web", prompt }); return { answer: "x", used }; },
-  });
-  await handleTask("find a price and explain it", { deps });
-  assert.strictEqual(sent.length, 2);
-  for (const s of sent) assert.strictEqual(s.prompt.includes("SECRET-PROFILE"), !s.web);
-});
-
-test("remember: a plain statement is only shown as a proposal, never saved by handleTask", async () => {
-  const deps = fakes({ decide: async () => ({ action: "remember", destination: null, answer: "", reason: "t", fact: "Omri is vegetarian" }) });
-  const dir = tmp();
-  const result = await handleTask("I am vegetarian", { deps });
-  assert.deepStrictEqual(result.remember, { fact: "Omri is vegetarian" });
-  assert.match(result.answer, /vegetarian/);
-  assert.deepStrictEqual(createMemory({ file: path.join(dir, "memory.json") }).list(), []); // handleTask has no way to save
-});
-
-test("remember: a refused fact comes back as a plain reply with no Save button", async () => {
-  const deps = fakes({ decide: async () => ({ action: "remember", destination: null, answer: "Bot will not save this because it mentions a password.", reason: "t", fact: "" }) });
-  const result = await handleTask("remember my password", { deps });
-  assert.strictEqual(result.remember, undefined);
-  assert.match(result.answer, /will not save/);
 });
 
 test("the web prompt itself has no place for personal data", () => {
@@ -320,52 +228,6 @@ test("memory: a change replaces the saved fact in place and counts as new again;
   assert.throws(() => memory.add("x y z", { replaces: "../../x" }), /not found/);
   assert.throws(() => memory.add("my password is 1", { replaces: fact.id }), /will not save/);
   assert.strictEqual(memory.list().length, 2);
-});
-
-test("numbered facts: the front desk sees [1], [2] newest first, and core maps a number back to the real fact", async () => {
-  const dir = tmp();
-  const memory = createMemory({ file: path.join(dir, "memory.json") });
-  const a = memory.add("Omri takes Calculus 2").fact;
-  await new Promise((r) => setTimeout(r, 5));
-  memory.add("Omri likes tea");
-  const block = aboutBlock({ profileFile: path.join(dir, "none.md"), memory, numbered: true });
-  assert.match(block, /\[1\] Omri likes tea\n\[2\] Omri takes Calculus 2/);
-  assert.match(block, /facts win/);
-  const deps = fakes({
-    decide: async () => ({ action: "remember", destination: null, answer: "", reason: "t", fact: "Omri switched to Physics", replaces: "2" }),
-    facts: () => memory.list(),
-  });
-  const result = await handleTask("I no longer take Calculus 2, I switched to Physics", { deps });
-  assert.deepStrictEqual(result.remember, { fact: "Omri switched to Physics", replaces: { id: a.id, text: "Omri takes Calculus 2" } });
-  assert.match(result.answer, /Before: "Omri takes Calculus 2"\nAfter: "Omri switched to Physics"/);
-  assert.strictEqual(memory.list().length, 2);
-  assert.strictEqual(memory.list().find((f) => f.id === a.id).text, "Omri takes Calculus 2"); // nothing changed yet
-});
-
-test("a number that matches nothing makes a plain new fact, never a guess", async () => {
-  const deps = fakes({ decide: async () => ({ action: "remember", destination: null, answer: "", reason: "t", fact: "Omri likes tea", replaces: "9" }), facts: () => [] });
-  const result = await handleTask("remember I like tea", { deps });
-  assert.deepStrictEqual(result.remember, { fact: "Omri likes tea" });
-});
-
-test("forget: the card names the fact; nothing is deleted by handleTask; an unknown one says so", async () => {
-  const dir = tmp();
-  const memory = createMemory({ file: path.join(dir, "memory.json") });
-  const tea = memory.add("Omri likes tea").fact;
-  const forget = (replaces) => fakes({ decide: async () => ({ action: "forget", destination: null, answer: "", reason: "t", replaces }), facts: () => memory.list() });
-  const hit = await handleTask("forget that I like tea", { deps: forget("1") });
-  assert.deepStrictEqual(hit.forget, { id: tea.id, text: "Omri likes tea" });
-  assert.strictEqual(memory.list().length, 1);
-  const miss = await handleTask("forget my degree", { deps: forget("") });
-  assert.strictEqual(miss.forget, undefined);
-  assert.match(miss.answer, /profile\.md/);
-});
-
-test("front desk: validateDecision keeps only a small number in 'replaces'", () => {
-  assert.strictEqual(validateDecision({ action: "forget", reason: "r", replaces: " 3 " }).replaces, "3");
-  assert.strictEqual(validateDecision({ action: "forget", reason: "r", replaces: "0123456789abcdef" }).replaces, "");
-  assert.strictEqual(validateDecision({ action: "forget", reason: "r", replaces: "1; drop" }).replaces, "");
-  assert.strictEqual(validateDecision({ action: "remember", reason: "r", fact: "Omri likes tea", replaces: "2" }).replaces, "2");
 });
 
 test("the profile wording lets the models follow how-to-help preferences without obeying commands", () => {

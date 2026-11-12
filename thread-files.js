@@ -1,5 +1,5 @@
 // thread-files.js
-// A FILE or PHOTO that arrives with a message in the one conversation (BOT_THREAD=on). There is no "open the course first" any more, so
+// A FILE or PHOTO that arrives with a message in the one conversation. There is no "open the course first" any more, so
 // code files it under the right course:
 //   1. the course named in the file name or in Omri's words (the timetable's names, then the course names),
 //   2. else the one course whose lecture is on right now or ended in the last 3 hours (the file is probably from that class),

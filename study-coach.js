@@ -29,7 +29,6 @@ const standing = require("./standing");
 const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
 const catchup = require("./catchup");
-const { createStudyChat } = require("./study-chat");
 const { MODELS } = require("./router");
 
 const INTENTS = ["teach", "start", "quiz", "answer", "progress", "plan", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
@@ -973,16 +972,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     },
   };
 
-  // Is this course taught from its notes (one big notes file, no lecture material attached)? Used by core.js to treat "teach me X" as teaching.
-  function teachesFromNotes(courseId) {
-    const ref = refs().find((r) => r.courseId === courseId);
-    return !!ref && notesCourse(ref) && !(tracked(ref) && tracker.progress(ref).withMaterial > 0);
-  }
 
-  // The study chat (study-chat.js): one big-context call for assignment and study talk. It is asked by core.js BEFORE answerStudy.
-  const studyChat = createStudyChat({ tracker, courses, refs, resolveRef, askChain, now, log });
-
-  return { brainTools, studyChat, teachesFromNotes, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
+  return { brainTools, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };

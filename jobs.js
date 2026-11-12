@@ -17,7 +17,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
-const { resultText } = require("./core");
+const { resultText } = require("./history");
 const { buildHistory } = require("./thread-context");
 
 // Job ids are random and checked everywhere. 32 hex characters = 128 random bits, so they
@@ -95,7 +95,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
   function historyEntry(m) {
     const add = m.result && m.result.calendarAdd;
     if (!cardNote || !add || !Array.isArray(add.events)) return { role: m.role, text: m.text };
-    // The note travels in its own fields, NOT inside text: historyBlock (core.js) cuts every text to a few thousand characters, and a note cut
+    // The note travels in its own fields, NOT inside text: historyBlock (history.js) cuts every text to a few thousand characters, and a note cut
     // in the middle of its JSON would silently lose the last classes. `note` is the full one, `noteShort` is for older cards.
     const entry = { role: m.role, text: m.text, cardId: typeof add.id === "string" ? add.id : undefined };
     try { entry.note = cardNote(add); entry.noteShort = cardNote(add, { short: true }); } catch (error) { /* the card note is only a help */ }
@@ -145,6 +145,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     if (runningCount >= maxRunning) throw Object.assign(new Error("busy, wait for the current tasks to finish"), { status: 429 });
     const inCourse = conversation ? conversation.courseId : courseId;
     if (inCourse && !handleCourse) throw Object.assign(new Error("the study notebooks are off"), { status: 404 });
+    if (!inCourse && !handle) throw Object.assign(new Error("Bot is one conversation now; the old chats can only be read"), { status: 404 });
 
     // The earlier messages become the memory for this task (a failed answer is not memory).
     const history = conversation ? conversation.messages.filter((m) => !m.error).map(historyEntry) : [];
@@ -209,15 +210,14 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
   }
 
   // ---------------------------------------------------------------------------------------------------------------------------
-  // THE THREAD (BOT_THREAD=on): one conversation, and every message is its own job.
+  // THE THREAD: one conversation, and every message is its own job.
   //
   // What changes compared with start() above:
   //   - there is no chat: the question and its answer are appended to the thread (thread-store.js). The answer carries replyTo, the id
   //     of its question, so a fast answer can arrive before a slow one and still sit under the right question.
   //   - a second message is never refused because a first one is still running (only 20 at once, so a runaway page cannot pile up work).
-  //   - TWO LANES. The front desk reads every message at once (it takes about 4 seconds, with no limit). When it then picks SLOW work
-  //     (a model answer, a plan, a course answer, a photo), core.js calls gate() and the job waits for one of `maxRunning` slow slots.
-  //     Fast actions (reply, clarify, calendar, reminder, memory, recall, add-event card) never take a slot.
+  //   - SLOTS. Every message is answered by the brain (brain.js), which calls gate() once before its work and so waits for one of
+  //     `maxRunning` slots: at most that many messages are being answered by models at the same time; the others queue.
   //   - SAME-COURSE ORDER: a question that goes to a course waits for an EARLIER question to the same course that is still running,
   //     so "and the next one?" sees the earlier answer. Questions to different courses never wait for each other.
   //   - the context is built by code from the thread (thread-context.js), small and capped.
@@ -250,7 +250,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     pump();
   }
 
-  // The gate core.js calls before slow work: resolves when this job may start.
+  // The gate brain.js calls before its work: resolves when this job may start.
   function makeGate(job) {
     return (info = {}) => new Promise((resolve) => {
       job.course = typeof info.course === "string" ? info.course : null;
@@ -321,7 +321,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
           log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
         };
         const list = courses();
-        // notify: one short line written by code (core.js), saved under the question as a message marked `ack`. It is not the answer: the
+        // notify: one short line written by code (brain.js), saved under the question as a message marked `ack`. It is not the answer: the
         // restart check does not count it as one, the model's memory skips it, and no push is sent for it (onFinish runs only for the answer).
         const notify = (text) => { try { job.acked = true; thread.append({ role: "assistant", text: String(text).slice(0, 500), replyTo: question.id, topic: "general", ack: true, at: now() }); } catch (error) { /* the line is a courtesy; the answer still comes */ } };
         const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify: attached ? null : notify, ...(attached ? { attached } : {}) });

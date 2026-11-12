@@ -108,12 +108,3 @@ test("claims and due dates are not kept as a position; a course Bot does not kno
   assert.strictEqual(coach.tracker.progress(refs[1]).positionKnown, false);
 });
 
-test("both briefings send a description of one's own state to update, and keep progress for questions", () => {
-  for (const f of ["router-brief.md", "router-brief-haiku.md"]) {
-    const t = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
-    assert.match(t, /DESCRIBES their own state/, f);
-    assert.match(t, /"I've done nothing yet"/, f);
-    assert.match(t, /progress \(a QUESTION about their status/, f);
-    assert.match(t, /<!--thread-->/, f);
-  }
-});

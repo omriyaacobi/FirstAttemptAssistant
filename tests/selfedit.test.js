@@ -325,15 +325,6 @@ test("requests are validated", async () => {
   s.cleanup();
 });
 
-test("isProtected: security files, secrets, git and data are protected; normal files are not", () => {
-  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", "gitops.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
-    assert.strictEqual(isProtected(file), true, file);
-  }
-  for (const file of ["public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js"]) {
-    assert.strictEqual(isProtected(file), false, file);
-  }
-});
-
 test("parseTestSummary reads node's test summary", () => {
   assert.deepStrictEqual(parseTestSummary("x\nℹ tests 75\nℹ suites 0\nℹ pass 75\nℹ fail 0\n"), { total: 75, failed: 0 });
   assert.deepStrictEqual(parseTestSummary("nothing"), { total: null, failed: null });
@@ -452,4 +443,13 @@ test("the protected list still names files that exist, and a moved file would be
   for (const f of ["server.js", "start-web.cmd", "improve-watch.js", "selfedit.js"]) assert.ok(fs.existsSync(path.join(root, f)), f);
   // Test files live in tests/ and are not protected (Improve Bot may add tests, the watch flags removed checks).
   assert.strictEqual(isProtected("tests/core.test.js"), false);
+});
+
+test("isProtected: security files, secrets, git and data are protected; normal files are not", () => {
+  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", "gitops.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
+    assert.strictEqual(isProtected(file), true, file);
+  }
+  for (const file of ["public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js"]) {
+    assert.strictEqual(isProtected(file), false, file);
+  }
 });

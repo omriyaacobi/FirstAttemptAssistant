@@ -45,13 +45,6 @@ test("a message is Hebrew when it has at least as many Hebrew words as Latin one
   assert.strictEqual(say("en", "Saved", "נשמר"), "Saved");
 });
 
-test("the rule for models says all Hebrew, with English only where it is customary, and every briefing has it", () => {
-  assert.match(HEBREW_RULE, /whole answer in Hebrew/);
-  assert.match(HEBREW_RULE, /normally say in English/);
-  for (const f of ["router-brief.md", "router-brief-haiku.md", "study.js", "tutor.js", "providers.js"]) assert.match(fs.readFileSync(path.join(__dirname, "..", f), "utf8"), /normally say in English/, f);
-  assert.match(fs.readFileSync(path.join(__dirname, "..", "core.js"), "utf8"), /mostlyHebrew\(task\) \? `\\n\\n\$\{HEBREW_RULE\}`/);
-});
-
 test("the study coach answers a Hebrew message in Hebrew on every path that code writes", async () => {
   const coach = make();
   const said = {};

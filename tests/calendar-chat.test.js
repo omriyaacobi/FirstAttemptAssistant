@@ -4,8 +4,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { checkRequest, formatEvents, friendlyError, readCalendar } = require("../calendar-chat");
-const { validateDecision } = require("../frontdesk");
-const { handleTask } = require("../core");
 
 const used = { provider: "agy", model: "fake" };
 const fakeDesk = (extra) => async () => ({ action: "calendar", destination: null, answer: "", reason: "test", calendar: { from: "2026-11-06", days: 1 }, ...extra });
@@ -17,14 +15,6 @@ test("checkRequest accepts real days and 1-14 days, rejects the rest", () => {
     { from: "2026-11-06", days: "15" }, { from: "2026-11-06", days: "1.5" }, { from: "2026-11-06", days: "x" }, { from: null, days: "1" }]) {
     assert.throws(() => checkRequest(bad), undefined, JSON.stringify(bad));
   }
-});
-
-test("front desk: a calendar decision is validated by code", () => {
-  const ok = validateDecision({ action: "calendar", destination: "none", answer: "", reason: "asks about tomorrow", calendarFrom: "2026-11-06", calendarDays: "1" });
-  assert.deepStrictEqual(ok.calendar, { from: "2026-11-06", days: 1 });
-  assert.strictEqual(ok.destination, null);
-  assert.strictEqual(validateDecision({ action: "calendar", destination: "none", answer: "", reason: "x", calendarFrom: "", calendarDays: "" }), null);
-  assert.strictEqual(validateDecision({ action: "calendar", destination: "none", answer: "", reason: "x", calendarFrom: "2026-11-06", calendarDays: "400" }), null);
 });
 
 test("formatEvents groups by day, shows empty days, keeps time order, cleans titles", () => {
@@ -58,18 +48,3 @@ test("friendlyError explains an expired login in plain words", () => {
   assert.match(friendlyError(new Error("boom")), /could not read the calendar: boom/);
 });
 
-test("handleTask: calendar question is answered by code, no model runs, titles not logged", async () => {
-  const logs = [];
-  const deps = baseDeps({ readCalendar: async () => ({ from: "2026-11-06", days: 1, events: [{}], text: "Friday 6 November\n  16:00-17:00  Dentist" }) });
-  const result = await handleTask("what do I have tomorrow?", { deps, log: (l) => logs.push(l) });
-  assert.strictEqual(result.rule, "calendar (read-only)");
-  assert.match(result.answer, /Dentist/);
-  assert.ok(logs.some((l) => l.includes("[calendar] read 1 event")));
-  assert.ok(!logs.join("\n").includes("Dentist"), "the log must not contain event titles");
-});
-
-test("handleTask: an expired login becomes a clear message, not a crash", async () => {
-  const deps = baseDeps({ readCalendar: async () => { throw new Error("Google token request failed: invalid_grant"); } });
-  const result = await handleTask("what do I have tomorrow?", { deps });
-  assert.match(result.answer, /login has expired/);
-});

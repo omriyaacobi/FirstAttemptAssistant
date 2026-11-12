@@ -15,8 +15,6 @@ const { createServer } = require("../server");
 const { createCourseRoutes } = require("../course-routes");
 const { ingestFile } = require("../ingest");
 const { askCourse } = require("../study");
-const { handleTask } = require("../core");
-const { validateDecision, STUDY_INTENTS } = require("../frontdesk");
 const { makeZip } = require("./testzip");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-link-"));
@@ -228,37 +226,3 @@ const deps = (extra = {}) => ({ chainForDestination: () => [{ provider: "agy", m
   askChain: async () => { throw new Error("no model may be called for a download"); }, ...extra });
 const deskSaying = (course) => async () => ({ action: "course", destination: null, answer: "", reason: "r", course, studyIntent: "linksave" });
 
-test("front desk: 'link' is a known study intent and the course is still checked against the real list", () => {
-  assert.ok(STUDY_INTENTS.includes("linksave"));
-  const d = validateDecision({ action: "course", course: "systems programming", studyIntent: "linksave", reason: "r" }, { courses: COURSES });
-  assert.deepStrictEqual(d.course, COURSES[1]);
-  assert.strictEqual(d.studyIntent, "linksave");
-  assert.strictEqual(validateDecision({ action: "course", course: "Made Up", studyIntent: "linksave", reason: "r" }, { courses: COURSES }), null);
-});
-
-test("chat: the URL is taken from the user's words by code (a model-proposed URL is ignored), no model is called, the reply is in the message's language", async () => {
-  const seen = [];
-  const decide = async () => ({ action: "course", destination: null, answer: "", reason: "r", course: COURSES[1], studyIntent: "linksave", url: "https://evil.example.org/hijack" });
-  const out = await handleTask("download https://github.com/octocat/Hello-World into my systems course", { deps: deps({ decide, fetchLink: async (id, url, lang) => { seen.push({ id, url, lang }); return { ok: true, text: "Downloaded the GitHub repository." }; } }), courses: COURSES });
-  assert.deepStrictEqual(seen, [{ id: COURSES[1].id, url: "https://github.com/octocat/Hello-World", lang: "en" }]);
-  assert.strictEqual(out.answer, "Downloaded the GitHub repository.");
-  assert.strictEqual(out.courseId, COURSES[1].id);
-  const he = await handleTask("תוריד את https://example.edu/a.pdf לחומרים", { deps: deps({ decide: deskSaying(COURSES[0]), fetchLink: async (id, url, lang) => { seen.push(lang); return { ok: true, text: "בוצע" }; } }), courses: COURSES });
-  assert.strictEqual(seen[1], "he");
-  assert.strictEqual(he.answer, "בוצע");
-});
-
-test("chat: no link in the message, no course named with several courses, and several links are each said plainly; nothing is downloaded", async () => {
-  let calls = 0;
-  const fetchLinkFake = async () => { calls++; return { ok: true, text: "done" }; };
-  const noLink = await handleTask("download the repo please", { deps: deps({ decide: deskSaying(COURSES[0]), fetchLink: fetchLinkFake }), courses: COURSES });
-  assert.match(noLink.answer, /did not find a link/);
-  const noCourse = await handleTask("download https://example.edu/a.pdf", { deps: deps({ decide: deskSaying(null), fetchLink: fetchLinkFake }), courses: COURSES });
-  assert.match(noCourse.answer, /Which course/);
-  assert.strictEqual(calls, 0);
-  const two = await handleTask("get https://example.edu/a.pdf and https://example.edu/b.pdf", { deps: deps({ decide: deskSaying(COURSES[0]), fetchLink: fetchLinkFake }), courses: COURSES });
-  assert.match(two.answer, /took the first one/);
-  assert.strictEqual(calls, 1);
-  const only = await handleTask("get https://example.edu/a.pdf", { deps: deps({ decide: deskSaying(null), fetchLink: fetchLinkFake }), courses: [COURSES[0]] });
-  assert.match(only.answer, /done/); // a single course is used without asking
-});

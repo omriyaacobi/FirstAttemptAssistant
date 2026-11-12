@@ -1,7 +1,7 @@
 // brain.js
 // THE BRAIN: one model reads every message of the thread and decides what to do, with a TOOLBOX instead of a fixed menu.
 //
-// Why: the old path (frontdesk.js -> core.js) sorted each message into ONE box (calendar, course, reminder, ...). A message that did not
+// Why: until 2026-11-10 a "front desk" model sorted each message into ONE box (calendar, course, reminder, ...). A message that did not
 // fit a box, or needed two things at once ("save this link in the course and tell me if it is ordered by weeks"), got a wrong or empty
 // answer, and Omri had to learn Bot's wording. Here the model understands the message and asks for the abilities it needs:
 //
@@ -22,16 +22,16 @@ const path = require("node:path");
 const { MODELS } = require("./router");
 const { ask, askChain, timeoutFor, askAgyStreamWithImage } = require("./providers");
 const { createWarmAgy } = require("./warmagy");
-const { historyBlock } = require("./core");
+const { historyBlock } = require("./history");
 const { parseWhen, cleanText, formatWhen, localIso } = require("./reminders");
 const { checkFact, explicitRemember, pickFacts, bestMatches, aboutBlock } = require("./profile");
 const { checkRequest, friendlyError } = require("./calendar-chat");
 const { say } = require("./lang");
 const { checkPhotoEvents } = require("./calendar-add");
-const { matchCourse } = require("./frontdesk");
+const { matchCourse } = require("./courses");
 const { listFound } = require("./recall");
 const { pickPages, defang } = require("./study");
-const { pickAssignment, fitAssignment, notesFor } = require("./study-chat");
+const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
 const { fixMath } = require("./tutor");
 const { prioritize, lowWithReserve, describeLow, getPoolLevels, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
@@ -54,7 +54,7 @@ const MAX_CALLS_PER_ROUND = 6;
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "save_links"]);
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -138,6 +138,7 @@ const repoOf = (url) => { const m = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+
 function createBrain({
   courses, // the course store (courses.js): allPages, get
   courseRoutes, // course-routes.js: list, courseFiles, addLink, linkFiles
+  linkBatches = null, // link-batch.js: many links from a course file, shown first and fetched after ONE Confirm tap
   moodle = null, // moodle-tools.js: Moodle read through Omri's own Chrome (moodle-bridge.js); null = no Moodle tools
   coach = null, // study-coach.js (quiz, tracker)
   reminders, // reminders.js store: create, list
@@ -382,6 +383,22 @@ ${text}`; } catch (error) {
         const r = await courseRoutes.addLink(c.id, u, lang);
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return (r.ok ? "DOWNLOADED and filed. " : "NOT downloaded. ") + r.text;
+      },
+      // A FILE OF ADDRESSES: every https link code finds in one course file, shown to Omri first; fetched only after one Confirm tap.
+      save_links: async ({ course, file }) => {
+        afterWeb("download files");
+        const c = need(course);
+        if (!linkBatches) return "Lists of links are not available in this Bot.";
+        const files = courseRoutes.linkFiles(c.id) || [];
+        if (!files.length) return `No file of ${c.name} holds https links. Omri can upload the file first, or send the link itself.`;
+        const want = String(file || "").toLowerCase().trim();
+        const low = (f) => String(f.name).toLowerCase();
+        const hit = files.find((f) => low(f) === want) || (want ? files.find((f) => low(f).includes(want) || want.includes(low(f).replace(/\.\w{2,5}$/, ""))) : null) || (files.length === 1 ? files[0] : null);
+        if (!hit) throw new Error(`which file? These files of ${c.name} hold links: ${files.slice(0, 8).map((f) => `"${f.name}"`).join(", ")}`);
+        const p = linkBatches.propose({ courseId: c.id, courseName: c.name, urls: hit.urls, mode: "save", lang, source: hit.name, notHttps: hit.notHttps, more: hit.more });
+        ctx.extras.linkBatch = p.card;
+        ctx.course = c;
+        return `A list of ${hit.urls.length} link(s) found in "${hit.name}" is now shown to Omri with a Confirm button. NOTHING is downloaded until Omri taps it. Say that in one short line.`;
       },
       // The folder with Omri's own code. It is linked only when the path is written in Omri's OWN message (a model or a page cannot pick one).
       link_folder: async ({ course, path: folder }) => {

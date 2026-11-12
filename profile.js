@@ -9,7 +9,6 @@
 //   - A model can only PROPOSE a fact. Nothing is saved until you press Save on the page (server.js). The one exception is
 //     when YOUR OWN message says "remember that ..." (see explicitRemember): then it is saved at once, with an Undo button.
 //   - A fact that looks like a secret (password, card, ID number, token) is refused (checkFact).
-//   - The web routes never get this text (personalize), because a model could put it into a search query.
 //   - Size caps, so the profile cannot eat the prompt or slow Bot down.
 //   - Only the facts that matter for THIS message go into a prompt (pickFacts), so old facts are found when they matter
 //     and a memory of 100 facts costs no more than a small one.
@@ -240,14 +239,6 @@ function aboutBlock({ profileFile = PROFILE_FILE, memory = createMemory(), numbe
 // The web routes must NEVER get the profile or the memory: a model could copy personal details into
 // a search query. A chain is a "web chain" if any model in it searches the web.
 const WEB_PROVIDERS = new Set(["web", "research"]);
-const isWebChain = (chain) => chain.some((m) => WEB_PROVIDERS.has(m.provider));
-
-function personalize(chain, prompt, about) {
-  if (!about || isWebChain(chain)) return prompt;
-  return `${about}\n\n${prompt}`;
-}
 
 module.exports = {
-  pickFacts, bestMatches, withTopics, explicitRemember, checkFact, loadProfile, createMemory, aboutBlock, personalize, isWebChain,
-  PROFILE_FILE, MEMORY_FILE, MAX_PROFILE_CHARS, MAX_MEMORY_PROMPT_CHARS, MAX_FACT_CHARS, MAX_FACTS,
-};
+  pickFacts, bestMatches, withTopics, explicitRemember, checkFact, loadProfile, createMemory, aboutBlock, PROFILE_FILE, MEMORY_FILE, MAX_PROFILE_CHARS, MAX_MEMORY_PROMPT_CHARS, MAX_FACT_CHARS, MAX_FACTS };
