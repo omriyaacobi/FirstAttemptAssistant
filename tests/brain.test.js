@@ -235,16 +235,26 @@ test("the last round with only CALL lines: the reply says what was done instead 
   assert.match(r.answer, /could not finish the answer, but this was done:[\s\S]*Reminder SET/);
 });
 
-test("the slow slot is taken ONCE per message, with the course in focus (a question to the same course waits for the earlier one)", async () => {
-  const { brain } = setup(["ok"]);
-  const gates = [];
-  await run(brain, "explain lecture 6 of calculus", { gate: async (info) => { gates.push(info); } });
-  assert.deepStrictEqual(gates, [{ course: "c2" }]);
+test("the slow slot: never for an answer or a quick action done after the first model call; ONCE, with the course in focus, for longer work", async () => {
+  const gated = async (replies, task) => { const { brain, seen } = setup(replies); const gates = []; const r = await run(brain, task, { gate: async (info) => { gates.push({ ...info, promptsSoFar: seen.prompts.length }); } }); return { gates, r }; };
+  // a direct answer: no slot at all
+  assert.deepStrictEqual((await gated(["ok"], "explain lecture 6 of calculus")).gates, []);
+  // a quick action (a doing tool with its reply in the same turn): no slot
+  const quick = await gated(['CALL {"tool":"set_reminder","text":"call mom","when":"2026-11-11T09:00"}\nDone, I will remind you.'], "remind me tomorrow at 9 to call mom");
+  assert.deepStrictEqual(quick.gates, []);
+  assert.strictEqual(quick.r.answer, "Done, I will remind you.");
+  // a lookup needs another model round: the slot is taken once, AFTER the first model call and before the second
+  const look = 'CALL {"tool":"course_files","course":"Calculus 2"}';
+  assert.deepStrictEqual((await gated([look, look, "Here they are."], "what files are in calculus?")).gates, [{ course: "c2", promptsSoFar: 1 }]);
+  // a doing tool that FAILED needs another round too
+  assert.deepStrictEqual((await gated(['CALL {"tool":"set_reminder","text":"x","when":"not a time"}\nDone.', "I could not set it."], "remind me")).gates.length, 1);
+  // a quiz (the coach's long flow) takes the slot before it starts
+  assert.deepStrictEqual((await gated(['CALL {"tool":"quiz","course":"Calculus 2"}'], "quiz me on calculus")).gates, [{ course: "c2", promptsSoFar: 1 }]);
 });
 
 test("a file of the course still being read: one short line, then the answer waits until it is read", async () => {
   let status = "reading";
-  const { brain } = setup(["answer from the new file"], {
+  const { brain } = setup(['CALL {"tool":"course_files","course":"Calculus 2"}', "answer from the new file"], {
     courseRoutes: { list: () => COURSES, courseFiles: (id) => ({ files: id === "c2" ? [{ id: "n1", name: "lecture7.pdf", status, pages: 0, pagesTotal: 20 }] : [] }), linkFiles: () => [] },
     waitPollMs: 5,
   });
@@ -254,7 +264,7 @@ test("a file of the course still being read: one short line, then the answer wai
   const r = await run(brain, "what is in lecture 7 of calculus?", { notify: (t) => { lines.push(t); order.push("notify"); }, gate: async () => { order.push("gate"); } });
   assert.strictEqual(lines.length, 1);
   assert.match(lines[0], /still being read/);
-  assert.deepStrictEqual(order, ["notify", "gate"], "the wait comes BEFORE the slot");
+  assert.deepStrictEqual(order, ["notify", "gate"], "the wait comes BEFORE the slot (taken here because the message needed a second model round)");
   assert.strictEqual(r.answer, "answer from the new file");
 });
 

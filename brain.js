@@ -33,7 +33,7 @@ const { listFound } = require("./recall");
 const { pickPages, defang } = require("./study");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
 const { fixMath } = require("./tutor");
-const { prioritize, lowWithReserve, describeLow, getPoolLevels, refreshQuota, noteFailure } = require("./quota");
+const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
 
@@ -171,6 +171,7 @@ function createBrain({
   photoChain = PHOTO_CHAIN,
   askOne = askWarm,
   poolLevels = getPoolLevels, // every quota pool and the room left in it (quota.js); read from memory, never waits for agy
+  poolRows = getPoolRows, // the raw rows (with each window's reset time), for pacing the week between the two agy pools
   refreshPools = refreshQuota, // after each message: look the pools up again in the background, for the NEXT message
   notePoolFailure = noteFailure, // a "you've hit your limit" error marks that pool low until its reset
   reserves = RESERVES,
@@ -181,6 +182,7 @@ function createBrain({
   waitLimitMs = WAIT_LIMIT_MS,
   now = () => Date.now(),
 }) {
+  let paceLead = null; // which agy model went first last time (quota.js paceOrder keeps it in the lead for a stretch); memory only
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
   const refOf = (course) => (coach ? coach.tracker.refsFor([course])[0] : null);
   const record = (course) => { try { const ref = refOf(course); return ref ? coach.tracker.course(ref) : null; } catch (error) { return null; } };
@@ -579,10 +581,14 @@ ${r.cardText}`; }
     const filedIn = attached && attached.courseId ? list.find((c) => c.id === attached.courseId) || null : null;
     const focus = route === "general" ? null : filedIn || focusCourse(task, history, list);
     if (focus) ctx.course = focus;
-    // A file of this course still being read: wait first (no slot held). Then take a slow slot; a question to the same course waits for
-    // an earlier one (jobs.js). The slot is taken ONCE per message.
+    // A file of this course still being read: wait first (no slot held).
     const fileNote = focus ? await waitForFiles(focus, lang, notify, log) : null;
-    if (gate) await gate(focus ? { course: focus.id } : {});
+    // THE SLOW SLOT (jobs.js). The first model call (reading the message) runs at once, WITHOUT a slot: an answer or a quick action
+    // ("remind me at 5") that is done after that one call never waits behind long work. Only when the message needs more (looking
+    // things up over more model rounds, a quiz, a lesson) is a slot taken, ONCE per message; there a question to the same course
+    // also waits for an earlier one. What is quick is decided by what the model asked for, never by words in Omri's message.
+    let slotTaken = false;
+    const slowSlot = async () => { if (gate && !slotTaken) { slotTaken = true; await gate(focus ? { course: focus.id } : {}); } };
 
     // -- the fixed part of the prompt --
     let about = "";
@@ -606,11 +612,17 @@ ${r.cardText}`; }
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
-    const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(chain, levels, reserves);
+    // PACING THE WEEK: of the two agy pools, the one with more quota left for the days left answers first (quota.js paceOrder).
+    // The reserve and the 15% rule still run after it, so a pool that is really low always steps back.
+    const rows = image ? [] : await (async () => { try { const r = await poolRows(); return Array.isArray(r) ? r : []; } catch (error) { return []; } })();
+    const paced = paceOrder(chain, rows, { now: now(), lead: paceLead });
+    if (!image) paceLead = paced.lead;
+    const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
     const askRaw = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
     const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => spent.push({ model, ...u }) });
-    if (order[0] !== chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
+    if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
+    else if (!image && paced.note) log(`[brain] ${paced.note}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
     const attempts = [];
     let used = null;
@@ -665,6 +677,7 @@ ${r.cardText}`; }
         reply.calls = reply.calls.map((c) => (isTerminal(c.tool) ? { ...c, alone: true } : c));
       } else if (term && coach) {
         const c = term.course ? matchCourse(term.course, list) : ctx.course;
+        await slowSlot(); // a quiz or a lesson is long model work
         log(`[brain] tool ${term.tool}${c ? ` (${c.name})` : ""}`);
         if (DIRECT[term.tool]) {
           const res = await DIRECT[term.tool](c, term, lang, onPartial || null);
@@ -675,6 +688,8 @@ ${r.cardText}`; }
         return { ...res, brain: true, seconds: seconds(), ...(c ? { courseId: c.id, courseName: c.name } : {}), studyIntent: args.studyIntent };
       }
 
+      // Anything but quick "doing" tools means another model round will follow: that is long work, so it takes a slot first.
+      if (!reply.calls.every((c) => DOING.has(c.tool))) await slowSlot();
       // Run the calls. Each is checked by its own code; a refused or failed call becomes a plain line the model must report honestly.
       const results = await Promise.all(reply.calls.map(async (call) => {
         const fn = tools[call.tool];
@@ -697,6 +712,7 @@ ${r.cardText}`; }
         if (onPartial) onPartial(said);
         return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
+      await slowSlot(); // the quick finish did not happen (a call failed, or the model wrote no reply): another round follows
       transcript.push(`## Tool round ${round + 1}\n` + results.map(({ call, text }) => {
         const id = newId();
         return `You called: ${JSON.stringify(call).slice(0, 400)}\n<tool-result id="${id}">\n${scrub(text)}\n</tool-result id="${id}">`;

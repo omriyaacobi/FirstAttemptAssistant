@@ -388,3 +388,40 @@ test("SERVER (thread on): /api/ask takes route general only; anything else is re
     assert.deepStrictEqual(seen, ["general", null]);
   } finally { s.close(); }
 });
+
+// ---- quick actions never wait behind long answers (2026-11-12) ----
+// The REAL brain inside the real jobs: two long messages hold both slow slots, and a reminder sent after them is still answered at once.
+test("the real brain: a reminder is answered while two long answers hold both slots; a third long one waits for a slot", async () => {
+  const { createBrain } = require("../brain");
+  const hold = gate();
+  const made = [];
+  const said = (prompt) => /<message>\n([\s\S]*?)\n<\/message>/.exec(prompt)[1];
+  const brain = createBrain({
+    courses: { allPages: () => [] }, courseRoutes: { list: () => [], courseFiles: () => ({ files: [] }), linkFiles: () => [] }, coach: null,
+    reminders: { list: () => [], create: (r) => { made.push(r.text); return { id: "r1", ...r }; } }, memory: { list: () => [], add: () => ({}) }, cards: { add: () => ({}) },
+    readCalendar: async () => ({ text: "" }), poolLevels: async () => [], poolRows: async () => [], refreshPools: () => {}, notePoolFailure: () => {},
+    chain: [{ provider: "agy", model: "fake-model" }],
+    // The fake model: a "long" message first asks for a lookup, and its second round hangs until the test lets go.
+    askOne: async (provider, model, prompt) => {
+      const text = said(prompt);
+      if (/^long/.test(text)) { if (!/## Tool round 1/.test(prompt)) return 'CALL {"tool":"reminders_list"}'; await hold.wait; return "long answer to " + text; }
+      return 'CALL {"tool":"set_reminder","text":"leave","when":"2030-01-01T17:00"}\nI will remind you at 17:00.';
+    },
+  });
+  const { thread, jobs } = setup({ handle: brain.handle, courses: () => [] });
+  const a = jobs.startThread({ task: "long one" });
+  const b = jobs.startThread({ task: "long two" });
+  const c = jobs.startThread({ task: "long three" });
+  await tick(40);
+  const quick = jobs.startThread({ task: "remind me at 5 to leave" });
+  const finished = await done(jobs, quick.id); // answered although both slots are held
+  assert.strictEqual(finished.status, "done");
+  assert.deepStrictEqual(made, ["leave"]);
+  for (const id of [a.id, b.id, c.id]) assert.strictEqual(jobs.get(id).status, "running");
+  assert.ok(jobs.get(c.id).log.some((l) => /waiting for a free slot/.test(l)), "the third long message waits for a slot, after its first model call");
+  assert.ok(![...thread.all()].some((m) => m.role === "assistant" && /long answer/.test(m.text)));
+  assert.match([...thread.all()].find((m) => m.replyTo === quick.messageId).text, /remind you at 17:00/);
+  hold.release();
+  for (const id of [a.id, b.id, c.id]) assert.strictEqual((await done(jobs, id)).status, "done");
+  assert.strictEqual([...thread.all()].filter((m) => m.role === "assistant" && /^long answer to long/.test(m.text)).length, 3);
+});
