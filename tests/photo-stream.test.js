@@ -41,3 +41,9 @@ test("the private folder is deleted when the call fails, and a bad model name is
   assert.strictEqual(fs.existsSync(dir), false);
   await assert.rejects(askAgyStreamWithImage("bad model; rm", "q", file), /model/i);
 });
+
+test("the photo time limits come from the measured timings: 90 s for Flash, 150 s for Argon", () => {
+  assert.strictEqual(imageTimeoutFor("gemini-3.8-flash-medium"), 90 * 1000);
+  assert.strictEqual(imageTimeoutFor("gemini-3.8-flash-low"), 90 * 1000);
+  assert.strictEqual(imageTimeoutFor("gemini-4-argon-low"), 150 * 1000);
+});

@@ -221,7 +221,7 @@ test("PINNED: the newest calendar card's note is in the context even when a busy
   assert.strictEqual(history[0].cardId, "card1"); // pinned at the front
   assert.match(history[0].note, /Algebra, Physics/);
   assert.ok(!history.slice(1).some((h) => h.cardId), "not doubled");
-  // core.js prints the newest card's FULL note
+  // history.js prints the newest card's FULL note
   assert.match(historyBlock(history), /CARD NOTE full: Algebra, Physics/);
   // when the card is among the recent turns, it is not added a second time
   const small = createThreadStore(tmp());

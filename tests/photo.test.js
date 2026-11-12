@@ -1,6 +1,6 @@
 // photo.test.js
 // Tests sending a photo with a message: the checks on the photo (photo.js), the server route,
-// the phone login, and the routing to Gemini (core.js). All model calls are fakes: no quota is used,
+// the phone login. (How the brain answers a photo: brain.test.js.) All model calls are fakes: no quota is used,
 // and photos are saved in a temporary folder, never in the real data/ folder.
 // Run with:  node --test
 
