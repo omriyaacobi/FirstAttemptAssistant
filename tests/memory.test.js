@@ -7,7 +7,6 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { pickFacts, bestMatches, explicitRemember, checkFact, createMemory, aboutBlock, MAX_MEMORY_PROMPT_CHARS } = require("../profile");
-const { handleTask } = require("../core");
 
 const used = { provider: "fake", model: "fake" };
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-memory-"));
@@ -75,36 +74,6 @@ test("the prompt block only carries the picked facts", () => {
   assert.ok(block.length < MAX_MEMORY_PROMPT_CHARS + 1000, `block is ${block.length}`);
 });
 
-test("a number from the front desk means the fact it saw, even if the list changed while it was thinking", async () => {
-  let list = [fact("Noa is allergic to peanuts", 1), ...filler(99)];
-  const deps = fakes({
-    facts: () => list,
-    decide: async () => { list = [fact("a brand new fact", 999), ...list]; return { action: "forget", destination: null, answer: "", reason: "t", replaces: "1" }; },
-  });
-  const result = await handleTask("forget about peanuts", { deps });
-  assert.strictEqual(result.forget.text, "Noa is allergic to peanuts");
-});
-
-test("forget with no number offers the closest saved fact on the card; nothing close means it says so", async () => {
-  const facts = [fact("Noa is allergic to peanuts", 1), ...filler(99)];
-  const forget = async () => ({ action: "forget", destination: null, answer: "", reason: "t", replaces: "" });
-  const found = await handleTask("forget that thing about peanuts", { deps: fakes({ facts: () => facts, decide: forget }) });
-  assert.strictEqual(found.forget.text, "Noa is allergic to peanuts");
-  const none = await handleTask("xyzzy", { deps: fakes({ facts: () => facts, decide: forget }) });
-  assert.strictEqual(none.forget, undefined);
-  assert.match(none.answer, /could not find/);
-});
-
-test("a follow-up searches with the earlier message too", async () => {
-  let picked;
-  const deps = fakes({
-    facts: () => [fact("Noa is allergic to peanuts", 1), ...filler(99)],
-    about: (opts) => { picked = opts.picked; return ""; },
-  });
-  await handleTask("and is that safe for me?", { deps, history: [{ role: "user", text: "is there peanuts in halva" }, { role: "assistant", text: "yes" }] });
-  assert.strictEqual(picked[0].text, "Noa is allergic to peanuts");
-});
-
 test("explicitRemember: only the user's own short, explicit words count", () => {
   assert.ok(explicitRemember("remember that I am vegetarian", "Noa is vegetarian"));
   assert.ok(explicitRemember("Please remember: my bike is red", "Noa's bike is red"));
@@ -125,37 +94,6 @@ test("explicitRemember: only the user's own short, explicit words count", () => 
   assert.ok(!explicitRemember("remember that " + "long ".repeat(70), "long long long"));
   // the words must be at the start or the end: quoting a page that contains them does not count
   assert.ok(!explicitRemember("the article says you should remember that cats sleep a lot", "cats sleep a lot"));
-});
-
-test("an explicit remember is saved at once and can be undone; the reply says what was saved", async () => {
-  const dir = tmp();
-  const memory = createMemory({ file: path.join(dir, "memory.json") });
-  const deps = fakes({ decide: proposes("Noa is vegetarian"), facts: () => memory.list(), addFact: (text) => memory.add(text) });
-  const result = await handleTask("remember that I am vegetarian", { deps });
-  assert.strictEqual(result.remember, undefined);
-  assert.strictEqual(result.remembered.text, "Noa is vegetarian");
-  assert.strictEqual(memory.list().length, 1);
-  assert.ok(memory.remove(result.remembered.id)); // what Undo calls
-  const again = await handleTask("remember that I am vegetarian", { deps });
-  await handleTask("remember that I am vegetarian", { deps });
-  assert.strictEqual(memory.list().length, 1); // the same fact is not saved twice
-  assert.ok(again.remembered);
-});
-
-test("a statement without \"remember\", and any change to a saved fact, still wait for a tap", async () => {
-  const saved = [fact("Noa is vegetarian", 1)];
-  const plain = await handleTask("I am vegan now", { deps: fakes({ decide: proposes("Noa is vegan") }) });
-  assert.deepStrictEqual(plain.remember, { fact: "Noa is vegan" });
-  const change = await handleTask("remember that Noa is vegan now", { deps: fakes({ facts: () => saved, decide: proposes("Noa is vegan", { replaces: "1" }) }) });
-  assert.strictEqual(change.remember.replaces.text, "Noa is vegetarian");
-  assert.strictEqual(change.remembered, undefined);
-});
-
-test("a full memory turns an explicit remember into a plain explanation", async () => {
-  const deps = fakes({ decide: proposes("Noa is vegetarian"), addFact: () => { throw new Error("Bot already holds 100 facts; delete some first"); } });
-  const result = await handleTask("remember that I am vegetarian", { deps });
-  assert.match(result.answer, /100 facts/);
-  assert.strictEqual(result.remembered, undefined);
 });
 
 test("checkFact refuses secrets and text that reads like an order to Bot", () => {

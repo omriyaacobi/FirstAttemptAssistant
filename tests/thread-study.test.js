@@ -9,7 +9,6 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createStudyCoach } = require("../study-coach");
-const { handleTask } = require("../core");
 const { createJobs } = require("../jobs");
 const { createThreadStore, dayOf } = require("../thread-store");
 const { createThreadFiles, pickCourse } = require("../thread-files");
@@ -46,36 +45,6 @@ const fakes = (overrides = {}) => ({
   about: () => "", facts: () => [], addFact: () => { throw new Error("no"); }, askChain: async () => ({ answer: "model answer", used: { model: "fake" } }), ...overrides,
 });
 const desk = (course, studyIntent) => async () => ({ action: "course", destination: null, answer: "", reason: "r", course, studyIntent });
-
-test("COACH: a plan question with no course goes to the coach (not the code-written 'which course')", async () => {
-  const asked = [];
-  const deps = fakes({ decide: desk(null, "plan"), studyAnswer: async (a) => { asked.push(a); return { mode: "study", answer: "Where you should be: ...", sources: [] }; }, courseAnswer: async () => { throw new Error("not the notebook"); } });
-  const r = await handleTask("what should I study today?", { deps, courses: COURSES, gate: async () => { throw new Error("a plan is code only: no slot"); } });
-  assert.strictEqual(r.mode, "study");
-  assert.deepStrictEqual(asked[0], { studyIntent: "plan", text: "what should I study today?", courseId: null, courseName: null });
-});
-
-test("COACH: intents map (quiz and exercises are a quiz, open shows progress); model intents take a slot, code-only ones do not", async () => {
-  const seen = [];
-  const slots = [];
-  const deps = fakes({ decide: async () => ({ action: "course", destination: null, answer: "", reason: "r", course: COURSES[1], studyIntent: global.__intent }), studyAnswer: async (a) => { seen.push(a.studyIntent); return { mode: "study", answer: "ok", sources: [] }; } });
-  for (const intent of ["quiz", "exercises", "open", "update", "confirm", "teach", "answer"]) {
-    global.__intent = intent;
-    const r = await handleTask("x", { deps, courses: COURSES, gate: async () => { slots.push(intent); } });
-    assert.strictEqual(r.mode, "study");
-    assert.strictEqual(r.courseId, IDS.sp);
-  }
-  delete global.__intent;
-  assert.deepStrictEqual(seen, ["quiz", "quiz", "progress", "update", "confirm", "teach", "answer"]);
-  assert.deepStrictEqual(slots, ["quiz", "exercises", "teach", "answer"]); // quiz and teach and answer call Argon; update, confirm, progress do not
-});
-
-test("COACH: a plain question to the notebook (ask, summary) still goes to the notebook, not the coach", async () => {
-  let notebook = 0;
-  const deps = fakes({ decide: desk(COURSES[0], "ask"), studyAnswer: async () => { throw new Error("not the coach"); }, courseAnswer: async () => { notebook++; return { mode: "course", courseId: IDS.calc, answer: "from the notes", sources: [] }; } });
-  assert.strictEqual((await handleTask("what is integration by parts", { deps, courses: COURSES })).mode, "course");
-  assert.strictEqual(notebook, 1);
-});
 
 test("COACH (real coach, fake Argon): the first study talk asks where Omri is and does not invent it; a correction is stored; a quiz asks a question", async () => {
   const { coach } = makeCoach();
@@ -441,14 +410,3 @@ async function startServer({ thread = null, coach = null, summaries = null, thre
   return { raw, json, close: () => server.close() };
 }
 
-test("COACH: 'teach me X' labelled ask is teaching for a course taught from its notes, and stays a notebook answer otherwise", async () => {
-  const seen = [];
-  let notebook = 0;
-  const mk = (canTeach) => fakes({ decide: desk(COURSES[0], "ask"), studyCanTeach: () => canTeach, studyAnswer: async (a) => { seen.push(a.studyIntent); return { mode: "study", answer: "ok", sources: [] }; }, courseAnswer: async () => { notebook++; return { mode: "course", courseId: IDS.calc, answer: "from the notes", sources: [] }; } });
-  assert.strictEqual((await handleTask("teach me about pointers", { deps: mk(true), courses: COURSES })).mode, "study");
-  assert.strictEqual((await handleTask("תלמד אותי על מצביעים", { deps: mk(true), courses: COURSES })).mode, "study");
-  assert.deepStrictEqual(seen, ["teach", "teach"]);
-  assert.strictEqual((await handleTask("teach me about pointers", { deps: mk(false), courses: COURSES })).mode, "course", "a lecture course keeps its notebook answer");
-  assert.strictEqual((await handleTask("what is a pointer", { deps: mk(true), courses: COURSES })).mode, "course", "a plain question is not teaching");
-  assert.strictEqual(notebook, 2);
-});

@@ -5,7 +5,7 @@
 //   node thread.js verify-import           check the copy is complete (counts, a hash of all texts, a search test)
 //   node thread.js export-conversations <new empty folder>
 //                                          write the messages made AFTER the switch as ordinary chat files into a NEW
-//                                          folder (the way back if you turn BOT_THREAD off)
+//                                          folder (a plain copy of the old chats)
 //   add  --data <folder>  to work on another data folder (tests use a temporary copy)
 //
 // Rules: the old chats are only READ, never changed. Nothing is ever written over data/conversations. Before the first
@@ -186,7 +186,7 @@ function main(argv) {
   } else if (command === "verify-import") {
     const r = verifyImport(paths);
     for (const c of r.checks) console.log(`${c.ok ? "PASS" : "FAIL"}  ${c.name}: ${c.detail}`);
-    console.log(r.ok ? "\nPASS: the thread holds every old message." : "\nFAIL: do not turn BOT_THREAD on yet.");
+    console.log(r.ok ? "\nPASS: the thread holds every old message." : "\nFAIL: the thread does not hold every old message.");
     process.exitCode = r.ok ? 0 : 1;
   } else if (command === "export-conversations" && target) {
     const r = exportConversations({ ...paths, outDir: target, all: wantAll });

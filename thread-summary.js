@@ -1,5 +1,5 @@
 // thread-summary.js
-// The DAILY SUMMARY of the one conversation (BOT_THREAD=on): a short note about each past day, so a message can carry "what happened
+// The DAILY SUMMARY of the one conversation: a short note about each past day, so a message can carry "what happened
 // the last three days" without carrying the days. Built from the findings of experiments/2026-11-06-one-conversation-research.md:
 //   - It runs LAZILY: at the first message of a new day (jobs.js calls catchUp() in the background, never blocking the message), and it
 //     catches up after days off. At most 3 days per run, only the last 7 days, oldest first. A day with nothing to say is skipped.

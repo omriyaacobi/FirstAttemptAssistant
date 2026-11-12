@@ -1,6 +1,6 @@
 // photo.test.js
 // Tests sending a photo with a message: the checks on the photo (photo.js), the server route,
-// the phone login, and the routing to Gemini (core.js). All model calls are fakes: no quota is used,
+// the phone login. (How the brain answers a photo: brain.test.js.) All model calls are fakes: no quota is used,
 // and photos are saved in a temporary folder, never in the real data/ folder.
 // Run with:  node --test
 
@@ -14,7 +14,6 @@ const { parsePhoto, savePhoto, sniffImage, MAX_PHOTO_BYTES } = require("../photo
 const { createServer, MAX_BODY } = require("../server");
 const { createStore } = require("../store");
 const { createAuth } = require("../auth");
-const { handleTask } = require("../core");
 
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40, 1)]);
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 2)]);
@@ -193,38 +192,3 @@ test("SECURITY: from the phone, a photo needs the login like any other message",
   await s.close();
 });
 
-// ---- routing ----
-test("a photo skips the front desk and only Gemini (through agy) is asked, with the photo file", async () => {
-  const asked = [];
-  const logs = [];
-  const result = await handleTask("what is on my schedule?", {
-    image: { path: "C:\\somewhere\\abc123.jpg", ext: ".jpg" },
-    log: (l) => logs.push(l),
-    deps: {
-      decide: async () => { throw new Error("the front desk must not run for a photo"); },
-      lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
-      askImage: async (model, question, imagePath) => { asked.push({ model, question, imagePath }); return "Monday 9:00 Math"; },
-    },
-  });
-  assert.strictEqual(result.rule, "photo");
-  assert.strictEqual(result.answer, "Monday 9:00 Math");
-  assert.strictEqual(asked.length, 1);
-  assert.strictEqual(asked[0].imagePath, "C:\\somewhere\\abc123.jpg");
-  assert.match(asked[0].question, /what is on my schedule\?/);
-  assert.match(asked[0].question, /"photo\.jpg"/);
-  assert.ok(result.chain.every((m) => m.provider === "agy")); // never the Claude CLI, which cannot see the file
-  assert.ok(logs.some((l) => /photo/.test(l)));
-});
-
-test("if the first Gemini model fails on a photo, the next one is tried", async () => {
-  const tried = [];
-  const result = await handleTask("read this", {
-    image: { path: "p.png", ext: ".png" },
-    deps: {
-      lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null,
-      askImage: async (model) => { tried.push(model); if (tried.length === 1) throw new Error("quota"); return "ok"; },
-    },
-  });
-  assert.strictEqual(tried.length, 2);
-  assert.strictEqual(result.answer, "ok");
-});

@@ -29,7 +29,6 @@ const standing = require("./standing");
 const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
 const catchup = require("./catchup");
-const { createStudyChat } = require("./study-chat");
 const { MODELS } = require("./router");
 
 const INTENTS = ["teach", "start", "quiz", "answer", "progress", "plan", "update", "assignment", "motivate", "pause", "resume", "confirm", "cancel"];
@@ -329,8 +328,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (exam && plan.daysBetween(today(), exam) <= 14) out.push({ ...base, kind: "review", label: `${ref.name}: ${T("review before the exam", "חזרה לפני המבחן")}`, minutes: catchup.MINUTES.review, say: T(`quiz me on ${ref.name}`, `תבחן אותי ${bet(ref.name)}`) });
     return out;
   }
-  function catchupPlan(text, list = refs()) {
-    const budget = catchup.parseBudget(text) || catchup.DEFAULT_BUDGET;
+  function catchupPlan(text, list = refs(), given = {}) {
+    const budget = given.minutes || catchup.parseBudget(text) || catchup.DEFAULT_BUDGET;
     for (const r of list) maybeAlign(r); // notes of "Lecture N" headings are matched to the timetable lectures first
     const active = list.filter((r) => (tracker.progress(r).position || {}).mode !== "paused");
     const items = active.flatMap(planItems);
@@ -345,7 +344,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     lines.push(T(`A realistic plan, about ${budget} minutes a day (today is ${dayLabel(today())}). It changes when you tell me more.`, `תוכנית ריאלית, בערך ${budget} דקות ביום (היום ${dayLabel(today())}). היא משתנה כשמספרים לי עוד.`));
     lines.push(T(`Start with: ${first.label} (${first.minutes} min). Say: "${first.say}".`, `מתחילים מ: ${first.label} (${first.minutes} דקות). לכתוב: "${first.say}".`));
     if (active.some((r) => (tracker.progress(r).position || {}).goal === "concepts")) lines.push(T("Concepts first, as you said: the exercises come after.", "קודם מושגים, כמו שנכתב: התרגילים אחר כך."));
-    const onlyToday = TODAY_WORDS.test(text) && !WEEK_WORDS.test(text);
+    const onlyToday = typeof given.todayOnly === "boolean" ? given.todayOnly : TODAY_WORDS.test(text) && !WEEK_WORDS.test(text);
     const rows = (onlyToday ? s.grid.slice(0, 1) : s.grid).map((g) => `${g.date === today() ? T("Today", "היום") : dayLabel(g.date)} (${g.minutes} ${T("min", "דק'")}): ${g.items.map((i) => i.label).join(" + ")}`);
     lines.push(...rows);
     if (onlyToday && s.grid.length > 1) lines.push(T('For the whole week say "plan for the week".', 'לתוכנית של כל השבוע: "תוכנית לשבוע".'));
@@ -598,9 +597,14 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const lost = standing.isLost(text);
     let raw = null;
     try { raw = await standing.readStanding({ askChain, text: clean(text, standing.MAX_READ_CHARS), courseName: target.name, ctx, log }); } catch (error) { log(`[standing] reader failed: ${error.message}`); }
+    return storeReading(target, text, raw, ctx, lost);
+  }
+  // Checks the proposed fields (standing.checkStanding: closed lists, the timetable, the outline) and stores what fits, keeping the old
+  // record for undo. byBrain: the fields came from the brain's study_position tool, so no words are scanned here.
+  function storeReading(target, text, raw, ctx, lost, { byBrain = false } = {}) {
     const res = standing.checkStanding(raw, ctx);
     // A written exam date ("the exam is on 22 December"): the reader only knows "in N days", so code reads the date itself (a real date, in the future, within a year).
-    if (!res.exam && /\bexam\b|\btest\b|מבחן/i.test(text) && /\d/.test(text)) {
+    if (!byBrain && !res.exam && /\bexam\b|\btest\b|מבחן/i.test(text) && /\d/.test(text)) {
       const d = (parseDay(text, "week") || {}).date;
       if (d && d > today() && plan.daysBetween(today(), d) <= standing.EXAM_MAX_DAYS) res.exam = { date: d };
     }
@@ -634,7 +638,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     }
     out.answer = standing.readback({ courseName: target.name, fields: res.fields, notes: res.notes, dropped: res.dropped, exam: res.exam, lang: curLang });
     const askedAt = tracker.course(target).askedStanding || 0;
-    if (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text)) out.question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
+    if (!byBrain && (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text))) out.question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
     return out;
   }
 
@@ -910,16 +914,66 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : "") + (r.needs ? "" : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
-  // Is this course taught from its notes (one big notes file, no lecture material attached)? Used by core.js to treat "teach me X" as teaching.
-  function teachesFromNotes(courseId) {
-    const ref = refs().find((r) => r.courseId === courseId);
-    return !!ref && notesCourse(ref) && !(tracked(ref) && tracker.progress(ref).withMaterial > 0);
-  }
+  // ---- THE BRAIN'S STUDY TOOLS (brain.js) ----
+  // The model understood Omri's message and hands in CHECKED VALUES (a date, minutes, a part name, closed fields); nothing here scans
+  // Omri's words. Each function checks its values in code and returns text written by code.
+  const refOfCourse = (courseId) => refs().find((r) => r.courseId === courseId) || null;
+  const brainTools = {
+    // Reserve duty or a break: the study nudges stop until a date, or until resume.
+    pause({ until = "", lang = "en" } = {}) {
+      curLang = lang;
+      if (until && (!plan.isIsoDate(until) || until < today())) throw new Error("until must be a real date (YYYY-MM-DD), today or later; leave it empty for 'until Omri says resume'");
+      nudges.pause(until || null);
+      const s = nudges.settings();
+      return T(`Study reminders are PAUSED${s.pausedUntil ? ` until ${niceDate(s.pausedUntil)}` : " until Omri says to resume"}. Progress is kept.`, `תזכורות הלימוד מושהות${s.pausedUntil ? ` עד ${niceDate(s.pausedUntil)}` : " עד שיתבקש לחדש אותן"}. ההתקדמות נשמרת.`);
+    },
+    resume({ lang = "en" } = {}) { curLang = lang; nudges.resume(); return T("Study reminders are ON again.", "תזכורות הלימוד חזרו לפעול."); },
+    // One realistic plan across all courses (code only): deadlines first, then the courses in turns.
+    plan({ minutes = null, todayOnly = false, lang = "en" } = {}) {
+      curLang = lang;
+      const m = Number(minutes);
+      return { mode: "study", answer: catchupPlan("", refs(), { minutes: Number.isInteger(m) && m >= 15 && m <= 600 ? m : null, todayOnly: todayOnly === true }) };
+    },
+    // Teaches the next part of a course (or the part named), one chunk, from the real notes; the part is matched by code against the outline.
+    async teach({ courseId, part = "", lang = "en", onText = null } = {}) {
+      curLang = lang;
+      const ref = refOfCourse(courseId);
+      if (!ref) return { mode: "study", answer: whichCourse() };
+      const text = clean(part, 200);
+      const align = maybeAlign(ref);
+      const pick = await notesPick(ref, text);
+      if (pick && pick.say) return { mode: "study", answer: pick.say };
+      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, through: null });
+      return { ...r, mode: "study", answer: r.answer + align, study: { course: ref.name, mode: r.mode, done: r.done } };
+    },
+    // An exam date becomes a Confirm card; it is stored only when Omri confirms.
+    exam({ courseId, date, lang = "en" } = {}) {
+      curLang = lang;
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      if (!plan.isIsoDate(date) || date <= today() || plan.daysBetween(today(), date) > standing.EXAM_MAX_DAYS) throw new Error("the exam date must be a real date (YYYY-MM-DD) after today and within a year");
+      return { proposal: card(addProposal({ kind: "exam", ref, date })), date: niceDate(date) };
+    },
+    // Where Omri stands in a course, as closed fields the model proposes; code keeps only what fits the timetable and the notes.
+    position({ courseId, fields, said = "", lang = "en" } = {}) {
+      curLang = lang;
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      const out = storeReading(ref, String(said), fields && typeof fields === "object" ? fields : {}, standingContext(ref), false, { byBrain: true });
+      if (!out) throw new Error("none of the fields could be used (they must be values from the closed lists, and a place must exist in the timetable or the notes)");
+      lastUndo = { items: [out.undo], proposalIds: [out.proposalId].filter(Boolean), at: now() };
+      return { text: out.answer, ...(out.proposal ? { proposal: out.proposal } : {}) };
+    },
+    // Takes back the last position() (within 2 hours): the old record returns.
+    undo({ lang = "en" } = {}) {
+      curLang = lang;
+      if (!lastUndo || now() - lastUndo.at >= UNDO_MS) throw new Error("there is nothing to undo (only the last stored position, within 2 hours)");
+      return undoReading();
+    },
+  };
 
-  // The study chat (study-chat.js): one big-context call for assignment and study talk. It is asked by core.js BEFORE answerStudy.
-  const studyChat = createStudyChat({ tracker, courses, refs, resolveRef, askChain, now, log });
 
-  return { studyChat, teachesFromNotes, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
+  return { brainTools, studyLine, questionLine, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, interpretUpdate, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };

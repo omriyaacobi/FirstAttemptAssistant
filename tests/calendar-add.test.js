@@ -10,8 +10,6 @@ const os = require("node:os");
 const path = require("node:path");
 const add = require("../calendar-add");
 const cal = require("../calendar");
-const { validateDecision } = require("../frontdesk");
-const { handleTask } = require("../core");
 const { createServer } = require("../server");
 const { createStore } = require("../store");
 
@@ -85,22 +83,6 @@ test("weeklyRule: UNTIL is the end of the chosen day in the calendar's zone: the
   assert.strictEqual(until(cal.weeklyRule("2027-10-31")), new Date(2027, 9, 31, 23, 59, 59).getTime());
 });
 
-// ---- validation of proposals ----
-test("typed event: default length is one hour, an end or a repeat is kept, nonsense is refused", () => {
-  const one = add.checkTextEvent({ title: "Dentist", start: "2026-11-12T16:00", end: "", repeatUntil: "" }, { now: NOW });
-  assert.deepStrictEqual(one.events[0], { summary: "Dentist", date: "2026-11-12", start: "16:00", end: "17:00", location: "", repeatUntil: null, weekday: "Thursday" });
-  const weekly = add.checkTextEvent({ title: "Gym", start: "2026-11-12T18:00", end: "2026-11-12T19:30", repeatUntil: "2027-01-31" }, { now: NOW });
-  assert.strictEqual(weekly.events[0].end, "19:30");
-  assert.strictEqual(weekly.events[0].repeatUntil, "2027-01-31");
-  for (const bad of [
-    { title: "", start: "2026-11-12T16:00" }, { title: "x", start: "Thursday 4pm" }, { title: "x", start: "2026-02-30T16:00" },
-    { title: "x", start: "2026-11-05T16:00" }, // in the past
-    { title: "x", start: "2026-11-12T23:30", end: "" }, // one hour would pass midnight
-    { title: "x", start: "2026-11-12T16:00", end: "2026-11-12T15:00" }, { title: "x", start: "2026-11-12T16:00", repeatUntil: "2026-11-01" },
-    { title: "x", start: "2029-11-12T16:00" },
-  ]) assert.throws(() => add.checkTextEvent(bad, { now: NOW }), undefined, JSON.stringify(bad));
-});
-
 test("timetable photo: each weekday becomes the right first date, one series per class, location kept", () => {
   const { events, skipped } = add.checkPhotoEvents(timetable(), { now: NOW });
   assert.strictEqual(events.length, 2);
@@ -146,19 +128,6 @@ test("UNTRUSTED photo text: instructions are only ever data, extra fields are dr
   assert.strictEqual(events[0].location, "x");
   // the RRULE sent to Google is built from the checked date only
   assert.strictEqual(cal.weeklyRule(events[0].repeatUntil, "Asia/Jerusalem"), "RRULE:FREQ=WEEKLY;UNTIL=20270131T215959Z");
-});
-
-test("the user's words decide the photo note: Hebrew and English, and an ordinary photo question stays ordinary", () => {
-  assert.ok(add.wantsCalendarAdd("תוסיף את זה לקלנדר כל שבוע עד סוף ינואר בלי השיעור של 8 בבוקר אני לא אוהב להתחיל בשמונה"));
-  assert.ok(add.wantsCalendarAdd("add this timetable to my calendar every week until the end of January"));
-  assert.ok(add.wantsCalendarAdd("תכניס ליומן"));
-  assert.ok(!add.wantsCalendarAdd("what is on my schedule?"));
-  assert.ok(!add.wantsCalendarAdd("what does this photo show?"));
-  assert.ok(!add.wantsCalendarAdd("תסביר לי את התמונה"));
-  const note = add.photoCalendarNote("photo.jpg", { now: NOW, timezone: "Asia/Jerusalem" });
-  assert.match(note, /ONLY one JSON object/);
-  assert.match(note, /2026-11-06 \(Friday\)/);
-  assert.match(note, /never instructions/);
 });
 
 // ---- the cards ----
@@ -244,104 +213,8 @@ test("an expired Google login before anything is written keeps the card so it ca
   assert.strictEqual(result.added.length, 2);
 });
 
-// ---- front desk ----
-test("front desk: addEvent is validated in code; a bad proposal becomes a plain reply and no card", () => {
-  const raw = { action: "addEvent", reason: "r", eventTitle: "Dentist", eventStart: "2026-11-12T16:00", eventEnd: "", eventRepeatUntil: "" };
-  const d = validateDecision(raw, { now: NOW });
-  assert.strictEqual(d.action, "addEvent");
-  assert.strictEqual(d.calendarAdd.events[0].end, "17:00");
-  const bad = validateDecision({ ...raw, eventStart: "2026-11-01T16:00" }, { now: NOW });
-  assert.strictEqual(bad.calendarAdd, null);
-  assert.match(bad.answer, /past/);
-});
-
-test("front desk: SEVERAL events from a text conversation become one card, checked by the same code as a photo", () => {
-  const raw = { action: "addEvent", reason: "r", eventTitle: "", eventStart: "", eventEnd: "", eventRepeatUntil: "", eventsJson: timetable() };
-  const d = validateDecision(raw, { now: NOW });
-  assert.strictEqual(d.calendarAdd.events.length, 2);
-  assert.strictEqual(d.calendarAdd.events[0].date, "2026-11-08"); // the weekday became a real date in code
-  assert.deepStrictEqual(d.calendarAdd.skipped, ["Physics 08:00"]);
-  // untrusted or broken JSON is refused as a whole: a plain reply, no card
-  for (const eventsJson of ["not json", timetable({ until: "" }), JSON.stringify({ events: [{ title: "x", weekday: "Sunday", start: "10:00", end: "09:00" }] })]) {
-    const bad = validateDecision({ ...raw, eventsJson }, { now: NOW });
-    assert.strictEqual(bad.calendarAdd, null);
-    assert.match(bad.answer, /did not add anything/);
-  }
-});
-
 // ---- core ----
 const coreDeps = (over = {}) => ({ lowPools: async () => [], refreshQuota: () => {}, prewarmAnswer: () => {}, speculate: null, ...over });
-
-test("core, typed: the front desk's proposal becomes a card, and no event is created", async () => {
-  const drafted = [];
-  const logs = [];
-  const result = await handleTask("add dentist Thursday at 4", {
-    log: (l) => logs.push(l),
-    deps: coreDeps({
-      decide: async () => validateDecision({ action: "addEvent", reason: "r", eventTitle: "Dentist", eventStart: "2026-11-12T16:00", eventEnd: "", eventRepeatUntil: "" }, { now: NOW }),
-      addCalendarCard: (p) => { drafted.push(p); return { id: "a".repeat(32), expiresAt: 1, events: p.events, skipped: p.skipped }; },
-      askChain: async () => { throw new Error("no model may answer this"); },
-    }),
-  });
-  assert.strictEqual(result.calendarAdd.events[0].summary, "Dentist");
-  assert.match(result.answer, /Nothing is added until you tap Confirm/);
-  assert.strictEqual(drafted.length, 1);
-  assert.ok(!logs.some((l) => /Dentist/.test(l)), "titles never reach the log");
-});
-
-test("core, photo + Hebrew request: Gemini is asked for strict JSON, the answer is checked, ONE card lists the events without the 8:00 class", async () => {
-  const hebrew = "תוסיף את זה לקלנדר כל שבוע עד סוף ינואר בלי השיעור של 8 בבוקר אני לא אוהב להתחיל בשמונה";
-  const asked = [];
-  const result = await handleTask(hebrew, {
-    image: { path: "p.jpg", ext: ".jpg" },
-    deps: coreDeps({
-      decide: async () => { throw new Error("the front desk must not run for a photo"); },
-      askImage: async (model, question) => { asked.push(question); return timetable(); },
-      addCalendarCard: (p) => ({ id: "b".repeat(32), expiresAt: 1, events: p.events, skipped: p.skipped }),
-    }),
-  });
-  assert.match(asked[0], /ONLY one JSON object/);
-  assert.match(asked[0], /without the 8:00 class|exclude/);
-  assert.doesNotMatch(asked[0], /cannot add anything to a calendar yet/);
-  assert.strictEqual(result.rule, "photo (calendar add, needs Confirm)");
-  assert.strictEqual(result.calendarAdd.events.length, 2);
-  assert.ok(!result.calendarAdd.events.some((e) => e.start === "08:00"));
-  assert.ok(result.calendarAdd.events.every((e) => e.repeatUntil === "2027-01-31"));
-  assert.ok(result.chain.every((m) => m.provider === "agy"));
-});
-
-test("core, photo: a photo message that is not about the calendar behaves as before (no JSON demand, no card)", async () => {
-  const asked = [];
-  const result = await handleTask("what is on my schedule?", {
-    image: { path: "p.jpg", ext: ".jpg" },
-    deps: coreDeps({ askImage: async (model, q) => { asked.push(q); return "Sunday 10:00 Calculus"; }, addCalendarCard: () => { throw new Error("no card for this"); } }),
-  });
-  assert.strictEqual(result.rule, "photo");
-  assert.strictEqual(result.answer, "Sunday 10:00 Calculus");
-  assert.doesNotMatch(asked[0], /JSON/);
-  assert.doesNotMatch(asked[0], /cannot add anything to a calendar yet/); // the note no longer says adding is impossible
-  assert.strictEqual(result.calendarAdd, undefined);
-});
-
-test("core, photo: if the model answers with prose or with a trick, no card is made and nothing is added", async () => {
-  for (const answer of ["Here is your timetable: Sunday 10:00 Calculus", timetable({ until: "" }), JSON.stringify({ events: [{ title: "x", date: "2020-01-01", start: "10:00", end: "11:00" }] })]) {
-    let drafted = 0;
-    const result = await handleTask("please add this to my calendar", {
-      image: { path: "p.jpg", ext: ".jpg" },
-      deps: coreDeps({ askImage: async () => answer, addCalendarCard: () => { drafted++; return {}; } }),
-    });
-    assert.strictEqual(drafted, 0);
-    assert.strictEqual(result.calendarAdd, undefined);
-    assert.match(result.answer, /Nothing was added/);
-  }
-});
-
-test("no model-facing file can create an event: createEvent is only used by calendar-add.js (the Confirm path) and calendar.js", () => {
-  for (const file of ["core.js", "frontdesk.js", "planner.js", "providers.js", "calendar-chat.js", "jobs.js", "server.js"]) {
-    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), /createEvent/, file);
-  }
-  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", "calendar.js"), "utf8"), /deleteEvent|\.delete\(|"DELETE"|"PATCH"|"PUT"/);
-});
 
 // ---- memory of a card, corrections, replacing a waiting card ----
 const hebrewTimetable = () => JSON.stringify({ events: [
@@ -414,50 +287,6 @@ test("A NEW CARD REPLACES A WAITING ONE: the old card can no longer be confirmed
   assert.strictEqual(created.length, 4);
 });
 
-test("core passes the earlier cards' ids of this chat, so the new card replaces them", async () => {
-  const seen = [];
-  const desk = async () => validateDecision({ action: "addEvent", reason: "r", eventTitle: "", eventStart: "", eventEnd: "", eventRepeatUntil: "", eventsJson: hebrewTimetable() }, { now: NOW });
-  await handleTask("תעביר את החמישי", {
-    history: [{ role: "user", text: "x" }, { role: "assistant", text: "card", cardId: "c".repeat(32) }],
-    deps: coreDeps({ decide: desk, addCalendarCard: (p, opts) => { seen.push(opts); return { id: "d".repeat(32), events: p.events, skipped: [], unclear: [] }; } }),
-  });
-  assert.deepStrictEqual(seen[0], { supersedes: ["c".repeat(32)] });
-});
-
-test("CORRECTION in Hebrew: the front desk copies the card's JSON, changes one event, and every other event stays exactly the same", () => {
-  const before = add.checkPhotoEvents(hebrewTimetable(), { now: NOW });
-  const { cards } = fakeCards();
-  const card = cards.add(before);
-  const note = cards.note(card);
-  const json = JSON.parse(note.slice(note.indexOf('{"events"'), note.lastIndexOf("}]") + 1)); // what the front desk reads in the history
-  const thursday = json.events.find((e) => e.weekday === "Thursday");
-  thursday.start = "14:00"; // "תעביר את החמישי שעתיים קדימה"
-  thursday.end = "16:00";
-  const d = validateDecision({ action: "addEvent", reason: "r", eventsJson: JSON.stringify(json) }, { now: NOW });
-  const after = d.calendarAdd.events;
-  assert.strictEqual(after.length, before.events.length);
-  const key = (e) => JSON.stringify(e);
-  for (const e of before.events.filter((x) => x.weekday !== "Thursday")) assert.ok(after.some((y) => key(y) === key(e)), "unchanged: " + e.summary);
-  const moved = after.find((e) => e.weekday === "Thursday");
-  assert.deepStrictEqual([moved.start, moved.end, moved.location, moved.repeatUntil], ["14:00", "16:00", "בניין 28", "2027-01-31"]);
-});
-
-test("both briefings explain corrections: waiting card -> full new card; confirmed card -> say it cannot be changed; unclear -> ask", () => {
-  for (const file of ["router-brief.md", "router-brief-haiku.md"]) {
-    const text = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
-    for (const word of ["CORRECTIONS", "WAITING", "CONFIRMED", "FULL corrected list", "unclear"]) assert.ok(text.includes(word), file + " lacks " + word);
-  }
-});
-
-test("UNCLEAR: doubts the photo model reports are cleaned and travel to the card; the note asks for them", () => {
-  const r = add.checkPhotoEvents(timetable({ unclear: ["Two classes called Systems: which one?\n", "", 5] }), { now: NOW });
-  assert.deepStrictEqual(r.unclear, ["Two classes called Systems: which one?", "5"]);
-  const { cards } = fakeCards();
-  assert.deepStrictEqual(cards.add(r).unclear, r.unclear);
-  assert.match(add.photoCalendarNote("photo.png", { now: NOW }), /"unclear"/);
-  assert.deepStrictEqual(add.checkPhotoEvents(timetable(), { now: NOW }).unclear, []);
-});
-
 test("the card reads 'Every Sunday ... from 8 Nov until 31 Jan 2027' with a header counting the weekly classes, and shows doubts", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
   assert.match(html, /"Every " \+ e\.weekday/);
@@ -470,56 +299,6 @@ test("the card reads 'Every Sunday ... from 8 Nov until 31 Jan 2027' with a head
 const bigTimetable = () => JSON.stringify({
   events: Array.from({ length: add.MAX_EVENTS }, (_, i) => ({ title: `קורס מספר ${i + 1} - שיעור מורחב עם שם ארוך מאוד כדי לבדוק חיתוך`, weekday: add.DAYS[i % 7], start: `${String(8 + (i % 10)).padStart(2, "0")}:00`, end: `${String(9 + (i % 10)).padStart(2, "0")}:00`, location: `בניין ${i + 1}, כיתה ${100 + i}` })),
   repeat: "weekly", until: "2027-01-31", skipped: [],
-});
-
-test("30 EVENTS: the full card note (more than 3000 characters) reaches the front desk prompt, not cut in the middle of the JSON", async () => {
-  const { createJobs } = require("../jobs");
-  const { buildPrompt } = require("../frontdesk");
-  const store = createStore(fs.mkdtempSync(path.join(os.tmpdir(), "caladd-big-")));
-  const { cards } = fakeCards();
-  let history = null, step = 0;
-  const jobs = createJobs({
-    store, cardNote: (card, options) => cards.note(card, options),
-    handle: async (task, opts) => {
-      history = opts.history;
-      if (step++ === 0) return { mode: "single", answer: "Add these to your calendar?", used, calendarAdd: cards.add(add.checkPhotoEvents(bigTimetable(), { now: NOW })) };
-      return { mode: "single", answer: "ok", used };
-    },
-  });
-  const wait = async (job) => { while (jobs.get(job.id).status === "running") await new Promise((r) => setTimeout(r, 5)); };
-  const first = jobs.start({ task: "תוסיף ליומן" });
-  await wait(first);
-  await wait(jobs.start({ task: "תעביר את הראשון", conversationId: first.conversationId }));
-  // what core gives the front desk, and what the front desk puts in its prompt
-  const { historyBlock } = require("../core");
-  const block = historyBlock(history);
-  const prompt = buildPrompt("תעביר את הראשון", { history: block, brief: "B", now: NOW });
-  const note = history[1].note;
-  assert.ok(note.length > 3000, "the note is longer than a single message may be (" + note.length + ")");
-  assert.ok(prompt.includes(note), "the whole note is in the front desk prompt");
-  const json = JSON.parse(note.slice(note.indexOf('{"events"'), note.length - 1)); // the note ends with the JSON and a closing ]
-  assert.strictEqual(json.events.length, add.MAX_EVENTS);
-  assert.strictEqual(json.events[add.MAX_EVENTS - 1].location, `בניין ${add.MAX_EVENTS}, כיתה ${100 + add.MAX_EVENTS - 1}`);
-});
-
-test("history: only the NEWEST card keeps its full note; older cards keep a short status; a note that cannot fit makes the model ask", () => {
-  const { historyBlock } = require("../core");
-  const full = (name) => `[Calendar card. Status: x. events: ${name}]`;
-  const history = [
-    { role: "assistant", text: "card one", note: full("OLD-EVENTS"), noteShort: "[An older calendar card. Status: CONFIRMED.]", cardId: "a" },
-    { role: "user", text: "fix" },
-    { role: "assistant", text: "card two", note: full("NEW-EVENTS"), noteShort: "[short]", cardId: "b" },
-  ];
-  const block = historyBlock(history);
-  assert.ok(block.includes("NEW-EVENTS"));
-  assert.ok(!block.includes("OLD-EVENTS"));
-  assert.ok(block.includes("An older calendar card. Status: CONFIRMED."));
-  const huge = historyBlock([{ role: "assistant", text: "card", note: "[" + "x".repeat(13000) + "]", noteShort: "[s]" }]);
-  assert.match(huge, /too long to repeat/);
-  assert.match(huge, /ask the user which events to change/);
-  assert.ok(!huge.includes("xxxxxxxxxx"));
-  // an ordinary long message is still cut as before
-  assert.ok(historyBlock([{ role: "user", text: "y".repeat(5000) }]).length < 3200);
 });
 
 // ---- the server routes ----
@@ -586,4 +365,39 @@ test("the page draws the card from fields and wires Confirm and Cancel to the tw
   assert.match(html, /\/api\/calendar\/cancel/);
   assert.match(html, /result\.calendarAdd/);
   assert.match(html, /@media \(max-width: 600px\) \{ \.calcard/); // phone layout
+});
+
+test("no model-facing file can create an event: createEvent is only used by calendar-add.js (the Confirm path) and calendar.js", () => {
+  for (const file of ["brain.js", "study-coach.js", "moodle-tools.js", "providers.js", "calendar-chat.js", "jobs.js", "server.js"]) {
+    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), /createEvent/, file);
+  }
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", "calendar.js"), "utf8"), /deleteEvent|\.delete\(|"DELETE"|"PATCH"|"PUT"/);
+});
+
+test("history: only the NEWEST card keeps its full note; older cards keep a short status; a note that cannot fit makes the model ask", () => {
+  const { historyBlock } = require("../history");
+  const full = (name) => `[Calendar card. Status: x. events: ${name}]`;
+  const history = [
+    { role: "assistant", text: "card one", note: full("OLD-EVENTS"), noteShort: "[An older calendar card. Status: CONFIRMED.]", cardId: "a" },
+    { role: "user", text: "fix" },
+    { role: "assistant", text: "card two", note: full("NEW-EVENTS"), noteShort: "[short]", cardId: "b" },
+  ];
+  const block = historyBlock(history);
+  assert.ok(block.includes("NEW-EVENTS"));
+  assert.ok(!block.includes("OLD-EVENTS"));
+  assert.ok(block.includes("An older calendar card. Status: CONFIRMED."));
+  const huge = historyBlock([{ role: "assistant", text: "card", note: "[" + "x".repeat(13000) + "]", noteShort: "[s]" }]);
+  assert.match(huge, /too long to repeat/);
+  assert.match(huge, /ask the user which events to change/);
+  assert.ok(!huge.includes("xxxxxxxxxx"));
+  // an ordinary long message is still cut as before
+  assert.ok(historyBlock([{ role: "user", text: "y".repeat(5000) }]).length < 3200);
+});
+
+test("UNCLEAR: doubts the photo model reports are cleaned and travel to the card", () => {
+  const r = add.checkPhotoEvents(timetable({ unclear: ["Two classes called Systems: which one?\n", "", 5] }), { now: NOW });
+  assert.deepStrictEqual(r.unclear, ["Two classes called Systems: which one?", "5"]);
+  const { cards } = fakeCards();
+  assert.deepStrictEqual(cards.add(r).unclear, r.unclear);
+  assert.deepStrictEqual(add.checkPhotoEvents(timetable(), { now: NOW }).unclear, []);
 });

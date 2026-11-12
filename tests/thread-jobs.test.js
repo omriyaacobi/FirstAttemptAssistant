@@ -12,8 +12,7 @@ const path = require("node:path");
 const { createJobs } = require("../jobs");
 const { createThreadStore, loadThreadFlag } = require("../thread-store");
 const { buildHistory, MAX_CONTEXT_CHARS } = require("../thread-context");
-const { historyBlock, MAX_HISTORY_CHARS } = require("../core");
-const { buildPrompt } = require("../frontdesk");
+const { historyBlock, MAX_HISTORY_CHARS } = require("../history");
 const { findInThread } = require("../recall");
 const { createStore } = require("../store");
 const { createServer } = require("../server");
@@ -195,11 +194,9 @@ test("CAP: however long the thread, the history for a message stays under the ha
   assert.ok(history.length >= 3 && history.length < 20);
   assert.ok(history.some((h) => h.text.startsWith("1199 ")), "the newest turn is kept");
   assert.strictEqual(history.filter((h) => /still working/.test(h.text)).length, 5); // pending lines are capped too
-  // and the text core.js really pastes in front of the model, plus the whole front desk prompt, stay small
+  // and the text really pasted in front of the model (history.js) stays small
   const block = historyBlock(history);
   assert.ok(block.length <= MAX_HISTORY_CHARS + 200, `the pasted block is ${block.length}`);
-  const prompt = buildPrompt("hello", { history: block, courses: COURSES, about: "a".repeat(5000), studyState: "s".repeat(600) });
-  assert.ok(prompt.length < 40000, `the whole desk prompt is ${prompt.length} characters`);
 });
 
 test("CAP: one single huge message cannot blow the cap either", () => {
@@ -224,7 +221,7 @@ test("PINNED: the newest calendar card's note is in the context even when a busy
   assert.strictEqual(history[0].cardId, "card1"); // pinned at the front
   assert.match(history[0].note, /Algebra, Physics/);
   assert.ok(!history.slice(1).some((h) => h.cardId), "not doubled");
-  // core.js prints the newest card's FULL note
+  // history.js prints the newest card's FULL note
   assert.match(historyBlock(history), /CARD NOTE full: Algebra, Physics/);
   // when the card is among the recent turns, it is not added a second time
   const small = createThreadStore(tmp());
@@ -357,19 +354,6 @@ test("SERVER (thread OFF): the old routes work exactly as before, and the thread
       hold.release();
     } finally { s2.close(); }
   } finally { s.close(); }
-});
-
-test("the switch: BOT_THREAD in the environment or .env, default off", () => {
-  const dir = tmp();
-  const envFile = path.join(dir, ".env");
-  assert.strictEqual(loadThreadFlag(envFile, {}), false); // no file, no variable
-  fs.writeFileSync(envFile, "BOT_THREAD=on\n");
-  assert.strictEqual(loadThreadFlag(envFile, {}), true);
-  fs.writeFileSync(envFile, "BOT_THREAD=off\n");
-  assert.strictEqual(loadThreadFlag(envFile, {}), false);
-  fs.writeFileSync(envFile, "BOT_THREAD=maybe\n");
-  assert.strictEqual(loadThreadFlag(envFile, {}), false);
-  assert.strictEqual(loadThreadFlag(envFile, { BOT_THREAD: "1" }), true);
 });
 
 test("SERVER (thread on): the trash list shows deleted messages after a reload, and Restore brings one back (night check)", async () => {

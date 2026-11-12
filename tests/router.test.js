@@ -6,10 +6,6 @@ const test = require("node:test");
 const assert = require("node:assert");
 const { MODELS, DESTINATIONS, DEFAULT_CHAIN, chainForDestination, chainForType } = require("../router");
 
-test("the default chain starts with Claude Sonnet", () => {
-  assert.deepStrictEqual(DEFAULT_CHAIN[0], MODELS.claudeSonnet);
-});
-
 test("every destination has a first choice and at least one fallback", () => {
   for (const [name, chain] of Object.entries(DESTINATIONS)) {
     assert.ok(chain.length >= 2, `${name} needs a fallback`);
@@ -32,12 +28,6 @@ test("chainForDestination only returns known destinations", () => {
   assert.strictEqual(chainForDestination("made-up-model"), null);
   assert.strictEqual(chainForDestination("toString"), null); // inherited object properties are not destinations
   assert.strictEqual(chainForDestination("__proto__"), null);
-});
-
-test("chainForType maps planner types to chains and falls back to the default", () => {
-  assert.strictEqual(chainForType("code")[0].provider, "claude");
-  assert.strictEqual(chainForType("hard")[0].model, "gemini-4-argon-medium");
-  assert.strictEqual(chainForType("nonsense"), DEFAULT_CHAIN);
 });
 
 test("every model says which quota pool(s) it draws from; the Claude CLI models draw from the Claude plan", () => {
@@ -70,16 +60,3 @@ test("web destinations only use models that can search, so nobody answers from m
   assert.strictEqual(chainForDestination("web-research")[0].provider, "research");
 });
 
-test("planner steps can use the web too", () => {
-  assert.strictEqual(chainForType("web"), chainForDestination("web-search"));
-  assert.strictEqual(chainForType("research"), chainForDestination("web-research"));
-});
-
-test("both briefings send a message with a web link to web-research", () => {
-  const fs = require("node:fs");
-  const path = require("node:path");
-  for (const f of ["router-brief.md", "router-brief-haiku.md"]) {
-    const t = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
-    assert.match(t, /web link[\s\S]*delegate web-research[\s\S]*Never answer that Bot cannot open links/, f);
-  }
-});
