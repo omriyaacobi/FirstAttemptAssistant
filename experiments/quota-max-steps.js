@@ -14,7 +14,7 @@ const [model, prompt] = process.argv.slice(2);
 const noAgent = process.argv.includes("--no-agent");
 if (!/^[\w.-]+$/.test(model || "") || !prompt) { console.error('usage: node quota-max-steps.js <model> "<prompt>" [--no-agent]'); process.exit(1); }
 
-const cwd = sandbox();
+const cwd = noAgent ? sandbox() : require("../providers").BRAIN_DIR; // the same folders Bot uses
 const args = ["-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
 if (!noAgent) args.push("--agent", ensureAgent(cwd));
 const child = spawn(AGY_CMD, args, { cwd, windowsHide: true });

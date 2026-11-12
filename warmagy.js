@@ -14,7 +14,7 @@
 
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { SANDBOX_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, readUsage, watchSteps } = require("./providers");
+const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, readUsage, watchSteps } = require("./providers");
 
 const MAX_SPARE_AGE_MS = 8 * 60 * 1000; // a spare older than this is thrown away (idle 5 min was tested fine)
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
@@ -22,12 +22,13 @@ const DEFAULT_TIMEOUT_MS = 90 * 1000;
 // One agy process in stream mode. ready resolves when agy printed "init". run(prompt) writes the prompt and resolves
 // with the structured reply. kill() stops it. It can run() only once.
 // agent: true starts it under the slim agent (providers.js ensureAgent): far fewer tokens per call, and only web search as a tool.
+// Such a process runs in the brain's own empty folder (BRAIN_DIR), where the agent file is; every other one in the shared sandbox.
 function startProcess({ command, prefixArgs, model, schema, clock, agent = false }) {
   const args = [...prefixArgs, "-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
   if (schema) args.push("--json-schema", JSON.stringify(schema));
   fs.mkdirSync(SANDBOX_DIR, { recursive: true });
-  if (agent) args.push("--agent", ensureAgent(SANDBOX_DIR));
-  const child = spawn(command, args, { cwd: SANDBOX_DIR, windowsHide: true });
+  if (agent) args.push("--agent", ensureAgent(BRAIN_DIR));
+  const child = spawn(command, args, { cwd: agent ? BRAIN_DIR : SANDBOX_DIR, windowsHide: true });
   const born = clock();
   let buffer = "";
   let isReady = false;

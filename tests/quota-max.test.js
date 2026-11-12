@@ -8,7 +8,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { askAgyStream, ensureAgent, readUsage, readClaudeStream, BRAIN_AGENT, SANDBOX_DIR } = require("../providers");
+const { askAgyStream, ensureAgent, readUsage, readClaudeStream, BRAIN_AGENT, BRAIN_DIR, SANDBOX_DIR } = require("../providers");
 const { createWarmAgy } = require("../warmagy");
 const { createTokenLog, dayOf } = require("../tokenlog");
 const { createBrain, costOf } = require("../brain");
@@ -63,7 +63,9 @@ test("askAgyStream: agent adds --agent, onUsage gets the tokens; without agent t
   const withAgent = await askAgyStream("q", "gemini-4-argon-low", () => {}, { ...opts, agent: true, onUsage: (u) => { cost = u; } });
   assert.ok(withAgent.endsWith(`--model gemini-4-argon-low --agent ${BRAIN_AGENT}`));
   assert.deepStrictEqual(cost, { input: 2073, output: 12, thinking: 5, cacheRead: 100, turns: 1, inner: [] });
-  assert.ok(fs.existsSync(path.join(SANDBOX_DIR, ".agents", "agents", BRAIN_AGENT, "agent.md"))); // written where agy runs
+  assert.ok(fs.existsSync(path.join(BRAIN_DIR, ".agents", "agents", BRAIN_AGENT, "agent.md"))); // written where the brain's agy runs
+  // ...and NOT in the shared sandbox: an agent file there would add about 1,000 tokens to every other agy call of Bot
+  assert.notStrictEqual(BRAIN_DIR, SANDBOX_DIR);
   const plain = await askAgyStream("q", "gemini-4-argon-low", () => {}, opts);
   assert.ok(!plain.includes("--agent"));
   assert.ok(!withAgent.includes("--dangerously-skip-permissions"));
