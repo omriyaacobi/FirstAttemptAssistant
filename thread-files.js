@@ -70,6 +70,11 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   const pending = new Map(); // id -> { bytes, name, text, questionId, at }
   const context = new Map(); // "courseId/fileId" -> { text, questionId } what to tell the coach when the file is read
 
+  // The words Omri wrote WITH the file. Filing is done by code; what the words ask (a question about the file, "and remind me ...") is
+  // understood by the brain, like any message. server.js sets the handler (it starts a thread job on the SAME question).
+  let wordsHandler = null;
+  const sendWords = (args) => { if (!wordsHandler || !String(args.text || "").trim()) return; try { wordsHandler(args); } catch (error) { log(`[files] the words sent with the file were not answered: ${error.message}`); } };
+
   const sweep = () => { for (const [id, p] of pending) if (now() - p.at > PENDING_MS) pending.delete(id); };
 
   function say(text, questionId, extra = {}) {
@@ -80,6 +85,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     const saved = courseRoutes.addUpload(courseId, bytes, name); // may throw 400/409/413/415: the caller shows the reason
     context.set(`${courseId}/${saved.id}`, { text, questionId });
     const reply = say(words(langOf(text), `Filed "${saved.name}" under ${ref.name} (I chose it from ${how}). Bot is reading it now and will tell you when it is ready.`, `תייקתי את "${saved.name}" ${bet(ref.name)} (לפי שם הקובץ או ההודעה). Bot קורא אותו עכשיו ויעדכן כשזה מוכן.`), questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, fileId: saved.id } });
+    sendWords({ text, questionId, courseId, courseName: ref.name, fileName: saved.name });
     return { status: "filed", courseId, fileId: saved.id, messageId: reply.id };
   }
 
@@ -128,6 +134,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
       waiting = { id, name: clean, courses: list, expiresAt: now() + PENDING_MS };
     }
     const reply = say(zipSummary(lang, clean, filed, skipped, undecided.length), question.id, { result: { filedCount: filed.length, skippedCount: skipped.length, ...(waiting ? { fileChoice: waiting } : {}) } });
+    if (filed.length && !waiting) { const only = groups.size === 1 ? [...groups.values()][0] : null; sendWords({ text, questionId: question.id, courseId: only ? only.ref.courseId : null, courseName: only ? only.ref.name : null, fileName: clean }); }
     return { status: waiting ? "asking" : "filed", filedCount: filed.length, skippedCount: skipped.length, questionId: question.id, messageId: reply.id, ...(waiting ? { pendingId: waiting.id, courses: list } : {}) };
   }
 
@@ -138,6 +145,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     fileMany(courseId, ref.name, p.files, filed, skipped);
     pending.delete(pendingId);
     const reply = say(zipSummary(langOf(p.text), p.zipName, filed, skipped, 0), p.questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, filedCount: filed.length, skippedCount: skipped.length } });
+    if (filed.length) sendWords({ text: p.text, questionId: p.questionId, courseId, courseName: ref.name, fileName: p.zipName });
     return { status: "filed", courseId, filedCount: filed.length, skippedCount: skipped.length, messageId: reply.id };
   }
 
@@ -210,7 +218,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     say(answer, ctx.questionId, { topic: `course:${courseId}`, result: { courseId, ...(r.proposal ? { proposal: r.proposal } : {}) } });
   }
 
-  return { receive, assign, onFileReady, pendingCount: () => pending.size };
+  return { receive, assign, onFileReady, pendingCount: () => pending.size, onWords: (fn) => { wordsHandler = fn; } };
 }
 
 module.exports = { createThreadFiles, pickCourse, PENDING_MS };

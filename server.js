@@ -244,6 +244,9 @@ function createServer({
     },
   });
 
+  // The words sent WITH a file (thread-files.js files it by code): the brain reads them as a follow-up on the same question.
+  if (brain && threadFiles && threadFiles.onWords) threadFiles.onWords(({ text, questionId, courseId, courseName, fileName }) => jobs.startThread({ task: text, questionId, attached: { courseId, courseName, fileName } }));
+
   // Every route runs inside this function. If one throws (a locked or damaged file, a bug), the page gets a plain 500 and Bot keeps running:
   // an async handler that throws would otherwise be an unhandled rejection, and Node ends the whole program on those.
   const handleRequest = async (req, res) => {

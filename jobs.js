@@ -271,7 +271,9 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     return "general";
   }
 
-  function startThread({ task, noPlan = false, image = null, deeper = false, route = null }) {
+  // questionId + attached (thread-files.js): the words Omri sent WITH a file. The question is already in the thread (and already has its
+  // "Filed ..." line), so no second question is saved; the brain is told about the file and may answer nothing (result.silent).
+  function startThread({ task, noPlan = false, image = null, deeper = false, route = null, questionId = null, attached = null }) {
     if (!thread) throw Object.assign(new Error("the thread is off"), { status: 404 });
     if (threadJobs().filter((j) => j.status === "running").length >= MAX_THREAD_JOBS) {
       throw Object.assign(new Error("too many messages are being worked on at once, wait a little"), { status: 429 });
@@ -289,7 +291,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
       notes: summaries ? (() => { try { return summaries.notesBlock(); } catch (error) { return ""; } })() : "",
     });
     const startedAt = now();
-    const question = thread.append({ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt, topic: "general" });
+    const question = questionId ? { id: questionId } : thread.append({ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt, topic: "general" });
 
     const job = {
       id: crypto.randomBytes(16).toString("hex"),
@@ -322,13 +324,16 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
         // notify: one short line written by code (core.js), saved under the question as a message marked `ack`. It is not the answer: the
         // restart check does not count it as one, the model's memory skips it, and no push is sent for it (onFinish runs only for the answer).
         const notify = (text) => { try { job.acked = true; thread.append({ role: "assistant", text: String(text).slice(0, 500), replyTo: question.id, topic: "general", ack: true, at: now() }); } catch (error) { /* the line is a courtesy; the answer still comes */ } };
-        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify });
-        const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);
-        // An empty answer is a failure, not a reply: the page must never show a blank bubble.
-        if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");
-        topic = topicOf(result);
-        message = { role: "assistant", text, replyTo: question.id, topic, result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
-        job.status = "done";
+        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify: attached ? null : notify, ...(attached ? { attached } : {}) });
+        if (attached && result && result.silent) { job.silent = true; job.status = "done"; }
+        if (!job.silent) {
+          const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);
+          // An empty answer is a failure, not a reply: the page must never show a blank bubble.
+          if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");
+          topic = topicOf(result);
+          message = { role: "assistant", text, replyTo: question.id, topic, result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
+          job.status = "done";
+        }
       } catch (error) {
         const text = String(error && error.message).slice(0, 500);
         message = { role: "assistant", text: "Something went wrong: " + text, replyTo: question.id, topic: "general", error: true, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
@@ -336,7 +341,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
         job.error = text;
       }
       try {
-        thread.append(message);
+        if (message) thread.append(message); // nothing to save when the words sent with a file needed no answer
       } catch (error) {
         job.status = "error";
         job.error = "the answer could not be saved: " + String(error.message).slice(0, 200);
@@ -346,7 +351,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
       job.waiting = false;
       release(job);
       prune();
-      try {
+      if (!job.silent) try {
         // The lock screen shows the push text, so it never carries the message or the answer: only a generic word for the topic.
         const word = { calendar: "your calendar", study: "your studies", course: "your studies" }[topic.split(":")[0]] || "your message";
         onFinish({ job: view(job), title: job.status === "done" ? `An answer about ${word} is ready` : "Bot could not finish", watched: now() - job.lastWatched < WATCH_FRESH_MS });
