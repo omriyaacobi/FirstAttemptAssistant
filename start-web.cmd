@@ -5,6 +5,9 @@ rem "start-web.cmd nobrowser hidden" is how start-hidden.vbs runs it: with no wi
 rem and it does nothing if Bot already answers on port 3000.
 cd /d "%~dp0"
 
+rem Starting Bot on purpose ends a stop made with stop-bot.cmd, so the watchdog (watchdog.cmd) watches it again.
+if exist "data\stay-stopped" del "data\stay-stopped"
+
 rem Use "node" if Windows can find it; otherwise fall back to where the Node installer puts it.
 set "NODE=node"
 where node >nul 2>nul || set "NODE=C:\Program Files\nodejs\node.exe"

@@ -8,6 +8,7 @@ Run all checks with `node --test` (about 1000 tests, about 45 s; they find the `
 | Folder / file | What it is |
 |---|---|
 | `server.js`, `start-web.cmd` | the web server and the double-click starter. Protected from Improve Bot. |
+| `start-hidden.vbs`, `stop-bot.cmd`, `watchdog.cmd`, `bot-watchdog.vbs`, `autostart.ps1`, `install-autostart.cmd`, `remove-autostart.cmd` | running Bot in the background with no window: start, stop, and the scheduled task "Bot" that starts it at login and restarts it every 5 minutes if it stopped or hung (see `experiments/2026-11-12-always-up.md`) |
 | `brain.js`, `brain-brief.md`, `project-folder.js` | THE BRAIN: one model with a toolbox reads every message of the thread and picks the abilities it needs (edit `brain-brief.md` to change how Bot behaves). `BOT_BRAIN=off` in `.env` goes back to the old path below |
 | `core.js`, `frontdesk.js`, `router.js`, `router-brief*.md`, `planner.js`, `providers.js`, `jobs.js` | how a message is routed to a model and answered |
 | `calendar*.js`, `reminders.js`, `morning.js` | Google Calendar, reminders, the morning brief |
