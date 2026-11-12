@@ -54,7 +54,7 @@ const MAX_CALLS_PER_ROUND = 6;
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo"]);
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -247,6 +247,7 @@ function createBrain({
   // Each returns text for the model (data). ctx collects what the page must draw (cards) and what happened.
   function makeTools(ctx) {
     const { task, history, list, lang } = ctx;
+    const study = coach && coach.brainTools ? coach.brainTools : null;
     const need = (name) => { const c = matchCourse(name, list); if (!c) throw new Error(`there is no course called "${String(name).slice(0, 60)}". The courses are: ${list.map((x) => x.name).join("; ")}`); return c; };
     // A link may be opened only if Omri wrote it (now or earlier in the talk) or it is written in a course file. A model never invents an address.
     let fileUrls = null;
@@ -436,6 +437,27 @@ ${r.cardText}`; }
           throw error;
         }
       },
+      // ---- the study coach's checked actions (study-coach.js brainTools). The model hands in VALUES; code checks them. ----
+      study_pause: async ({ until }) => { afterWeb("change the study reminders"); if (!study) return "The study tracker is off."; return study.pause({ until: String(until || "").trim(), lang }); },
+      study_resume: async () => { afterWeb("change the study reminders"); if (!study) return "The study tracker is off."; return study.resume({ lang }); },
+      exam_date: async ({ course, date }) => {
+        const c = need(course);
+        if (!study) return "The study tracker is off.";
+        const r = study.exam({ courseId: c.id, date: String(date || "").trim(), lang });
+        ctx.extras.proposal = r.proposal;
+        ctx.course = c;
+        return `A card asks Omri to confirm: the exam of ${c.name} is on ${r.date}. It is NOT saved until Omri taps Confirm.`;
+      },
+      study_position: async ({ tool, course, ...fields }) => {
+        afterWeb("store where Omri stands");
+        const c = need(course);
+        if (!study) return "The study tracker is off.";
+        const r = study.position({ courseId: c.id, fields, said: task, lang });
+        if (r.proposal) ctx.extras.proposal = r.proposal;
+        ctx.course = c;
+        return `STORED for ${c.name} (Omri can ask to undo it). What code kept, and what it dropped and why:\n${r.text}`;
+      },
+      study_undo: async () => { afterWeb("change the study record"); if (!study) return "The study tracker is off."; return study.undo({ lang }); },
       improve_bot: async ({ request }) => {
         ctx.extras.improve = { request: String(request || task).slice(0, 2000) };
         return "A button that opens Improve Bot with this request is shown to Omri. Nothing changes until Omri starts it there. Say that in one line.";
@@ -449,6 +471,12 @@ ${r.cardText}`; }
     quiz_answer: (c, task) => ({ studyIntent: "answer", text: task }),
     card_reply: (c, task, a) => ({ studyIntent: a.yes === false ? "cancel" : "confirm", text: task }),
   };
+  // Code-run study answers that are also shown as they are: the plan across all courses, and teaching the next part from the notes.
+  const DIRECT = {
+    study_plan: (c, a, lang) => coach.brainTools.plan({ minutes: a.minutes, todayOnly: a.today_only === true, lang }),
+    teach_next: (c, a, lang, onText) => coach.brainTools.teach({ courseId: c ? c.id : null, part: String(a.part || ""), lang, onText }),
+  };
+  const isTerminal = (tool) => !!TERMINAL[tool] || (!!DIRECT[tool] && !!(coach && coach.brainTools));
 
   // The coming week of the calendar and the waiting reminders, as text. Read-only. The calendar answer is kept for a minute, and a slow
   // or failed Google call just leaves the block out (the model can still call calendar_read).
@@ -591,12 +619,16 @@ ${r.cardText}`; }
       if (showing && onPartial) onPartial("");
 
       // A coach flow: its output is the answer, so it must come ALONE (other calls next to it would be lost without a word).
-      const term = reply.calls.find((c) => TERMINAL[c.tool]);
+      const term = reply.calls.find((c) => isTerminal(c.tool));
       if (term && coach && reply.calls.length > 1) {
-        reply.calls = reply.calls.map((c) => (TERMINAL[c.tool] ? { ...c, alone: true } : c));
+        reply.calls = reply.calls.map((c) => (isTerminal(c.tool) ? { ...c, alone: true } : c));
       } else if (term && coach) {
         const c = term.course ? matchCourse(term.course, list) : ctx.course;
         log(`[brain] tool ${term.tool}${c ? ` (${c.name})` : ""}`);
+        if (DIRECT[term.tool]) {
+          const res = await DIRECT[term.tool](c, term, lang, onPartial || null);
+          return { ...res, mode: "study", brain: true, seconds: seconds(), ...(c && term.tool !== "study_plan" ? { courseId: c.id, courseName: c.name } : {}) };
+        }
         const args = TERMINAL[term.tool](c, task, term);
         const res = await coach.answerStudy({ ...args, courseId: c ? c.id : null, courseName: c ? c.name : null, ...(onPartial ? { onText: onPartial } : {}) });
         return { ...res, brain: true, seconds: seconds(), ...(c ? { courseId: c.id, courseName: c.name } : {}), studyIntent: args.studyIntent };
