@@ -276,7 +276,8 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
 
   // questionId + attached (thread-files.js): the words Omri sent WITH a file. The question is already in the thread (and already has its
   // "Filed ..." line), so no second question is saved; the brain is told about the file and may answer nothing (result.silent).
-  function startThread({ task, noPlan = false, image = null, deeper = false, route = null, questionId = null, attached = null }) {
+  // fromPhone: the message came from the phone (server.js knows); open_on_pc then says the thing opened on the PC.
+  function startThread({ task, noPlan = false, image = null, deeper = false, route = null, questionId = null, attached = null, fromPhone = false }) {
     if (!thread) throw Object.assign(new Error("the thread is off"), { status: 404 });
     if (threadJobs().filter((j) => j.status === "running").length >= MAX_THREAD_JOBS) {
       throw Object.assign(new Error("too many messages are being worked on at once, wait a little"), { status: 429 });
@@ -327,7 +328,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
         // notify: one short line written by code (brain.js), saved under the question as a message marked `ack`. It is not the answer: the
         // restart check does not count it as one, the model's memory skips it, and no push is sent for it (onFinish runs only for the answer).
         const notify = (text) => { try { job.acked = true; thread.append({ role: "assistant", text: String(text).slice(0, 500), replyTo: question.id, topic: "general", ack: true, at: now() }); } catch (error) { /* the line is a courtesy; the answer still comes */ } };
-        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify: attached ? null : notify, ...(attached ? { attached } : {}) });
+        const result = await handle(task, { ...common, noPlan: noPlan === true, image, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify: attached ? null : notify, fromPhone: fromPhone === true, ...(attached ? { attached } : {}) });
         if (attached && result && result.silent) { job.silent = true; job.status = "done"; }
         if (!job.silent) {
           const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);

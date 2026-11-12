@@ -177,6 +177,20 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     return out.join("\n\n");
   }
 
+  // The address of a Moodle course page, or of one REAL item of it, for opening in Omri's own Chrome (pc-open.js). The item is looked up
+  // in the course as Moodle shows it now; the address is built by code from its numbers (moodleUrl), never from model or Moodle text.
+  async function openTarget(name, item, patternFor) {
+    const { moodleUrl } = require("./pc-open");
+    const { m } = await resolve(name, patternFor);
+    const s = String(item == null ? "" : item).trim();
+    if (!s) return { url: moodleUrl({ courseId: m.id }), label: `the Moodle page of ${m.name}` };
+    const { items } = await contents(m);
+    let hits = /^\d+$/.test(s) ? items.filter((i) => i.id === Number(s)) : items.filter((i) => norm(i.name) === norm(s));
+    if (!hits.length && norm(s)) hits = items.filter((i) => norm(i.name).includes(norm(s)));
+    if (hits.length !== 1) throw fail(hits.length ? `more than one item of ${m.name} fits "${s.slice(0, 60)}": ${hits.slice(0, 6).map((i) => `[${i.id}] ${oneLine(i.name, 60)}`).join("; ")}. Use its number.` : `no item like "${s.slice(0, 60)}" in the Moodle course ${m.name}. moodle_course lists its items.`);
+    return { url: moodleUrl({ cmid: hits[0].id, module: hits[0].module }), label: `"${oneLine(hits[0].name, 120)}" in ${m.name}` };
+  }
+
   // Remember which Bot course a Moodle course is (Omri's answer). botId null = "no Bot course for it".
   async function link(moodleName, botCourse, patternFor) {
     const { m, bots } = await resolve(moodleName, patternFor);
@@ -283,7 +297,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     };
   }
 
-  return { listText, courseText, newsText, fetchFiles, link, autoMap, resolve, explain, connected: () => bridge.connected() };
+  return { listText, courseText, newsText, fetchFiles, link, openTarget, autoMap, resolve, explain, connected: () => bridge.connected() };
 }
 
 module.exports = { createMoodleTools, explain, norm, plain, MAX_DIRECT, MAX_TOTAL_BYTES };

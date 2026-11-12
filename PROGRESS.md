@@ -14,7 +14,6 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   photos (Argon first), files sent with a message (filed by code, my words answered by the brain), and the study coach as tools:
   quiz, plan across courses, teach the next part, where I stand (with undo), exam date (card), pause / resume the study reminders.
 - **When every model fails** Bot says so honestly and tries nothing else.
-- **Tests:** `node --test` (about 960 tests). All pass.
 - **Quota (branch `claude/vigilant-aryabhata-2bf780`, 2026-11-12, NOT merged yet):** one everyday message costs about 40% fewer
   tokens than before (about 33,000 -> 20,000 on Argon), so each pool gives about 1.65 times the messages. A token is the unit
   models count text in; the pools charge by tokens. What does it: the brain's `agy` calls run under a slim agent (only web
@@ -22,6 +21,10 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   are paced over the week, and the daily summary asks Flash first. Every answer's log line now ends with its model calls and
   tokens, and `node tokenlog.js` prints tokens per message per day. Quick actions (a reminder) no longer wait behind long
   answers. Full numbers, open points and how to check: `experiments/2026-11-12-quota-max.md` section 7.
+- **PC hands (2026-11-12, branch claude/pc-hands-e816e7):** Bot can find my folders and files by name (`pc_find`, `pc_list`, roots via
+  `pc_roots`) and open things on the PC (`open_on_pc`: pages in Chrome, Moodle pages, course files, found files and folders; never programs).
+  A found folder is linked to a course with one Confirm tap. The rules are in `CLAUDE.md` (PC HANDS).
+- **Tests:** `node --test` (about 985 tests, about 50 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
 ## What the 2026-11-12 cleanup did (branch claude/brain-permanent-3257b5)
@@ -62,6 +65,9 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - Phone: Tailscale Always-on VPN + battery Unrestricted (steps in `experiments/2026-11-12-always-up.md`).
 - Moodle: Chrome -> chrome://extensions -> Developer mode -> Load unpacked -> the folder `moodle-extension`. Keep Chrome open and logged in
   to Moodle; when Moodle logs me out (about an hour idle), Bot says so and I log in again.
+- Make Chrome the Windows default browser myself: Settings -> Apps -> Default apps -> Google Chrome -> Set default (Bot uses Chrome anyway).
+- To let Bot search `C:Assingnemt` too, write in chat: "also search C:Assingnemt" (a new root needs its full path in my own message).
+- After the PC-hands merge, try once: "open the last lecture of Calculus 2" and "find my SP assignment folder and link it", to see the windows open while Bot runs hidden.
 - A leftover test copy of Bot may still run on port 3100; `stop-bot.cmd` stops every `node server.js`.
 
 ## Remember
