@@ -225,3 +225,40 @@ test("createQuota.rows hands out the raw rows the pacing needs", async () => {
   await q.refresh();
   assert.deepStrictEqual((await q.rows()).map((r) => [r.pool, r.remaining]), [[ARGON_POOL, 40]]);
 });
+
+// The brain with fake pools: which model is asked first, and what the log says about it.
+function pacedBrain() {
+  const state = { rows: [], levels: [], asked: [], logs: [] };
+  const brain = createBrain({
+    courses: { allPages: () => [] }, courseRoutes: { list: () => [], courseFiles: () => ({ files: [] }), linkFiles: () => [] }, coach: null,
+    reminders: { list: () => [] }, memory: { list: () => [] }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
+    poolRows: async () => state.rows, poolLevels: async () => state.levels, refreshPools: () => {}, notePoolFailure: () => {},
+    askOne: async (provider, model) => { state.asked.push(model); return "Fine."; }, now: () => NOW,
+  });
+  const send = async () => { state.asked.length = 0; state.logs.length = 0; await brain.handle("hello", { history: [], courses: [], log: (l) => state.logs.push(l) }); return state.asked[0]; };
+  return { state, send };
+}
+
+test("the brain paces the week: the agy pool that is ahead answers first, says why, and keeps the lead for a stretch", async () => {
+  const { state, send } = pacedBrain();
+  assert.strictEqual(await send(), "gemini-4-argon-low"); // nothing known: the chain as written
+  state.rows = [week(ARGON_POOL, 60, 5.6), week(SONNET_POOL, 100, 7)]; // Argon is 20 points behind its week
+  assert.strictEqual(await send(), "claude-sonnet-5-5-low");
+  assert.ok(state.logs.some((l) => /^\[brain\] pacing the week: Claude and GPT models is 20 points ahead of Gemini 4 Argon .*: asking claude-sonnet-5-5-low first$/.test(l)), state.logs.join("\n"));
+  state.rows = [week(ARGON_POOL, 60, 5.6), week(SONNET_POOL, 85, 7)]; // the gap shrank to 5: Sonnet keeps the lead
+  assert.strictEqual(await send(), "claude-sonnet-5-5-low");
+  state.rows = [week(ARGON_POOL, 60, 5.6), week(SONNET_POOL, 70, 7)]; // Argon is now 10 ahead: back to Argon, and nothing to explain
+  assert.strictEqual(await send(), "gemini-4-argon-low");
+  assert.ok(!state.logs.some((l) => /pacing the week/.test(l)));
+});
+
+test("pacing never beats the safety rules: Argon in its reserve steps back even when its pace is better", async () => {
+  const { state, send } = pacedBrain();
+  state.rows = [week(ARGON_POOL, 20, 1.2), week(SONNET_POOL, 29, 5.7)]; // the real numbers of 2026-11-12: Argon +3, Sonnet -52
+  state.levels = [{ pool: ARGON_POOL, remaining: 20 }, { pool: SONNET_POOL, remaining: 29 }];
+  assert.strictEqual(await send(), "claude-sonnet-5-5-low"); // Argon is under its 25% reserve
+  assert.ok(state.logs.some((l) => /Gemini 4 Argon 20% left: asking claude-sonnet-5-5-low first/.test(l)), state.logs.join("\n"));
+  state.levels = [{ pool: ARGON_POOL, remaining: 60 }, { pool: SONNET_POOL, remaining: 10 }]; // agy's Claude pool under 15%
+  state.rows = [week(ARGON_POOL, 60, 6.5), week(SONNET_POOL, 10, 0.2)]; // ...although its week is nearly over (pace +7 against -33)
+  assert.strictEqual(await send(), "gemini-4-argon-low");
+});
