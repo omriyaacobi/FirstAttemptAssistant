@@ -335,7 +335,7 @@
   .callist li { margin: 6px 0; }
   @media (max-width: 600px) { .calcard .actions button { flex: 1 1 40%; min-height: 44px; } }
 
-  /* ===== The one conversation (BOT_THREAD=on). Everything here only matters with body.thread; with the switch off none of it applies. ===== */
+  /* ===== The one conversation. Everything here only matters with body.thread. ===== */
   body.thread nav[aria-label="Conversations"] { display: none; }
   body.thread .course-cols > section:nth-child(2) { display: none; } /* the old per-course chats */
   body.thread .course-cols { grid-template-columns: minmax(0, 1fr); }
@@ -1548,7 +1548,7 @@
 
   const FAST_POLL_WINDOW_MS = 40000;
   async function pollJobs() {
-    if (session.thread) return; // one conversation (BOT_THREAD=on): the thread script below follows the jobs
+    if (session.thread) return; // one conversation: the thread script below follows the jobs
     if (jobState.polling) return;
     jobState.polling = true;
     try {
@@ -2624,7 +2624,7 @@
 </script>
 <script src="/study.js"></script>
 <script id="threadScript">
-  // ===== The ONE conversation (only when the server says BOT_THREAD is on) =====
+  // ===== The ONE conversation (always on) =====
   // With the switch off nothing below runs: window.botThread.start() is only called when /api/session says "thread: true".
   // It reuses the page's own helpers (el, renderResult, renderText, botCard, logDetails, errorCard, photo) and takes over
   // sending and following jobs. All text goes in with textContent; the only HTML-like thing is the existing math path.

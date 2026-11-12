@@ -1,10 +1,8 @@
 // router.js
-// The menu of places a task can go. The front desk (frontdesk.js) picks ONE name from
-// DESTINATIONS; the code then runs that destination's chain. A chain is a list of models
-// tried in order: the first is the preferred one, the rest are fallbacks if it fails.
-//
-// The front desk can only pick names that exist here. Anything else it writes is rejected,
-// so a mistake (or a trick hidden in a user's message) can at worst pick a poor model.
+// The MODELS Bot can ask (each with the quota pool it draws from) and a few named chains.
+// A chain is a list of models tried in order: the first is the preferred one, the rest are fallbacks if it fails.
+// The brain (brain.js) has its own chain; the course notebook (study.js), the tutor, the reader and the summaries take theirs from here.
+// (Until 2026-11-12 a "front desk" model picked a destination name from this file; the brain replaced it.)
 // Based on experiments/2026-10-28-model-comparison.md:
 //   - Gemini has the most quota room, so it handles most things.
 //   - The claude CLI is kept for code and the hardest problems (shared Claude plan, scarce).
@@ -21,13 +19,13 @@ const CLAUDE_PLAN = "Claude plan", CLAUDE_OPUS_WEEK = "Claude plan (Opus)";
 const GEMINI = "Gemini Models", ARGON = "Gemini 4 Argon", CLAUDE_AGY = "Claude and GPT models"; // the pool names
 const MODELS = {
   flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
-  flashLow: { provider: "agy", model: "gemini-3.8-flash-low", pool: "Gemini Models" }, // the front desk (experiments/2026-11-05-frontdesk-speed.md)
+  flashLow: { provider: "agy", model: "gemini-3.8-flash-low", pool: "Gemini Models" }, // only for short helper calls (the other-language search words, crosslang.js)
   flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the planner
   argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" },
   argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: "Gemini 4 Argon" },
   claudeSonnet: { provider: "claude", model: "sonnet", pool: CLAUDE_PLAN },
   claudeOpus: { provider: "claude", model: "opus", pool: [CLAUDE_PLAN, CLAUDE_OPUS_WEEK] },
-  claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the backup front desk (frontdesk.js)
+  claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the tiny quota probe (quota.js)
   claudeInAgy: { provider: "agy", model: "claude-sonnet-5-5-medium", pool: "Claude and GPT models" }, // smallest quota: last resort only
   sonnetInAgy: { provider: "agy", model: "claude-sonnet-5-5-low", pool: CLAUDE_AGY }, // the brain's 2nd model: agy's own Claude pool, NOT the Claude Pro plan (experiments/2026-11-11-quota-stretch.md)
   webFlash: { provider: "web", model: "gemini-3.8-flash-medium", pool: GEMINI },
@@ -38,8 +36,7 @@ const MODELS = {
   researchClaude: { provider: "research", model: "claude-sonnet-5-5-medium", pool: CLAUDE_AGY },
 };
 
-// The names the front desk may choose. Keep this list and router-brief.md in sync
-// (a test checks that every name here is described in the briefing).
+// Named chains (study.js asks for one by name with chainForDestination).
 const DESTINATIONS = {
   "gemini-flash": [MODELS.flashMedium, MODELS.argonLow, MODELS.claudeSonnet],
   "gemini-argon-low": [MODELS.argonLow, MODELS.flashMedium, MODELS.claudeSonnet],
@@ -49,20 +46,6 @@ const DESTINATIONS = {
   // Only models that can search: a model without the web would just guess.
   "web-search": [MODELS.webFlash, MODELS.webFlashHigh, MODELS.webClaude],
   "web-research": [MODELS.researchArgon, MODELS.researchFlash, MODELS.researchClaude],
-};
-
-// Used whenever something goes wrong with the front desk: Claude Sonnet takes the task.
-const DEFAULT_CHAIN = DESTINATIONS["claude-sonnet"];
-
-// The planner labels each sub-task with a type; this maps a type to a destination.
-const TYPE_TO_DESTINATION = {
-  quick: "gemini-flash",
-  code: "claude-sonnet",
-  hard: "gemini-argon-medium",
-  google: "gemini-flash",
-  general: "gemini-argon-low",
-  web: "web-search",
-  research: "web-research",
 };
 
 // The pools a model draws from, as a list (a model may have one pool, several, or none).
@@ -78,8 +61,4 @@ function chainForDestination(name) {
   return Object.hasOwn(DESTINATIONS, name) ? DESTINATIONS[name] : null;
 }
 
-function chainForType(type) {
-  return chainForDestination(TYPE_TO_DESTINATION[type]) || DEFAULT_CHAIN;
-}
-
-module.exports = { CLAUDE_PLAN, CLAUDE_OPUS_WEEK, poolsOf, poolsForModel, MODELS, DESTINATIONS, DEFAULT_CHAIN, chainForDestination, chainForType };
+module.exports = { CLAUDE_PLAN, CLAUDE_OPUS_WEEK, poolsOf, poolsForModel, MODELS, DESTINATIONS, chainForDestination };

@@ -8,7 +8,7 @@
 //   POST   /api/ask                -> start a task (inside a conversation) as a BACKGROUND JOB; answers at once with its id
 //   GET    /api/jobs               -> running jobs and recently finished ones (progress, plain-words step)
 //   GET    /api/jobs/:id           -> one job (see jobs.js: the answer is saved into the conversation by the server)
-//   GET    /api/thread?before=<ms>&limit=<n> -> ONE conversation (only when BOT_THREAD=on): the newest messages, older ones by "before"
+//   GET    /api/thread?before=<ms>&limit=<n> -> THE conversation: the newest messages, older ones by "before"
 //   DELETE /api/thread/:id         -> move one thread message to the 30-day trash; POST /api/thread/:id/restore brings it back
 //   POST   /api/thread/upload?name=&text= -> a FILE or photo with a message (raw bytes): filed under a course by code, or Bot asks which one
 //   POST   /api/thread/file/:id/assign    -> { courseId }: the course tapped for a file Bot asked about
@@ -48,7 +48,7 @@
 //
 // Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
 // The models themselves remember nothing, so for each new message we send them the recent
-// conversation as context (see core.js).
+// conversation as context (see brain.js and history.js).
 //
 // SECURITY: this server can start tools that run under YOUR logins and spend YOUR quota,
 // so it is locked down in several ways (see the checks below). Only built-in Node modules
@@ -58,7 +58,6 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
-const { handleTask, resultText } = require("./core");
 const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
 const { buildPreviewHtml, PREVIEW_CSP } = require("./preview");
@@ -67,7 +66,7 @@ const { getReminders } = require("./reminders");
 const { createAuth, loadPhoneConfig } = require("./auth");
 const { createPush } = require("./webpush");
 const { createJobs, JOB_ID_PATTERN } = require("./jobs");
-const { createThreadStore, loadThreadFlag, ID_PATTERN: THREAD_ID_PATTERN } = require("./thread-store");
+const { createThreadStore, ID_PATTERN: THREAD_ID_PATTERN } = require("./thread-store");
 const { createStudyCoach } = require("./study-coach");
 const { createThreadFiles } = require("./thread-files");
 const { createSummaries } = require("./thread-summary");
@@ -178,7 +177,7 @@ async function readJsonBody(req, res, { photo = false } = {}) {
 const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|uncommitted|new commits|only "ready"|blocked|changed after/.test(error.message) ? 409 : 400);
 
 function createServer({
-  handle = handleTask,
+  handle = null, // tests only: a fake that answers a message. The real Bot answers with the brain (makeBrain).
   usage = getUsage,
   store = createStore(path.join(__dirname, "data", "conversations")),
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
@@ -193,44 +192,26 @@ function createServer({
   coach = null, // the study coach (study-coach.js), only with the thread
   summaries = null, // the daily summaries (thread-summary.js), only with the thread
   moodleBridge = null, // the waiting list the Bot Moodle extension (moodle-extension/) takes read jobs from (moodle-bridge.js)
-  makeBrain = null, // (thread) builds the brain (brain.js) around the old path, which stays as its fallback; null = the old path only
+  makeBrain = null, // builds the brain (brain.js): one model with a toolbox reads every message of the thread
   linkBatches = null, // many links from a file of addresses, shown first and fetched after one Confirm (link-batch.js), only with the thread
   threadFiles = null, // files that arrive with a message (thread-files.js), only with the thread
-  thread = null, // the ONE conversation (thread-store.js); off unless given (BOT_THREAD=on), so with it off every route is exactly as before
+  thread = null, // the ONE conversation (thread-store.js). The real Bot always has it; tests that do not need it leave it out
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
   backup = null, // the data/ backup (backup.js); off unless given, so tests never read data/
   morning = null, // the morning brief (morning.js); off unless given, so tests never touch data/morning.json
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
-  threadDeps = null, // (thread) extra fakes or helpers for core.js, for example the thread search for "recall"; tests pass their own
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
 } = {}) {
   // Tasks run as background jobs (see jobs.js), so they survive the page being closed or reloaded.
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
-  // Thread jobs (BOT_THREAD=on) pass the real course list; only then is the course action possible, and the answer comes from the notebook.
-  const oldThreadHandle = (task, options = {}) => (options.courses && courseRoutes
-    ? handle(task, { ...options, deps: { ...(options.deps || {}), courseAnswer: (id, question, o) => courseRoutes.answer(id, question, o), courseFiles: (id) => courseRoutes.courseFiles(id), fetchLink: (id, url, lang) => courseRoutes.addLink(id, url, lang), linkFiles: (id) => courseRoutes.linkFiles(id), ...(linkBatches ? { proposeLinks: (a) => linkBatches.propose(a) } : {}),...(coach ? { studyChat: coach.studyChat, studyAnswer: (args) => coach.answerStudy(args), studyCanTeach: (courseId) => coach.teachesFromNotes(courseId) } : {}), ...(threadDeps ? threadDeps() : {}) } })
-    : handle(task, options));
-  const brain = makeBrain ? makeBrain({ fallback: oldThreadHandle }) : null;
-  const threadHandle = (task, options = {}) => (brain && options.courses && courseRoutes ? brain.handle(task, options) : oldThreadHandle(task, options));
-  // One short block of study state for the front desk (written by code from the tracker; data, never instructions).
-  const studyState = () => {
-    if (!coach) return "";
-    try {
-      const lines = [coach.questionLine(), coach.studyLine()];
-      const card = coach.pendingProposal();
-      if (card) lines.push(`A confirmation card is waiting for the user's yes or no (${card.kind} for ${card.course}).`);
-      for (const ref of coach.tracker.refsFor(courseRoutes ? courseRoutes.list() : [])) {
-        if (coach.tracker.getSession(ref)) lines.push(`A quiz or lesson is open in ${ref.name}: the user's next message is probably an answer (studyIntent answer).`);
-      }
-      return lines.filter(Boolean).join("\n").slice(0, 900);
-    } catch (error) { return ""; }
-  };
+  // Every message of the thread is answered by the brain. (Tests pass their own `handle` instead.)
+  const brain = makeBrain ? makeBrain() : null;
+  const threadHandle = brain ? (task, options = {}) => brain.handle(task, options) : handle;
   const jobs = createJobs({
     handle: threadHandle,
     thread,
     summaries,
-    studyState,
     courses: () => (courseRoutes ? courseRoutes.list() : []),
     courseName: courseRoutes ? (id) => courseRoutes.name(id) : null,
     cardNote: (add, options) => calendarCards.note(add, options), // the chat history tells the next message what the calendar cards held and what happened to them
@@ -243,6 +224,9 @@ function createServer({
       push.notifyAll({ title: ok ? "Bot finished" : "Bot could not finish", body: title, tag: `job-${job.id}` }).catch(() => {});
     },
   });
+
+  // The words sent WITH a file (thread-files.js files it by code): the brain reads them as a follow-up on the same question.
+  if (brain && threadFiles && threadFiles.onWords) threadFiles.onWords(({ text, questionId, courseId, courseName, fileName }) => jobs.startThread({ task: text, questionId, attached: { courseId, courseName, fileName } }));
 
   // Every route runs inside this function. If one throws (a locked or damaged file, a bug), the page gets a plain 500 and Bot keeps running:
   // an async handler that throws would otherwise be an unhandled rejection, and Node ends the whole program on those.
@@ -296,7 +280,7 @@ function createServer({
         phoneAccess: auth.enabled,
         loggedIn: remote ? auth.isLoggedIn(req) : true,
         images: true, // this Bot can receive a photo with a message
-        ...(thread ? { thread: true } : {}), ...(thread && coach ? { study: true } : {}), // one conversation (BOT_THREAD=on): the page shows the thread; with it off the answer has no such key, as before
+        ...(thread ? { thread: true } : {}), ...(thread && coach ? { study: true } : {}), // one conversation: the page shows the thread
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
       });
     }
@@ -376,7 +360,7 @@ function createServer({
       }
     }
 
-    // What Bot remembers about you. Facts are only ever added by a click on Save (the front desk just proposes),
+    // What Bot remembers about you. Facts are only ever added by a click on Save (a model only proposes),
     // and only from this page: these routes sit behind the same Host, Origin and phone-login checks as the others.
     if (req.method === "GET" && url.pathname === "/api/memory") {
       return sendJson(res, 200, { facts: memory.list(), profile: { loaded: loadProfile(profileFile).length > 0 } });
@@ -496,10 +480,10 @@ function createServer({
       try { return sendJson(res, 201, threadFiles.assign(assignRoute[1], String(input.courseId || ""))); } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
     }
 
-    // The ONE conversation (only when BOT_THREAD=on; with it off these routes do not exist).
+    // The ONE conversation.
     const threadRoute = url.pathname.match(/^\/api\/thread(?:\/([^/]+?)(\/restore)?)?$/);
     if (threadRoute) {
-      if (!thread) return sendJson(res, 404, { error: "the thread is off (BOT_THREAD in .env)" });
+      if (!thread) return sendJson(res, 404, { error: "the thread is not available" });
       const [, id, restore] = threadRoute;
       if (!id && req.method === "GET") {
         // before = a time in ms (only older messages), limit = how many (1 to 200, default 50). Both are checked here; nothing else is read.
@@ -727,46 +711,43 @@ if (require.main === module) {
   const auth = createAuth({ config: loadPhoneConfig(path.join(__dirname, ".env")) });
   const store = createStore(path.join(__dirname, "data", "conversations")); // the course chats live here too
   const coursesStore = createCourses(path.join(__dirname, "data", "courses"));
-  const threadOn = loadThreadFlag(path.join(__dirname, ".env"));
-  let threadFiles = null; // set below when the thread is on; the course reader calls it after a file is read
+  let threadFiles = null; // set below; the course reader calls it after a file is read
+  const { MODELS } = require("./router");
+  const crossWarm = require("./warmagy").createWarmAgy({ keepReady: false }); // no background process while idle
   const courseRoutes = createCourseRoutes({
     store,
     courses: coursesStore,
-    onFileReady: threadOn ? (args) => (threadFiles ? threadFiles.onFileReady(args) : undefined) : null,
+    onFileReady: (args) => (threadFiles ? threadFiles.onFileReady(args) : undefined),
     askCourse, ingestFile, askChain, askFile: askAgyWithFile,
-    // Other-language search words for course questions (crosslang.js): one short Flash call through the front desk's pre-warmed agy.
-    expand: (text) => { const { expandQuery } = require("./crosslang"); const fd = require("./frontdesk"); return expandQuery({ text, askStructured: fd.warm.askStructured, model: fd.FRONT_DESK_MODEL.model }); },
+    // Other-language search words for course questions (crosslang.js): one short Flash low call through its own pre-warmed agy.
+    expand: (text) => require("./crosslang").expandQuery({ text, askStructured: crossWarm.askStructured, model: MODELS.flashLow.model }),
     about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
     log: console.log,
   });
-  // BOT_THREAD=on in .env turns the one-conversation thread on (default off: Bot is then exactly what it was).
-  const thread = threadOn ? createThreadStore(path.join(__dirname, "data", "thread")) : null;
-  if (thread) { try { const n = thread.markUnanswered(); if (n) console.log(`Thread: ${n} question(s) had no answer because Bot was stopped; each now says so.`); } catch (error) { console.error("Thread:", error.message); } } // nothing is lost silently after a restart
-  const coach = thread ? createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log }) : null;
-  const summaries = thread ? createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, log: console.log }) : null;
-  if (thread) threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
+  // The ONE conversation (thread-store.js). It is always on: the old list of chats and its switch (BOT_THREAD) were removed on 2026-11-12.
+  const thread = createThreadStore(path.join(__dirname, "data", "thread"));
+  { try { const n = thread.markUnanswered(); if (n) console.log(`Thread: ${n} question(s) had no answer because Bot was stopped; each now says so.`); } catch (error) { console.error("Thread:", error.message); } } // nothing is lost silently after a restart
+  const coach = createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log });
+  const summaries = createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, log: console.log });
+  threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
   const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, study: coach, thread, log: console.log });
   const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
-  let threadDeps = null;
-  if (thread) {
-    const { findInThread } = require("./recall");
-    threadDeps = () => ({ searchChats: (query) => findInThread(thread, query, { oldChats: store }) });
-    console.log("BOT_THREAD is on: one conversation (data/thread).");
+  {
     const purge = () => { try { const n = thread.purgeTrash(); if (n) console.log(`Thread trash: removed ${n} message(s) older than 30 days.`); } catch (error) { console.error("Thread trash:", error.message); } };
     purge();
     setInterval(purge, 6 * 3600 * 1000).unref();
   }
-  const linkBatches = thread ? require("./link-batch").createLinkBatches({ thread, courseRoutes, log: console.log }) : null;
-  // THE BRAIN (brain.js): one model with a toolbox reads every thread message. BOT_BRAIN=off in .env goes back to the front desk menu.
-  const brainOn = thread && !/^(off|0|false|no)$/i.test(String(process.env.BOT_BRAIN ?? (() => { try { return require("./auth").parseEnv(fs.readFileSync(path.join(__dirname, ".env"), "utf8")).BOT_BRAIN; } catch (error) { return ""; } })() ?? "").trim());
+  const linkBatches = require("./link-batch").createLinkBatches({ thread, courseRoutes, log: console.log });
+  // THE BRAIN (brain.js): one model with a toolbox reads every message. It is the only way Bot answers (no switch).
   let brainRef = null;
   const moodleBridge = require("./moodle-bridge").createBridge(); // only fills when the Chrome extension is installed and Omri asks about Moodle
-  const makeBrain = brainOn ? ({ fallback }) => (brainRef = require("./brain").createBrain({
-    courses: coursesStore, courseRoutes, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
-    searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }), lowPools: require("./quota").getLowPools, fallback,
-  })) : null;
-  if (brainOn) console.log("The brain is on: one model with a toolbox reads every message (brain.js). BOT_BRAIN=off in .env switches back.");
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches, makeBrain, moodleBridge });
+  const makeBrain = () => (brainRef = require("./brain").createBrain({
+    courses: coursesStore, courseRoutes, linkBatches, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
+    searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
+    // BOT_BRAIN_FIRST=claude in .env: Claude Code Sonnet first for a while. Bot does not load .env into process.env, so read the file.
+    chain: require("./brain").chainFor((() => { try { return require("./auth").parseEnv(fs.readFileSync(path.join(__dirname, ".env"), "utf8")).BOT_BRAIN_FIRST; } catch (error) { return ""; } })()),
+  }));
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, coach, summaries, threadFiles, linkBatches, makeBrain, moodleBridge });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
@@ -788,7 +769,6 @@ if (require.main === module) {
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
     if (brainRef) brainRef.warmUp();
-    try { if (!brainRef) require("./frontdesk").warmUpDesk(); } catch (error) { console.error("Could not prepare the front desk:", error.message); } // only makes the first message slower
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });
 }

@@ -11,7 +11,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { askAgyWithFile, askAgyWithImage, cleanWorkDir, removeStaleWorkDirs } = require("../providers");
+const { askAgyWithFile, askAgyStreamWithImage, cleanWorkDir, removeStaleWorkDirs } = require("../providers");
 
 function withBrokenDelete(fn) {
   const real = fs.rmSync;
@@ -32,7 +32,7 @@ test("a good answer survives a work folder Windows refuses to delete (file and p
   try {
     await withBrokenDelete(async (attempts) => {
       assert.strictEqual(await askAgyWithFile("gemini-3.8-flash-medium", "real answer", file), "real answer");
-      assert.strictEqual(await askAgyWithImage("gemini-3.8-flash-medium", "real photo answer", file), "real photo answer");
+      assert.strictEqual(await askAgyStreamWithImage("gemini-3.8-flash-medium", "q", file, () => {}, { stream: async () => "real photo answer" }), "real photo answer");
       assert.ok(attempts() >= 2); // it did try to delete
     });
   } finally {

@@ -1,3 +1,5 @@
+> NOTE (2026-11-12): written on 2026-11-07, before the brain. `BOT_THREAD` no longer exists (the thread is always on) and the front desk is gone. For the current state read `PROGRESS.md`.
+
 # Handoff to the manager chat (written 2026-11-07)
 
 Read this with `CLAUDE.md` and the end of `PROGRESS.md`. This chat replaces the old Opus manager chat, which grew too long.

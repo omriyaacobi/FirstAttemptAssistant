@@ -1,5 +1,5 @@
 // thread-store.js
-// The storage of Bot's ONE continuous conversation (the "thread"), used only when BOT_THREAD=on.
+// The storage of Bot's ONE continuous conversation (the "thread").
 //
 // Why a new store instead of store.js? store.js keeps one file per chat and silently drops everything past 200
 // messages. A thread never ends, so it must never drop anything. Here:
@@ -230,7 +230,6 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     return marked.length;
   }
 
-
   // ---- the imported marker (thread.js) ----
   const importedFrom = () => readIndex().importedFrom;
   function setImportedFrom(list) {
@@ -288,13 +287,4 @@ function createThreadStore(dir, { now = Date.now } = {}) {
   return { markUnanswered, append, appendMany, days, find, page, all, recent, trash, trashList, restore, purgeTrash, importedFrom, setImportedFrom, rebuildIndex: () => rebuildIndex(), readDay };
 }
 
-// BOT_THREAD in the environment or in .env: "on", "1", "true" or "yes" turns the thread on; anything else (or nothing) is off.
-function loadThreadFlag(envFile, env = process.env) {
-  let value = env.BOT_THREAD;
-  if (value === undefined) {
-    try { value = require("./auth").parseEnv(fs.readFileSync(envFile, "utf8")).BOT_THREAD; } catch (error) { /* no .env */ }
-  }
-  return /^(on|1|true|yes)$/i.test(String(value || "").trim());
-}
-
-module.exports = { loadThreadFlag, createThreadStore, dayOf, newId, ID_PATTERN, DAY_PATTERN, TOPIC_PATTERN, TRASH_KEEP_MS, DEFAULT_PAGE };
+module.exports = { createThreadStore, dayOf, newId, ID_PATTERN, DAY_PATTERN, TOPIC_PATTERN, TRASH_KEEP_MS, DEFAULT_PAGE };

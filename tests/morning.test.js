@@ -160,5 +160,5 @@ test("a saved fact can never change a setting: the only way in is update(), from
   assert.deepStrictEqual(s.morning.settings(), { on: false, time: "08:00" });
   assert.strictEqual(await s.morning.tick(), false);
   assert.ok(!fs.readFileSync(path.join(__dirname, "..", "profile.js"), "utf8").includes("morning"), "profile.js knows nothing about settings");
-  assert.ok(!fs.readFileSync(path.join(__dirname, "..", "core.js"), "utf8").includes("morning"), "the chat code knows nothing about settings");
+  assert.ok(!fs.readFileSync(path.join(__dirname, "..", "brain.js"), "utf8").includes("morning"), "the chat code knows nothing about settings");
 });
