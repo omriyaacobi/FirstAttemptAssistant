@@ -391,7 +391,7 @@ test("brain: after a Moodle read, a reminder in the same message is refused, but
   ]);
   await brain.handle("read the announcements and get lecture 1", { history: [], courses: BOT_COURSES });
   assert.strictEqual(reminders.length, 0);
-  assert.match(prompts[2], /FAILED, nothing was done: Bot does not set reminders right after reading Moodle/);
+  assert.match(prompts[2], /FAILED, nothing was done: Bot does not set reminders in a message after reading Moodle/);
   assert.strictEqual(filed.length, 1);
   assert.match(prompts[2], /DOWNLOADED/);
 });

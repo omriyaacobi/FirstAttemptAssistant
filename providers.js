@@ -149,11 +149,12 @@ function askAgy(question, model) {
 // while the model writes; each time one arrives, onText gets all the text so far. The final "result" event is the
 // authority for the returned answer. If agy dies before the result, this rejects (the caller drops the partial text).
 // Measured in experiments/2026-11-05-answer-low-vs-medium.md: the first words arrive before the whole answer.
-function askAgyStream(question, model, onText, { signal, command = AGY_CMD, prefixArgs = [] } = {}) { // command/prefixArgs: so tests can use a fake agy
+// cwd / timeoutMs: only for a photo (askAgyStreamWithImage), which runs in its own private folder with the photo time limit.
+function askAgyStream(question, model, onText, { signal, command = AGY_CMD, prefixArgs = [], cwd = null, timeoutMs = null } = {}) { // command/prefixArgs: so tests can use a fake agy
   checkModelName(model);
   const args = [...prefixArgs, "-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: sandbox(), windowsHide: true });
+    const child = spawn(command, args, { cwd: cwd || sandbox(), windowsHide: true });
     let buffer = "", text = "", step = null, settled = false;
     const finish = (fn, value) => { if (!settled) { settled = true; fn(value); } };
     for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", () => {}); // a broken pipe is handled by "close"
@@ -184,9 +185,22 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
         }
       }
     });
-    withTimeout(child, timeoutFor(model), (error) => finish(reject, error), model);
+    withTimeout(child, timeoutMs || timeoutFor(model), (error) => finish(reject, error), model);
     killOnAbort(child, signal, (error) => finish(reject, error));
   });
+}
+
+// The brain looking at a photo: the same streaming call (the long prompt goes through stdin, never the command line), run in a
+// brand-new EMPTY folder that holds only a copy of the photo under a fixed name ("photo.png"). The folder is deleted afterwards.
+async function askAgyStreamWithImage(model, question, imagePath, onText = () => {}, { stream = askAgyStream } = {}) {
+  checkModelName(model);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
+  try {
+    fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
+    return await stream(question, model, onText, { cwd: dir, timeoutMs: imageTimeoutFor(model) });
+  } finally {
+    cleanWorkDir(dir);
+  }
 }
 
 // Asks agy for an answer that must match a JSON schema (a description of the shape we want).
@@ -428,5 +442,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, askClaudeStructured, killOnAbort, askAgyWithImage, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
