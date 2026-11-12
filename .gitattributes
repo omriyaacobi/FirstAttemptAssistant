@@ -1,0 +1,4 @@
+# Windows scripts must have Windows line endings (CRLF): cmd.exe can break labels and goto with Unix (LF) endings.
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+*.ps1 text eol=crlf
