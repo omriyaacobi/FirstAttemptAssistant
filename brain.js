@@ -43,6 +43,12 @@ const BRIEF_FILE = path.join(__dirname, "brain-brief.md");
 // Measured on the real brain (experiments/2026-11-11-quota-stretch.md): agy Sonnet low was as correct as Argon and 2-3x faster;
 // GPT-OSS was rejected (wrong weekdays, gave a solution away).
 const CHAIN = [MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
+// BOT_BRAIN_FIRST=claude in .env (a restart reads it): Claude Code Sonnet (the Pro plan) is asked FIRST, for a few hours when the
+// agy pools are low (Omri, 2026-11-12). The normal 15% rule still moves it to the end when the plan's 5-hour window is nearly used.
+// Any other value, or none, = the normal order above.
+function chainFor(first) {
+  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.argonLow, MODELS.sonnetInAgy] : CHAIN;
+}
 // A message with a photo: only agy can look at a picture here. Argon low first; Flash medium only if Argon fails (Omri, 2026-11-12).
 const PHOTO_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
 // A pool listed here counts as low for the brain EARLIER than the normal 15%. Under 25% Argon steps aside for everyday chat, so
@@ -689,4 +695,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, pathInText,CHAIN, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, pathInText, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

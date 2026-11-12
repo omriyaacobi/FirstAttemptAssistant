@@ -35,7 +35,9 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   `progress`, `quiz`, `answer`, `confirm`, `cancel` and the new `brainTools`. Remove the rest with its tests.
 - **Two things the brain changed that I should decide on:** (1) the model that sees my profile can also search the web (before, web
   models never got the profile); (2) every message now takes one of the 2 slots, so a reminder can wait behind two long answers.
-- **Should `brain.js` and `brain-brief.md` be protected from Improve Bot?** Today they are not in `selfedit.js`'s protected list.
+- **Protect `brain.js` from Improve Bot** (decided 2026-11-12, not urgent: Omri does not use Improve Bot until the quota work is
+  done). Add it to `selfedit.js`'s protected list, because it holds the code checks on every tool call. `brain-brief.md` stays
+  editable (that is how Bot is tuned).
 - **Moodle, smarter (asked 2026-11-11, when there is quota):** a quiet morning check for new announcements, files and deadlines (offered,
   never downloaded silently); deadlines offered as calendar events or reminders; assignment pages read in full; lecture videos (Kaltura,
   captions not checked); the coach using Moodle's sections to know the week. Read-only, no keep-alive, tools and the briefing only.
@@ -54,6 +56,8 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 ## Remember
 
 - First place to look when Bot is down or odd: the end of `data/bot.log`.
+- `BOT_BRAIN_FIRST=claude` in `.env` (then restart) makes the brain ask Claude Code Sonnet (the Pro plan) first, for a few hours
+  when the agy pools are low. Delete the line and restart to go back. The 15% rule still moves Claude to the end near the limit.
 - Start: the scheduled task "Bot" (hidden, at login) or `start-web.cmd`. Stop: `stop-bot.cmd`. Restart: the button on the page.
 - Claude Pro tokens work through Claude Code (`claude` CLI); a separate Anthropic API key would be billed separately.
 - Gemini route is the Antigravity CLI (`agy`); the old Gemini CLI stopped serving personal accounts on 2026-06-18.

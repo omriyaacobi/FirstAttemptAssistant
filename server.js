@@ -744,6 +744,7 @@ if (require.main === module) {
   const makeBrain = () => (brainRef = require("./brain").createBrain({
     courses: coursesStore, courseRoutes, linkBatches, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
+    chain: require("./brain").chainFor(process.env.BOT_BRAIN_FIRST), // BOT_BRAIN_FIRST=claude: Claude Code Sonnet first for a while
   }));
   const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, coach, summaries, threadFiles, linkBatches, makeBrain, moodleBridge });
   // When a reminder is due, send it to every phone that turned notifications on.
