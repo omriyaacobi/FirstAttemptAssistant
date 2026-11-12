@@ -14,7 +14,14 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   photos (Argon first), files sent with a message (filed by code, my words answered by the brain), and the study coach as tools:
   quiz, plan across courses, teach the next part, where I stand (with undo), exam date (card), pause / resume the study reminders.
 - **When every model fails** Bot says so honestly and tries nothing else.
-- **Tests:** `node --test` (about 940 tests, about 45 s). All pass.
+- **Tests:** `node --test` (about 960 tests). All pass.
+- **Quota (branch `claude/vigilant-aryabhata-2bf780`, 2026-11-12, NOT merged yet):** one everyday message costs about 40% fewer
+  tokens than before (about 33,000 -> 20,000 on Argon), so each pool gives about 1.65 times the messages. A token is the unit
+  models count text in; the pools charge by tokens. What does it: the brain's `agy` calls run under a slim agent (only web
+  search, no shell or browser descriptions), the recent talk and the linked code folder are sent smaller, the two agy pools
+  are paced over the week, and the daily summary asks Flash first. Every answer's log line now ends with its model calls and
+  tokens, and `node tokenlog.js` prints tokens per message per day. Quick actions (a reminder) no longer wait behind long
+  answers. Full numbers, open points and how to check: `experiments/2026-11-12-quota-max.md` section 7.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
 ## What the 2026-11-12 cleanup did (branch claude/brain-permanent-3257b5)
@@ -46,6 +53,10 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 
 ## To do by me (Omri)
 
+- Quota work: decide the three open points in `experiments/2026-11-12-quota-max.md` 7.3 (a reserve that shrinks as the week
+  ends; counting agy's own web search as "a web page was read"; the odd agy Sonnet reading), and say whether the proposed
+  `CLAUDE.md` text in 7.5 goes in. After a few days, run `node tokenlog.js` to see the real tokens per message.
+
 - After a merge that changes the starter files: double-click `install-autostart.cmd` once (if "access denied": Run as administrator).
 - Windows: Settings -> Accounts -> Sign-in options -> "Use my sign-in info to automatically finish setting up after an update".
 - Phone: Tailscale Always-on VPN + battery Unrestricted (steps in `experiments/2026-11-12-always-up.md`).
@@ -56,6 +67,8 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 ## Remember
 
 - First place to look when Bot is down or odd: the end of `data/bot.log`.
+- Where the quota goes: `node tokenlog.js` (tokens per day, per model, per message). `MSYS_NO_PATHCONV=1 agy -p "/usage"` in
+  Git Bash shows the pools. Scripts that spend quota to test the brain are in `experiments/` (`quota-max-brain-run.js`).
 - `BOT_BRAIN_FIRST=claude` in `.env` (then restart) makes the brain ask Claude Code Sonnet (the Pro plan) first, for a few hours
   when the agy pools are low. Delete the line and restart to go back. The 15% rule still moves Claude to the end near the limit.
 - Start: the scheduled task "Bot" (hidden, at login) or `start-web.cmd`. Stop: `stop-bot.cmd`. Restart: the button on the page.
