@@ -571,3 +571,13 @@ Background mode (2026-11-11, local only): the night stop of 11 Nov was NOT a cra
 - TO DO BY OMRI: (1) after the merge, double-click `install-autostart.cmd` in the main folder once (if "access denied": right-click -> Run as administrator). (2) Settings -> Accounts -> Sign-in options -> "Use my sign-in info to automatically finish setting up after an update", so an update restart logs in by itself. (3) Phone: Tailscale Always-on VPN + battery Unrestricted (exact steps in experiments/2026-11-12-always-up.md). (4) A leftover test copy of Bot runs on port 3100 (node PID 23416); it can be stopped (note: `stop-bot.cmd` stops EVERY `node server.js`, the copy too).
 - Laptop off: not possible without another machine. Keep the laptop on (now); an old laptop or mini PC at home is the next step if needed; a cloud VM is not worth it (logins, files, Moodle blocks data centers). See experiments/2026-11-12-always-up.md.
 - Tests: tests/watchdog.test.js (7, runs the real watchdog.cmd on fake servers, including a hung one).
+
+## Quota max: more messages a week (branch claude/vigilant-aryabhata-2bf780, 2026-11-12, PHASE 1 only, NOT merged)
+
+Measured, nothing in Bot changed yet. Full numbers and the plan: `experiments/2026-11-12-quota-max.md`.
+- The pools charge by tokens. agy adds 8,200 (Gemini) to 12,500 (Claude Sonnet) tokens of its own to EVERY call (60 tool descriptions Bot never uses). A custom agy agent with only `search_web` (`.agents/agents/<name>/agent.md` in the working folder, `--agent <name>`) cuts that to 2,100 / 3,400.
+- The brain's prompt is about 40,000 characters (13,000 tokens) per round; 45 of 46 real messages carried the focus course's assignment, code and pages. 1.45 model calls per message.
+- agy reports exact tokens per call (`usage` in the last stream-json event); Bot does not read it yet.
+- Today: about 330 everyday messages a week on Argon and about 90 on agy Sonnet (if chat were the only user).
+- Proposed, waiting for Omri's OK: (1) slim agent + token log, (2) pace the week across the two pools, (3) smaller context with an A/B test, (4) summary and readers to Flash first.
+- Scripts: `experiments/quota-max-measure.js` (free), `experiments/quota-max-probe.js` (spends a little quota).
