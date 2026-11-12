@@ -4,13 +4,22 @@
 // Why small? The thread never ends, but a model that gets the whole history answers slower and, past about 200,000 characters,
 // answers NOTHING (measured, experiments/2026-11-06-one-conversation-in-bot.md section 5). So code decides what goes in, with a
 // fixed cap, and a test fails if any part can exceed it:
-//   - the most recent turns, newest first, until RECENT_CHARS is used (each message cut to MAX_MESSAGE_CHARS),
+//   - the most recent turns, newest first, until RECENT_CHARS is used (each message cut to MAX_MESSAGE_CHARS; an OLDER answer of
+//     Bot keeps only its first OLD_ANSWER_CHARS, see below),
 //   - the NEWEST calendar card's note, always (even when it is older than the recent turns; see pinnedCard below),
 //   - one line per message that is still being worked on ("Bot is still working on: ..."),
 // and nothing else. Failed answers are never memory. The result is a list of { role, text, label?, note?, noteShort?, cardId? },
 // the same shape jobs.js has always given the answering code, so history.js's historyBlock (which has its own cap) can print it.
 
-const RECENT_CHARS = 9000; // the recent turns (the course path already uses 6,000)
+// The recent talk is sent again with EVERY model call, and Hebrew costs about one token per letter, so it is one of the biggest
+// parts of the bill (27% of the prompt, experiments/2026-11-12-quota-max.md). Since 2026-11-12: the newest FULL_TURNS messages
+// stay whole (a follow-up like "explain that again" needs the last answer word for word); an OLDER answer of Bot keeps only its
+// start, which is enough to know what was talked about (Omri's own messages are never shortened this way). The search_memory
+// tool still finds the full text of anything older.
+const RECENT_CHARS = 5000; // the recent turns (9,000 until 2026-11-12)
+const FULL_TURNS = 3; // the last answer, the message before it, and the answer before that
+const OLD_ANSWER_CHARS = 500;
+const CUT_MARK = " [... the rest of this earlier answer is left out]";
 const MAX_MESSAGE_CHARS = 2000; // one long message is cut to this here (history.js cuts again at 3,000)
 const SCAN_MESSAGES = 80; // how far back to look for the recent turns (a page of the store, never the whole thread)
 const PENDING_CHARS = 60; // "still working on: <first 60 characters>"
@@ -20,7 +29,7 @@ const CARD_SCAN_DAYS = 14; // how far back the newest calendar card is looked fo
 // The most that buildHistory can ever return, in characters of text and notes (used by the tests). Roughly: the recent turns,
 // one pinned card with its full note (history.js refuses a note that does not fit its own cap), and the pending lines.
 const NOTES_CHARS = 2400; // the last 3 daily notes (thread-summary.js), already capped there
-const MAX_CONTEXT_CHARS = RECENT_CHARS + 6000 + NOTES_CHARS + MAX_PENDING * (PENDING_CHARS + 80);
+const MAX_CONTEXT_CHARS = RECENT_CHARS + 6000 + NOTES_CHARS + MAX_PENDING * (PENDING_CHARS + 80) + SCAN_MESSAGES * CUT_MARK.length;
 
 const clip = (text, max) => { const t = String(text); return t.length > max ? t.slice(0, max) : t; };
 
@@ -43,16 +52,21 @@ function buildHistory(store, { entryOf, courseName = null, busy = [], pending = 
   const recent = store.page({ limit: SCAN_MESSAGES }).messages.filter(usable);
 
   const entries = [];
+  const limits = new Map(); // message -> how many of its characters are kept
   let used = 0;
   for (let i = recent.length - 1; i >= 0; i--) { // newest to oldest, so the newest survive
     const m = recent[i];
-    const cost = Math.min(m.text.length, MAX_MESSAGE_CHARS);
+    const old = entries.length >= FULL_TURNS && m.role === "assistant";
+    const limit = old ? OLD_ANSWER_CHARS : MAX_MESSAGE_CHARS;
+    const cost = Math.min(m.text.length, limit);
     if (entries.length && used + cost > maxChars) break;
     entries.unshift(m);
+    limits.set(m, limit);
     used += cost;
   }
   const out = entries.map((m) => {
-    const entry = { ...entryOf(m), text: clip(m.text, MAX_MESSAGE_CHARS) };
+    const limit = limits.get(m);
+    const entry = { ...entryOf(m), text: m.text.length > limit && limit === OLD_ANSWER_CHARS ? clip(m.text, limit) + CUT_MARK : clip(m.text, limit) };
     const label = labelOf(m, courseName);
     if (label) entry.label = label;
     if (m.result && typeof m.result.courseId === "string") entry.courseId = m.result.courseId; // which course this turn was about
@@ -87,4 +101,4 @@ function pinnedCard(store, { entryOf, hide, already }) {
   return { ...entry, text: clip(found.text, MAX_MESSAGE_CHARS) };
 }
 
-module.exports = { buildHistory, labelOf, RECENT_CHARS, MAX_MESSAGE_CHARS, MAX_CONTEXT_CHARS, PENDING_CHARS };
+module.exports = { buildHistory, labelOf, RECENT_CHARS, MAX_MESSAGE_CHARS, MAX_CONTEXT_CHARS, PENDING_CHARS, FULL_TURNS, OLD_ANSWER_CHARS, CUT_MARK };

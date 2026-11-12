@@ -235,16 +235,26 @@ test("the last round with only CALL lines: the reply says what was done instead 
   assert.match(r.answer, /could not finish the answer, but this was done:[\s\S]*Reminder SET/);
 });
 
-test("the slow slot is taken ONCE per message, with the course in focus (a question to the same course waits for the earlier one)", async () => {
-  const { brain } = setup(["ok"]);
-  const gates = [];
-  await run(brain, "explain lecture 6 of calculus", { gate: async (info) => { gates.push(info); } });
-  assert.deepStrictEqual(gates, [{ course: "c2" }]);
+test("the slow slot: never for an answer or a quick action done after the first model call; ONCE, with the course in focus, for longer work", async () => {
+  const gated = async (replies, task) => { const { brain, seen } = setup(replies); const gates = []; const r = await run(brain, task, { gate: async (info) => { gates.push({ ...info, promptsSoFar: seen.prompts.length }); } }); return { gates, r }; };
+  // a direct answer: no slot at all
+  assert.deepStrictEqual((await gated(["ok"], "explain lecture 6 of calculus")).gates, []);
+  // a quick action (a doing tool with its reply in the same turn): no slot
+  const quick = await gated(['CALL {"tool":"set_reminder","text":"call mom","when":"2026-11-11T09:00"}\nDone, I will remind you.'], "remind me tomorrow at 9 to call mom");
+  assert.deepStrictEqual(quick.gates, []);
+  assert.strictEqual(quick.r.answer, "Done, I will remind you.");
+  // a lookup needs another model round: the slot is taken once, AFTER the first model call and before the second
+  const look = 'CALL {"tool":"course_files","course":"Calculus 2"}';
+  assert.deepStrictEqual((await gated([look, look, "Here they are."], "what files are in calculus?")).gates, [{ course: "c2", promptsSoFar: 1 }]);
+  // a doing tool that FAILED needs another round too
+  assert.deepStrictEqual((await gated(['CALL {"tool":"set_reminder","text":"x","when":"not a time"}\nDone.', "I could not set it."], "remind me")).gates.length, 1);
+  // a quiz (the coach's long flow) takes the slot before it starts
+  assert.deepStrictEqual((await gated(['CALL {"tool":"quiz","course":"Calculus 2"}'], "quiz me on calculus")).gates, [{ course: "c2", promptsSoFar: 1 }]);
 });
 
 test("a file of the course still being read: one short line, then the answer waits until it is read", async () => {
   let status = "reading";
-  const { brain } = setup(["answer from the new file"], {
+  const { brain } = setup(['CALL {"tool":"course_files","course":"Calculus 2"}', "answer from the new file"], {
     courseRoutes: { list: () => COURSES, courseFiles: (id) => ({ files: id === "c2" ? [{ id: "n1", name: "lecture7.pdf", status, pages: 0, pagesTotal: 20 }] : [] }), linkFiles: () => [] },
     waitPollMs: 5,
   });
@@ -254,7 +264,7 @@ test("a file of the course still being read: one short line, then the answer wai
   const r = await run(brain, "what is in lecture 7 of calculus?", { notify: (t) => { lines.push(t); order.push("notify"); }, gate: async () => { order.push("gate"); } });
   assert.strictEqual(lines.length, 1);
   assert.match(lines[0], /still being read/);
-  assert.deepStrictEqual(order, ["notify", "gate"], "the wait comes BEFORE the slot");
+  assert.deepStrictEqual(order, ["notify", "gate"], "the wait comes BEFORE the slot (taken here because the message needed a second model round)");
   assert.strictEqual(r.answer, "answer from the new file");
 });
 
@@ -337,4 +347,52 @@ test("save_links: the links of a course file become ONE list with a Confirm card
   assert.strictEqual(r.linkBatch.id, "b1");
   assert.strictEqual(seen.saved.length, 0, "nothing is downloaded before the tap");
   assert.strictEqual(r.answer, "The list is waiting for your Confirm.");
+});
+
+// ---- smaller context (2026-11-12, experiments/2026-11-12-quota-max.md) ----
+test("the linked folder: only files being worked on ride along (changed in the last 48 hours), the newest one always", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const NOW = Date.parse("2026-11-10T12:00:00Z"); // the brain's clock in these tests
+  const hoursAgo = (h) => new Date(NOW - h * 3600 * 1000);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-recent-"));
+  const put = (name, text, hours) => { fs.writeFileSync(path.join(dir, name), text); fs.utimesSync(path.join(dir, name), hoursAgo(hours), hoursAgo(hours)); };
+  put("main.c", "int newest_file = 1;\n", 1);
+  put("decoder.c", "int two_hours_old = 2;\n", 2);
+  put("old.c", "int three_days_old = 3;\n", 72);
+  put("README.md", "notes from nine days ago\n", 216);
+  const link = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, "ok"]);
+  await run(link.brain, `my systems programming assignment folder is ${dir}`);
+  await run(link.brain, "what does my code do in Systems Programming?");
+  const prompt = link.seen.prompts[1];
+  for (const name of ["main.c", "decoder.c", "old.c", "README.md"]) assert.ok(prompt.includes(name + " ("), name + " is in the file list");
+  assert.match(prompt, /The files Omri changed last/);
+  assert.match(prompt, /1: int newest_file = 1;/);
+  assert.match(prompt, /1: int two_hours_old = 2;/);
+  assert.ok(!prompt.includes("three_days_old"), "a file changed 3 days ago is only listed");
+  assert.ok(!prompt.includes("nine days ago"), "an old README is only listed");
+  // nothing changed for a week: the newest file still rides along (it is what Omri touched last), alone
+  for (const name of ["main.c", "decoder.c", "old.c", "README.md"]) fs.utimesSync(path.join(dir, name), hoursAgo(name === "main.c" ? 200 : 300), hoursAgo(name === "main.c" ? 200 : 300));
+  const later = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, "ok"]);
+  await run(later.brain, `my systems programming assignment folder is ${dir}`);
+  await run(later.brain, "what does my code do in Systems Programming?");
+  assert.match(later.seen.prompts[1], /The file Omri changed last/);
+  assert.match(later.seen.prompts[1], /1: int newest_file = 1;/);
+  assert.ok(!later.seen.prompts[1].includes("two_hours_old"));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the linked folder: recent files stop riding along once they pass the size limit together", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const NOW = Date.parse("2026-11-10T12:00:00Z");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-recent-big-"));
+  const put = (name, text, hours) => { fs.writeFileSync(path.join(dir, name), text); const t = new Date(NOW - hours * 3600 * 1000); fs.utimesSync(path.join(dir, name), t, t); };
+  put("a.c", "// first_marker\n" + "x".repeat(5000), 1);
+  put("b.c", "// second_marker\n" + "y".repeat(5000), 2); // 5,000 + 5,000 is over the 8,000 limit
+  put("c.c", "// third_marker\n", 3); // small: it still fits
+  const b = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, "ok"]);
+  await run(b.brain, `my systems programming assignment folder is ${dir}`);
+  await run(b.brain, "what does my code do in Systems Programming?");
+  assert.ok(b.seen.prompts[1].includes("first_marker") && b.seen.prompts[1].includes("third_marker"));
+  assert.ok(!b.seen.prompts[1].includes("second_marker"));
+  fs.rmSync(dir, { recursive: true, force: true });
 });

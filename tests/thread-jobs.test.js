@@ -388,3 +388,85 @@ test("SERVER (thread on): /api/ask takes route general only; anything else is re
     assert.deepStrictEqual(seen, ["general", null]);
   } finally { s.close(); }
 });
+
+// ---- quick actions never wait behind long answers (2026-11-12) ----
+// The REAL brain inside the real jobs: two long messages hold both slow slots, and a reminder sent after them is still answered at once.
+test("the real brain: a reminder is answered while two long answers hold both slots; a third long one waits for a slot", async () => {
+  const { createBrain } = require("../brain");
+  const hold = gate();
+  const made = [];
+  const said = (prompt) => /<message>\n([\s\S]*?)\n<\/message>/.exec(prompt)[1];
+  const brain = createBrain({
+    courses: { allPages: () => [] }, courseRoutes: { list: () => [], courseFiles: () => ({ files: [] }), linkFiles: () => [] }, coach: null,
+    reminders: { list: () => [], create: (r) => { made.push(r.text); return { id: "r1", ...r }; } }, memory: { list: () => [], add: () => ({}) }, cards: { add: () => ({}) },
+    readCalendar: async () => ({ text: "" }), poolLevels: async () => [], poolRows: async () => [], refreshPools: () => {}, notePoolFailure: () => {},
+    chain: [{ provider: "agy", model: "fake-model" }],
+    // The fake model: a "long" message first asks for a lookup, and its second round hangs until the test lets go.
+    askOne: async (provider, model, prompt) => {
+      const text = said(prompt);
+      if (/^long/.test(text)) { if (!/## Tool round 1/.test(prompt)) return 'CALL {"tool":"reminders_list"}'; await hold.wait; return "long answer to " + text; }
+      return 'CALL {"tool":"set_reminder","text":"leave","when":"2030-01-01T17:00"}\nI will remind you at 17:00.';
+    },
+  });
+  const { thread, jobs } = setup({ handle: brain.handle, courses: () => [] });
+  const a = jobs.startThread({ task: "long one" });
+  const b = jobs.startThread({ task: "long two" });
+  const c = jobs.startThread({ task: "long three" });
+  await tick(40);
+  const quick = jobs.startThread({ task: "remind me at 5 to leave" });
+  const finished = await done(jobs, quick.id); // answered although both slots are held
+  assert.strictEqual(finished.status, "done");
+  assert.deepStrictEqual(made, ["leave"]);
+  for (const id of [a.id, b.id, c.id]) assert.strictEqual(jobs.get(id).status, "running");
+  assert.ok(jobs.get(c.id).log.some((l) => /waiting for a free slot/.test(l)), "the third long message waits for a slot, after its first model call");
+  assert.ok(![...thread.all()].some((m) => m.role === "assistant" && /long answer/.test(m.text)));
+  assert.match([...thread.all()].find((m) => m.replyTo === quick.messageId).text, /remind you at 17:00/);
+  hold.release();
+  for (const id of [a.id, b.id, c.id]) assert.strictEqual((await done(jobs, id)).status, "done");
+  assert.strictEqual([...thread.all()].filter((m) => m.role === "assistant" && /^long answer to long/.test(m.text)).length, 3);
+});
+
+// ---- the recent talk is smaller since 2026-11-12: older answers of Bot keep only their start ----
+test("history: the newest 3 messages stay whole, an older answer of Bot keeps its first 500 characters, Omri's own messages are never shortened that way", () => {
+  const { RECENT_CHARS, FULL_TURNS, OLD_ANSWER_CHARS, CUT_MARK } = require("../thread-context");
+  assert.deepStrictEqual([RECENT_CHARS, FULL_TURNS, OLD_ANSWER_CHARS], [5000, 3, 500]);
+  const thread = createThreadStore(tmp());
+  const t0 = Date.now() - 3600 * 1000;
+  const long = (tag) => tag + " " + "w".repeat(1200);
+  thread.appendMany([
+    { role: "user", text: long("Q1"), at: t0 },
+    { role: "assistant", text: long("A1"), at: t0 + 1000 },
+    { role: "user", text: "Q2 short", at: t0 + 2000 },
+    { role: "assistant", text: long("A2"), at: t0 + 3000 },
+    { role: "user", text: "Q3 short", at: t0 + 4000 },
+    { role: "assistant", text: long("A3"), at: t0 + 5000 },
+  ]);
+  const history = buildHistory(thread, { entryOf: (m) => ({ role: m.role, text: m.text }) });
+  const by = (tag) => history.find((h) => h.text.startsWith(tag));
+  assert.strictEqual(by("A3").text.length, 1203); // the last answer, word for word
+  assert.strictEqual(by("A2").text.length, 1203); // and the answer before it (among the newest 3)
+  assert.strictEqual(by("A1").text, long("A1").slice(0, 500) + CUT_MARK); // an older answer: its start and a mark
+  assert.strictEqual(by("Q1").text.length, 1203); // Omri's own older message is kept whole
+  assert.deepStrictEqual(history.map((h) => h.text.slice(0, 2)), ["Q1", "A1", "Q2", "A2", "Q3", "A3"]);
+});
+
+test("history: the recent turns never pass the budget, and short older answers are not marked", () => {
+  const { RECENT_CHARS, CUT_MARK } = require("../thread-context");
+  const thread = createThreadStore(tmp());
+  const t0 = Date.now() - 3600 * 1000;
+  thread.appendMany(Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: `${i} ` + "z".repeat(i % 2 ? 900 : 100), at: t0 + i * 1000 })));
+  thread.append({ role: "assistant", text: "short and old", at: t0 - 1000 });
+  const history = buildHistory(thread, { entryOf: (m) => ({ role: m.role, text: m.text }) });
+  const kept = history.reduce((a, h) => a + Math.min(h.text.length, h.text.endsWith(CUT_MARK) ? h.text.length - CUT_MARK.length : h.text.length), 0);
+  assert.ok(kept <= RECENT_CHARS, `${kept} characters kept, the budget is ${RECENT_CHARS}`);
+  assert.ok(history.length > 8, "shortening older answers leaves room for more turns: " + history.length);
+  assert.ok(history[history.length - 1].text.startsWith("39 ") && !history[history.length - 1].text.endsWith(CUT_MARK));
+  const short = buildHistory(createThreadStoreWith(["hello", "short answer", "and?", "another short one", "ok", "fine", "last q", "last a"]), { entryOf: (m) => ({ role: m.role, text: m.text }) });
+  assert.ok(!short.some((h) => h.text.includes(CUT_MARK)));
+});
+function createThreadStoreWith(texts) {
+  const thread = createThreadStore(tmp());
+  const t0 = Date.now() - 3600 * 1000;
+  thread.appendMany(texts.map((text, i) => ({ role: i % 2 ? "assistant" : "user", text, at: t0 + i * 1000 })));
+  return thread;
+}

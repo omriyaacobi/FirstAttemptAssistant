@@ -209,6 +209,42 @@ function lowWithReserve(levels, reserves = {}, threshold = LOW_THRESHOLD) {
     .map(({ pool, remaining }) => ({ pool, remaining }));
 }
 
+// ---- pacing the week (experiments/2026-11-12-quota-max.md) ----
+// A weekly pool is "on pace" when the share of quota left equals the share of the week left. pace = quota left (%) minus week
+// left (%): +20 means 20 points more quota than time (room to spend), -20 means it is being used up too fast.
+// Before this, the brain used Argon alone until its reserve and only then agy's Claude pool, so one pool was burnt by day 2
+// while the other reset unused. Now the pool with the better pace answers.
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+const PACE_MARGIN = 10; // points one pool must be ahead before the brain switches to it (so the same model answers for a stretch)
+
+// Pure. The pace of one pool from the raw rows ([{ pool, window, remaining, resets }]), or null when its weekly row is unknown or out of date.
+function paceOf(rows, pool, now = Date.now()) {
+  const row = (rows || []).find((r) => r && r.pool === pool && /week/i.test(String(r.window)) && Number.isFinite(r.remaining) && Date.parse(r.resets) > now);
+  if (!row) return null;
+  const weekLeft = Math.min(1, (Date.parse(row.resets) - now) / WEEK_MS);
+  return Math.round(row.remaining - 100 * weekLeft);
+}
+
+// Pure. Decides which of the first two agy models of the chain goes first, by pace. Everything else keeps its place (Claude Code
+// stays where it is). lead is the model that went first last time (or null): it keeps the lead until the other is PACE_MARGIN
+// points ahead, so the choice does not flip with every message. Returns { chain, lead, note } (note: plain words when the order changed).
+function paceOrder(chain, rows, { now = Date.now(), margin = PACE_MARGIN, lead = null } = {}) {
+  const spots = chain.map((m, i) => [m, i]).filter(([m]) => m.provider === "agy").slice(0, 2);
+  if (spots.length < 2) return { chain: chain.slice(), lead: null, note: "" };
+  const [[a, ia], [b, ib]] = spots;
+  const pool = (m) => poolsOf(m)[0];
+  const pa = paceOf(rows, pool(a), now), pb = paceOf(rows, pool(b), now);
+  if (pa === null || pb === null || pool(a) === pool(b)) return { chain: chain.slice(), lead: null, note: "" };
+  const current = lead === b.model ? b : a; // without a lead, the chain's own order
+  const other = current === a ? b : a;
+  const gap = (other === a ? pa : pb) - (current === a ? pa : pb);
+  const first = gap >= margin ? other : current;
+  const out = chain.slice();
+  if (first === b) { out[ia] = b; out[ib] = a; }
+  const note = first === b ? `pacing the week: ${pool(b)} is ${pb - pa} point${pb - pa === 1 ? "" : "s"} ahead of ${pool(a)} (quota left compared with the days left)` : "";
+  return { chain: out, lead: first.model, note };
+}
+
 // "Gemini 4 Argon 4% left, Claude plan 0% left"
 const describeLow = (low) => low.map((p) => `${p.pool} ${p.remaining}% left`).join(", ");
 
@@ -314,7 +350,11 @@ function createQuota({ fetchRows = fetchUsage, fetchClaude = probeClaude, now = 
     }
     return Promise.all([pendingAgy, pendingClaude]).then(() => {});
   }
-  return { get, levels, refresh, noteFailure, noteClaudeInfo };
+  // The raw rows (pool, window, remaining, resets), for paceOrder.
+  async function rows() {
+    return allRows();
+  }
+  return { get, levels, rows, refresh, noteFailure, noteClaudeInfo };
 }
 
 // The one shared instance Bot uses.
@@ -322,6 +362,7 @@ const quota = createQuota();
 onClaudeRateLimit(quota.noteClaudeInfo);
 
 module.exports = {
+  paceOf, paceOrder, PACE_MARGIN, getPoolRows: quota.rows,
   parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, lowWithReserve, prioritize, describeLow, createQuota,
   getLowPools: quota.get, getPoolLevels: quota.levels, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
 };

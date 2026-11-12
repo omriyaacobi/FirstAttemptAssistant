@@ -12,7 +12,9 @@ const plan = require("./study-plan");
 const { clean } = require("./study-tracker");
 const { parseJson } = require("./tutor");
 
-const POSITION_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
+// Flash medium first since 2026-11-12 (quota): these readers only PROPOSE closed fields that code checks against the timetable
+// and the outline (checkPositions, standing.checkStanding), so Argon's pool stays for answers. Argon is the fallback. Never Claude.
+const POSITION_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
 const STATES = new Set(["lecture", "upToDate", "notStarted", "date", "unknown"]);
 
 // raw: what the model sent. refs: the tracked courses [{ key, name, courseId }]. heldOf(ref) -> held slots [{ n, date }].

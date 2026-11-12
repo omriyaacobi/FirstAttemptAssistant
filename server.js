@@ -744,6 +744,7 @@ if (require.main === module) {
   const makeBrain = () => (brainRef = require("./brain").createBrain({
     courses: coursesStore, courseRoutes, linkBatches, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
+    tokenLog: require("./tokenlog").createTokenLog({ file: path.join(__dirname, "data", "token-log.json") }), // what the answers cost, numbers only
     // Omri's PC: find folders and files by name under the search roots (data/pc-roots.json), never in Bot's own folder (pc-find.js).
     finder: require("./pc-find").createFinder({ dataDir: path.join(__dirname, "data"), forbidden: [__dirname] }),
     // BOT_BRAIN_FIRST=claude in .env: Claude Code Sonnet first for a while. Bot does not load .env into process.env, so read the file.

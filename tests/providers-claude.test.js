@@ -68,6 +68,6 @@ test("askClaude: output that is not stream-json is returned as it is (the old be
 
 test("readClaudeStream: skips junk lines and keeps the rate_limit_info objects", () => {
   const out = readClaudeStream('junk\n{broken\n{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}\n{"type":"result","is_error":false,"result":"hi"}\n');
-  assert.deepStrictEqual(out, { parsed: true, text: "hi", isError: false, infos: [{ status: "allowed" }] });
-  assert.deepStrictEqual(readClaudeStream(""), { parsed: false, text: "", isError: false, infos: [] });
+  assert.deepStrictEqual(out, { parsed: true, text: "hi", isError: false, infos: [{ status: "allowed" }], usage: null });
+  assert.deepStrictEqual(readClaudeStream(""), { parsed: false, text: "", isError: false, infos: [], usage: null });
 });

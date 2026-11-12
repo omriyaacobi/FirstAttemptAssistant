@@ -33,7 +33,7 @@ const { listFound } = require("./recall");
 const { pickPages, defang } = require("./study");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
 const { fixMath } = require("./tutor");
-const { prioritize, lowWithReserve, describeLow, getPoolLevels, refreshQuota, noteFailure } = require("./quota");
+const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
 const pcOpen = require("./pc-open");
@@ -58,6 +58,8 @@ const PHOTO_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
 const RESERVES = { [MODELS.argonLow.pool]: 25 };
 const MAX_TOOL_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 6;
+const RECENT_CODE_MS = 48 * 3600 * 1000; // a file of the linked folder changed in the last two days is "being worked on"
+const RECENT_CODE_BYTES = 8000; // ...and together those files may take this much of the prompt
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
@@ -74,14 +76,28 @@ const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, note
 // keepReady is OFF on purpose: a spare is started after each answer and thrown away after 8 idle minutes, so an idle Bot starts
 // nothing in the background (a fresh agy every 8 minutes, all day, was a likely cause of short freezes in a game). The first message
 // after a pause just pays the 2-3 s start-up.
-const pool = createWarmAgy({ keepReady: false });
+// THE SLIM AGENT (providers.js ensureAgent): the brain's agy calls run under an agent whose only tool is web search, which cuts
+// 6,000 to 9,000 tokens of agy's own overhead from EVERY call (experiments/2026-11-12-quota-max.md). BOT_BRAIN_AGENT=off in the
+// environment turns it off (only for comparing in a test run).
+const SLIM_AGENT = process.env.BOT_BRAIN_AGENT !== "off";
+const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
 const warmUp = () => { try { pool.warmUp(MODELS.argonLow.model, null); } catch (error) { /* only makes the first message slower */ } };
-function askWarm(provider, model, question, onText) {
-  if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
+// extra.onUsage gets what the call cost in tokens, when the tool reports it.
+function askWarm(provider, model, question, onText, extra = {}) {
+  const onUsage = extra.onUsage || null;
+  if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model), onUsage });
   // agy always gets the prompt through stdin (the streaming call). Without onText, ask() would put it on the command line, and the
   // brain's prompt is far longer than Windows allows ("spawn ENAMETOOLONG"), so every agy model but the warm Argon failed at once.
-  if (provider === "agy") return ask(provider, model, question, onText || (() => {}));
-  return ask(provider, model, question, onText);
+  if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage });
+  return ask(provider, model, question, onText, { onUsage });
+}
+// "2 model calls, 31,204 tokens" from the calls one message made (each: { model, input, output, thinking, cacheRead }).
+function costOf(spent) {
+  const tokens = spent.reduce((a, c) => a + (c.input || 0) + (c.output || 0) + (c.thinking || 0) + (c.cacheRead || 0), 0);
+  // agy's own tool (web search) ran inside a call: each use is one more model turn that read the whole prompt again.
+  const inner = spent.flatMap((c) => (Array.isArray(c.inner) ? c.inner : []));
+  const web = inner.length ? `, ${inner.length} web search step${inner.length === 1 ? "" : "s"} inside agy` : "";
+  return { calls: spent.length, tokens, text: spent.length ? `${spent.length} model call${spent.length === 1 ? "" : "s"}, ${tokens.toLocaleString("en-US")} tokens${web}` : "" };
 }
 
 // The order the models are asked in, from the pool levels. Two steps:
@@ -158,10 +174,12 @@ function createBrain({
   photoChain = PHOTO_CHAIN,
   askOne = askWarm,
   poolLevels = getPoolLevels, // every quota pool and the room left in it (quota.js); read from memory, never waits for agy
+  poolRows = getPoolRows, // the raw rows (with each window's reset time), for pacing the week between the two agy pools
   refreshPools = refreshQuota, // after each message: look the pools up again in the background, for the NEXT message
   notePoolFailure = noteFailure, // a "you've hit your limit" error marks that pool low until its reset
   reserves = RESERVES,
   chain = CHAIN,
+  tokenLog = null, // tokenlog.js: per-day totals of what the answers cost (numbers only); null = not kept
   folderRules = {}, // extra options for project-folder.js checkFolder (tests only)
   opener = pcOpen.createOpener({ log: console.log }), // pc-open.js: opens pages (Chrome), documents, code (VS Code) and folders; tests pass a fake
   finder = null, // pc-find.js: finds folders and files by NAME under Omri's search roots; null = no PC search
@@ -169,6 +187,7 @@ function createBrain({
   waitLimitMs = WAIT_LIMIT_MS,
   now = () => Date.now(),
 }) {
+  let paceLead = null; // which agy model went first last time (quota.js paceOrder keeps it in the lead for a stretch); memory only
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
   const refOf = (course) => (coach ? coach.tracker.refsFor([course])[0] : null);
   const record = (course) => { try { const ref = refOf(course); return ref ? coach.tracker.course(ref) : null; } catch (error) { return null; } };
@@ -239,14 +258,25 @@ function createBrain({
     const rest = asg && asg.fileId ? pages.filter((p) => p.fileId !== asg.fileId) : pages;
     let picked = [];
     try { picked = notesFor({ pages: rest, message: String(task).slice(0, 600), cap: LIMITS.notes }); } catch (error) { picked = []; }
-    // Omri's own code: the file list of the linked folder, and the files changed last (what Omri is working on right now).
+    // Omri's own code: the file list of the linked folder, and the files Omri is working on right now: the one changed last, plus
+    // up to two more changed in the last 48 hours, within a size limit. Until 2026-11-12 the three newest files rode along with
+    // EVERY message whatever their age (in the real folder the third was a README last touched 9 days earlier, 9,500 characters
+    // on every call). The list shows the model what exists; it reads any other file with project_read.
     if (r && r.projectDir) {
       try {
         const { files, more } = projectFolder.listFiles(r.projectDir);
         const tree = files.slice(0, 150).map((f) => `${f.rel} (${f.bytes} bytes)`).join("\n") + (more || files.length > 150 ? "\n[... more files]" : "");
-        const newest = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000).slice(0, 3);
+        const byAge = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000);
+        const newest = [];
+        let codeBytes = 0;
+        for (const f of byAge.slice(0, 3)) {
+          const first = newest.length === 0;
+          if (!first && (now() - f.mtime > RECENT_CODE_MS || codeBytes + f.bytes > RECENT_CODE_BYTES)) continue;
+          newest.push(f);
+          codeBytes += f.bytes;
+        }
         const bodies = newest.map((f) => { try { return `[${f.rel}, changed ${new Date(f.mtime).toISOString().slice(0, 16).replace("T", " ")} UTC]\n${projectFolder.numbered(projectFolder.readFile(r.projectDir, f.rel).text)}`; } catch (error) { return ""; } }).filter(Boolean);
-        out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe files Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
+        out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe file${bodies.length === 1 ? "" : "s"} Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
       } catch (error) { out.push(`The linked folder ${r.projectDir} could not be read right now (${String(error.message).slice(0, 100)}).`); }
     }
     if (picked.length) out.push(`Pages of ${course.name}'s material that best match the message (they may not be what is needed; use course_search for more):\n` + block("course-material", picked.map((p) => `[${p.fileName}, page ${p.page}]\n${p.text}`).join("\n\n")));
@@ -632,6 +662,8 @@ ${r.cardText}`; }
   // ---- one message ----
   async function handle(task, options = {}) {
     const { history = [], image = null, log = () => {}, onPartial = null, gate = null, route = null, notify = null, attached = null, fromPhone = false } = options;
+    const spent = Array.isArray(options.spent) ? options.spent : []; // every model call of this message and its tokens
+    const cost = () => { const c = costOf(spent); return c.text ? ", " + c.text : ""; };
     const t0 = now();
     const seconds = () => Number(((now() - t0) / 1000).toFixed(1));
     const lang = /[֐-׿]/.test(task) && (task.match(/[֐-׿]/g) || []).length >= (task.match(/[a-z]/gi) || []).length ? "he" : "en";
@@ -642,10 +674,14 @@ ${r.cardText}`; }
     const filedIn = attached && attached.courseId ? list.find((c) => c.id === attached.courseId) || null : null;
     const focus = route === "general" ? null : filedIn || focusCourse(task, history, list);
     if (focus) ctx.course = focus;
-    // A file of this course still being read: wait first (no slot held). Then take a slow slot; a question to the same course waits for
-    // an earlier one (jobs.js). The slot is taken ONCE per message.
+    // A file of this course still being read: wait first (no slot held).
     const fileNote = focus ? await waitForFiles(focus, lang, notify, log) : null;
-    if (gate) await gate(focus ? { course: focus.id } : {});
+    // THE SLOW SLOT (jobs.js). The first model call (reading the message) runs at once, WITHOUT a slot: an answer or a quick action
+    // ("remind me at 5") that is done after that one call never waits behind long work. Only when the message needs more (looking
+    // things up over more model rounds, a quiz, a lesson) is a slot taken, ONCE per message; there a question to the same course
+    // also waits for an earlier one. What is quick is decided by what the model asked for, never by words in Omri's message.
+    let slotTaken = false;
+    const slowSlot = async () => { if (gate && !slotTaken) { slotTaken = true; await gate(focus ? { course: focus.id } : {}); } };
 
     // -- the fixed part of the prompt --
     let about = "";
@@ -669,10 +705,17 @@ ${r.cardText}`; }
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
-    const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(chain, levels, reserves);
+    // PACING THE WEEK: of the two agy pools, the one with more quota left for the days left answers first (quota.js paceOrder).
+    // The reserve and the 15% rule still run after it, so a pool that is really low always steps back.
+    const rows = image ? [] : await (async () => { try { const r = await poolRows(); return Array.isArray(r) ? r : []; } catch (error) { return []; } })();
+    const paced = paceOrder(chain, rows, { now: now(), lead: paceLead });
+    if (!image) paceLead = paced.lead;
+    const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
-    const askThis = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
-    if (order[0] !== chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
+    const askRaw = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
+    const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => spent.push({ model, ...u }) });
+    if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
+    else if (!image && paced.note) log(`[brain] ${paced.note}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
     const attempts = [];
     let used = null;
@@ -716,8 +759,8 @@ ${r.cardText}`; }
         // The words that came with a file asked for nothing more: no second message under the "Filed ..." line.
         if (attached && /^\W*nothing\W*$/i.test(answer)) { if (onPartial) onPartial(""); log("[brain] the words sent with the file needed no answer"); return { mode: "single", brain: true, silent: true, answer: "", seconds: seconds() }; }
         if (fileNote) answer = fileNote + "\n\n" + answer;
-        log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}`);
-        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}${cost()}`);
+        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
       if (showing && onPartial) onPartial("");
 
@@ -727,6 +770,7 @@ ${r.cardText}`; }
         reply.calls = reply.calls.map((c) => (isTerminal(c.tool) ? { ...c, alone: true } : c));
       } else if (term && coach) {
         const c = term.course ? matchCourse(term.course, list) : ctx.course;
+        await slowSlot(); // a quiz or a lesson is long model work
         log(`[brain] tool ${term.tool}${c ? ` (${c.name})` : ""}`);
         if (DIRECT[term.tool]) {
           const res = await DIRECT[term.tool](c, term, lang, onPartial || null);
@@ -737,6 +781,8 @@ ${r.cardText}`; }
         return { ...res, brain: true, seconds: seconds(), ...(c ? { courseId: c.id, courseName: c.name } : {}), studyIntent: args.studyIntent };
       }
 
+      // Anything but quick "doing" tools means another model round will follow: that is long work, so it takes a slot first.
+      if (!reply.calls.every((c) => DOING.has(c.tool))) await slowSlot();
       // Run the calls. Each is checked by its own code; a refused or failed call becomes a plain line the model must report honestly.
       const results = await Promise.all(reply.calls.map(async (call) => {
         const fn = tools[call.tool];
@@ -755,10 +801,11 @@ ${r.cardText}`; }
       let said = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```/.test(l)).join("\n").trim());
       if (said && results.every((x) => x.ok && DOING.has(x.call.tool))) {
         if (fileNote) said = fileNote + "\n\n" + said;
-        log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}`);
+        log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
         if (onPartial) onPartial(said);
-        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
+      await slowSlot(); // the quick finish did not happen (a call failed, or the model wrote no reply): another round follows
       transcript.push(`## Tool round ${round + 1}\n` + results.map(({ call, text }) => {
         const id = newId();
         return `You called: ${JSON.stringify(call).slice(0, 400)}\n<tool-result id="${id}">\n${scrub(text)}\n</tool-result id="${id}">`;
@@ -768,11 +815,16 @@ ${r.cardText}`; }
   }
 
   // After every message (answered or not), the pools are looked up again in the background for the next one. Never awaited.
-  async function handleAndRefresh(task, options) {
-    try { return await handle(task, options); } finally { try { Promise.resolve(refreshPools()).catch(() => {}); } catch (error) { /* never breaks an answer */ } }
+  // What the message cost in tokens is added to the day's totals (tokenlog.js), answered or not: a failed call was paid for too.
+  async function handleAndRefresh(task, options = {}) {
+    const spent = [];
+    try { return await handle(task, { ...options, spent }); } finally {
+      if (tokenLog && spent.length) { try { tokenLog.add(spent); } catch (error) { /* never breaks an answer */ } }
+      try { Promise.resolve(refreshPools()).catch(() => {}); } catch (error) { /* never breaks an answer */ }
+    }
   }
 
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, pathInText, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, parseReply, looksLikeCall, urlsIn, pathInText, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

@@ -14,18 +14,21 @@
 
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { SANDBOX_DIR, killTree, checkModelName, AGY_CMD } = require("./providers");
+const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, readUsage, watchSteps } = require("./providers");
 
 const MAX_SPARE_AGE_MS = 8 * 60 * 1000; // a spare older than this is thrown away (idle 5 min was tested fine)
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
 
 // One agy process in stream mode. ready resolves when agy printed "init". run(prompt) writes the prompt and resolves
 // with the structured reply. kill() stops it. It can run() only once.
-function startProcess({ command, prefixArgs, model, schema, clock }) {
+// agent: true starts it under the slim agent (providers.js ensureAgent): far fewer tokens per call, and only web search as a tool.
+// Such a process runs in the brain's own empty folder (BRAIN_DIR), where the agent file is; every other one in the shared sandbox.
+function startProcess({ command, prefixArgs, model, schema, clock, agent = false }) {
   const args = [...prefixArgs, "-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
   if (schema) args.push("--json-schema", JSON.stringify(schema));
   fs.mkdirSync(SANDBOX_DIR, { recursive: true });
-  const child = spawn(command, args, { cwd: SANDBOX_DIR, windowsHide: true });
+  if (agent) args.push("--agent", ensureAgent(BRAIN_DIR));
+  const child = spawn(command, args, { cwd: agent ? BRAIN_DIR : SANDBOX_DIR, windowsHide: true });
   const born = clock();
   let buffer = "";
   let isReady = false;
@@ -35,6 +38,7 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
   let waiter = null; // { resolve, reject } of the one run() in progress
   const ready = new Promise((resolve) => { onReady = resolve; });
   let deathReason = "agy closed before it answered";
+  const steps = watchSteps(); // how many model turns and which of agy's own tools ran inside this one call
 
   // processDied marks an error as "the agy process itself went away" (not a model answer), so the caller may start a fresh one.
   const died = (reason) => Object.assign(new Error(reason), { processDied: true });
@@ -64,6 +68,7 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
       let event;
       try { event = JSON.parse(line); } catch (error) { continue; }
       if (event.event === "init") { isReady = true; onReady(); }
+      steps.see(event);
       const u = event.step_update;
       if (event.event === "step_update" && waiter && waiter.text !== undefined && u && u.step_type === "agent_response" && u.text_delta) {
         // A TEXT call: collect the answer as it is written and tell onText what there is so far (same rules as providers.askAgyStream).
@@ -76,6 +81,7 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
         const w = waiter;
         waiter = null;
         const result = event.result || {};
+        if (w.onUsage) { try { const u = readUsage(result.usage); if (u) w.onUsage({ ...u, ...steps.extra() }); } catch (error) { /* counting tokens must never break an answer */ } }
         if (result.status && result.status !== "SUCCESS") return w.reject(new Error("agy status " + result.status));
         if (w.text !== undefined) return w.resolve(String(result.response ?? w.text).trim()); // a text answer: the result is the authority
         try {
@@ -94,11 +100,11 @@ function startProcess({ command, prefixArgs, model, schema, clock }) {
     get age() { return clock() - born; },
     get used() { return used; },
     // options.text: true for a plain text answer (not JSON); options.onText gets the text so far while it is written.
-    run(prompt, { text = false, onText = null } = {}) {
+    run(prompt, { text = false, onText = null, onUsage = null } = {}) {
       used = true;
       return new Promise((resolve, reject) => {
         if (isDead) return reject(died(deathReason));
-        waiter = text ? { resolve, reject, text: "", step: null, onText } : { resolve, reject };
+        waiter = text ? { resolve, reject, text: "", step: null, onText, onUsage } : { resolve, reject, onUsage };
         ready.then(() => {
           if (isDead) return;
           // The message format agy expects on stdin in stream-json mode: one JSON line per user turn.
@@ -121,13 +127,14 @@ process.once("exit", () => { for (const spares of allSpares) for (const proc of 
 
 // keepReady: when a spare gets too old it is replaced at once, so a message after a long pause is warm too. Waiting spares use
 // no model quota (the model is only called when a prompt arrives).
-function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS, keepReady = false } = {}) {
+// agent: true = every process of this pool runs under the slim agent (the brain's pool).
+function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS, keepReady = false, agent = false } = {}) {
   const spares = new Map(); // "model|schema" -> a waiting process
   allSpares.add(spares);
 
   // A text call and a structured call to the same model are the same kind of process, so they share spares.
   const keyOf = (model, schema) => model + "|" + (schema ? JSON.stringify(schema) : "");
-  const fresh = (model, schema) => startProcess({ command, prefixArgs, model, schema, clock });
+  const fresh = (model, schema) => startProcess({ command, prefixArgs, model, schema, clock, agent });
 
   // Starts the spare for the NEXT message (does nothing if a good one is already waiting).
   function warmUp(model, schema) {
@@ -156,8 +163,8 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
 
   // A plain TEXT answer, written piece by piece: same shape as providers.askAgyStream(question, model, onText, { signal }).
   // Same rules: one process per message, the same flags, a dead spare is replaced at once.
-  async function askText(question, model, onText, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-    return runOnSpare(question, model, null, { signal, timeoutMs, runOptions: { text: true, onText } });
+  async function askText(question, model, onText, { signal, timeoutMs = DEFAULT_TIMEOUT_MS, onUsage = null } = {}) {
+    return runOnSpare(question, model, null, { signal, timeoutMs, runOptions: { text: true, onText, onUsage } });
   }
 
   async function runOnSpare(question, model, schema, { signal, timeoutMs, runOptions }) {

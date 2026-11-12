@@ -23,7 +23,10 @@ const { checkFact } = require("./profile");
 const { isIsoDate } = require("./study-plan");
 const { dayOf } = require("./thread-store");
 
-const SUMMARY_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
+// Flash medium first since 2026-11-12 (quota): every item of a summary must carry a word-for-word quote and a message id, which
+// code checks (checkSummary), and facts and tasks are only ever cards Omri confirms. So a weaker model cannot slip a wrong
+// item in, and Argon's pool stays for answers. Argon is the fallback. Never Claude.
+const SUMMARY_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
 const MAX_DAYS_PER_RUN = 3;
 const LOOKBACK_DAYS = 7;
 const MIN_MESSAGES = 2;

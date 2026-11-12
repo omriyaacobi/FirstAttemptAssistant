@@ -17,6 +17,7 @@ model, checks and runs the tools it asks for) -> the answer is saved in the thre
 | `history.js`, `thread-context.js`, `course-material.js`, `project-folder.js` | what code hands the brain with each message: the recent talk, the course's assignment and best pages, the linked code folder (read-only) |
 | `pc-find.js`, `pc-open.js` | PC hands: find folders and files by name under the search roots, and open pages (Chrome), documents, code (VS Code) and folders; never programs |
 | `jobs.js`, `providers.js`, `router.js`, `quota.js`, `warmagy.js` | one job per message; running `agy` and `claude`; the models and their quota pools; the pre-warmed `agy` |
+| `tokenlog.js` | what the answers cost in tokens, per day and per model (`data/token-log.json`, numbers only). `node tokenlog.js` prints the last 7 days |
 | `calendar*.js`, `reminders.js`, `morning.js`, `profile.js`, `recall.js` | Google Calendar (cards), reminders, the morning brief, the profile and saved facts, search in earlier talk |
 | `courses.js`, `course-routes.js`, `study.js`, `ingest.js`, `crosslang.js`, `search.js` | courses, reading their files, the course page's own question box |
 | `study-coach.js`, `study-plan.js`, `study-tracker.js`, `study-nudges.js`, `study-page.js`, `study-positions.js`, `tutor.js`, `catchup.js`, `standing.js`, `outline.js`, `position-record.js` | the study coach: timetable, progress, graded quiz, teaching from the notes, where Omri stands, nudges (the brain reaches it through tools) |

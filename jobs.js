@@ -216,8 +216,11 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
   //   - there is no chat: the question and its answer are appended to the thread (thread-store.js). The answer carries replyTo, the id
   //     of its question, so a fast answer can arrive before a slow one and still sit under the right question.
   //   - a second message is never refused because a first one is still running (only 20 at once, so a runaway page cannot pile up work).
-  //   - SLOTS. Every message is answered by the brain (brain.js), which calls gate() once before its work and so waits for one of
-  //     `maxRunning` slots: at most that many messages are being answered by models at the same time; the others queue.
+  //   - SLOTS. Every message is answered by the brain (brain.js). Its FIRST model call (reading the message) starts at once, with
+  //     no slot: an answer or a quick action ("remind me at 5") that is finished after that one call never waits behind long work.
+  //     Only when the brain has to go on (look things up over more model rounds, run a quiz or a lesson) does it call gate() once
+  //     and wait for one of `maxRunning` slots: at most that many messages are in long work at the same time; the others queue.
+  //     (Until 2026-11-12 the slot was taken before the first call, so a reminder could wait behind two long answers.)
   //   - SAME-COURSE ORDER: a question that goes to a course waits for an EARLIER question to the same course that is still running,
   //     so "and the next one?" sees the earlier answer. Questions to different courses never wait for each other.
   //   - the context is built by code from the thread (thread-context.js), small and capped.
