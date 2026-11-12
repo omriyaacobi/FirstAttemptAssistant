@@ -73,14 +73,28 @@ const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, note
 // keepReady is OFF on purpose: a spare is started after each answer and thrown away after 8 idle minutes, so an idle Bot starts
 // nothing in the background (a fresh agy every 8 minutes, all day, was a likely cause of short freezes in a game). The first message
 // after a pause just pays the 2-3 s start-up.
-const pool = createWarmAgy({ keepReady: false });
+// THE SLIM AGENT (providers.js ensureAgent): the brain's agy calls run under an agent whose only tool is web search, which cuts
+// 6,000 to 9,000 tokens of agy's own overhead from EVERY call (experiments/2026-11-12-quota-max.md). BOT_BRAIN_AGENT=off in the
+// environment turns it off (only for comparing in a test run).
+const SLIM_AGENT = process.env.BOT_BRAIN_AGENT !== "off";
+const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
 const warmUp = () => { try { pool.warmUp(MODELS.argonLow.model, null); } catch (error) { /* only makes the first message slower */ } };
-function askWarm(provider, model, question, onText) {
-  if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model) });
+// extra.onUsage gets what the call cost in tokens, when the tool reports it.
+function askWarm(provider, model, question, onText, extra = {}) {
+  const onUsage = extra.onUsage || null;
+  if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model), onUsage });
   // agy always gets the prompt through stdin (the streaming call). Without onText, ask() would put it on the command line, and the
   // brain's prompt is far longer than Windows allows ("spawn ENAMETOOLONG"), so every agy model but the warm Argon failed at once.
-  if (provider === "agy") return ask(provider, model, question, onText || (() => {}));
-  return ask(provider, model, question, onText);
+  if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage });
+  return ask(provider, model, question, onText, { onUsage });
+}
+// "2 model calls, 31,204 tokens" from the calls one message made (each: { model, input, output, thinking, cacheRead }).
+function costOf(spent) {
+  const tokens = spent.reduce((a, c) => a + (c.input || 0) + (c.output || 0) + (c.thinking || 0) + (c.cacheRead || 0), 0);
+  // agy's own tool (web search) ran inside a call: each use is one more model turn that read the whole prompt again.
+  const inner = spent.flatMap((c) => (Array.isArray(c.inner) ? c.inner : []));
+  const web = inner.length ? `, ${inner.length} web search step${inner.length === 1 ? "" : "s"} inside agy` : "";
+  return { calls: spent.length, tokens, text: spent.length ? `${spent.length} model call${spent.length === 1 ? "" : "s"}, ${tokens.toLocaleString("en-US")} tokens${web}` : "" };
 }
 
 // The order the models are asked in, from the pool levels. Two steps:
@@ -161,6 +175,7 @@ function createBrain({
   notePoolFailure = noteFailure, // a "you've hit your limit" error marks that pool low until its reset
   reserves = RESERVES,
   chain = CHAIN,
+  tokenLog = null, // tokenlog.js: per-day totals of what the answers cost (numbers only); null = not kept
   folderRules = {}, // extra options for project-folder.js checkFolder (tests only)
   waitPollMs = WAIT_POLL_MS, // how often a file still being read is looked at again (tests use a few ms)
   waitLimitMs = WAIT_LIMIT_MS,
@@ -552,6 +567,8 @@ ${r.cardText}`; }
   // ---- one message ----
   async function handle(task, options = {}) {
     const { history = [], image = null, log = () => {}, onPartial = null, gate = null, route = null, notify = null, attached = null } = options;
+    const spent = Array.isArray(options.spent) ? options.spent : []; // every model call of this message and its tokens
+    const cost = () => { const c = costOf(spent); return c.text ? ", " + c.text : ""; };
     const t0 = now();
     const seconds = () => Number(((now() - t0) / 1000).toFixed(1));
     const lang = /[֐-׿]/.test(task) && (task.match(/[֐-׿]/g) || []).length >= (task.match(/[a-z]/gi) || []).length ? "he" : "en";
@@ -591,7 +608,8 @@ ${r.cardText}`; }
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
     const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(chain, levels, reserves);
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
-    const askThis = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
+    const askRaw = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
+    const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => spent.push({ model, ...u }) });
     if (order[0] !== chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
     const attempts = [];
@@ -636,8 +654,8 @@ ${r.cardText}`; }
         // The words that came with a file asked for nothing more: no second message under the "Filed ..." line.
         if (attached && /^\W*nothing\W*$/i.test(answer)) { if (onPartial) onPartial(""); log("[brain] the words sent with the file needed no answer"); return { mode: "single", brain: true, silent: true, answer: "", seconds: seconds() }; }
         if (fileNote) answer = fileNote + "\n\n" + answer;
-        log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}`);
-        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}${cost()}`);
+        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
       if (showing && onPartial) onPartial("");
 
@@ -675,9 +693,9 @@ ${r.cardText}`; }
       let said = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```/.test(l)).join("\n").trim());
       if (said && results.every((x) => x.ok && DOING.has(x.call.tool))) {
         if (fileNote) said = fileNote + "\n\n" + said;
-        log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}`);
+        log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
         if (onPartial) onPartial(said);
-        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
       transcript.push(`## Tool round ${round + 1}\n` + results.map(({ call, text }) => {
         const id = newId();
@@ -688,11 +706,16 @@ ${r.cardText}`; }
   }
 
   // After every message (answered or not), the pools are looked up again in the background for the next one. Never awaited.
-  async function handleAndRefresh(task, options) {
-    try { return await handle(task, options); } finally { try { Promise.resolve(refreshPools()).catch(() => {}); } catch (error) { /* never breaks an answer */ } }
+  // What the message cost in tokens is added to the day's totals (tokenlog.js), answered or not: a failed call was paid for too.
+  async function handleAndRefresh(task, options = {}) {
+    const spent = [];
+    try { return await handle(task, { ...options, spent }); } finally {
+      if (tokenLog && spent.length) { try { tokenLog.add(spent); } catch (error) { /* never breaks an answer */ } }
+      try { Promise.resolve(refreshPools()).catch(() => {}); } catch (error) { /* never breaks an answer */ }
+    }
   }
 
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, pathInText, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, parseReply, looksLikeCall, urlsIn, pathInText, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
