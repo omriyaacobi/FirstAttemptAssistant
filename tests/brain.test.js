@@ -348,3 +348,51 @@ test("save_links: the links of a course file become ONE list with a Confirm card
   assert.strictEqual(seen.saved.length, 0, "nothing is downloaded before the tap");
   assert.strictEqual(r.answer, "The list is waiting for your Confirm.");
 });
+
+// ---- smaller context (2026-11-12, experiments/2026-11-12-quota-max.md) ----
+test("the linked folder: only files being worked on ride along (changed in the last 48 hours), the newest one always", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const NOW = Date.parse("2026-11-10T12:00:00Z"); // the brain's clock in these tests
+  const hoursAgo = (h) => new Date(NOW - h * 3600 * 1000);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-recent-"));
+  const put = (name, text, hours) => { fs.writeFileSync(path.join(dir, name), text); fs.utimesSync(path.join(dir, name), hoursAgo(hours), hoursAgo(hours)); };
+  put("main.c", "int newest_file = 1;\n", 1);
+  put("decoder.c", "int two_hours_old = 2;\n", 2);
+  put("old.c", "int three_days_old = 3;\n", 72);
+  put("README.md", "notes from nine days ago\n", 216);
+  const link = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, "ok"]);
+  await run(link.brain, `my systems programming assignment folder is ${dir}`);
+  await run(link.brain, "what does my code do in Systems Programming?");
+  const prompt = link.seen.prompts[1];
+  for (const name of ["main.c", "decoder.c", "old.c", "README.md"]) assert.ok(prompt.includes(name + " ("), name + " is in the file list");
+  assert.match(prompt, /The files Omri changed last/);
+  assert.match(prompt, /1: int newest_file = 1;/);
+  assert.match(prompt, /1: int two_hours_old = 2;/);
+  assert.ok(!prompt.includes("three_days_old"), "a file changed 3 days ago is only listed");
+  assert.ok(!prompt.includes("nine days ago"), "an old README is only listed");
+  // nothing changed for a week: the newest file still rides along (it is what Omri touched last), alone
+  for (const name of ["main.c", "decoder.c", "old.c", "README.md"]) fs.utimesSync(path.join(dir, name), hoursAgo(name === "main.c" ? 200 : 300), hoursAgo(name === "main.c" ? 200 : 300));
+  const later = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, "ok"]);
+  await run(later.brain, `my systems programming assignment folder is ${dir}`);
+  await run(later.brain, "what does my code do in Systems Programming?");
+  assert.match(later.seen.prompts[1], /The file Omri changed last/);
+  assert.match(later.seen.prompts[1], /1: int newest_file = 1;/);
+  assert.ok(!later.seen.prompts[1].includes("two_hours_old"));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the linked folder: recent files stop riding along once they pass the size limit together", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const NOW = Date.parse("2026-11-10T12:00:00Z");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-recent-big-"));
+  const put = (name, text, hours) => { fs.writeFileSync(path.join(dir, name), text); const t = new Date(NOW - hours * 3600 * 1000); fs.utimesSync(path.join(dir, name), t, t); };
+  put("a.c", "// first_marker\n" + "x".repeat(5000), 1);
+  put("b.c", "// second_marker\n" + "y".repeat(5000), 2); // 5,000 + 5,000 is over the 8,000 limit
+  put("c.c", "// third_marker\n", 3); // small: it still fits
+  const b = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, "ok"]);
+  await run(b.brain, `my systems programming assignment folder is ${dir}`);
+  await run(b.brain, "what does my code do in Systems Programming?");
+  assert.ok(b.seen.prompts[1].includes("first_marker") && b.seen.prompts[1].includes("third_marker"));
+  assert.ok(!b.seen.prompts[1].includes("second_marker"));
+  fs.rmSync(dir, { recursive: true, force: true });
+});

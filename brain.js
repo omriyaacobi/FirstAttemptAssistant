@@ -57,6 +57,8 @@ const PHOTO_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
 const RESERVES = { [MODELS.argonLow.pool]: 25 };
 const MAX_TOOL_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 6;
+const RECENT_CODE_MS = 48 * 3600 * 1000; // a file of the linked folder changed in the last two days is "being worked on"
+const RECENT_CODE_BYTES = 8000; // ...and together those files may take this much of the prompt
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
@@ -253,14 +255,25 @@ function createBrain({
     const rest = asg && asg.fileId ? pages.filter((p) => p.fileId !== asg.fileId) : pages;
     let picked = [];
     try { picked = notesFor({ pages: rest, message: String(task).slice(0, 600), cap: LIMITS.notes }); } catch (error) { picked = []; }
-    // Omri's own code: the file list of the linked folder, and the files changed last (what Omri is working on right now).
+    // Omri's own code: the file list of the linked folder, and the files Omri is working on right now: the one changed last, plus
+    // up to two more changed in the last 48 hours, within a size limit. Until 2026-11-12 the three newest files rode along with
+    // EVERY message whatever their age (in the real folder the third was a README last touched 9 days earlier, 9,500 characters
+    // on every call). The list shows the model what exists; it reads any other file with project_read.
     if (r && r.projectDir) {
       try {
         const { files, more } = projectFolder.listFiles(r.projectDir);
         const tree = files.slice(0, 150).map((f) => `${f.rel} (${f.bytes} bytes)`).join("\n") + (more || files.length > 150 ? "\n[... more files]" : "");
-        const newest = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000).slice(0, 3);
+        const byAge = [...files].sort((a, b) => b.mtime - a.mtime).filter((f) => f.bytes <= 12000);
+        const newest = [];
+        let codeBytes = 0;
+        for (const f of byAge.slice(0, 3)) {
+          const first = newest.length === 0;
+          if (!first && (now() - f.mtime > RECENT_CODE_MS || codeBytes + f.bytes > RECENT_CODE_BYTES)) continue;
+          newest.push(f);
+          codeBytes += f.bytes;
+        }
         const bodies = newest.map((f) => { try { return `[${f.rel}, changed ${new Date(f.mtime).toISOString().slice(0, 16).replace("T", " ")} UTC]\n${projectFolder.numbered(projectFolder.readFile(r.projectDir, f.rel).text)}`; } catch (error) { return ""; } }).filter(Boolean);
-        out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe files Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
+        out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe file${bodies.length === 1 ? "" : "s"} Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
       } catch (error) { out.push(`The linked folder ${r.projectDir} could not be read right now (${String(error.message).slice(0, 100)}).`); }
     }
     if (picked.length) out.push(`Pages of ${course.name}'s material that best match the message (they may not be what is needed; use course_search for more):\n` + block("course-material", picked.map((p) => `[${p.fileName}, page ${p.page}]\n${p.text}`).join("\n\n")));

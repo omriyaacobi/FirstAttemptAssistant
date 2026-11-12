@@ -1,7 +1,7 @@
 // experiments/quota-max-measure.js
 // Where does the brain's quota go? This script spends NO quota: it never calls a model.
 //
-//   node experiments/quota-max-measure.js "C:\Claude Code Project\FirstAttemptAssistant" [days]
+//   node experiments/quota-max-measure.js "C:\Claude Code Project\FirstAttemptAssistant" [days] [code folder]
 //
 // Part 1 reads the thread day files (data/thread/*.jsonl) and counts, from each answer's own log lines, how many model calls a
 //        message cost, which model answered and which tools ran.
@@ -16,7 +16,9 @@ const path = require("node:path");
 const ROOT = path.resolve(process.argv[2] || path.join(__dirname, ".."));
 const DAYS = Number(process.argv[3]) || 2;
 const DATA = path.join(ROOT, "data");
-const req = (name) => require(path.join(ROOT, name));
+// The CODE may come from another folder (a worktree) than the data: pass it as the 3rd argument. The profile is then read from that folder's own data/.
+const CODE = path.resolve(process.argv[4] || ROOT);
+const req = (name) => require(path.join(CODE, name));
 
 const pct = (arr, p) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
@@ -88,7 +90,7 @@ async function part2(all) {
 
   // The real calendar, read ONCE (read-only), then the same text for every replayed message.
   let calendarText = "";
-  try { const got = await Promise.race([req("calendar-chat.js").readCalendar({ from: new Date().toISOString().slice(0, 10), days: 7 }), new Promise((r) => setTimeout(() => r(null), 8000))]); calendarText = got && got.text ? got.text : ""; } catch (error) { calendarText = ""; }
+  try { const got = await Promise.race([require(path.join(ROOT, "calendar-chat.js")).readCalendar({ from: new Date().toISOString().slice(0, 10), days: 7 }), new Promise((r) => setTimeout(() => r(null), 8000))]); calendarText = got && got.text ? got.text : ""; } catch (error) { calendarText = ""; }
   console.log(`calendar block: ${calendarText.length} chars (0 = could not be read, then the real prompt is a little bigger)`);
   console.log(`daily notes block: ${notes.length} chars`);
 
