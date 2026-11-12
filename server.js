@@ -763,7 +763,7 @@ if (require.main === module) {
   const moodleBridge = require("./moodle-bridge").createBridge(); // only fills when the Chrome extension is installed and Omri asks about Moodle
   const makeBrain = brainOn ? ({ fallback }) => (brainRef = require("./brain").createBrain({
     courses: coursesStore, courseRoutes, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
-    searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }), lowPools: require("./quota").getLowPools, fallback,
+    searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }), fallback,
   })) : null;
   if (brainOn) console.log("The brain is on: one model with a toolbox reads every message (brain.js). BOT_BRAIN=off in .env switches back.");
   const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, threadDeps, coach, summaries, threadFiles, linkBatches, makeBrain, moodleBridge });

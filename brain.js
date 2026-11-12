@@ -14,7 +14,7 @@
 // The rules that keep Omri safe stay in CODE, exactly as before: a model only proposes. Calendar events and saved facts are cards that
 // Omri confirms; nothing can delete or change an event; links are fetched only by linkfetch.js (https, public addresses, limits, no
 // login); web pages and files are data inside marked blocks; "Understood" is only ever set by the coach's graded quiz.
-// If the brain fails completely, the old path answers (fallback), so a message is never lost.
+// If every model fails, Bot says so honestly (which models, why) and nothing is attempted another way.
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -26,6 +26,7 @@ const { historyBlock } = require("./core");
 const { parseWhen, cleanText, formatWhen, localIso } = require("./reminders");
 const { checkFact, explicitRemember, pickFacts, bestMatches, aboutBlock } = require("./profile");
 const { checkRequest, friendlyError } = require("./calendar-chat");
+const { say } = require("./lang");
 const { checkPhotoEvents } = require("./calendar-add");
 const { matchCourse } = require("./frontdesk");
 const { listFound } = require("./recall");
@@ -55,6 +56,9 @@ const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "cour
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
+const FILE_BUSY = new Set(["queued", "reading"]);
+const WAIT_POLL_MS = 2000;
+const WAIT_LIMIT_MS = 15 * 60 * 1000; // a file still being read after 15 minutes: answer anyway, and say so
 const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, notes: 10000, link: 14000, note: 300, notesKept: 6 };
 
 // One Argon process waits ready, so the answer does not pay agy's 2-3 s start-up (warmagy.js; a waiting process uses no quota).
@@ -115,6 +119,18 @@ function looksLikeCall(partial) {
 
 // Every https address in a text, without the punctuation that often follows a link in a sentence.
 const urlsIn = (text) => (String(text).match(/https:\/\/[^\s<>"'`)\]]+/g) || []).map((u) => u.replace(/[.,;:!?]+$/, ""));
+// Is `folder` written in Omri's message as a WHOLE path, not only as the start of a longer one ("D:/school" inside "D:/school/sp/ex3")?
+function pathInText(text, folder) {
+  const norm = (s) => String(s).replace(/\\/g, "/").toLowerCase();
+  const want = norm(folder).replace(/\/+$/, "");
+  const hay = norm(text);
+  if (want.length < 3) return false;
+  for (let i = hay.indexOf(want); i !== -1; i = hay.indexOf(want, i + 1)) {
+    const rest = hay.slice(i + want.length).replace(/^\/+/, "");
+    if (rest === "" || /^[\s"'`),;!?]/.test(rest) || /^[.:](\s|$)/.test(rest)) return true;
+  }
+  return false;
+}
 const repoOf = (url) => { const m = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)/i.exec(url); return m ? `${m[1]}/${m[2]}`.toLowerCase().replace(/\.git$/, "") : null; };
 
 function createBrain({
@@ -136,6 +152,8 @@ function createBrain({
   reserves = RESERVES,
   chain = CHAIN,
   folderRules = {}, // extra options for project-folder.js checkFolder (tests only)
+  waitPollMs = WAIT_POLL_MS, // how often a file still being read is looked at again (tests use a few ms)
+  waitLimitMs = WAIT_LIMIT_MS,
   now = () => Date.now(),
 }) {
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
@@ -367,8 +385,7 @@ ${text}`; } catch (error) {
         const c = need(course);
         const ref = refOf(c);
         if (!ref) return "The study tracker is off, so the folder was not linked.";
-        const norm = (s) => String(s).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-        if (!folder || !norm(task).includes(norm(folder))) throw new Error("the folder path must be written in Omri's own message. Ask Omri to send the full path of the folder.");
+        if (!folder || !pathInText(task, folder)) throw new Error("the folder path must be written in Omri's own message. Ask Omri to send the full path of the folder.");
         const real = projectFolder.checkFolder(folder, { forbidden: [__dirname], ...folderRules });
         const rec = coach.tracker.course(ref);
         coach.tracker.save({ ...rec, projectDir: real });
@@ -450,23 +467,54 @@ ${r.cardText}`; }
     return out.join("\n\n");
   }
 
+  // WAIT FOR THE FILES (agreed 2026-11-08). If a file of the course this talk is in is still queued or being read, an answer now would
+  // come from the OLD material. Code (the files' state only: no model, no phrase in Omri's words) posts ONE short line (notify), waits
+  // WITHOUT a slow slot, and returns a note for the front of the answer when a read failed or was not finished in time.
+  async function waitForFiles(course, lang, notify, log) {
+    const busy = () => filesOf(course).filter((f) => FILE_BUSY.has(f.status));
+    const first = busy();
+    if (!first.length) return null;
+    const ids = new Set(first.map((f) => f.id));
+    const pagesLeft = first.reduce((a, f) => a + Math.max(1, (f.pagesTotal || Math.ceil((f.bytes || 0) / 60000)) - (f.pages || 0)), 0);
+    const minutes = Math.min(15, Math.max(1, Math.ceil(pagesLeft / 20))); // a rough guess: about 20 pages a minute
+    log("[queue] waiting for the file to be read");
+    if (notify) { try { notify(say(lang, `The file is still being read; I will answer when it is done (about ${minutes} min).`, `הקובץ עדיין נקרא. התשובה תגיע כשהקריאה תסתיים (בערך ${minutes} דקות).`)); } catch (error) { /* only a courtesy */ } }
+    const t0 = Date.now();
+    let left = first;
+    while (Date.now() - t0 < waitLimitMs) {
+      await new Promise((r) => setTimeout(r, waitPollMs));
+      left = filesOf(course).filter((f) => ids.has(f.id)); // a file removed meanwhile is simply gone
+      if (!left.some((f) => FILE_BUSY.has(f.status))) break;
+    }
+    const names = (l) => l.map((f) => `"${f.name}"`).join(", ");
+    const failed = left.filter((f) => f.status === "failed");
+    const late = left.filter((f) => FILE_BUSY.has(f.status));
+    const notes = [];
+    if (failed.length) notes.push(say(lang, `I could not read ${names(failed)}, so this answer uses only the material that was already in the course.`, `לא הצלחתי לקרוא את ${names(failed)}, אז התשובה הזאת מבוססת רק על החומר שכבר היה בקורס.`));
+    if (late.length) notes.push(say(lang, `Bot has not finished reading ${names(late)} yet, so this answer uses only the material that was already in the course.`, `הקריאה של ${names(late)} עדיין לא הסתיימה, אז התשובה הזאת מבוססת רק על החומר שכבר היה בקורס.`));
+    return notes.length ? notes.join("\n") : null;
+  }
+
   // ---- one message ----
   async function handle(task, options = {}) {
-    const { history = [], image = null, log = () => {}, onPartial = null, gate = null, route = null } = options;
+    const { history = [], image = null, log = () => {}, onPartial = null, gate = null, route = null, notify = null } = options;
     if (image) return fallback(task, options); // a photo still goes the old way (Gemini looks at it in a private folder)
     const t0 = now();
     const seconds = () => Number(((now() - t0) / 1000).toFixed(1));
     const lang = /[֐-׿]/.test(task) && (task.match(/[֐-׿]/g) || []).length >= (task.match(/[a-z]/gi) || []).length ? "he" : "en";
     const list = Array.isArray(options.courses) ? options.courses : courseList();
-    const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, tools: [] };
+    const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, tools: [], done: [] };
     const tools = makeTools(ctx);
-    if (gate) await gate({});
+    const focus = route === "general" ? null : focusCourse(task, history, list);
+    if (focus) ctx.course = focus;
+    // A file of this course still being read: wait first (no slot held). Then take a slow slot; a question to the same course waits for
+    // an earlier one (jobs.js). The slot is taken ONCE per message.
+    const fileNote = focus ? await waitForFiles(focus, lang, notify, log) : null;
+    if (gate) await gate(focus ? { course: focus.id } : {});
 
     // -- the fixed part of the prompt --
     let about = "";
     try { const facts = memory.list(); about = aboutBlock({ picked: pickFacts(facts, task) }) || ""; } catch (error) { about = ""; }
-    const focus = route === "general" ? null : focusCourse(task, history, list);
-    if (focus) ctx.course = focus;
     const zone = localZone();
     const day = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long" }).format(new Date(now()));
     const head = [
@@ -508,24 +556,34 @@ ${r.cardText}`; }
       try {
         r = await askChain(order, prompt, { askOne, onTry: (m) => log(`[brain] asking ${m.model}`), onFail: (m) => { log(`[brain] ${m.model} failed after ${m.seconds} s: ${m.message}`); try { notePoolFailure(m, m.message); } catch (error) { /* quota never breaks an answer */ } }, ...(stream ? { onText: stream } : {}) });
       } catch (error) {
-        log(`[brain] no model answered: ${String(error.message).slice(0, 200)}. The old path takes this message.`);
-        if (Object.keys(ctx.extras).length || ctx.tools.length) throw error; // something was already done: do not run the message twice
-        return fallback(task, options);
+        // Every model failed. Bot says so honestly; nothing is tried another way. What was already done in an earlier round (a card,
+        // a reminder) is reported, and its card is still shown.
+        const why = String(error.message).replace(/^Every model in the chain failed:\s*/i, "").split("\n").map((l) => "- " + l.trim().slice(0, 160)).join("\n");
+        log(`[brain] no model answered: ${why.replace(/\n/g, " ")}`);
+        const text = say(lang, `Every model failed on this message, so I could not answer:\n${why}\nSend it again in a minute.`, `כל המודלים נכשלו בהודעה הזאת, אז לא הצלחתי לענות:\n${why}\nאפשר לשלוח שוב בעוד דקה.`);
+        if (!ctx.done.length && !Object.keys(ctx.extras).length) throw new Error(text);
+        const answer = text + "\n\n" + say(lang, "Before that, this was done:", "לפני כן זה כבר בוצע:") + "\n" + ctx.done.map((d) => "- " + d).join("\n");
+        return { mode: "single", brain: true, rule: "Bot", reason: "every model failed after some tools ran", chain: order, used: used || order[0], answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
       attempts.push(...(r.attempts || []));
       used = r.used;
       const reply = parseReply(r.answer);
       if (!reply.calls.length || last) {
-        const answer = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*CALL\s*\{/.test(l)).join("\n").trim());
+        let answer = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```\s*$/.test(l)).join("\n").trim());
+        // The last round and the model still only asked for tools: say what was done instead of failing the whole message.
+        if (!answer && ctx.done.length) answer = say(lang, "I could not finish the answer, but this was done:", "לא הצלחתי לסיים את התשובה, אבל זה כבר בוצע:") + "\n" + ctx.done.map((d) => "- " + d).join("\n");
         if (!answer) throw new Error("the model sent back an empty answer");
+        if (fileNote) answer = fileNote + "\n\n" + answer;
         log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}`);
         return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
       }
       if (showing && onPartial) onPartial("");
 
-      // A coach flow: its output is the answer.
+      // A coach flow: its output is the answer, so it must come ALONE (other calls next to it would be lost without a word).
       const term = reply.calls.find((c) => TERMINAL[c.tool]);
-      if (term && coach) {
+      if (term && coach && reply.calls.length > 1) {
+        reply.calls = reply.calls.map((c) => (TERMINAL[c.tool] ? { ...c, alone: true } : c));
+      } else if (term && coach) {
         const c = term.course ? matchCourse(term.course, list) : ctx.course;
         log(`[brain] tool ${term.tool}${c ? ` (${c.name})` : ""}`);
         const args = TERMINAL[term.tool](c, task, term);
@@ -539,12 +597,18 @@ ${r.cardText}`; }
         const label = `${call.tool}${call.course ? ` (${String(call.course).slice(0, 40)})` : ""}`;
         log(`[brain] tool ${label}`);
         ctx.tools.push(call.tool);
+        if (call.alone) return { call, text: `NOT started: ${call.tool} must be called ALONE (its output is shown to Omri as the answer). Call it again by itself after the other tools.`, ok: false };
         if (!fn) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}".`, ok: false };
-        try { return { call, text: clip(await fn(call), LIMITS.result), ok: true }; } catch (error) { return { call, text: `FAILED, nothing was done: ${String(error.message).slice(0, 400)}`, ok: false }; }
+        try {
+          const text = clip(await fn(call), LIMITS.result);
+          if (DOING.has(call.tool)) ctx.done.push(text.split("\n")[0].slice(0, 200)); // what really happened, for an honest reply if the model fails later
+          return { call, text, ok: true };
+        } catch (error) { return { call, text: `FAILED, nothing was done: ${String(error.message).slice(0, 400)}`, ok: false }; }
       }));
       // The quick finish: only "doing" tools, all of them worked, and the model already wrote what to tell Omri under its CALL lines.
-      const said = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```/.test(l)).join("\n").trim());
+      let said = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```/.test(l)).join("\n").trim());
       if (said && results.every((x) => x.ok && DOING.has(x.call.tool))) {
+        if (fileNote) said = fileNote + "\n\n" + said;
         log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}`);
         if (onPartial) onPartial(said);
         return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
@@ -565,4 +629,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, CHAIN, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, parseReply, looksLikeCall, urlsIn, pathInText,CHAIN, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
