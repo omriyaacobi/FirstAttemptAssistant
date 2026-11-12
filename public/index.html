@@ -3390,7 +3390,7 @@
       const box = el("div", "tfilechoice");
       const note = el("p", "sub", "");
       const waiting = batch.expiresAt && Date.now() > batch.expiresAt;
-      const go = el("button", "", batch.mode === "moodle" ? "Confirm: download " + batch.count + " Moodle files" : batch.mode === "save" ? "Confirm: download " + batch.count + " links" : "Confirm: look at " + batch.count + " links");
+      const go = el("button", "", batch.mode === "folder" ? "Confirm: link this folder" : batch.mode === "moodle" ? "Confirm: download " + batch.count + " Moodle files" : batch.mode === "save" ? "Confirm: download " + batch.count + " links" : "Confirm: look at " + batch.count + " links");
       const no = el("button", "ghost", "Cancel");
       for (const b of [go, no]) { b.type = "button"; b.disabled = !!waiting; }
       const call = async (what, doneText) => {
@@ -3403,8 +3403,8 @@
           else { go.disabled = no.disabled = false; note.textContent = "Not done: " + error.message; }
         }
       };
-      go.addEventListener("click", () => call("confirm", "Working on it. Bot will write one summary here when it is done."));
-      no.addEventListener("click", () => call("cancel", "Cancelled. Nothing was fetched."));
+      go.addEventListener("click", () => call("confirm", batch.mode === "folder" ? "Linking it. Bot will say here when it is done." : "Working on it. Bot will write one summary here when it is done."));
+      no.addEventListener("click", () => call("cancel", batch.mode === "folder" ? "Cancelled. Nothing was linked." : "Cancelled. Nothing was fetched."));
       box.append(go, no, note);
       if (waiting) note.textContent = "This list is no longer waiting. Ask again.";
       return box;

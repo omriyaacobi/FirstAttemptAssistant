@@ -39,11 +39,20 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
   function propose({ courseId, courseName, urls, mode, lang = "en", source = "", questionId = null, notHttps = 0, more = 0, runOne = null }) {
     sweep();
     if (!urls.length) throw Object.assign(new Error("no links"), { status: 400 });
-    if (mode === "moodle" && typeof runOne !== "function") throw new Error("a Moodle list needs its downloader");
+    const custom = mode === "moodle" || mode === "folder"; // the work of each line is done by runOne (Moodle downloads, linking a folder)
+    if (custom && typeof runOne !== "function") throw new Error(`a ${mode} list needs its runOne`);
     const id = crypto.randomBytes(8).toString("hex");
-    pending.set(id, { courseId, courseName, urls: [...urls], mode, lang, source, questionId, runOne: mode === "moodle" ? runOne : null, at: now() });
+    pending.set(id, { courseId, courseName, urls: [...urls], mode, lang, source, questionId, runOne: custom ? runOne : null, at: now() });
     while (pending.size > MAX_PENDING) pending.delete(pending.keys().next().value);
-    const shown = urls.slice(0, 15).map((u) => `- ${iso(lang, mode === "moodle" ? oneLine(u, 120) : shortUrl(u))}`).join("\n");
+    const shown = urls.slice(0, 15).map((u) => `- ${iso(lang, custom ? oneLine(u, 240) : shortUrl(u))}`).join("\n");
+    if (mode === "folder") { // one folder found on the PC (pc-find.js), linked to a course only after the tap
+      const text = words(lang, `Link this folder to ${courseName}?
+${shown}
+Bot can then list and read the text files in it (read-only, never changes or runs anything). Nothing is linked until you tap Confirm.`, `לקשר את התיקייה הזאת ל${courseName}?
+${shown}
+אחר כך Bot יוכל לראות ולקרוא את קבצי הטקסט שבה (קריאה בלבד, בלי לשנות או להריץ כלום). שום דבר לא מקושר לפני לחיצה על אישור.`);
+      return { text, card: { id, mode, count: urls.length, courseName, expiresAt: now() + PENDING_MS } };
+    }
     if (mode === "moodle") {
       const more15 = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
       const text = words(lang, `${urls.length} files${source ? ` from ${source}` : ""}:\n${shown}${more15}\nShall I download them into ${courseName}? Nothing is downloaded until you tap Confirm.`, `${urls.length} קבצים${source ? ` מתוך ${source}` : ""}:\n${shown}${more15}\nלהוריד אותם ${bet(courseName)}? שום דבר לא יורד לפני שתלחץ על אישור.`);
@@ -59,7 +68,7 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
   }
 
   async function one(p, url) {
-    if (p.mode === "moodle") return p.runOne(url);
+    if (p.runOne) return p.runOne(url);
     if (p.mode === "save") {
       const r = await courseRoutes.addLink(p.courseId, url, p.lang);
       if (r.ok && r.filedCount > 0) return { ok: true, filed: r.filedCount };
@@ -79,6 +88,9 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
     const good = results.filter((r) => r.res.ok);
     const bad = results.filter((r) => !r.res.ok);
     const out = [];
+    if (mode === "folder") {
+      return good.length ? words(lang, `Linked ${good[0].url} to ${p.courseName} (read-only).`, `קישרתי את ${iso(lang, good[0].url)} ל${p.courseName} (קריאה בלבד).`) : words(lang, `The folder was NOT linked: ${(bad[0] && bad[0].res.why) || "unknown reason"}`, `התיקייה לא קושרה: ${(bad[0] && bad[0].res.why) || "סיבה לא ידועה"}`);
+    }
     if (mode === "moodle") {
       out.push(words(lang, `Done: ${good.length} of ${results.length} Moodle file${results.length === 1 ? "" : "s"} saved in ${p.courseName}. Bot is reading them now.`, `סיימתי: ${good.length} מתוך ${results.length} קבצים מהמודל נשמרו ${bet(p.courseName)}. Bot קורא אותם עכשיו.`));
     } else if (mode === "save") {
