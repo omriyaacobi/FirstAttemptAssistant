@@ -46,8 +46,8 @@ test("a calendar photo asks ARGON low first (accuracy first; Flash medium though
   assert.strictEqual(result.calendarAdd.events.length, 1);
 });
 
-test("an ordinary photo question keeps its old order (Flash medium first)", async () => {
+test("an ordinary photo question asks Argon low first (Flash medium only as the fallback)", async () => {
   const tried = [];
   await handleTask("what is in this photo?", { image: { path: "p.png", ext: ".png" }, deps: deps({ askImage: async (model) => { tried.push(model); return "a table"; } }) });
-  assert.deepStrictEqual(tried, ["gemini-3.8-flash-medium"]);
+  assert.deepStrictEqual(tried, ["gemini-4-argon-low"]);
 });

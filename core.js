@@ -128,7 +128,8 @@ function resultText(result) {
 }
 
 // Only Gemini (through agy) can look at a photo here, so a message with a photo skips the front desk.
-const PHOTO_CHAIN = [MODELS.flashMedium, MODELS.argonLow];
+// Argon low first (2026-11-12, Omri: Flash's answers are not good enough; Flash made real reading errors before). Flash medium only if Argon fails.
+const PHOTO_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
 // A timetable photo with "add to my calendar" is a JSON task with possibly several changes. Measured (experiments/2026-11-06-photo-calendar-timing.md):
 // Flash MEDIUM thought for 135 s and answered nothing (414 s in the real chat); Argon low needed 24 s. Accuracy comes first (Flash made real reading
 // errors before, and Flash low is kept for the front desk only), so Argon low goes first and Flash medium is the fallback, under the photo time limit.
