@@ -222,41 +222,6 @@ const hebrewTimetable = () => JSON.stringify({ events: [
   { title: "אלגוריתמים - שיעור", weekday: "Sunday", start: "16:00", end: "18:00", location: "בניין 90" },
   { title: "חדו\"א 2 - תרגיל", weekday: "Monday", start: "12:00", end: "14:00" }], repeat: "weekly", until: "2027-01-31", skipped: [] });
 
-test("MEMORY: the next message sees the card's checked events and its status, but the page text is not changed", async () => {
-  const { createJobs } = require("../jobs");
-  const store = createStore(fs.mkdtempSync(path.join(os.tmpdir(), "caladd-jobs-")));
-  const { cards } = fakeCards();
-  const histories = [];
-  let step = 0;
-  const jobs = createJobs({
-    store, cardNote: (card) => cards.note(card),
-    handle: async (task, opts) => {
-      histories.push(opts.history);
-      if (step++ === 0) return { mode: "single", answer: "Add these to your calendar? Nothing is added until you tap Confirm.", used, calendarAdd: cards.add(add.checkPhotoEvents(hebrewTimetable(), { now: NOW })) };
-      return { mode: "single", answer: "ok", used };
-    },
-  });
-  const wait = async (job) => { while (jobs.get(job.id).status === "running") await new Promise((r) => setTimeout(r, 5)); };
-  const first = jobs.start({ task: "תוסיף ליומן" });
-  await wait(first);
-  const chat = store.get(first.conversationId);
-  const cardId = chat.messages[1].result.calendarAdd.id;
-  const second = jobs.start({ task: "תעביר את החמישי", conversationId: chat.id });
-  await wait(second);
-  const seen = histories[1][1];
-  assert.match(seen.note, /Status: WAITING/);
-  assert.match(seen.note, /תכנות מערכות - שיעור/);
-  assert.match(seen.note, /"weekday":"Thursday","start":"12:00","end":"14:00","location":"בניין 28"/);
-  assert.match(seen.note, /"until":"2027-01-31"/);
-  assert.doesNotMatch(seen.text, /Calendar card/); // the note is a separate field, so the text cut in historyBlock cannot damage it
-  assert.strictEqual(seen.cardId, cardId);
-  assert.doesNotMatch(store.get(chat.id).messages[1].text, /Calendar card/); // nothing extra is stored or shown as the message
-  await cards.confirm(cardId); // after Confirm the next message hears that it was added
-  const third = jobs.start({ task: "ok", conversationId: chat.id });
-  await wait(third);
-  assert.match(histories[2][1].note, /Status: CONFIRMED: all events were added/);
-});
-
 test("status words: cancelled, replaced, expired, partly added, and unknown after a restart", async () => {
   const { cards, advance } = fakeCards({ failAt: [1] });
   const a = cards.add(proposal());

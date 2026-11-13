@@ -38,7 +38,7 @@ The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. T
 - agy's own web search is noticed even without token numbers; photo messages are in the token log; clearer progress lines.
 - Improve Bot can no longer change `brain.js`, the starter and watchdog files or `improve-watch.js`.
 - Tidy: `pagesandbox.js` -> `tests/`, `HANDOFF.md` -> `experiments/2026-11-07-handoff.md`, `thread.js` -> `tools/`.
-- Not done: removing the old chat list and trimming `study-coach.js` (needs its own session, see Next).
+- The old list of chats is removed (page, routes, `jobs.start`) and `study-coach.js` is trimmed; see Next for what is left.
 
 ## What the 2026-11-12 cleanup did (branch claude/brain-permanent-3257b5)
 
@@ -51,9 +51,12 @@ The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. T
 
 ## Next (not started)
 
-- **Finish removing the old chat list.** The page (`public/index.html`) and the server still carry the old list-of-chats code
-  (`jobs.start`, `/api/conversations`, the non-thread parts of the page). Nothing reaches it from chat; old chats can only be read.
-  It needs its own session, with the page checked in a browser after every step.
+- **The old list of chats is removed (2026-11-13).** Gone: the chat list, opening / deleting / starting chats and the course chat bar in
+  `public/index.html` and `public/study.js`, the routes `/api/conversations`, the chat half of `/api/ask`, and `jobs.start`. The old
+  chats stay on disk in `data/conversations/` (nothing deletes them) and Bot's memory search still finds them; no page opens them.
+  **Left, each needs my yes** (list in `experiments/2026-11-13-fable-review.md`, "After 5.5"): the course question answering code that
+  only course chats used (`courseRoutes.answer`, root `study.js`, `crosslang.js`) is now reached by nothing; `morning.js` still has a
+  branch for a Bot without the conversation; `CLAUDE.md` still describes the old state in three places.
 - **`study-coach.js` trimmed (2026-11-13):** the front desk's intents and word lists are gone (979 -> about 610 lines); tests of what
   is still used now go through `brainTools`. Telling Bot that a class was cancelled ("no lecture this week") only
   worked through the old intents; since 2026-11-13 the brain has the checked tool `class_cancelled` for it (item 5.6 in

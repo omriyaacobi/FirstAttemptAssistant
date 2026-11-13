@@ -79,19 +79,3 @@ test("askChain: without onText the models are asked as before (no extra argument
   assert.strictEqual(args[3], undefined);
 });
 
-test("jobs: the growing answer is on the running job, and gone once it is done", async () => {
-  const store = createStore(fs.mkdtempSync(path.join(os.tmpdir(), "bot-streamjobs-")));
-  let release;
-  const gate = new Promise((r) => { release = r; });
-  const jobs = createJobs({ handle: async (task, { onPartial }) => { onPartial("Hello wor"); await gate; return { mode: "single", answer: "Hello world" }; }, store });
-  const started = jobs.start({ task: "hi" });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.strictEqual(jobs.get(started.id).partial, "Hello wor");
-  assert.strictEqual(jobs.list()[0].partial, "Hello wor");
-  release();
-  await new Promise((r) => setTimeout(r, 50));
-  const done = jobs.get(started.id);
-  assert.strictEqual(done.status, "done");
-  assert.strictEqual(done.partial, undefined);
-  assert.strictEqual(store.get(started.conversationId).messages.at(-1).text, "Hello world"); // the saved answer is the whole one
-});

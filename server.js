@@ -15,10 +15,6 @@
 //   GET    /api/study                     -> data for the Study page: per course where Omri should be, where they are, what is due, questions
 //   POST   /api/study/confirm | /cancel   -> { id }: the Confirm / Cancel tap on a study card (an assignment, or lecture material)
 //   GET    /api/summaries/proposals       -> facts and tasks from the daily summaries, waiting for a tap; POST .../:id/accept | /dismiss
-//   GET    /api/conversations      -> the list of saved conversations
-//   GET    /api/conversations/:id  -> one conversation with all its messages
-//   DELETE /api/conversations/:id  -> delete a conversation
-//   GET    /api/selfedit           -> the list of self-edit proposals
 //   POST   /api/selfedit           -> start one: an editor model changes a PRIVATE COPY of the project
 //   GET    /api/selfedit/:id       -> one proposal (diff, test results)
 //   POST   /api/selfedit/:id/approve | /reject  -> merge it into the project, or throw it away
@@ -46,7 +42,8 @@
 // THE PHONE: it reaches Bot through Tailscale (`tailscale serve`), which runs on this PC and forwards
 // to 127.0.0.1. Such requests must log in first. GitHub stays usable from this computer only.
 //
-// Conversations are saved by store.js in data/conversations/ (git-ignored, they are private).
+// The one conversation is saved by thread-store.js in data/thread/ (git-ignored, it is private). store.js still holds the old
+// chats in data/conversations/ (kept on disk; since 2026-11-13 no route opens them, Bot's memory search can still find them).
 // The models themselves remember nothing, so for each new message we send them the recent
 // conversation as context (see brain.js and history.js).
 //
@@ -217,7 +214,6 @@ function createServer({
     courses: () => (courseRoutes ? courseRoutes.list() : []),
     courseName: courseRoutes ? (id) => courseRoutes.name(id) : null,
     cardNote: (add, options) => calendarCards.note(add, options), // the chat history tells the next message what the calendar cards held and what happened to them
-    handleCourse: courseRoutes ? (task, opts) => courseRoutes.answer(opts.courseId, task, opts) : null, // chats inside a course
     store,
     maxRunning: MAX_RUNNING,
     onFinish: ({ job, title, watched }) => {
@@ -508,20 +504,6 @@ function createServer({
       return sendJson(res, 404, { error: "not found" });
     }
 
-    // Saved conversations
-    if (req.method === "GET" && url.pathname === "/api/conversations") {
-      return sendJson(res, 200, { conversations: store.list() });
-    }
-    const conversationRoute = url.pathname.match(/^\/api\/conversations\/([^/]+)$/);
-    if (conversationRoute && req.method === "GET") {
-      const conversation = store.get(conversationRoute[1]);
-      // A course chat also carries its course name, for the title bar.
-      return conversation ? sendJson(res, 200, conversation.courseId && courseRoutes ? { ...conversation, courseName: courseRoutes.name(conversation.courseId) } : conversation) : sendJson(res, 404, { error: "conversation not found" });
-    }
-    if (conversationRoute && req.method === "DELETE") {
-      return store.remove(conversationRoute[1]) ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: "conversation not found" });
-    }
-
     // Self-edit proposals. Only YOU start these (from the "Improve Bot" panel);
     // the models can never start one on their own.
     if (url.pathname === "/api/selfedit" && req.method === "GET") {
@@ -643,32 +625,11 @@ function createServer({
         }
       }
 
-      // The thread: there is no chat, so no chat id and no course id is read. Every message is its own job (jobs.js startThread).
-      if (thread) {
-        try {
-          if (input.route !== undefined && input.route !== "general") { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 400, { error: 'route can only be "general"' }); }
-          const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote });
-          return sendJson(res, 202, { job });
-        } catch (error) {
-          if (image) fs.rmSync(image.path, { force: true });
-          return sendJson(res, error.status || 500, { error: error.message });
-        }
-      }
-
-      // A new chat inside a course: the course must exist (an id from the page is never trusted).
-      let courseId = null;
-      if (input.courseId !== undefined && input.conversationId == null) {
-        if (typeof input.courseId !== "string" || !validCourseId(input.courseId) || !courseRoutes || !courseRoutes.exists(input.courseId)) {
-          if (image) fs.rmSync(image.path, { force: true });
-          return sendJson(res, 404, { error: "course not found" });
-        }
-        courseId = input.courseId;
-      }
-
+      // One conversation: there is no chat, so no chat id and no course id is read. Every message is its own job (jobs.js startThread).
+      if (!thread) { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 503, { error: "the conversation is not set up on this server" }); }
       try {
-        // Also checks the conversation id, that this chat has no job running already (409),
-        // and the cap on simultaneous tasks (429).
-        const job = jobs.start({ task, noPlan: input.noPlan === true, conversationId: input.conversationId, image, courseId, deeper: input.deeper === true });
+        if (input.route !== undefined && input.route !== "general") { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 400, { error: 'route can only be "general"' }); }
+        const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote });
         return sendJson(res, 202, { job });
       } catch (error) {
         if (image) fs.rmSync(image.path, { force: true }); // the job never started, so nothing else will delete the photo
@@ -676,8 +637,8 @@ function createServer({
       }
     }
 
-    // Following jobs. `?watching=<conversation id>` tells Bot which chat the page is showing,
-    // so it only sends a push notification when nobody is looking at the chat that finished.
+    // Following jobs. `?watching=thread` tells Bot the page is showing the conversation,
+    // so it only sends a push notification when nobody is looking.
     if (req.method === "GET" && url.pathname === "/api/jobs") {
       const watching = url.searchParams.get("watching");
       return sendJson(res, 200, { jobs: jobs.list({ watching }) });

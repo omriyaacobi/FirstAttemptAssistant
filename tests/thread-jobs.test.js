@@ -329,33 +329,6 @@ test("SERVER (thread on): /api/ask needs no chat id, /api/thread pages, and a ba
   } finally { s.close(); }
 });
 
-test("SERVER (thread OFF): the old routes work exactly as before, and the thread routes do not exist", async () => {
-  const s = await startServer({ thread: null });
-  try {
-    assert.strictEqual("thread" in (await s.request("GET", "/api/session")).json, false); // the session answer is what it was
-    assert.strictEqual((await s.request("GET", "/api/thread")).status, 404);
-    assert.strictEqual((await s.request("DELETE", "/api/thread/m_abcdef012345")).status, 404);
-    const ask = await s.request("POST", "/api/ask", { body: { task: "old style question" } });
-    assert.strictEqual(ask.status, 202);
-    const conversationId = ask.json.job.conversationId;
-    assert.match(conversationId, /^[a-f0-9]{16}$/); // a real chat, as before
-    for (let i = 0; i < 100; i++) { const j = await s.request("GET", "/api/jobs/" + ask.json.job.id); if (j.json.job.status !== "running") break; await tick(10); }
-    const chat = await s.request("GET", "/api/conversations/" + conversationId);
-    assert.deepStrictEqual(chat.json.messages.map((m) => m.text), ["old style question", "hello"]);
-    assert.strictEqual((await s.request("GET", "/api/conversations")).json.conversations.length, 1);
-    // a follow-up in the same chat while a task runs is still refused (409), like before
-    const hold = gate();
-    s.close();
-    const s2 = await startServer({ thread: null, handle: async () => { await hold.wait; return single("late"); } });
-    try {
-      const first = await s2.request("POST", "/api/ask", { body: { task: "first" } });
-      const second = await s2.request("POST", "/api/ask", { body: { task: "second", conversationId: first.json.job.conversationId } });
-      assert.strictEqual(second.status, 409);
-      hold.release();
-    } finally { s2.close(); }
-  } finally { s.close(); }
-});
-
 test("SERVER (thread on): the trash list shows deleted messages after a reload, and Restore brings one back (night check)", async () => {
   const thread = createThreadStore(tmp());
   const s = await startServer({ thread });

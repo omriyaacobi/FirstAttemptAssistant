@@ -73,14 +73,11 @@ function describeProgress(lines) {
   return text;
 }
 
-// handleCourse(task, { courseId, history, deeper, onPartial, log }) answers a message in a course chat
-// (a conversation with a courseId); it is only given when the study notebooks are on.
-// thread (optional, BOT_THREAD=on): the thread store (thread-store.js); with it, startThread() works. courses() gives the real course list
+// thread: the thread store (thread-store.js), the ONE conversation; startThread() needs it. courses() gives the real course list
 // [{ id, name }], studyState() one line per course written by code (the study tracker), courseName(id) the name for a label. All three
-// are safe to leave out. With no thread, nothing below changes: start() is exactly what it was.
-function createJobs({ handle, handleCourse = null, cardNote = null, store, thread = null, summaries = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
+// are safe to leave out. (Until 2026-11-13 there was also start(): one job per chat of the old list of chats. It was removed with that list.)
+function createJobs({ handle, cardNote = null, thread = null, summaries = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
   const jobs = new Map(); // id -> job
-  let runningCount = 0;
 
   // A message of the chat as memory for the models. A calendar card is not in the message's text (the page draws it from result.calendarAdd),
   // so code adds a note with the card's checked events and what happened to it (cardNote, from calendar-add.js) for the models only.
@@ -102,8 +99,6 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     });
   }
 
-  const activeFor = (conversationId) => [...jobs.values()].find((j) => j.status === "running" && j.conversationId === conversationId);
-
   // What the page may see. The log is only included while the job runs (afterwards it is saved in the conversation).
   function view(job, { withLog = false } = {}) {
     const out = {
@@ -123,89 +118,10 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     return out;
   }
 
-  // Starts a job. `task` must already be checked by the caller. Throws errors with a `status` for the server to send.
-  // `image` ({ path, ext }) is a photo the server already checked and saved; the job deletes it when it ends.
-  // `courseId` (checked by the caller) starts a NEW chat inside a course; an existing chat remembers its own course.
-  function start({ task, noPlan = false, conversationId = null, image = null, courseId = null, deeper = false }) {
-    let conversation = null;
-    if (conversationId !== null && conversationId !== undefined) {
-      conversation = store.get(conversationId);
-      if (!conversation) throw Object.assign(new Error("conversation not found"), { status: 404 });
-      if (activeFor(conversation.id)) {
-        throw Object.assign(new Error("Bot is still working on your last message in this chat. Wait for it to finish, or write in another chat."), { status: 409 });
-      }
-    }
-    if (runningCount >= maxRunning) throw Object.assign(new Error("busy, wait for the current tasks to finish"), { status: 429 });
-    const inCourse = conversation ? conversation.courseId : courseId;
-    if (inCourse && !handleCourse) throw Object.assign(new Error("the study notebooks are off"), { status: 404 });
-    if (!inCourse && !handle) throw Object.assign(new Error("Bot is one conversation now; the old chats can only be read"), { status: 404 });
-
-    // The earlier messages become the memory for this task (a failed answer is not memory).
-    const history = conversation ? conversation.messages.filter((m) => !m.error).map(historyEntry) : [];
-    // Save the question right away: if you reload or come back later, the chat already shows it.
-    if (!conversation) conversation = store.create(task, { courseId });
-    const startedAt = now();
-    store.append(conversation.id, [{ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt }]);
-
-    const job = {
-      id: crypto.randomBytes(16).toString("hex"),
-      conversationId: conversation.id,
-      task,
-      status: "running",
-      startedAt,
-      finishedAt: null,
-      log: [],
-      partial: "",
-      lastWatched: 0,
-    };
-    jobs.set(job.id, job);
-    runningCount++;
-
-    // Run it. Nothing waits for this promise: the job finishes on its own.
-    (async () => {
-      let message;
-      try {
-        const common = {
-          history,
-          onPartial: (text) => { job.partial = String(text).slice(-MAX_PARTIAL_CHARS); },
-          log: (text) => { if (job.log.length < MAX_LOG_LINES) job.log.push(String(text)); },
-        };
-        const result = inCourse
-          ? await handleCourse(task, { ...common, courseId: inCourse, deeper: deeper === true, image })
-          : await handle(task, { ...common, noPlan: noPlan === true, image });
-        message = { role: "assistant", text: result.mode === "course" ? result.answer : resultText(result), result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
-        job.status = "done";
-      } catch (error) {
-        const text = String(error && error.message).slice(0, 500);
-        message = { role: "assistant", text: "Something went wrong: " + text, error: true, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
-        job.status = "error";
-        job.error = text;
-      }
-      try {
-        store.append(job.conversationId, [message]);
-      } catch (error) {
-        // The chat was deleted while the task ran: the answer has nowhere to go.
-        job.status = "error";
-        job.error = "the conversation was deleted before the answer arrived";
-      }
-      if (image) fs.rmSync(image.path, { force: true }); // the photo is private: it is not kept after the answer
-      job.finishedAt = now();
-      runningCount--;
-      prune();
-      try {
-        const title = (store.get(job.conversationId) || {}).title || "chat";
-        // watched = a page asked about this chat a moment ago, so someone is looking at it.
-        onFinish({ job: view(job), title, watched: now() - job.lastWatched < WATCH_FRESH_MS });
-      } catch (error) { /* a notification problem must never break a job */ }
-    })();
-
-    return view(job);
-  }
-
   // ---------------------------------------------------------------------------------------------------------------------------
   // THE THREAD: one conversation, and every message is its own job.
   //
-  // What changes compared with start() above:
+  // How it works:
   //   - there is no chat: the question and its answer are appended to the thread (thread-store.js). The answer carries replyTo, the id
   //     of its question, so a fast answer can arrive before a slow one and still sit under the right question.
   //   - a second message is never refused because a first one is still running (only 20 at once, so a runaway page cannot pile up work).
@@ -374,7 +290,7 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     return all.sort((a, b) => b.startedAt - a.startedAt).map((j) => view(j, { withLog: j.status === "running" }));
   }
 
-  return { start, startThread, get, list, running: () => runningCount + threadJobs().filter((j) => j.status === "running").length };
+  return { startThread, get, list, running: () => threadJobs().filter((j) => j.status === "running").length };
 }
 
 module.exports = { createJobs, describeProgress, JOB_ID_PATTERN, KEEP_FINISHED_MS, THREAD_ID, MAX_THREAD_JOBS };

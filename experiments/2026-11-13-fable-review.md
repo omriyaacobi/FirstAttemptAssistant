@@ -62,7 +62,7 @@ of `data/` is being made. That is for Omri to set (`.env`, the passphrase is the
 | 5.2 | Long answers on the phone: code knows when a message comes from the phone (`fromPhone`); tell the model so it keeps the reply to about one phone screen unless Omri asks for more. | S | done |
 | 5.3 | Trim `study-coach.js` (= 3.4, second half). The brain calls `answerStudy` only with progress (always the fixed text "where am I"), quiz, answer, confirm and cancel. The intents update / plan / motivate / assignment / teach / start / pause / resume, the word lists that rerouted Omri's words between them, and `studyLine` / `questionLine` / `interpretUpdate` (front desk prompt lines) are reached by nothing. Delete them and the tests that only test them; keep brainTools, onUpload, the cards, progress, quiz and answer. | M | backed out, plan below |
 | 5.4 | `moodle_link` also sets the answer's course (as 5.1 did for the other Moodle tools). | S | done |
-| 5.5 | The old chat list (`jobs.start`, `/api/conversations`, the non-thread parts of `public/index.html`): remove only if the page can be checked; otherwise a written plan. | M | proposal, mapped below (own fresh session) |
+| 5.5 | The old chat list (`jobs.start`, `/api/conversations`, the non-thread parts of `public/index.html`): remove only if the page can be checked; otherwise a written plan. | M | done (see "After 5.5" below) |
 | 5.6 | **Cancelled classes:** CLAUDE.md says cancelled classes are told to Bot in chat. That only worked through the old "update" intent (removed in 5.3; the brain could not reach it since 2026-11-12). Proposal: a checked tool `class_cancelled {"course","date"}` whose date code checks against the timetable (a real lecture of that course), with an undo, like study_position. Omri said yes on 2026-11-13. Built: the date must be a lecture date of that course in the timetable (else the model gets the nearby dates), refused after a web page / photo / Moodle text, `study_undo` takes the last one back (2 hours). Tests: `tests/brain-cancelled.test.js`. | S | done |
 | 5.7 | `tutor.js` still has the "teach through the assignment" mode (`through`, `workText`) and `study-positions.js` the old multi-course reader; nothing reaches them since 5.3. Remove with their tests. | S | done |
 
@@ -94,6 +94,22 @@ How to check the page safely: start the WORKTREE's server on another port (`PORT
 empty `data/`), with `AGY_CMD` and `CLAUDE_CMD` pointing at a file that does not exist, so a test message fails at once and spends no
 quota. Look at the thread view, sending a message, the course page and Improve Bot (open only) in the built-in browser before and after
 each step, then stop that server.
+
+**After 5.5 (done 2026-11-13, Omri accepted that old chats can no longer be opened the old way).** Removed: in `public/index.html` the chat
+list, opening / deleting / starting chats, the course chat bar, the old job follower and the old send path (about 370 lines); in
+`public/study.js` the course's Chats column and the chat bar panel (about 120 lines); in `server.js` the routes `/api/conversations` and the
+chat half of `/api/ask` (a server without the conversation now answers 503); in `jobs.js` `start()`. Checked in the built-in browser on a
+test server (port 3101, because 3100 was held by another process that was left alone) with model commands that do not exist: sending,
+Study, the course screen, adding a course, the morning brief button, Improve Bot, Back. 39 tests that went through the removed entrance
+were dropped; what they checked and still matters is in `tests/one-conversation.test.js` (13 tests). Left on purpose, each a decision for Omri:
+- **The course question answering that only course chats used is now unreachable:** `courseRoutes.answer` (`course-routes.js`), the root
+  `study.js` it calls, `crosslang.js`, and `migrateOldChats` / `chatsOf`. 8 tests of it went through the removed chat entrance and were
+  dropped, so this code is now less tested. `CLAUDE.md` describes it as agreed rules (COURSES "the course page's own question box",
+  LANGUAGES), so it was not deleted. Proposal: delete it with its tests and those two `CLAUDE.md` passages, or wire the page to it again.
+- `morning.js` still writes the brief into a new old-style chat when it is given no thread (only tests do that).
+- `recall.js` still searches old chats that were never copied into the thread (`oldChats: store`); it only gives text to the model.
+- The Hebrew first-use notice in `public/index.html` uses a gendered "you", against the rule for code-written Hebrew.
+- `data/conversations/` is untouched; `store.js` (protected) is unchanged.
 
 ## Not changed on purpose
 

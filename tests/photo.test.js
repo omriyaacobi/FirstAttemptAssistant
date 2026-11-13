@@ -105,29 +105,6 @@ async function startServer({ handle, authConfig = { enabled: false } } = {}) {
   return { request, ask, finish, uploads, store, seen, close, port };
 }
 
-test("a message with a photo starts a job, the model gets the saved file, and the file is deleted afterwards", async () => {
-  const s = await startServer();
-  const res = await s.ask({ task: "add this to my calendar", image: url(JPEG) });
-  assert.strictEqual(res.status, 202);
-  const job = await s.finish(res);
-  assert.strictEqual(job.status, "done");
-  assert.strictEqual(s.seen.length, 1);
-  assert.strictEqual(s.seen[0].existed, true); // it was there while the model ran
-  assert.strictEqual(s.seen[0].image.ext, ".jpg");
-  assert.deepStrictEqual(s.uploads(), []); // and gone afterwards
-  const messages = s.store.get(job.conversationId).messages;
-  assert.strictEqual(messages[0].text, "(photo attached) add this to my calendar");
-  await s.close();
-});
-
-test("a message without a photo is unchanged: no image reaches the model", async () => {
-  const s = await startServer();
-  await s.finish(await s.ask({ task: "hi" }));
-  assert.strictEqual(s.seen[0].image, null);
-  assert.strictEqual(s.store.get(s.store.list()[0].id).messages[0].text, "hi");
-  await s.close();
-});
-
 test("SECURITY: a photo with the wrong bytes is refused and nothing is saved or started", async () => {
   const s = await startServer();
   const res = await s.ask({ task: "look", image: url(Buffer.from("not an image at all, just text"), "image/png") });
@@ -159,17 +136,6 @@ test("the bigger size limit is only for a request that carries a photo", async (
   // other routes keep the small limit
   const login = await s.request("POST", "/api/login", { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: "x".repeat(MAX_BODY + 10) }) }).catch(() => ({ status: 413 }));
   assert.strictEqual(login.status, 413);
-  await s.close();
-});
-
-test("a photo needs a message, JSON and a real conversation; a failed start leaves no photo behind", async () => {
-  const s = await startServer();
-  assert.strictEqual((await s.ask({ task: "", image: url(JPEG) })).status, 400);
-  const bad = await s.request("POST", "/api/ask", { headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ task: "hi", image: url(JPEG) }) });
-  assert.strictEqual(bad.status, 415);
-  const missing = await s.ask({ task: "hi", image: url(JPEG), conversationId: "0123456789abcdef" });
-  assert.strictEqual(missing.status, 404);
-  assert.deepStrictEqual(s.uploads(), []);
   await s.close();
 });
 

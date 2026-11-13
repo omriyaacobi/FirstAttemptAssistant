@@ -94,42 +94,6 @@ test("serves the page", async () => {
   await s.close();
 });
 
-test("a valid task starts a background job and answers at once", async () => {
-  let release;
-  const gate = new Promise((r) => (release = r));
-  const s = await start(async (task, { log }) => {
-    log("[brain] reading your message");
-    await gate;
-    return { mode: "single", answer: "hello " + task, used: { provider: "p", model: "m" } };
-  });
-  const res = await s.ask("hi");
-  assert.strictEqual(res.status, 202); // not waiting for the models
-  const job = JSON.parse(res.body).job;
-  assert.match(job.id, /^[a-f0-9]{32}$/);
-  assert.strictEqual(job.status, "running");
-  const mid = JSON.parse((await s.request("GET", "/api/jobs/" + job.id)).body).job;
-  assert.deepStrictEqual(mid.log, ["[brain] reading your message"]);
-  assert.match(mid.step, /Reading your message/);
-  // the question is already saved while the models work
-  assert.strictEqual(s.store.get(job.conversationId).messages.length, 1);
-  release();
-  const done = await s.askDone("again");
-  assert.strictEqual(done.job.status, "done");
-  assert.strictEqual(s.store.get(done.conversationId).messages[1].result.answer, "hello again");
-  await s.close();
-});
-
-test("an error inside the engine becomes a failed job and a saved error message, not a crash", async () => {
-  const s = await start(async () => { throw new Error("all models failed"); });
-  const { job, conversationId } = await s.askDone("hi");
-  assert.strictEqual(job.status, "error");
-  assert.strictEqual(job.error, "all models failed");
-  const messages = s.store.get(conversationId).messages;
-  assert.deepStrictEqual(messages.map((m) => m.role), ["user", "assistant"]);
-  assert.strictEqual(messages[1].error, true);
-  await s.close();
-});
-
 test("SECURITY: a wrong Host header is refused (DNS rebinding)", async () => {
   const s = await start();
   const res = await s.request("GET", "/", { headers: { Host: "evil.example.com" } });
@@ -148,13 +112,6 @@ test("SECURITY: a cross-site fetch is refused", async () => {
   const s = await start();
   const res = await s.ask("hi", { "Sec-Fetch-Site": "cross-site" });
   assert.strictEqual(res.status, 403);
-  await s.close();
-});
-
-test("SECURITY: a request from this page's own origin is allowed", async () => {
-  const s = await start();
-  const res = await s.ask("hi", { Origin: `http://localhost:${s.port}`, "Sec-Fetch-Site": "same-origin" });
-  assert.strictEqual(res.status, 202);
   await s.close();
 });
 
@@ -194,17 +151,6 @@ test("rejects an oversized request body", async () => {
   await s.close();
 });
 
-test("limits how many tasks run at once", async () => {
-  let release;
-  const gate = new Promise((r) => (release = r));
-  const s = await start(async () => { await gate; return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } }; });
-  for (let i = 0; i < MAX_RUNNING; i++) assert.strictEqual((await s.ask("slow")).status, 202);
-  const extra = await s.ask("one too many");
-  assert.strictEqual(extra.status, 429);
-  release();
-  await s.close();
-});
-
 test("usage endpoint returns rows; unknown routes are 404", async () => {
   const s = await start();
   const usage = await s.request("GET", "/api/usage");
@@ -213,83 +159,10 @@ test("usage endpoint returns rows; unknown routes are 404", async () => {
   await s.close();
 });
 
-test("a new conversation is created and saved, and its id is returned", async () => {
-  const s = await start();
-  const result = await s.askDone("first question");
-  assert.strictEqual(result.job.status, "done");
-  const saved = s.store.get(result.conversationId);
-  assert.strictEqual(saved.title, "first question");
-  assert.deepStrictEqual(saved.messages.map((m) => m.role), ["user", "assistant"]);
-  assert.strictEqual(saved.messages[1].text, "hello");
-  await s.close();
-});
-
-test("a follow-up in the same conversation gets the earlier messages as history", async () => {
-  let seenHistory = null;
-  const s = await start(async (task, { history }) => {
-    seenHistory = history;
-    return { mode: "single", answer: "reply to " + task, used: { provider: "p", model: "m" } };
-  });
-  const first = await s.askDone("my name is Omri");
-  assert.deepStrictEqual(seenHistory, []); // first message: no history yet
-  await s.askDone("what is my name?", {},{ conversationId: first.conversationId });
-  assert.deepStrictEqual(seenHistory, [
-    { role: "user", text: "my name is Omri" },
-    { role: "assistant", text: "reply to my name is Omri" },
-  ]);
-  assert.strictEqual(s.store.get(first.conversationId).messages.length, 4);
-  await s.close();
-});
-
-test("an unknown or malformed conversation id is refused", async () => {
-  const s = await start();
-  assert.strictEqual((await s.ask("hi", {}, { conversationId: "0123456789abcdef" })).status, 404);
-  assert.strictEqual((await s.ask("hi", {}, { conversationId: "../../etc/passwd" })).status, 404);
-  assert.strictEqual((await s.ask("hi", {}, { conversationId: 42 })).status, 404);
-  await s.close();
-});
-
-test("a failed task keeps your question and an error note, and is not used as memory", async () => {
-  let seenHistory = null;
-  let fail = true;
-  const s = await start(async (task, { history }) => {
-    seenHistory = history;
-    if (fail) throw new Error("all models failed");
-    return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } };
-  });
-  const first = await s.askDone("this will fail");
-  assert.strictEqual(s.store.get(first.conversationId).messages.length, 2);
-  fail = false;
-  await s.askDone("try again", {}, { conversationId: first.conversationId });
-  assert.deepStrictEqual(seenHistory, [{ role: "user", text: "this will fail" }]);
-  await s.close();
-});
-
-test("list, open and delete conversations over HTTP", async () => {
-  const s = await start();
-  const made = await s.askDone("hello there");
-  const list = JSON.parse((await s.request("GET", "/api/conversations")).body);
-  assert.strictEqual(list.conversations[0].title, "hello there");
-  const one = await s.request("GET", "/api/conversations/" + made.conversationId);
-  assert.strictEqual(JSON.parse(one.body).messages.length, 2);
-  assert.strictEqual((await s.request("DELETE", "/api/conversations/" + made.conversationId)).status, 200);
-  assert.strictEqual((await s.request("GET", "/api/conversations/" + made.conversationId)).status, 404);
-  await s.close();
-});
-
 test("SECURITY: a path-traversal id cannot read or delete other files", async () => {
   const s = await start();
   assert.strictEqual((await s.request("GET", "/api/conversations/..%2F..%2Fpackage")).status, 404);
   assert.strictEqual((await s.request("DELETE", "/api/conversations/..%2F..%2Fpackage")).status, 404);
-  await s.close();
-});
-
-test("SECURITY: deleting from another website is refused", async () => {
-  const s = await start();
-  const made = await s.askDone("keep me");
-  const res = await s.request("DELETE", "/api/conversations/" + made.conversationId, { headers: { Origin: "https://evil.example.com", "Sec-Fetch-Site": "cross-site" } });
-  assert.strictEqual(res.status, 403);
-  assert.ok(s.store.get(made.conversationId)); // still there
   await s.close();
 });
 
@@ -343,17 +216,6 @@ test("restart: works when supervised", async () => {
   assert.strictEqual(res.status, 200);
   assert.deepStrictEqual(JSON.parse(res.body), { restarting: true });
   assert.strictEqual(s.restarts.length, 1);
-  await s.close();
-});
-
-test("restart: refused while a task is running", async () => {
-  let release;
-  const gate = new Promise((r) => (release = r));
-  const s = await start(async () => { await gate; return { mode: "single", answer: "ok", used: { provider: "p", model: "m" } }; }, { supervised: true });
-  assert.strictEqual((await s.ask("slow")).status, 202);
-  assert.strictEqual((await s.post("/api/restart", {})).status, 409);
-  assert.strictEqual(s.restarts.length, 0);
-  release();
   await s.close();
 });
 
