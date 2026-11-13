@@ -27,10 +27,15 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
-## Zip folders (2026-11-13, branch claude/zip-folders-721aaa)
+## Folders for course files (2026-11-13, branch claude/zip-folders-721aaa)
 
 - Files from a zip now keep the folder they sat in as a label (`mission2/README.pdf`), so Bot can find "the README inside mission2".
-  It is display text only: files are still stored by random id. Details: `experiments/2026-11-13-zip-folders.md`.
+  Moodle downloads keep their section ("Week 3", "Week 3/Lab files"). Single uploads and chat files have no folder.
+  It is display text only: files are still stored by random id. Details and what was tested: `experiments/2026-11-13-zip-folders.md`.
+- Ask Bot "put lecture1 and lecture2 in a Lectures folder" or "rename the folder op to Assignment 1": the brain tool `file_folder`
+  changes only the labels (checked by code, never after a web page or photo).
+- Hebrew names in zips made on a Mac (no UTF-8 flag) are no longer garbled.
+- Proposed, not built: group the page's file list by folder, move files from the page. See the note.
 - **To do once after the merge:** upload the assignment zip again (chat or course page). No second copy is made; the summary says
   "I added folder names to N files you already had".
 
