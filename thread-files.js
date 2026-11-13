@@ -15,7 +15,7 @@ const plan = require("./study-plan");
 const { sniffFile, cleanName } = require("./upload");
 const { unzip, looksLikeZip } = require("./unzip");
 const { sniffOffice } = require("./office");
-const { zipSummary, fileMany: fileManyWith, filedName, showName } = require("./zip-filing");
+const { zipSummary, fileMany: fileManyWith, zipItems, showName } = require("./zip-filing");
 const { dueFromWords } = require("./due-date");
 
 const PENDING_MS = 30 * 60 * 1000;
@@ -120,9 +120,10 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     const groups = new Map(); // courseId -> { ref, items }
     for (const item of opened.files) {
       const choice = pickCourse({ fileName: `${clean} ${showName(item.name)}`, text, coach, courseList: list, now: now() });
-      if (!choice) { undecided.push({ bytes: item.bytes, name: filedName(item), group: item.group, kind: item.kind }); continue; }
+      const filing = zipItems([item])[0]; // its filed name and folder LABEL (zip-filing.js; the label is never a path)
+      if (!choice) { undecided.push(filing); continue; }
       const g = groups.get(choice.ref.courseId) || { ref: choice.ref, items: [] };
-      g.items.push({ bytes: item.bytes, name: filedName(item), group: item.group, kind: item.kind });
+      g.items.push(filing);
       groups.set(choice.ref.courseId, g);
     }
     for (const [courseId, g] of groups) fileMany(courseId, g.ref.name, g.items, filed, skipped);

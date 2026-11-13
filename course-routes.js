@@ -26,7 +26,7 @@ const { openPdf } = require("./pdfcut");
 const { sniffFile, readRawBody, cleanName } = require("./upload");
 const { unzip, looksLikeZip, MAX_ZIP_BYTES } = require("./unzip");
 const { sniffOffice } = require("./office");
-const { zipSummary, fileMany, filedName } = require("./zip-filing");
+const { zipSummary, fileMany, zipItems } = require("./zip-filing");
 const { say: words, bet } = require("./lang");
 const linkfetch = require("./linkfetch");
 
@@ -83,9 +83,10 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
 
   // The SAME checks as the upload route below (real first bytes, 50 MB, 400 MB per course, no duplicate), for a file that arrives with a
   // message in the thread. Throws errors with a status. Returns the saved file entry; reading starts in the background.
-  function addUpload(courseId, bytes, name) {
+  // folder: the zip folder LABEL (zip-filing.js), "" for a single file; display text only, never a path.
+  function addUpload(courseId, bytes, name, folder = "") {
     const { kind, ext } = sniffFile(bytes);
-    const file = courses.addFile(courseId, { bytes, kind, ext, name: cleanName(name) });
+    const file = courses.addFile(courseId, { bytes, kind, ext, name: cleanName(name), folder });
     enqueue(courseId, file.id);
     return file;
   }
@@ -98,7 +99,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
     const opened = unzip(bytes);
     const filed = [];
     const skipped = [...opened.skipped];
-    fileMany(addUpload, courseId, courseName, opened.files.map((f) => ({ bytes: f.bytes, name: filedName(f), group: f.group, kind: f.kind })), filed, skipped);
+    fileMany(addUpload, courseId, courseName, zipItems(opened.files), filed, skipped);
     return { name: clean, filedCount: filed.length, skippedCount: skipped.length, summary: zipSummary(lang, clean, filed, skipped, 0) };
   }
   // A file that came from a LINK (linkfetch.js fetched the bytes; they are untrusted like any upload). The SAME roads as above: a zip is opened
@@ -296,7 +297,7 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   // The files of one course with their reading state, for the thread (brain.js waits while any is queued or reading). Names are shown to the user.
   const courseFiles = (courseId) => {
     const c = courses.get(courseId);
-    return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
+    return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, ...(f.folder ? { folder: f.folder } : {}), status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
   };
   return { handle, answer, addUpload, addLink, fileFetched, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }

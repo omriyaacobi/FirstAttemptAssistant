@@ -37,6 +37,21 @@ function cleanName(name, fallback = "file") {
   return clean || fallback;
 }
 
+// The FOLDER a file sat in inside a zip ("operation_b7/mission2"), kept as a LABEL so Bot can tell "the README inside mission2" from
+// the others. Display text ONLY: it is never joined into a disk path (files are stored by random id, courses.js). Cleaned here, by code:
+// control characters and <> removed, "\" read as "/", empty, "." and ".." parts dropped, each part clipped to 60 characters, and at
+// most 200 characters in all (the innermost folders are kept, the outer ones cut, marked with "…/"). "" = no folder.
+const MAX_FOLDER_CHARS = 200;
+const MAX_FOLDER_PART = 60;
+function cleanFolder(folder) {
+  const parts = String(folder || "").replace(/\\/g, "/").split("/")
+    .map((p) => p.replace(/[\u0000-\u001f\u007f<>]+/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_FOLDER_PART).trim())
+    .filter((p) => p && p !== "." && p !== ".." && !/^[a-zA-Z]:$/.test(p));
+  let out = parts.join("/");
+  while (out.length > MAX_FOLDER_CHARS && parts.length > 1) { parts.shift(); out = "…/" + parts.join("/"); }
+  return out.slice(0, MAX_FOLDER_CHARS);
+}
+
 // Reads the whole request body as bytes, but gives up (413) as soon as it passes the limit.
 function readRawBody(req, limit = MAX_FILE_BYTES) {
   return new Promise((resolve, reject) => {
@@ -61,4 +76,4 @@ function readRawBody(req, limit = MAX_FILE_BYTES) {
   });
 }
 
-module.exports = { sniffFile, cleanName, readRawBody, MAX_FILE_BYTES, MAX_TEXT_BYTES };
+module.exports = { sniffFile, cleanName, cleanFolder, readRawBody, MAX_FILE_BYTES, MAX_TEXT_BYTES, MAX_FOLDER_CHARS };
