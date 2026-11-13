@@ -3,7 +3,7 @@
 A small local Node.js app (no packages, no build step): Omri's personal assistant. ONE conversation, answered by "the brain": one model
 (Gemini through `agy`, or Claude) that reads every message with a toolbox for courses, calendar, reminders, links, Moodle and studying.
 Start it with `start-web.cmd` (or `node server.js`), open http://localhost:3000.
-Run all checks with `node --test` (about 940 tests, about 45 s; they find the `tests/` folder by themselves).
+Run all checks with `node --test` (about 1,000 tests, about 45 s; they find the `tests/` folder by themselves).
 
 How a message is answered: `server.js` (route `/api/ask`) -> `jobs.js` (one job per message) -> `brain.js` (builds the context, asks the
 model, checks and runs the tools it asks for) -> the answer is saved in the thread (`thread-store.js`) and shown by `public/index.html`.
@@ -24,17 +24,17 @@ model, checks and runs the tools it asks for) -> the answer is saved in the thre
 | `linkfetch.js`, `link-batch.js` | download or just read a link Omri typed, or the links inside a file of the course (safe fetch: https, public addresses, size limits); a list is shown first and fetched after one Confirm |
 | `moodle-bridge.js`, `moodle-tools.js`, `moodle-extension/`, `moodle.js` | read-only BGU Moodle through Omri's own logged-in Chrome: the extension takes read jobs from Bot's waiting list (`/api/moodle/next`), the brain's `moodle_*` tools use them. `moodle.js` is a direct Node client that BGU's edge blocks (kept, unused) |
 | `thread*.js`, `unzip.js`, `zip-filing.js`, `upload.js`, `office.js`, `pdfcut.js`, `photo.js` | the one conversation, file and zip upload, reading files |
-| `selfedit.js`, `preview.js`, `pagesandbox.js`, `gitops.js`, `improve-watch.js` | Improve Bot (self edit) and its safety checks |
+| `selfedit.js`, `preview.js`, `gitops.js`, `improve-watch.js` | Improve Bot (self edit) and its safety checks |
 | `backup.js`, `auth.js`, `store.js`, `webpush.js`, `botlog.js` | backup, login, storage of the old chats and course chats, phone pushes, the log file `data/bot.log` |
 | `public/` | the web page and phone app (plain HTML/JS, `index.html`, `study.js`, `sw.js`) |
-| `tests/` | all tests (`*.test.js`) and the test helper `testzip.js` |
+| `tests/` | all tests (`*.test.js`) and the test helpers `testzip.js` (builds zips) and `pagesandbox.js` (runs the page's drawing code without a browser) |
 | `experiments/` | one-off measurements: notes (`*.md`, dated) and the scripts that produced them. See `experiments/README.md` |
 | `qa/` | QA reports |
-| `tools/` | small helper scripts (icons, power settings) |
+| `tools/` | small helper scripts run by hand: icons, power settings, `thread.js` (the one-time copy of the old chats into the thread) |
 
 ## Notes to read after a break
 1. `CLAUDE.md` - the agreed rules and design (my decisions; the Bot design part was rewritten 2026-11-12).
-2. `PROGRESS.md` - where things stand and what is next (short). The full history: `experiments/progress-history-until-2026-11-12.md`. `HANDOFF.md` - how the manager chat worked (written 2026-11-07, before the brain).
+2. `PROGRESS.md` - where things stand and what is next (short). The full history: `experiments/progress-history-until-2026-11-12.md`. `experiments/2026-11-07-handoff.md` - how the manager chat worked (written 2026-11-07, before the brain).
 3. `experiments/2026-11-08-cleanup-progress.md` - what the November cleanup moved and why.
 4. `experiments/2026-11-08-react-verdict.md` - should Bot be rewritten in React?
 

@@ -14,7 +14,7 @@
 
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, readUsage, watchSteps } = require("./providers");
+const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, usageWithSteps, watchSteps } = require("./providers");
 
 const MAX_SPARE_AGE_MS = 8 * 60 * 1000; // a spare older than this is thrown away (idle 5 min was tested fine)
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
@@ -81,7 +81,7 @@ function startProcess({ command, prefixArgs, model, schema, clock, agent = false
         const w = waiter;
         waiter = null;
         const result = event.result || {};
-        if (w.onUsage) { try { const u = readUsage(result.usage); if (u) w.onUsage({ ...u, ...steps.extra() }); } catch (error) { /* counting tokens must never break an answer */ } }
+        if (w.onUsage) { try { const u = usageWithSteps(result.usage, steps); if (u) w.onUsage(u); } catch (error) { /* counting tokens must never break an answer */ } }
         if (result.status && result.status !== "SUCCESS") return w.reject(new Error("agy status " + result.status));
         if (w.text !== undefined) return w.resolve(String(result.response ?? w.text).trim()); // a text answer: the result is the authority
         try {

@@ -22,7 +22,7 @@ out({ event: "init" });
 process.stdin.once("data", () => {
   const step = (step_index, step_type, more) => out({ event: "step_update", step_update: { step_index, step_type, ...more } });
   if (process.env.FAKE_WEB) { step(1, "agent_response", {}); step(2, "tool", { tool_name: "search_web" }); step(2, "tool", { tool_name: "search_web" }); step(3, "agent_response", { text_delta: "x" }); }
-  out({ event: "result", result: { status: process.env.FAKE_STATUS || "SUCCESS", response: process.argv.slice(2).join(" "), usage: { input_tokens: 2073, output_tokens: 12, thinking_tokens: 5, cache_read_tokens: 100, total_tokens: 2190 } } });
+  out({ event: "result", result: { status: process.env.FAKE_STATUS || "SUCCESS", response: process.argv.slice(2).join(" "), usage: process.env.FAKE_NOUSAGE ? undefined : { input_tokens: 2073, output_tokens: 12, thinking_tokens: 5, cache_read_tokens: 100, total_tokens: 2190 } } });
 });
 `);
 const opts = { command: process.execPath, prefixArgs: [fake] };
@@ -91,6 +91,11 @@ test("the warm pool: agent pools start agy with --agent (the spare too) and repo
   try { await slim.askText("q", "m", () => {}, { onUsage: (u) => { cost = u; } }); } finally { delete process.env.FAKE_WEB; }
   assert.deepStrictEqual([cost.turns, cost.inner], [2, ["search_web"]]);
   slim.closeAll();
+  // the warm path too: a web search with no token numbers is still reported (review 1.2, 2026-11-13)
+  process.env.FAKE_WEB = "1"; process.env.FAKE_NOUSAGE = "1"; cost = null;
+  try { await slim.askText("q", "m", () => {}, { onUsage: (u) => { cost = u; } }); } finally { delete process.env.FAKE_WEB; delete process.env.FAKE_NOUSAGE; }
+  assert.deepStrictEqual([cost.input, cost.inner], [0, ["search_web"]]);
+  slim.closeAll();
   const plain = createWarmAgy(opts);
   assert.ok(!(await plain.askText("q", "m", () => {})).includes("--agent"));
   plain.closeAll();
@@ -134,6 +139,16 @@ test("a web search inside agy is counted: two model turns, one tool step, and th
   try { await askAgyStream("q", "m", () => {}, { ...opts, onUsage: (u) => { cost = u; } }); } finally { delete process.env.FAKE_WEB; }
   assert.deepStrictEqual([cost.turns, cost.inner], [2, ["search_web"]]); // the same tool step reported twice counts once
   assert.strictEqual(costOf([{ input: 5000, inner: ["search_web"] }, { input: 100 }]).text, "2 model calls, 5,100 tokens, 1 web search step inside agy");
+});
+
+test("a web search inside agy is reported even when agy sends no token numbers (the brain's no-doing-after-a-web-page rule needs it)", async () => {
+  let cost = null, plain = "unset";
+  process.env.FAKE_WEB = "1"; process.env.FAKE_NOUSAGE = "1";
+  try { await askAgyStream("q", "m", () => {}, { ...opts, onUsage: (u) => { cost = u; } }); } finally { delete process.env.FAKE_WEB; }
+  try { await askAgyStream("q", "m", () => {}, { ...opts, onUsage: (u) => { plain = u; } }); } finally { delete process.env.FAKE_NOUSAGE; }
+  assert.deepStrictEqual(cost.inner, ["search_web"]);
+  assert.strictEqual(cost.input, 0);
+  assert.strictEqual(plain, "unset"); // no tokens and no tool: nothing to report, as before
 });
 
 test("costOf: calls and tokens in plain words", () => {

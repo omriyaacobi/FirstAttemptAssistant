@@ -24,8 +24,21 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **PC hands (2026-11-12, branch claude/pc-hands-e816e7):** Bot can find my folders and files by name (`pc_find`, `pc_list`, roots via
   `pc_roots`) and open things on the PC (`open_on_pc`: pages in Chrome, Moodle pages, course files, found files and folders; never programs).
   A found folder is linked to a course with one Confirm tap. The rules are in `CLAUDE.md` (PC HANDS).
-- **Tests:** `node --test` (about 985 tests, about 50 s). All pass.
+- **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
+
+## Review of 2026-11-13 (branch claude/fable-improve-c73f00, NOT merged yet)
+
+The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. The main finds:
+- **Code answers looked broken because of Bot, not the model:** the brain deleted the closing ``` of every code block. Fixed.
+- English questions are no longer answered in Hebrew: code tells the model the message's language. The briefing now says how to
+  check code (main problems first with line numbers, hints in steps), never to talk about "the context", and to use Bot's own copy
+  of a file when Moodle is logged out.
+- Bot's memory keeps the END of a long recent answer too (the question Bot asked last was being cut off).
+- agy's own web search is noticed even without token numbers; photo messages are in the token log; clearer progress lines.
+- Improve Bot can no longer change `brain.js`, the starter and watchdog files or `improve-watch.js`.
+- Tidy: `pagesandbox.js` -> `tests/`, `HANDOFF.md` -> `experiments/2026-11-07-handoff.md`, `thread.js` -> `tools/`.
+- Not done: removing the old chat list and trimming `study-coach.js` (needs its own session, see Next).
 
 ## What the 2026-11-12 cleanup did (branch claude/brain-permanent-3257b5)
 
@@ -45,9 +58,6 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   `progress`, `quiz`, `answer`, `confirm`, `cancel` and the new `brainTools`. Remove the rest with its tests.
 - **Two things the brain changed that I should decide on:** (1) the model that sees my profile can also search the web (before, web
   models never got the profile); (2) every message now takes one of the 2 slots, so a reminder can wait behind two long answers.
-- **Protect `brain.js` from Improve Bot** (decided 2026-11-12, not urgent: Omri does not use Improve Bot until the quota work is
-  done). Add it to `selfedit.js`'s protected list, because it holds the code checks on every tool call. `brain-brief.md` stays
-  editable (that is how Bot is tuned).
 - **Moodle, smarter (asked 2026-11-11, when there is quota):** a quiet morning check for new announcements, files and deadlines (offered,
   never downloaded silently); deadlines offered as calendar events or reminders; assignment pages read in full; lecture videos (Kaltura,
   captions not checked); the coach using Moodle's sections to know the week. Read-only, no keep-alive, tools and the briefing only.

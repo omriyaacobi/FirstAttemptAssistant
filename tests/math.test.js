@@ -2,7 +2,7 @@
 // Checks the math display in answers ($..$, $$..$$, \(..\), \[..\] turned into MathML) without a browser.
 const test = require("node:test");
 const assert = require("node:assert");
-const { html, script, sandbox, tags, find, allNodes } = require("../pagesandbox");
+const { html, script, sandbox, tags, find, allNodes } = require("./pagesandbox");
 
 const ml = (n) => (n.tag === "#text" ? n._text : "<" + n.tag + ">" + n._text + n.children.map(ml).join("") + "</" + n.tag + ">"); // the tree as a string
 const math = (tex, display) => { const m = sandbox.texToMath(tex, display); return m && ml(m); };

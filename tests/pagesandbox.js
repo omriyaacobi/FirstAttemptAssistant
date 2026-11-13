@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
 const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("</script>"));
 const from = script.indexOf("// ---- TeX math"), to = script.indexOf("function botCard");
 

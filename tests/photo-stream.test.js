@@ -34,6 +34,16 @@ test("the photo is copied alone into a private folder under a fixed name; the lo
   assert.strictEqual(fs.existsSync(seen.options.cwd), false, "the private folder is deleted");
 });
 
+test("a photo call hands onUsage to the stream, so its tokens reach the token log (review 1.3, 2026-11-13)", async () => {
+  const file = photo();
+  const got = [];
+  await askAgyStreamWithImage("gemini-4-argon-low", "q", file, () => {}, {
+    onUsage: (u) => got.push(u),
+    stream: async (q, m, t, options) => { options.onUsage({ input: 7, output: 1 }); return "ok"; },
+  });
+  assert.deepStrictEqual(got, [{ input: 7, output: 1 }]);
+});
+
 test("the private folder is deleted when the call fails, and a bad model name is refused", async () => {
   const file = photo();
   let dir = null;

@@ -12,3 +12,5 @@ Finished one-off measurements. Nothing in Bot requires anything from this folder
 - `progress-history-until-2026-11-12.md`: the old `PROGRESS.md`, every step since day one. It describes files that no longer exist (the front desk, `core.js`, `bot.js`, the switches `BOT_THREAD` / `BOT_BRAIN`); some older scripts here `require` those files and no longer run.
 - `window-check.ps1`: proves the watchdog chain opens no window and takes no focus (see `2026-11-12-always-up.md`).
 - `2026-11-12-quota-max.md`: where the quota goes (tokens per call, agy overhead, prompt parts) and what was built to stretch it (slim agent, token log, pacing, smaller context). Scripts: `quota-max-measure.js` (free: replays real messages with a fake model), `quota-max-probe.js`, `quota-max-steps.js` and `quota-max-brain-run.js` (these three spend quota).
+- `2026-11-07-handoff.md`: how the manager chat worked on 2026-11-07 (before the brain); moved here from the root on 2026-11-13. Today the manager keeps its handover note in the shared side-session notes folder.
+- `2026-11-13-fable-review.md`: a full review of Bot on 2026-11-13: the ranked list of findings and what was done about each.

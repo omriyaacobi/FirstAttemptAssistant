@@ -85,7 +85,8 @@ function createFinder({ dataDir, forbidden = [], system = SYSTEM_DIRS(), appData
   }
   function setRoots(list) {
     fs.mkdirSync(dataDir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ roots: list }, null, 2));
+    fs.writeFileSync(file + ".tmp", JSON.stringify({ roots: list }, null, 2)); // a temporary file renamed into place: a crash never leaves half a file
+    fs.renameSync(file + ".tmp", file);
   }
   function addRoot(text) {
     const real = checkRoot(text);

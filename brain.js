@@ -139,12 +139,40 @@ function parseReply(raw) {
   }
   return { calls: calls.slice(0, MAX_CALLS_PER_ROUND), text };
 }
+// The text for Omri: the reply without its CALL lines. Until 2026-11-13 this also deleted EVERY line that was only a code fence (```),
+// meant for fences wrapped around CALL lines, so each code block in an answer lost its closing fence: the text after it fell into the
+// box and the next block's opening fence closed it. Now a fence is removed only when it sits right next to a CALL line (with only
+// blank lines between), and a code block still open at the end is closed.
+const CALL_LINE = /^\s*(?:[-*`]\s*)?CALL\s*\{/;
+const FENCE_LINE = /^\s*```/;
+const BARE_FENCE = /^\s*```\s*(?:json)?\s*$/i;
+function withoutCalls(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const isCall = lines.map((l) => CALL_LINE.test(l));
+  const nextTo = (i, step) => { for (let j = i + step; j >= 0 && j < lines.length; j += step) { if (lines[j].trim()) return isCall[j]; } return false; };
+  const kept = lines.filter((l, i) => !isCall[i] && !(BARE_FENCE.test(l) && (nextTo(i, -1) || nextTo(i, 1))));
+  if (kept.filter((l) => FENCE_LINE.test(l)).length % 2 === 1) kept.push("```");
+  return kept.join("\n").trim();
+}
+
 // While the model writes: is this going to be a tool round? (so tool lines are never shown to Omri as an answer)
 // Returns true (tool lines), false (an answer), or null (too early to tell: the first few characters could still become "CALL").
 function looksLikeCall(partial) {
   const t = String(partial).replace(/^\s*(?:```\w*\s*)?(?:[-*`]\s*)?/, "");
   if (t.length < 5) return "CALL ".startsWith(t) ? null : false;
   return /^CALL\b/.test(t);
+}
+
+// The language of Omri's message, said plainly next to it (2026-11-13). The briefing says "reply in the language of the message", but
+// with Hebrew course notes and Hebrew talk around it the model answered an English question in Hebrew twice on 2026-11-12. Code counts
+// the letters of the message (code in backticks left out); only a clear majority gives a line, a real mix gives none.
+function languageLine(task) {
+  const prose = String(task).replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
+  const he = (prose.match(/[֐-׿]/g) || []).length;
+  const en = (prose.match(/[a-z]/gi) || []).length;
+  if (he >= 3 && he >= 2 * en) return "\n(This message is in Hebrew: write the reply in Hebrew; code and the technical terms people say in English stay in English.)";
+  if (en >= 3 && en >= 4 * he) return "\n(This message is in English: write the reply in English, even if the notes or the earlier talk are in Hebrew.)";
+  return "";
 }
 
 // Every https address in a text, without the punctuation that often follows a link in a sentence.
@@ -348,6 +376,8 @@ ${text}`; } catch (error) {
         if (!want || !hit) throw new Error(`no readable file like "${String(file).slice(0, 80)}" in ${c.name}. Files: ${names.slice(0, 30).join("; ")}`);
         const from = Math.max(1, Number(from_page) || 1);
         const mine = pages.filter((p) => p.fileName === hit).sort((a, b) => a.page - b.page);
+        const end = mine[mine.length - 1].page;
+        if (from > end) return `${hit} has ${end} page${end === 1 ? "" : "s"}, so there is nothing from page ${from} on. That was the end of the file.`;
         let text = "", last = from - 1;
         for (const p of mine.filter((p) => p.page >= from)) { if (text.length + p.text.length > LIMITS.read && text) break; text += `\n[page ${p.page}]\n${p.text}`; last = p.page; }
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
@@ -706,7 +736,7 @@ ${r.cardText}`; }
       focus ? `## The course this talk is in: ${focus.name}\n${prefetch(focus, task)}` : "",
       historyBlock(history) ? "## " + historyBlock(history) : "## Conversation so far\n(none)",
     ].filter(Boolean).join("\n\n");
-    const tail = `## Omri's new message\n<message>\n${noCtl(task)}\n</message>`;
+    const tail = `## Omri's new message\n<message>\n${noCtl(task)}\n</message>` + languageLine(task);
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
@@ -717,7 +747,7 @@ ${r.cardText}`; }
     if (!image) paceLead = paced.lead;
     const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
-    const askRaw = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
+    const askRaw = image ? (provider, model, q, onText, extra = {}) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {}), { onUsage: extra.onUsage || null }) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
     // agy's OWN web search (search_web inside one agy call) is seen in its step events (providers.js watchSteps -> u.inner). A page read
     // that way counts as a web page for the afterWeb rule: no doing-tool may run after it in this message (Omri, 2026-11-13).
     const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => { spent.push({ model, ...u }); if (usedWebSearch(u && u.inner)) ctx.sawWeb = true; } });
@@ -759,7 +789,7 @@ ${r.cardText}`; }
       used = r.used;
       const reply = parseReply(r.answer);
       if (!reply.calls.length || last) {
-        let answer = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```\s*$/.test(l)).join("\n").trim());
+        let answer = fixMath(withoutCalls(reply.text));
         // The last round and the model still only asked for tools: say what was done instead of failing the whole message.
         if (!answer && ctx.done.length) answer = say(lang, "I could not finish the answer, but this was done:", "לא הצלחתי לסיים את התשובה, אבל זה כבר בוצע:") + "\n" + ctx.done.map((d) => "- " + d).join("\n");
         if (!answer) throw new Error("the model sent back an empty answer");
@@ -805,7 +835,7 @@ ${r.cardText}`; }
         } catch (error) { return { call, text: `FAILED, nothing was done: ${String(error.message).slice(0, 400)}`, ok: false }; }
       }));
       // The quick finish: only "doing" tools, all of them worked, and the model already wrote what to tell Omri under its CALL lines.
-      let said = fixMath(reply.text.split(/\r?\n/).filter((l) => !/^\s*(?:[-*`]\s*)?CALL\s*\{/.test(l) && !/^\s*```/.test(l)).join("\n").trim());
+      let said = fixMath(withoutCalls(reply.text));
       if (said && results.every((x) => x.ok && DOING.has(x.call.tool))) {
         if (fileNote) said = fileNote + "\n\n" + said;
         log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
@@ -834,4 +864,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, parseReply, looksLikeCall, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, looksLikeCall, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

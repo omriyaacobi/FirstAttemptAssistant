@@ -32,6 +32,17 @@ const NOTES_CHARS = 2400; // the last 3 daily notes (thread-summary.js), already
 const MAX_CONTEXT_CHARS = RECENT_CHARS + 6000 + NOTES_CHARS + MAX_PENDING * (PENDING_CHARS + 80) + SCAN_MESSAGES * CUT_MARK.length;
 
 const clip = (text, max) => { const t = String(text); return t.length > max ? t.slice(0, max) : t; };
+// A long RECENT message keeps its start AND its end (2026-11-13). A teaching answer usually ENDS with the check question or the
+// next step ("run it and tell me what valgrind says"); cutting only the end lost exactly that, so the reply "done, what now?" was
+// answered without the question Bot had asked. The result is never longer than max.
+const MIDDLE_MARK = "\n[... the middle of this message is left out ...]\n";
+function keepEnds(text, max) {
+  const t = String(text);
+  if (t.length <= max) return t;
+  const room = Math.max(0, max - MIDDLE_MARK.length);
+  const head = Math.ceil(room * 0.55);
+  return t.slice(0, head) + MIDDLE_MARK + t.slice(t.length - (room - head));
+}
 
 // "course answer: Calculus 2" for an answer that came from a course (written by code, never by a model).
 function labelOf(message, courseName) {
@@ -66,7 +77,7 @@ function buildHistory(store, { entryOf, courseName = null, busy = [], pending = 
   }
   const out = entries.map((m) => {
     const limit = limits.get(m);
-    const entry = { ...entryOf(m), text: m.text.length > limit && limit === OLD_ANSWER_CHARS ? clip(m.text, limit) + CUT_MARK : clip(m.text, limit) };
+    const entry = { ...entryOf(m), text: m.text.length > limit && limit === OLD_ANSWER_CHARS ? clip(m.text, limit) + CUT_MARK : keepEnds(m.text, limit) };
     const label = labelOf(m, courseName);
     if (label) entry.label = label;
     if (m.result && typeof m.result.courseId === "string") entry.courseId = m.result.courseId; // which course this turn was about
@@ -101,4 +112,4 @@ function pinnedCard(store, { entryOf, hide, already }) {
   return { ...entry, text: clip(found.text, MAX_MESSAGE_CHARS) };
 }
 
-module.exports = { buildHistory, labelOf, RECENT_CHARS, MAX_MESSAGE_CHARS, MAX_CONTEXT_CHARS, PENDING_CHARS, FULL_TURNS, OLD_ANSWER_CHARS, CUT_MARK };
+module.exports = { keepEnds, buildHistory, labelOf, RECENT_CHARS, MAX_MESSAGE_CHARS, MAX_CONTEXT_CHARS, PENDING_CHARS, FULL_TURNS, OLD_ANSWER_CHARS, CUT_MARK };

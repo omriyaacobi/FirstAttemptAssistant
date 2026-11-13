@@ -259,7 +259,7 @@ test("RECALL: an imported old chat is found, and old chats that were never copie
   const fresh = old.create("another");
   old.append(fresh.id, [{ role: "user", text: "tell me about zebra crossings in Norway", at: 3000 }, { role: "assistant", text: "They are striped.", at: 4000 }]);
   const thread = createThreadStore(path.join(root, "thread"));
-  const { importChats } = require("../thread");
+  const { importChats } = require("../tools/thread");
   // import only the first chat: move the second out of the way for the import, then back
   const second = path.join(root, "conversations", fresh.id + ".json");
   const hold = fs.readFileSync(second);
@@ -470,3 +470,20 @@ function createThreadStoreWith(texts) {
   thread.appendMany(texts.map((text, i) => ({ role: i % 2 ? "assistant" : "user", text, at: t0 + i * 1000 })));
   return thread;
 }
+
+// ---- a long recent answer keeps its END (2026-11-13): the check question Bot asked is at the end ----
+test("ENDS: a long recent answer keeps its start and its end, so the question Bot asked last is still in the memory", () => {
+  const { keepEnds } = require("../thread-context");
+  const thread = createThreadStore(tmp());
+  const answer = "Step one: open the loop in main.c. " + "filler text about pointers. ".repeat(150) + "Now run make again and tell me which line the error points to?";
+  thread.append({ role: "user", text: "why does my loop crash" });
+  thread.append({ role: "assistant", text: answer });
+  const history = buildHistory(thread, { entryOf: (m) => ({ role: m.role, text: m.text }) });
+  const last = history[history.length - 1].text;
+  assert.ok(last.length <= 2000, `kept ${last.length} characters`);
+  assert.ok(last.startsWith("Step one: open the loop"), "the start is kept");
+  assert.ok(last.endsWith("which line the error points to?"), "the end (the question) is kept");
+  assert.match(last, /middle of this message is left out/);
+  assert.strictEqual(keepEnds("short", 2000), "short");
+  for (const n of [60, 100, 2000]) assert.ok(keepEnds("x".repeat(5000), n).length <= n);
+});

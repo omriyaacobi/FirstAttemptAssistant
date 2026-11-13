@@ -97,7 +97,7 @@ test("a valid task starts a background job and answers at once", async () => {
   let release;
   const gate = new Promise((r) => (release = r));
   const s = await start(async (task, { log }) => {
-    log("[frontdesk] asking gemini/flash");
+    log("[brain] reading your message");
     await gate;
     return { mode: "single", answer: "hello " + task, used: { provider: "p", model: "m" } };
   });
@@ -107,8 +107,8 @@ test("a valid task starts a background job and answers at once", async () => {
   assert.match(job.id, /^[a-f0-9]{32}$/);
   assert.strictEqual(job.status, "running");
   const mid = JSON.parse((await s.request("GET", "/api/jobs/" + job.id)).body).job;
-  assert.deepStrictEqual(mid.log, ["[frontdesk] asking gemini/flash"]);
-  assert.match(mid.step, /front desk/i);
+  assert.deepStrictEqual(mid.log, ["[brain] reading your message"]);
+  assert.match(mid.step, /Reading your message/);
   // the question is already saved while the models work
   assert.strictEqual(s.store.get(job.conversationId).messages.length, 1);
   release();

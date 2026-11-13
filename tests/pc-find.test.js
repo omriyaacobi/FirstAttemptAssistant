@@ -27,6 +27,13 @@ function disk() {
   return { base, root, outside, finder, dataDir };
 }
 
+test("the roots file is written whole (temporary file renamed into place, none left behind) (review 2.3)", () => {
+  const { finder, outside, dataDir } = disk();
+  finder.addRoot(outside);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(dataDir, "pc-roots.json"), "utf8")).roots.includes(fs.realpathSync(outside)));
+  assert.deepStrictEqual(fs.readdirSync(dataDir), ["pc-roots.json"]);
+});
+
 test("words of names: letters and numbers split, Hebrew kept", () => {
   assert.deepStrictEqual(tokens("OS_ex3-final"), ["os", "ex", "3", "final"]);
   assert.deepStrictEqual(tokens("מטלה 3"), ["מטלה", "3"]);

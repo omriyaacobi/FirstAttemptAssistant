@@ -32,50 +32,43 @@ const THREAD_ID = "thread"; // every job of the one conversation carries this as
 const MAX_THREAD_JOBS = 20; // messages being worked on at the same time in the thread
 const WATCH_FRESH_MS = 8000; // a page that asked this recently counts as "looking at it"
 
-// Turns the raw log lines ("[frontdesk] asking ...", "[planner] step 2 ...") into one plain sentence
-// for the page. Pure function, so it is easy to test. Unknown lines are ignored on purpose, so a
-// new log line can never break the display.
+// Turns the raw log lines ("[brain] asking ...", "[brain] tool course_read (Calculus 2)") into one plain sentence for the page.
+// Pure function, so it is easy to test. Unknown lines are ignored on purpose, so a new log line can never break the display.
+// (The front desk and planner lines went on 2026-11-13: nothing writes them since the brain became the only way Bot works.)
+const TOOL_WORDS = {
+  course_search: "Looking in the course material", course_read: "Reading a course file", course_files: "Checking the course files",
+  calendar_read: "Reading your calendar", reminders_list: "Reading your reminders", study_status: "Checking your study progress",
+  search_memory: "Looking through earlier conversations", read_link: "Opening the link", save_link: "Downloading into the course",
+  save_links: "Listing the links in the file", set_reminder: "Setting your reminder", add_events: "Preparing your calendar card",
+  remember: "Noting that down", forget: "Looking for that fact", course_note: "Noting where you are", quiz: "Preparing your quiz",
+  quiz_answer: "Checking your answer", card_reply: "Saving your answer to the card", improve_bot: "Preparing a pointer to Improve Bot",
+  project_files: "Looking at your project folder", project_read: "Reading your code", link_folder: "Linking your project folder",
+  pc_find: "Searching your PC by name", pc_list: "Looking inside the folder", pc_roots: "Checking the search folders",
+  open_on_pc: "Opening it on the PC", moodle_courses: "Reading Moodle", moodle_course: "Reading the Moodle course",
+  moodle_news: "Reading the Moodle announcements", moodle_fetch: "Downloading from Moodle", moodle_link: "Matching the Moodle course",
+  study_pause: "Pausing study reminders", study_resume: "Turning study reminders on", exam_date: "Preparing the exam date card",
+  study_position: "Noting where you stand", study_undo: "Putting the earlier record back", study_plan: "Building your study plan",
+  teach_next: "Preparing the lesson",
+};
 function describeProgress(lines) {
   let text = "Starting...";
-  let total = 0;
-  const started = new Set();
-  const finished = new Set();
-  const models = new Map(); // step id -> model it is asking
+  let phase = ""; // "Reading your message" or "Putting the answer together": the model asked is shown after it
   const short = (m) => String(m || "").replace(/^[^/]*\//, "");
   for (const line of lines) {
     let m;
-    if ((m = line.match(/^\[frontdesk\] asking (.+)$/))) text = "The front desk is reading your message and deciding what to do";
-    else if (/^\[frontdesk\] failed/.test(line)) text = "The front desk failed, so Claude Sonnet takes over";
-    else if ((m = line.match(/^\[frontdesk\] decision: (\w+)/))) {
-      text = { answer: "The front desk is answering", clarify: "The front desk has a question for you", delegate: "Choosing the right model", split: "Splitting your message into steps", remind: "Setting your reminder", improve: "Preparing a pointer to Improve Bot", remember: "Noting that down", forget: "Looking for that fact", calendar: "Reading your calendar", addEvent: "Preparing your calendar card", listReminders: "Reading your reminders", recall: "Looking through your earlier chats" }[m[1]] || "The front desk decided";
-    } else if ((m = line.match(/^\[router\] trying (.+)$/))) text = `Asking ${short(m[1])}`;
-    else if ((m = line.match(/^\[router\] (\S+) failed/))) text = `${short(m[1])} did not answer, trying the next model`;
-    else if ((m = line.match(/^\[router\] answered by /))) text = "Got the answer";
-    else if ((m = line.match(/^\[planner\] (\d+) step\(s\)/))) { total = Number(m[1]); text = `Plan ready: ${total} steps`; }
-    else if (/^\[planner\] (?!step \d)/.test(line) && /failed|error|could not/i.test(line)) text = "The planner failed, so Claude Sonnet takes over";
-    else if ((m = line.match(/^\[planner\] step (\d+) \([^)]*\) starting: (.+)$/))) { started.add(m[1]); models.set(m[1], short(m[2])); }
-    else if ((m = line.match(/^\[planner\] step (\d+) (?:FAILED|done)/))) finished.add(m[1]);
-    else if (/^\[planner\] all steps finished/.test(line)) text = "All steps finished";
+    if (/^\[brain\] reading/.test(line)) text = phase = "Reading your message";
+    else if (/^\[brain\] thinking/.test(line)) text = phase = "Putting the answer together";
+    else if ((m = line.match(/^\[brain\] asking (\S+)$/))) text = phase ? `${phase} (${short(m[1])})` : `Asking ${short(m[1])}`;
+    else if ((m = line.match(/^\[brain\] (\S+) failed after/))) text = `${short(m[1])} did not answer, trying the next model`;
+    else if ((m = line.match(/^\[brain\] tool (\w+)(?: \((.+)\))?$/))) text = (TOOL_WORDS[m[1]] || "Working on it") + (m[2] ? ` (${m[2].slice(0, 50)})` : "");
     else if (/^\[reminder\]/.test(line)) text = "Setting your reminder";
     else if ((m = line.match(/^\[study\] (\w+)(?: in (.+))?$/))) text = ({ teach: "Preparing the lesson", quiz: "Preparing your quiz", start: "Preparing the assignment check", answer: "Checking your answer", progress: "Counting your progress from the timetable", plan: "Counting your progress from the timetable", update: "Noting where you are", assignment: "Reading the assignment", motivate: "Looking at your progress", confirm: "Saving", cancel: "Dropping it", pause: "Pausing study reminders", resume: "Turning study reminders on" }[m[1]] || "Working on your studies") + (m[2] ? ` (${m[2].slice(0, 60)})` : "");
     else if ((m = line.match(/^\[course\] (.+): (\d+) of \d+ pages sent \(.*?\)(?: lectures: ([\d,]+))?$/))) text = `Reading ${m[1].slice(0, 60)}${m[3] ? (m[3].includes(",") ? ", lectures " : ", lecture ") + m[3].replace(/,/g, ", ") : ""} (${m[2]} page${m[2] === "1" ? "" : "s"})`;
-    else if (/^\[brain\] reading/.test(line)) text = "Reading your message";
-    else if (/^\[brain\] thinking/.test(line)) text = "Putting the answer together";
-    else if ((m = line.match(/^\[brain\] tool (\w+)(?: \((.+)\))?$/))) text = ({ course_search: "Looking in the course material", course_read: "Reading a course file", course_files: "Checking the course files", calendar_read: "Reading your calendar", reminders_list: "Reading your reminders", study_status: "Checking your study progress", search_memory: "Looking through earlier conversations", read_link: "Opening the link", save_link: "Downloading into the course", set_reminder: "Setting your reminder", add_events: "Preparing your calendar card", remember: "Noting that down", forget: "Looking for that fact", course_note: "Noting where you are", quiz: "Preparing your quiz", quiz_answer: "Checking your answer", improve_bot: "Preparing a pointer to Improve Bot" }[m[1]] || "Working on it") + (m[2] ? ` (${m[2].slice(0, 50)})` : "");
     else if (/^\[tutor\] asking /.test(line)) text = "The tutor model is writing (this can take 20 seconds)";
     else if (/^\[queue\] waiting for a free slot/.test(line)) text = "Waiting for a free slot: Bot is busy with other tasks";
     else if (/^\[queue\] waiting for an earlier question/.test(line)) text = "Waiting for your earlier question about the same course to finish";
     else if (/^\[queue\] waiting for the file to be read/.test(line)) text = "Waiting for the file to be read (Bot answers when it is done)";
     else if (/^\[queue\] started/.test(line)) text = "Starting";
-    if (m && /^\[planner\] step/.test(line)) {
-      const n = total || started.size;
-      const done = finished.size;
-      const running = [...started].filter((id) => !finished.has(id));
-      if (done >= n) text = "All steps finished";
-      else if (running.length > 1) text = `Working on ${running.length} steps at once (${done} of ${n} done)`;
-      else if (running.length === 1) text = `Working on step ${running[0]} of ${n} (asking ${models.get(running[0])})`;
-      else text = `${done} of ${n} steps done`;
-    }
   }
   return text;
 }

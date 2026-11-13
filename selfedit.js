@@ -25,7 +25,12 @@ const { ID_PATTERN } = require("./store");
 // store.js validates conversation ids, selfedit.js is this safety gate itself, and the rest
 // protect secrets, git, and your private chats.
 // gitops.js is protected because it pushes to GitHub.
-const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", "gitops.js", "auth.js", "preview.js", ".gitignore", ".gitattributes", "start-web.cmd"];
+// brain.js holds the code checks on every tool call the models ask for (Omri decided 2026-11-12; added 2026-11-13).
+// brain-brief.md stays editable: changing the briefing is how Bot is tuned.
+// The starter and watchdog files run with Omri's own rights at every login (the scheduled task "Bot"), and improve-watch.js is run
+// by name by another scheduled task: a change there would run unseen later, so they are protected too (2026-11-13).
+const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", "gitops.js", "auth.js", "preview.js", "brain.js", ".gitignore", ".gitattributes", "start-web.cmd",
+  "start-hidden.vbs", "stop-bot.cmd", "watchdog.cmd", "bot-watchdog.vbs", "autostart.ps1", "install-autostart.cmd", "remove-autostart.cmd", "improve-watch.js"];
 const PROTECTED_PREFIXES = [".git/", ".github/", "data/", "node_modules/"];
 
 function isProtected(file) {
@@ -47,7 +52,7 @@ Make the change the user asks for. Keep it as small and clear as you can, in the
 
 You can only read and edit files in this folder. You cannot run commands, so add or update tests for what you change (the project uses Node's built-in test runner; test files end in .test.js and live in the tests folder) and reason carefully about whether they will pass.
 
-Do not touch these files: server.js, selfedit.js, store.js, gitops.js, .gitignore, start-web.cmd, anything inside data/ or .git/. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
+Do not touch these files: ${PROTECTED_FILES.join(", ")}, any .env file, anything inside ${PROTECTED_PREFIXES.join(" or ")}. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
 
 When you finish, reply with a short summary (3 to 6 lines): what you changed, why, and anything the user should check.`;
 

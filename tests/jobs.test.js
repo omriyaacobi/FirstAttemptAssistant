@@ -19,10 +19,12 @@ const gate = () => { let release; const wait = new Promise((r) => (release = r))
 
 test("describeProgress turns log lines into plain words", () => {
   assert.match(describeProgress([]), /Starting/);
-  assert.match(describeProgress(["[frontdesk] asking gemini/gemini-3.8-flash-high"]), /front desk/i);
-  assert.match(describeProgress(["[frontdesk] asking x", "[frontdesk] decision: delegate -> claude-sonnet (r)", "[router] trying claude/sonnet"]), /Asking sonnet/);
-  assert.match(describeProgress(["[router] trying claude/sonnet", "[router] claude/sonnet failed: boom"]), /sonnet did not answer/);
+  assert.strictEqual(describeProgress(["[brain] reading your message"]), "Reading your message");
+  assert.strictEqual(describeProgress(["[brain] asking gemini-4-argon-low"]), "Asking gemini-4-argon-low");
+  assert.strictEqual(describeProgress(["[brain] reading your message", "[brain] asking gemini-4-argon-low"]), "Reading your message (gemini-4-argon-low)");
+  assert.match(describeProgress(["[brain] asking a", "[brain] gemini-4-argon-low failed after 3 s: boom"]), /argon-low did not answer, trying the next model/);
   assert.match(describeProgress(["[quota] low: x"]), /Starting/); // unknown lines change nothing
+  assert.match(describeProgress(["[frontdesk] asking x"]), /Starting/); // the old front desk is gone, its lines mean nothing now
 });
 
 test("describeProgress says which lecture a course answer is reading, and what the study coach is doing", () => {
@@ -34,16 +36,12 @@ test("describeProgress says which lecture a course answer is reading, and what t
   assert.match(describeProgress(["[study] progress"]), /progress/);
 });
 
-test("describeProgress counts planner steps", () => {
-  const plan = ["[planner] 3 step(s), planned by gemini/flash"];
-  assert.match(describeProgress(plan), /3 steps/);
-  const one = [...plan, "[planner] step 1 (quick) starting: gemini/flash"];
-  assert.strictEqual(describeProgress(one), "Working on step 1 of 3 (asking flash)");
-  const all = [...one, "[planner] step 2 (code) starting: claude/sonnet", "[planner] step 3 (hard) starting: gemini/argon"];
-  assert.match(describeProgress(all), /3 steps at once \(0 of 3 done\)/);
-  const some = [...all, "[planner] step 1 done by gemini/flash", "[planner] step 2 FAILED: x"];
-  assert.match(describeProgress(some), /step 3 of 3/);
-  assert.match(describeProgress([...some, "[planner] step 3 done by x", "[planner] all steps finished"]), /All steps finished/);
+test("describeProgress names every brain tool, newer ones too (2026-11-13)", () => {
+  assert.strictEqual(describeProgress(["[brain] tool project_read (Systems Programming)"]), "Reading your code (Systems Programming)");
+  assert.strictEqual(describeProgress(["[brain] tool pc_find"]), "Searching your PC by name");
+  assert.strictEqual(describeProgress(["[brain] tool moodle_news (Algebra)"]), "Reading the Moodle announcements (Algebra)");
+  assert.strictEqual(describeProgress(["[brain] tool teach_next"]), "Preparing the lesson");
+  assert.strictEqual(describeProgress(["[brain] tool something_new"]), "Working on it");
 });
 
 test("a job runs in the background and the answer is saved without anyone watching", async () => {

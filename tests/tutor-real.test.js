@@ -8,7 +8,7 @@ const path = require("node:path");
 const { createTracker } = require("../study-tracker");
 const plan = require("../study-plan");
 const tutor = require("../tutor");
-const { sandbox } = require("../pagesandbox");
+const { sandbox } = require("./pagesandbox");
 
 const NOW = new Date("2026-11-07T12:00:00+02:00").getTime();
 const SP = { key: "sp", courseId: "a".repeat(16), name: "Systems Programming" };

@@ -172,6 +172,15 @@ function watchSteps() {
     extra: () => ({ turns: Math.max(1, turns.size), inner: inner.slice() }),
   };
 }
+// What one agy call reports to onUsage: its tokens plus its steps. The tool names (inner) are reported even when agy sent no token
+// numbers: the brain uses them to know a web page was read (no doing-tools after it), and that must not depend on the token count.
+// null = nothing to report (no tokens and no tool).
+function usageWithSteps(usage, steps) {
+  const cost = readUsage(usage);
+  const extra = steps.extra();
+  if (cost) return { ...cost, ...extra };
+  return extra.inner.length ? { input: 0, output: 0, thinking: 0, cacheRead: 0, ...extra } : null;
+}
 const tell = (fn, value) => { if (fn && value) { try { fn(value); } catch (error) { /* counting tokens must never break an answer */ } } };
 
 // Claude Code CLI. The question goes in through stdin so special characters are safe.
@@ -243,7 +252,7 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
         } else if (event.event === "result") {
           const result = event.result || {};
           killTree(child);
-          { const cost = readUsage(result.usage); tell(onUsage, cost && { ...cost, ...steps.extra() }); } // a failed call was paid for too
+          tell(onUsage, usageWithSteps(result.usage, steps)); // a failed call was paid for too
           if (result.status && result.status !== "SUCCESS") finish(reject, new Error("agy status " + result.status));
           else finish(resolve, String(result.response ?? text).trim());
         }
@@ -256,12 +265,13 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
 
 // The brain looking at a photo: the same streaming call (the long prompt goes through stdin, never the command line), run in a
 // brand-new EMPTY folder that holds only a copy of the photo under a fixed name ("photo.png"). The folder is deleted afterwards.
-async function askAgyStreamWithImage(model, question, imagePath, onText = () => {}, { stream = askAgyStream } = {}) {
+// onUsage (optional): what the call cost in tokens, like every other brain call (so photo messages are in the token log too).
+async function askAgyStreamWithImage(model, question, imagePath, onText = () => {}, { stream = askAgyStream, onUsage = null } = {}) {
   checkModelName(model);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
   try {
     fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
-    return await stream(question, model, onText, { cwd: dir, timeoutMs: imageTimeoutFor(model) });
+    return await stream(question, model, onText, { cwd: dir, timeoutMs: imageTimeoutFor(model), onUsage });
   } finally {
     cleanWorkDir(dir);
   }
@@ -465,5 +475,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { watchSteps, ensureAgent, readUsage, BRAIN_AGENT, BRAIN_DIR, imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { watchSteps, usageWithSteps, ensureAgent, readUsage, BRAIN_AGENT, BRAIN_DIR, imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };

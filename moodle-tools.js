@@ -46,7 +46,9 @@ function explain(error, lang = "en") {
 function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, now = () => Date.now() }) {
   const mapFile = path.join(dataDir, "moodle-map.json");
   const readMap = () => { try { const m = JSON.parse(fs.readFileSync(mapFile, "utf8")); return { links: m.links || {}, fetched: m.fetched || {} }; } catch (error) { return { links: {}, fetched: {} }; } };
-  const writeMap = (m) => { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(mapFile, JSON.stringify(m, null, 2)); };
+  // Written to a temporary file first, then renamed into place (like profile.js), so a crash halfway never leaves a broken map
+  // (a broken map reads as empty: the course links and the "already downloaded" list would be lost).
+  const writeMap = (m) => { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(mapFile + ".tmp", JSON.stringify(m, null, 2)); fs.renameSync(mapFile + ".tmp", mapFile); };
   let coursesCache = { at: 0, list: null };
 
   async function moodleCourses() {

@@ -445,11 +445,17 @@ test("the protected list still names files that exist, and a moved file would be
   assert.strictEqual(isProtected("tests/core.test.js"), false);
 });
 
+test("the editor is told about EVERY protected file (the line is built from the list, so it cannot fall behind)", () => {
+  const { PROTECTED_FILES, EDITOR_RULES } = require("../selfedit");
+  const line = EDITOR_RULES.split("\n").find((l) => l.startsWith("Do not touch"));
+  for (const f of PROTECTED_FILES) assert.ok(line.includes(f), f);
+});
+
 test("isProtected: security files, secrets, git and data are protected; normal files are not", () => {
-  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", "gitops.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
+  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", "gitops.js", "brain.js", "watchdog.cmd", "bot-watchdog.vbs", "Start-Hidden.vbs", "autostart.ps1", "improve-watch.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
     assert.strictEqual(isProtected(file), true, file);
   }
-  for (const file of ["public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js"]) {
+  for (const file of ["public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js", "brain-brief.md"]) {
     assert.strictEqual(isProtected(file), false, file);
   }
 });

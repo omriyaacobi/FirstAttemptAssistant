@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createThreadStore, dayOf } = require("../thread-store");
-const { importChats, verifyImport, exportConversations, importedId } = require("../thread");
+const { importChats, verifyImport, exportConversations, importedId } = require("../tools/thread");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-thread-"));
 const T0 = new Date(2026, 10, 5, 10, 0, 0).getTime(); // local time, so the day is stable

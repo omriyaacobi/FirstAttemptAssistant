@@ -1,9 +1,9 @@
-// thread.js
+// tools/thread.js (in the root until 2026-11-13; the old chats were imported when the thread was switched on, so it is kept only for the record and for a re-check)
 // Moves Bot's OLD chats into the thread (and back out). Used from the command line, by you:
 //
-//   node thread.js import                  copy every old chat (data/conversations/) into the thread. Safe to run twice.
-//   node thread.js verify-import           check the copy is complete (counts, a hash of all texts, a search test)
-//   node thread.js export-conversations <new empty folder>
+//   node tools/thread.js import                  copy every old chat (data/conversations/) into the thread. Safe to run twice.
+//   node tools/thread.js verify-import           check the copy is complete (counts, a hash of all texts, a search test)
+//   node tools/thread.js export-conversations <new empty folder>
 //                                          write the messages made AFTER the switch as ordinary chat files into a NEW
 //                                          folder (a plain copy of the old chats)
 //   add  --data <folder>  to work on another data folder (tests use a temporary copy)
@@ -14,8 +14,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { createThreadStore, dayOf, ID_PATTERN } = require("./thread-store");
-const { createIndex, search } = require("./search");
+const { createThreadStore, dayOf, ID_PATTERN } = require("../thread-store");
+const { createIndex, search } = require("../search");
 
 const CHAT_FILE = /^[a-f0-9]{16}\.json$/;
 const MAX_CHAT_MESSAGES = 200; // what the old store keeps per file; export splits longer days into parts
@@ -173,7 +173,7 @@ function exportConversations({ threadDir, outDir, conversationsDir = null, all =
 function main(argv) {
   const args = argv.slice(2);
   const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args.splice(i, 2)[1] : null; };
-  const dataDir = path.resolve(flag("--data") || path.join(__dirname, "data"));
+  const dataDir = path.resolve(flag("--data") || path.join(__dirname, "..", "data"));
   const wantAll = args.includes("--all") ? (args.splice(args.indexOf("--all"), 1), true) : false;
   const [command, target] = args;
   const paths = { conversationsDir: path.join(dataDir, "conversations"), threadDir: path.join(dataDir, "thread") };
@@ -182,7 +182,7 @@ function main(argv) {
     console.log("Tip: run  node backup.js run  first, so an encrypted backup exists.");
     const r = importChats(paths);
     console.log(`Done: ${r.chats} chats, ${r.added} messages added, ${r.skipped} already there.`);
-    console.log("Now run:  node thread.js verify-import");
+    console.log("Now run:  node tools/thread.js verify-import");
   } else if (command === "verify-import") {
     const r = verifyImport(paths);
     for (const c of r.checks) console.log(`${c.ok ? "PASS" : "FAIL"}  ${c.name}: ${c.detail}`);
@@ -192,7 +192,7 @@ function main(argv) {
     const r = exportConversations({ ...paths, outDir: target, all: wantAll });
     console.log(`Wrote ${r.messages} messages as ${r.files} chat file(s) into ${path.resolve(target)}. Copy them into data/conversations by hand if you want them back in the old list.`);
   } else {
-    console.log("Usage: node thread.js import | verify-import | export-conversations <new empty folder>   [--data <folder>] [--all]");
+    console.log("Usage: node tools/thread.js import | verify-import | export-conversations <new empty folder>   [--data <folder>] [--all]");
     process.exitCode = 1;
   }
 }

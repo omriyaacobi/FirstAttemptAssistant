@@ -5,7 +5,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("fs");
 const path = require("path");
-const { html, script, sandbox, tags, find } = require("../pagesandbox");
+const { html, script, sandbox, tags, find } = require("./pagesandbox");
 
 test("headings, bold, italics and rules show no ### or ** characters", () => {
   const box = sandbox.renderText("### Title\nSome **bold** and *slanted* words\n***\n## Next");

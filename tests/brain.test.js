@@ -52,6 +52,48 @@ test("parseReply: CALL lines become calls, anything else is the answer", () => {
   assert.strictEqual(parseReply('```\nCALL {"tool":"a"}\n```').calls.length, 1);
 });
 
+test("course_read: reads a file from a page, and past the last page says the file has ended (review 1.6)", async () => {
+  const { brain, seen } = setup(['CALL {"tool":"course_read","course":"Systems Programming","file":"notes.html"}\nCALL {"tool":"course_read","course":"Systems Programming","file":"notes.html","from_page":5}', "Done."]);
+  await run(brain, "read the notes");
+  const results = seen.prompts[1];
+  assert.match(results, /notes\.html, pages 1-1 of 1\. That is the end of the file\./);
+  assert.match(results, /notes\.html has 1 page, so there is nothing from page 5 on/);
+  assert.ok(!/pages 5-4/.test(results));
+});
+
+test("CODE BLOCKS keep their closing fence: an answer with two code blocks reaches Omri whole (review 4.2)", async () => {
+  const { withoutCalls } = require("../brain");
+  const answer = "Use a loop:\n\n```c\nfor (int k = 0; k < n; k++) {\n    total += k;\n}\n```\n\nThen print it:\n\n```c\nprintf(\"%d\\n\", total);\n```\n\nWhat does total hold after the loop?";
+  assert.strictEqual(withoutCalls(answer), answer); // nothing is taken away from a normal answer
+  const { brain } = setup([answer]);
+  assert.strictEqual((await run(brain, "how do I sum the numbers")).answer, answer);
+  // fences the model put AROUND its CALL lines still go, and the reply under them is kept
+  assert.strictEqual(withoutCalls('```\nCALL {"tool":"set_reminder"}\n```\nReminder set.'), "Reminder set.");
+  assert.strictEqual(withoutCalls('```json\nCALL {"tool":"a"}\nCALL {"tool":"b"}\n```\n\nDone.'), "Done.");
+  // a block the model left open is closed, so the rest of the page is not swallowed by it
+  assert.strictEqual(withoutCalls("Try:\n```c\nint x = 1;"), "Try:\n```c\nint x = 1;\n```");
+});
+
+test("CODE BLOCKS: the quick finish under CALL lines keeps its code block too", async () => {
+  const { brain } = setup(['CALL {"tool":"set_reminder","text":"submit ex2","when":"2026-11-11T09:00"}\nSet. Meanwhile this is the line to fix:\n```c\nchar buf[16];\n```']);
+  const r = await run(brain, "remind me tomorrow at 9 to submit ex2");
+  assert.strictEqual(r.answer, "Set. Meanwhile this is the line to fix:\n```c\nchar buf[16];\n```");
+});
+
+test("LANGUAGE: the prompt says plainly which language the new message is in; a real mix gets no line (review 4.3)", async () => {
+  const { languageLine } = require("../brain");
+  assert.match(languageLine("which sorting algorithm is stable, merge sort or quick sort?"), /in English: write the reply in English/);
+  assert.match(languageLine("למה הלולאה שלי לא נעצרת?"), /in Hebrew: write the reply in Hebrew/);
+  // English code inside a Hebrew question does not make it English
+  assert.match(languageLine("מה לא בסדר פה? `for (int k = 0; k < n; k++)`"), /in Hebrew/);
+  assert.match(languageLine("מה לא בסדר?\n```c\nint main(void) { return counter_value; }\n```"), /in Hebrew/);
+  assert.strictEqual(languageLine("ok"), ""); // too short to tell
+  assert.strictEqual(languageLine("תבדוק את ה merge sort function שלי please"), ""); // a real mix: the model decides
+  const { brain, seen } = setup(["Fine."]);
+  await run(brain, "why does my loop never stop");
+  assert.match(seen.prompts[0], /<\/message>\n\(This message is in English/);
+});
+
 test("looksLikeCall: undecided for the first characters, then yes or no", () => {
   assert.strictEqual(looksLikeCall("CA"), null);
   assert.strictEqual(looksLikeCall("Sure, here"), false);
@@ -195,6 +237,15 @@ test("a photo is a normal brain message: the photo model sees the full context a
   assert.strictEqual(calls[0].imagePath, "C:/tmp/x.png");
   assert.match(calls[0].prompt, /attached a photo\. It is the file "photo\.png"/);
   assert.match(calls[0].prompt, /The course this talk is in: Systems Programming/);
+});
+
+test("a photo message is in the token log too: the photo model's onUsage is passed on (review 1.3)", async () => {
+  const added = [];
+  const askImage = async (model, prompt, imagePath, onText, extra = {}) => { if (extra.onUsage) extra.onUsage({ input: 900, output: 20 }); return "A cat."; };
+  const { brain } = setup([], { askImage, photoChain: [{ provider: "agy", model: "photo-a" }], tokenLog: { add: (calls) => added.push(calls) } });
+  const r = await run(brain, "what is this?", { image: { path: "x.png" } });
+  assert.strictEqual(r.answer, "A cat.");
+  assert.deepStrictEqual(added, [[{ model: "photo-a", input: 900, output: 20 }]]);
 });
 
 test("a photo: the second photo model takes over when the first fails", async () => {
