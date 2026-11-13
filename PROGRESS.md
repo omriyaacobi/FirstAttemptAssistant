@@ -46,7 +46,9 @@ The morning brief is now a small newspaper. Choices and reasons: `experiments/20
   summary, and nothing can act on them. Only the Flash pool is used (Omri agreed); never Argon or Claude.
 - **To try after the merge:** turn the morning brief on in the page and set 08:30; "Show me one now" makes one at once (it uses the
   news pile). The log lines start with `[news]` and `[brief]` in `data/bot.log`.
-- **Open:** Flash high vs medium was not measured with real calls (Omri agreed to high). Links are in the alerts, not in the brief
+- **Measured live 2026-11-13 (2 runs, real feeds, made-up ledger):** the news pick by Flash high took about 3.5 minutes and about
+  39,000 tokens (28,000 of them thinking); by Flash medium about 50 s. The "You" call timed out on Flash high twice (90 s, then 4 min)
+  and Flash medium wrote 3 checked lines. So with high first the brief arrives around 08:35, not 08:32. Open: Omri decides high or medium first. Links are in the alerts, not in the brief
   (to keep it one screen).
 
 ## Review of 2026-11-13 (branch claude/fable-improve-c73f00, NOT merged yet)
