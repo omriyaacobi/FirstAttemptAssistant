@@ -78,7 +78,7 @@ function describeProgress(lines) {
 // thread (optional, BOT_THREAD=on): the thread store (thread-store.js); with it, startThread() works. courses() gives the real course list
 // [{ id, name }], studyState() one line per course written by code (the study tracker), courseName(id) the name for a label. All three
 // are safe to leave out. With no thread, nothing below changes: start() is exactly what it was.
-function createJobs({ handle, handleCourse = null, cardNote = null, store, thread = null, summaries = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
+function createJobs({ handle, handleCourse = null, cardNote = null, store, thread = null, summaries = null, onMessage = null, courses = () => [], studyState = () => "", courseName = null, maxRunning = 2, onFinish = () => {}, now = Date.now }) {
   const jobs = new Map(); // id -> job
   let runningCount = 0;
 
@@ -278,6 +278,8 @@ function createJobs({ handle, handleCourse = null, cardNote = null, store, threa
     const running = threadJobs().filter((j) => j.status === "running");
     // The first message of a new day starts the daily summaries in the background (thread-summary.js); it never delays this message.
     if (summaries) { try { Promise.resolve(summaries.catchUp()).catch(() => {}); } catch (error) { /* a summary problem never blocks a message */ } }
+    // onMessage (server.js: morning.early): Omri's first message before the brief time starts the morning brief; never waited for.
+    if (onMessage) { try { onMessage(); } catch (error) { /* the brief never blocks a message */ } }
     // The memory for this message: built BEFORE its own question is saved, from finished messages only. Questions still being
     // answered become one "still working on" line each.
     const history = buildHistory(thread, {

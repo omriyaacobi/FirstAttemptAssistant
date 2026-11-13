@@ -17,7 +17,7 @@ const MAX_CHATS = 200; // newest first; a chat holds at most 200 messages (store
 const MAX_FOUND = 4;
 const MAX_EXCERPT_CHARS = 500;
 const MATCH_FLOOR = 0.4; // at least this share of the best match
-const PRIVATE_RULES = new Set(["calendar (read-only)", "morning brief"]);
+const PRIVATE_RULES = new Set(["calendar (read-only)", "morning brief", "news alert"]);
 
 const cut = (text, max) => { const t = String(text).replace(/\s+/g, " ").trim(); return t.length > max ? t.slice(0, max - 1) + "…" : t; };
 

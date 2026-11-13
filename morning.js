@@ -10,15 +10,27 @@
 //
 // Settings live in data/morning.json (git-ignored): { on, time, lastDay }. lastDay is saved BEFORE sending, so a crash can
 // never send the brief twice.
+//
+// Since 2026-11-13 (Omri's choice, experiments/2026-11-13-morning-brief-options.md) the brief is a small morning NEWSPAPER:
+//   - at the brief time (default 08:30) news.js fetches the feeds one last time and one checked Flash high call picks the news;
+//     the brief follows right after (about 08:32). The push still shows counts only.
+//   - "You": brief-me.js (yesterday's progress log + what is due + what is behind, written by Flash high, every line checked by code).
+//   - EARLY: from EARLY_FROM (05:00) until the brief time, Omri's first message of the day starts the brief at once (early()); it
+//     arrives a little after the answer. Then the timer sees lastDay and does not send a second one.
+//   - alert(): a very big news item found by a daytime check (news.js) is posted at once; no push in quiet hours, and the push
+//     never shows the headline.
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { localIso, formatWhen } = require("./reminders");
 const { readCalendar, friendlyError } = require("./calendar-chat");
+const { inQuietHours } = require("./study-plan");
 
 const TICK_MS = 30 * 1000;
 const CATCH_UP_HOURS = 4;
-const DEFAULT_TIME = "08:00";
+const DEFAULT_TIME = "08:30";
+const EARLY_FROM = "05:00";
+const NEWS_PUSH_QUIET = { from: "22:00", to: "08:00" }; // a news alert at night is posted without a push
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -26,7 +38,8 @@ const minutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5
 const clean = (text) => String(text).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-function createMorning({ file, store, reminders, push, study = null, thread = null, calendar = readCalendar, now = () => Date.now(), timezone = localZone(), log = () => {} }) {
+// news: news.js (or null). aboutMe: async () => { text } | null (brief-me.js, wired in server.js). Both are optional.
+function createMorning({ file, store, reminders, push, study = null, thread = null, news = null, aboutMe = null, calendar = readCalendar, now = () => Date.now(), timezone = localZone(), log = () => {} }) {
   if (!file) throw new Error("createMorning needs a file");
   let timer = null;
 
@@ -84,17 +97,26 @@ function createMorning({ file, store, reminders, push, study = null, thread = nu
     if (pending.length) lines.push("Reminders today\n" + pending.map((r) => `  ${formatWhen(r.at, r.timezone).split(", ").pop()}  ${clean(r.text)}`).join("\n"));
     const missed = reminders.list().filter((r) => r.status === "fired");
     if (missed.length) lines.push("Reminders you have not seen yet\n" + missed.map((r) => `  ${clean(r.text)}`).join("\n"));
+    // "You" and the news are made at the same time (each is one Flash call); a failure is one honest line, never a lost brief.
+    const [me, newsBlock] = await Promise.all([
+      aboutMe ? Promise.resolve().then(aboutMe).catch((error) => { log(`[morning] "You" part failed: ${error.message}`); return null; }) : null,
+      news ? news.briefBlock().catch((error) => { log(`[morning] news failed: ${error.message}`); return null; }) : null,
+    ]);
+    if (me && me.text) lines.push(me.text);
     // The study coach (study-nudges.js): at most one code-written line a day. The push gets a count only, never a name.
     let studyBlock = null;
     try { studyBlock = study ? study.morningBlock() : null; } catch (error) { log(`[morning] study line failed: ${error.message}`); }
     if (studyBlock) lines.push(studyBlock.text);
-    return { text: `Good morning. Here is your day.\n\n${lines.join("\n\n")}`, summary: `Today: ${plural(events, "event")}, ${plural(pending.length, "reminder")}${studyBlock ? `, ${studyBlock.count} study item` : ""}.` };
+    // The news is always LAST: thread-context.js puts everything from its heading on inside the <news-data> markers.
+    if (newsBlock && newsBlock.text) lines.push(newsBlock.text);
+    const newsCount = newsBlock ? newsBlock.count || 0 : 0;
+    return { text: `Good morning. Here is your day.\n\n${lines.join("\n\n")}`, summary: `Today: ${plural(events, "event")}, ${plural(pending.length, "reminder")}${studyBlock ? `, ${studyBlock.count} study item` : ""}${newsCount ? `, ${plural(newsCount, "news item")}` : ""}.` };
   }
 
   // Writes today's brief into a new chat and tells the phones.
   async function send() {
     const { text, summary } = await compose();
-    const result = { mode: "single", rule: "morning brief", reason: "you turned on the morning brief", chain: [], used: { provider: "code", model: "no model" }, answer: text, seconds: 0 };
+    const result = { mode: "single", rule: "morning brief", reason: "you turned on the morning brief", chain: [], used: { provider: "code", model: news || aboutMe ? "code, with Gemini Flash picking the news and writing the You lines (checked by code)" : "no model" }, answer: text, seconds: 0 };
     let saved;
     if (thread) {
       // The one conversation: the brief is ONE message in the thread, not a new chat. recall.js skips it (rule "morning brief").
@@ -122,6 +144,28 @@ function createMorning({ file, store, reminders, push, study = null, thread = nu
     write({ ...settings, lastDay: today() });
     await send();
     return true;
+  }
+
+  // Omri's first message of the day, between EARLY_FROM and the brief time: the brief is made now (in the background), not at
+  // the set time. Returns true when it started one. It never delays the message (jobs.js does not wait for it).
+  function early() {
+    const settings = read();
+    const minute = minuteOfDay();
+    if (!settings.on || settings.lastDay === today() || minute < minutes(EARLY_FROM) || minute >= minutes(settings.time)) return false;
+    write({ ...settings, lastDay: today() });
+    log("[morning] early brief: Omri wrote before the brief time");
+    send().catch((error) => log(`[morning] early brief failed: ${error.message}`));
+    return true;
+  }
+
+  // A very big news item from a daytime check (news.js onAlert): one message in the thread; the push says only how many, and
+  // none in quiet hours. Its text stays out of recall and the daily summary (rule "news alert") and is marked as data in the memory.
+  async function alert({ text, count }) {
+    const result = { mode: "single", rule: "news alert", reason: "a daytime news check found a very big event", chain: [], used: { provider: "code", model: "Gemini Flash picked it, code wrote it" }, answer: text, seconds: 0 };
+    if (thread) thread.append({ role: "assistant", text, result, topic: "general", at: now() });
+    else { const chat = store.create(`Big news, ${today()}`); store.append(chat.id, [{ role: "assistant", text, result, at: now() }]); }
+    if (inQuietHours(now(), NEWS_PUSH_QUIET, timezone)) { log("[news] alert posted without a push (quiet hours)"); return; }
+    try { await push.notifyAll({ title: "Bot", body: `${plural(count, "important news item")}. Open Bot to read.`, tag: `news-${now()}` }); } catch (error) { log(`[news] push failed: ${error.message}`); }
   }
 
   function start(intervalMs = TICK_MS) {
@@ -167,7 +211,7 @@ function createMorning({ file, store, reminders, push, study = null, thread = nu
     return false;
   }
 
-  return { settings: () => { const { on, time } = read(); return { on, time }; }, update, compose, send, tick, start, stop, handle };
+  return { settings: () => { const { on, time } = read(); return { on, time }; }, update, compose, send, tick, early, alert, start, stop, handle };
 }
 
-module.exports = { createMorning, DEFAULT_TIME, CATCH_UP_HOURS };
+module.exports = { createMorning, DEFAULT_TIME, CATCH_UP_HOURS, EARLY_FROM };
