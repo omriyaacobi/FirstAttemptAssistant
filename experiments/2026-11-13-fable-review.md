@@ -62,7 +62,7 @@ of `data/` is being made. That is for Omri to set (`.env`, the passphrase is the
 | 5.2 | Long answers on the phone: code knows when a message comes from the phone (`fromPhone`); tell the model so it keeps the reply to about one phone screen unless Omri asks for more. | S | done |
 | 5.3 | Trim `study-coach.js` (= 3.4, second half). The brain calls `answerStudy` only with progress (always the fixed text "where am I"), quiz, answer, confirm and cancel. The intents update / plan / motivate / assignment / teach / start / pause / resume, the word lists that rerouted Omri's words between them, and `studyLine` / `questionLine` / `interpretUpdate` (front desk prompt lines) are reached by nothing. Delete them and the tests that only test them; keep brainTools, onUpload, the cards, progress, quiz and answer. | M | backed out, plan below |
 | 5.4 | `moodle_link` also sets the answer's course (as 5.1 did for the other Moodle tools). | S | done |
-| 5.5 | The old chat list (`jobs.start`, `/api/conversations`, the non-thread parts of `public/index.html`): remove only if the page can be checked; otherwise a written plan. | M | proposal: own session that starts a test copy of Bot on another port and checks the page in a browser after each step |
+| 5.5 | The old chat list (`jobs.start`, `/api/conversations`, the non-thread parts of `public/index.html`): remove only if the page can be checked; otherwise a written plan. | M | proposal, mapped below (own fresh session) |
 | 5.6 | **Cancelled classes:** CLAUDE.md says cancelled classes are told to Bot in chat. That only worked through the old "update" intent (removed in 5.3; the brain could not reach it since 2026-11-12). Proposal: a checked tool `class_cancelled {"course","date"}` whose date code checks against the timetable (a real lecture of that course), with an undo, like study_position. Needs Omri's yes (it changes the study record). | S | proposal |
 | 5.7 | `tutor.js` still has the "teach through the assignment" mode (`through`, `workText`) and `study-positions.js` the old multi-course reader; nothing reaches them since 5.3. Remove with their tests. | S | done |
 
@@ -77,6 +77,23 @@ the exam card, the "no" undo, Hebrew wording) through the removed entry points: 
 position / exam / undo` (as `tests/brain-study.test.js` does) instead of deleting, so coverage does not drop. The list of the 73 with
 a first sorting is `study-coach-trim-failing-tests.txt` in the same folder. Also then: `study-positions.js` keeps only
 `POSITION_CHAIN` for `standing.js` (`checkPositions` / `proposePositions` would be test-only). Do it in a fresh session (big context).
+
+**Map for 5.5 (the old list of chats), for the session that removes it.** Not started on 2026-11-13: it is one long careful job and this
+session's context was too full for it. Where the old code is:
+- `public/index.html` (3,650 lines): `chatButtons`, `loadChats`, `openChat`, `renderConversation`, `newChat`, `deleteChat`,
+  `chatMarker`, `updateChatName` (about lines 1210-1340, 1450, 1700); the job follower that skips itself when `session.thread`
+  (about 1550); the send path that posts `conversationId` (about 1600); the course page link to a chat (about 2470, 3265). Every
+  `if (session.thread)` / `!session.thread` branch keeps only its thread side.
+- `server.js`: `GET/DELETE /api/conversations(/:id)` and the non-thread half of `/api/ask` (`jobs.start`).
+- `jobs.js`: `start()` and its helpers; `course-routes.js`: the course chats (`store.create`, `chatsOf`).
+- `store.js` is protected from Improve Bot; `tools/thread.js`'s import already copied the old chats into the thread.
+- Decide with Omri first: `CLAUDE.md` says the old chats "can only be read"; removing the routes removes that reading (the copies in
+  the thread stay).
+
+How to check the page safely: start the WORKTREE's server on another port (`PORT=3100`, from the worktree, so it uses the worktree's own
+empty `data/`), with `AGY_CMD` and `CLAUDE_CMD` pointing at a file that does not exist, so a test message fails at once and spends no
+quota. Look at the thread view, sending a message, the course page and Improve Bot (open only) in the built-in browser before and after
+each step, then stop that server.
 
 ## Not changed on purpose
 
