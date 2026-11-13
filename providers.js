@@ -32,6 +32,10 @@ function claudeEnv() {
   return token ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token } : process.env;
 }
 const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bin\\agy.exe";
+// agy's own auto-updater starts a detached "agy --bg-updater" that runs "agy --version" in a NEW console window: the
+// 0.1 s black flash over a game (caught in a process log 2026-11-13). Every agy call Bot makes inherits this, so the
+// updater never runs from Bot. agy still updates when Omri uses it directly or runs "agy update".
+process.env.AGY_CLI_DISABLE_AUTO_UPDATE = "true";
 
 // How long one model gets before it is killed and the next model in the chain takes over.
 // One named constant each; the first matching word in the model name decides (see timeoutFor).
