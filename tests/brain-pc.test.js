@@ -126,6 +126,15 @@ test("from the phone it still opens on the PC, and the result tells the model to
   assert.match(lastPrompt(seen), /Omri wrote from the phone/);
 });
 
+test("from the phone the model is asked to keep the reply to about one phone screen; from the PC it is not (review 5.2)", async () => {
+  const a = setup(["Short answer."]);
+  await run(a.brain, "explain recursion", { fromPhone: true });
+  assert.match(a.seen.prompts[0], /writing from the phone: keep the reply to about one phone screen/);
+  const b = setup(["Answer."]);
+  await run(b.brain, "explain recursion");
+  assert.ok(!/writing from the phone/.test(b.seen.prompts[0]));
+});
+
 test("a Moodle item opens by code-built address, also after reading Moodle; not after a web page", async () => {
   const moodle = { openTarget: async (c, item) => ({ url: `https://moodle.bgu.ac.il/moodle/mod/assign/view.php?id=${item}`, label: '"Ex 3"' }), courseText: async () => "items", explain: (e) => e.message };
   const a = setup(['CALL {"tool":"moodle_course","course":"Systems Programming"}', 'CALL {"tool":"open_on_pc","moodle":"Systems Programming","item":"77"}\nOpened.'], { moodle });
@@ -134,6 +143,19 @@ test("a Moodle item opens by code-built address, also after reading Moodle; not 
   const b = setup(['CALL {"tool":"read_link","url":"https://example.com/a"}', 'CALL {"tool":"open_on_pc","moodle":"Systems Programming","item":"77"}\nOpened.', "No."], { moodle });
   await run(b.brain, "read https://example.com/a and open the moodle item");
   assert.strictEqual(b.seen.started.length, 0);
+});
+
+test("a Moodle lookup sets the answer's course from the name the tool was given, even when Moodle is logged out (review 5.1)", async () => {
+  const loggedOut = Object.assign(new Error("logged out"), { code: "login" });
+  const moodle = { courseText: async () => { throw loggedOut; }, explain: () => "Moodle logged you out" };
+  const { brain } = setup(['CALL {"tool":"moodle_course","course":"calc"}', "Moodle logged you out."], { moodle });
+  // the talk before was about Systems Programming, but this message is about Calculus 2
+  const r = await run(brain, "show me the calc moodle page", { history: [{ role: "assistant", text: "...", courseId: "c1", at: Date.now() - 60000 }] });
+  assert.strictEqual(r.courseName, "Calculus 2");
+  // a name that fits no course (or a Moodle id) changes nothing
+  const b = setup(['CALL {"tool":"moodle_course","course":"12345"}', "Done."], { moodle });
+  const r2 = await run(b.brain, "the moodle course 12345", { history: [{ role: "assistant", text: "...", courseId: "c1", at: Date.now() - 60000 }] });
+  assert.strictEqual(r2.courseName, "Systems Programming");
 });
 
 test("a found folder is linked only after Omri taps Confirm on the card", async () => {

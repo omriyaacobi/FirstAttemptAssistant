@@ -50,6 +50,17 @@ Sizes: S = under an hour, M = a few hours, L = its own session. Status: todo / d
 | 4.5 | **Long reviews:** "check my code" got a 2,000-character list of every small point. Briefing for code checks: the one or two problems that matter most first (with line numbers), the rest in one short line, then the next small step. | S | done |
 | 4.6 | Moodle was logged out, so a request to open a lecture from Moodle failed although that lecture was in Bot's own course files; Omri had to say so. Briefing: when Moodle cannot be read and the course already has the file, open or offer Bot's copy. | S | done |
 
+## 5. Roaming (after the merge of 2026-11-13, squash 50e0214)
+
+Checked first: the answer logs saved in the thread for 2026-11-10 to 13 (79 answers) show no model failures and no failed messages;
+`data/bot.log` only holds start and stop lines. It does show **`[backup] off: BOT_BACKUP_DIR is not set in .env`**: no encrypted backup
+of `data/` is being made. That is for Omri to set (`.env`, the passphrase is theirs).
+
+| # | What | Size | Status |
+|---|---|---|---|
+| 5.1 | The Moodle tools do not tell the brain which course they worked on, so an answer after a Moodle lookup is labelled with the course talked about before, and the NEXT message is answered with that old course's material (seen on 2026-11-12). Fix: `moodle_course`, `moodle_news`, `moodle_fetch`, `moodle_link` set the course when it maps to a Bot course. | S | done |
+| 5.2 | Long answers on the phone: code knows when a message comes from the phone (`fromPhone`); tell the model so it keeps the reply to about one phone screen unless Omri asks for more. | S | done |
+
 ## Not changed on purpose
 
 - `moodle.js` and `experiments/moodle-probe.js` stay (CLAUDE.md: kept for the day BGU allows scripts).

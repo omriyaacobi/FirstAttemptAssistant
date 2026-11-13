@@ -340,6 +340,19 @@ function createBrain({
     const patternFor = (c) => {
       try { const ref = refOf(c); const p = ref && (coach.tracker.timetable().courses || []).find((x) => x.key === ref.key); return p ? new RegExp(p.match, "i") : null; } catch (error) { return null; }
     };
+    // The Moodle tools name a course in their own words ("algo", a Bot name, a Moodle name). When exactly one Bot course fits that
+    // name (or its timetable pattern), it becomes the course of this answer, so the answer is labelled right and the NEXT message
+    // is answered with that course's material, not the one talked about before (seen 2026-11-12, while Moodle was logged out).
+    // Nothing is guessed: no fit or two fits leave the course as it was.
+    const aboutCourse = (name) => {
+      try {
+        const q = String(name == null ? "" : name).trim();
+        if (!q || /^\d+$/.test(q)) return;
+        const hit = matchCourse(q, list);
+        const fits = hit ? [hit] : list.filter((c) => { const re = patternFor(c); return !!re && re.test(q); });
+        if (fits.length === 1) ctx.course = fits[0];
+      } catch (error) { /* only a label */ }
+    };
     // Moodle reads: what comes back is untrusted data (it may hold anything a lecturer or student wrote). A bridge problem (Chrome closed,
     // logged out) is a plain answer for Omri, not a failure.
     const moodleRead = async (fn) => {
@@ -581,8 +594,8 @@ ${text}`; } catch (error) {
         throw new Error("say what to open: url, moodle (+ item), course + file, or found (a number of the last pc_find list)");
       },
       moodle_courses: async () => moodleRead(() => moodle.listText(patternFor)),
-      moodle_course: async ({ course }) => moodleRead(() => moodle.courseText(course, patternFor)),
-      moodle_news: async ({ course, count }) => moodleRead(() => moodle.newsText(course, patternFor, count)),
+      moodle_course: async ({ course }) => { aboutCourse(course); return moodleRead(() => moodle.courseText(course, patternFor)); },
+      moodle_news: async ({ course, count }) => { aboutCourse(course); return moodleRead(() => moodle.newsText(course, patternFor, count)); },
       // Which Bot course a Moodle course is: only decides where Moodle files go, both sides checked against the real lists.
       moodle_link: async ({ moodle: which, course }) => {
         afterWeb("link courses", { moodleOk: true });
@@ -594,6 +607,7 @@ ${text}`; } catch (error) {
       moodle_fetch: async ({ course, items }) => {
         afterWeb("download files", { moodleOk: true });
         if (!moodle) throw new Error("Moodle access is not set up in this Bot.");
+        aboutCourse(course);
         try {
           const r = await moodle.fetchFiles(course, items, { lang, patternFor });
           if (r.card) { ctx.extras.linkBatch = r.card; return `${r.text}
@@ -736,7 +750,9 @@ ${r.cardText}`; }
       focus ? `## The course this talk is in: ${focus.name}\n${prefetch(focus, task)}` : "",
       historyBlock(history) ? "## " + historyBlock(history) : "## Conversation so far\n(none)",
     ].filter(Boolean).join("\n\n");
-    const tail = `## Omri's new message\n<message>\n${noCtl(task)}\n</message>` + languageLine(task);
+    // From the phone (server.js knows, never a model): a long answer is a lot of scrolling on a small screen (2026-11-13).
+    const phoneLine = fromPhone === true ? "\n(Omri is writing from the phone: keep the reply to about one phone screen, a few short paragraphs, unless Omri asks for more.)" : "";
+    const tail = `## Omri's new message\n<message>\n${noCtl(task)}\n</message>` + languageLine(task) + phoneLine;
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
