@@ -26,9 +26,12 @@ const MAX_NOTES = 5;
 const SAID_MAX = 300;
 const clean = (s, n = 200) => String(s == null ? "" : s).replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, n);
 
-function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE } = {}) {
+// progressLog (optional, progress-log.js): every real study event below also writes one code-made line there, for the morning brief.
+function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE, progressLog = null } = {}) {
   if (!dir) throw new Error("createTracker needs a folder");
   fs.mkdirSync(dir, { recursive: true });
+  // One line in the progress log, written by code from the record just saved. A log problem never breaks studying.
+  const logEvent = (kind, c, text, understood = false) => { if (!progressLog) return; try { progressLog.add({ kind, course: c ? c.name : "", text, understood }); } catch (error) { /* the log is only a help */ } };
 
   const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { return null; } };
   const writeJson = (file, data) => { const temp = file + ".tmp"; fs.writeFileSync(temp, JSON.stringify(data, null, 1)); fs.renameSync(temp, file); };
@@ -63,8 +66,10 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     const keys = timetable().courses.map((c) => c.key);
     if (course !== "*" && !keys.includes(course)) throw new Error("unknown course");
     const s = state();
-    if (!s.skips.some((k) => k.date === date && k.course === course)) s.skips.push({ date, course });
+    const isNew = !s.skips.some((k) => k.date === date && k.course === course);
+    if (isNew) s.skips.push({ date, course });
     saveState(s);
+    if (isNew) { const tc = course === "*" ? null : timetable().courses.find((x) => x.key === course); logEvent("cancelled", tc ? { name: tc.short || tc.key } : null, `No class on ${plan.niceDate(date)}${course === "*" ? " (all courses)" : ""}, as Omri said`); }
     return s.skips;
   }
   function removeSkip({ date, course = "*" }) {
@@ -127,6 +132,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     if (clean(said, SAID_MAX)) c.position.said = clean(said, SAID_MAX);
     c.pendingQuestion = null; // answered
     save(c);
+    logEvent("position", c, `Where Omri stands: ${seenThrough ? `seen through the lecture of ${plan.niceDate(seenThrough.date)}` : "updated"}${c.position.said ? `, in Omri's words: "${c.position.said}"` : ""}`);
     return c.position;
   }
 
@@ -149,6 +155,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     c.position = normalizePosition(cand);
     c.pendingQuestion = null;
     save(c);
+    logEvent("position", c, `Where Omri stands was updated${c.position.said ? `, in Omri's words: "${c.position.said}"` : ""}`);
     return c.position;
   }
   const pendingQuestion = (ref) => course(ref).pendingQuestion;
@@ -166,6 +173,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     const c = course(ref);
     c.position = normalizePosition({ ...c.position, examDate: date, confirmed: true });
     save(c);
+    logEvent("exam", c, `Exam date confirmed: ${plan.niceDate(date)}`);
     return c.position;
   }
 
@@ -231,15 +239,18 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     if (!item.title) throw new Error("the assignment needs a title");
     c.assignments.push(item);
     save(c);
+    logEvent("assignment", c, `New assignment "${item.title}"${item.due ? `, due ${plan.niceDate(item.due)}` : ""}`);
     return item;
   }
   function setAssignment(ref, id, patch) {
     const c = course(ref);
     const a = c.assignments.find((x) => x.id === id);
     if (!a) throw new Error("no such assignment");
+    const before = a.status;
     if (patch.status !== undefined) { if (!["todo", "started", "done"].includes(patch.status)) throw new Error("bad status"); a.status = patch.status; }
     if (patch.due !== undefined) { if (!plan.isIsoDate(patch.due)) throw new Error("that is not a real date"); a.due = patch.due; }
     save(c);
+    if (a.status !== before) logEvent("assignment", c, `Assignment "${a.title}" marked ${a.status === "done" ? "done" : a.status === "started" ? "started" : "not started"}`);
     return a;
   }
 
@@ -270,6 +281,12 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     }
     save(c);
     markActivity();
+    if (total) {
+      const a = target.type === "lecture" ? null : c.assignments.find((x) => x.id === target.id);
+      const what = target.type === "lecture" && plan.isIsoDate(target.date) ? `the lecture of ${plan.niceDate(target.date)}` : a ? `the assignment "${a.title}"` : "a topic";
+      const verdict = understood ? ", passed: now Understood" : target.type !== "lecture" ? "" : total < MIN_QUESTIONS ? " (too few questions to count)" : ", not passed yet";
+      logEvent("quiz", c, `Graded quiz on ${what}: ${total} question${total === 1 ? "" : "s"}, ${Math.round(score * 100)}%${verdict}`, understood);
+    }
     return { total, score, understood };
   }
   function markTaught(ref, date) {
@@ -279,6 +296,15 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     c.lectures[date] = l;
     save(c);
     markActivity();
+    logEvent("lesson", c, `Lesson from the notes on the lecture of ${plan.niceDate(date)}`);
+  }
+  // A note in Omri's own words about a course (the brain's course_note): kept on the course and written to the progress log.
+  function addNote(ref, text, keep = 6) {
+    const c = course(ref);
+    c.brainNotes = [...(Array.isArray(c.brainNotes) ? c.brainNotes : []), { at: now(), text }].slice(-keep);
+    save(c);
+    logEvent("note", c, `Omri said: "${clean(text, 240)}"`);
+    return c;
   }
   function markActivity() { const s = state(); s.lastActivity = now(); s.activity = [...s.activity, now()].slice(-100); saveState(s); } // a study moment: a tutor turn, a graded check
 
@@ -305,7 +331,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     };
   }
 
-  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, timetableDates, setPosition, setStanding, pendingQuestion, restoreStanding, setExamDate, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
+  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, timetableDates, setPosition, setStanding, pendingQuestion, restoreStanding, setExamDate, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, addNote, markActivity, getSession, setSession, progress, today };
 }
 
 module.exports = { createTracker, BOX_DAYS, MIN_QUESTIONS, PASS_SCORE, GRACE_DAYS, clean };

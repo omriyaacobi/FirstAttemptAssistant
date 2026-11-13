@@ -458,8 +458,7 @@ ${text}`; } catch (error) {
         if (!ref) return "The study tracker is off, so the note was not saved.";
         const text = noCtl(note).replace(/\s+/g, " ").trim().slice(0, LIMITS.note);
         if (text.length < 5) throw new Error("the note is empty");
-        const rec = coach.tracker.course(ref);
-        coach.tracker.save({ ...rec, brainNotes: [...(Array.isArray(rec.brainNotes) ? rec.brainNotes : []), { at: now(), text }].slice(-LIMITS.notesKept) });
+        coach.tracker.addNote(ref, text, LIMITS.notesKept); // also one line in the progress log (progress-log.js)
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return `Noted for ${c.name}: "${text}"`;
       },
