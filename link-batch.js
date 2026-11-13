@@ -39,7 +39,7 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
   function propose({ courseId, courseName, urls, mode, lang = "en", source = "", questionId = null, notHttps = 0, more = 0, runOne = null }) {
     sweep();
     if (!urls.length) throw Object.assign(new Error("no links"), { status: 400 });
-    const custom = mode === "moodle" || mode === "folder"; // the work of each line is done by runOne (Moodle downloads, linking a folder)
+    const custom = mode === "moodle" || mode === "folder" || mode === "root"; // the work of each line is done by runOne (Moodle downloads, linking a folder)
     if (custom && typeof runOne !== "function") throw new Error(`a ${mode} list needs its runOne`);
     const id = crypto.randomBytes(8).toString("hex");
     pending.set(id, { courseId, courseName, urls: [...urls], mode, lang, source, questionId, runOne: custom ? runOne : null, at: now() });
@@ -53,6 +53,10 @@ Bot can then list and read the text files in it (read-only, never changes or run
 ${shown}${why}
 אחר כך Bot יוכל לראות ולקרוא את קבצי הטקסט שבה (קריאה בלבד, בלי לשנות או להריץ כלום). שום דבר לא מקושר לפני לחיצה על אישור.`);
       return { text, card: { id, mode, count: urls.length, courseName, folder: oneLine(urls[0], 240), expiresAt: now() + PENDING_MS } };
+    }
+    if (mode === "root") { // a WSL home code found in Omri's linked course folders, added to the search folders only after the tap
+      const text = words(lang, `Add this to the folders Bot searches by name?\n${shown}\nBot then finds files there by name (read-only). Nothing is added until you tap Confirm.`, `להוסיף את זה לתיקיות ש-Bot מחפש בהן לפי שם?\n${shown}\nאחר כך Bot ימצא שם קבצים לפי שם (קריאה בלבד). שום דבר לא נוסף לפני לחיצה על אישור.`);
+      return { text, card: { id, mode, count: urls.length, courseName, folder: oneLine(urls.join("; "), 240), expiresAt: now() + PENDING_MS } };
     }
     if (mode === "moodle") {
       const more15 = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
@@ -89,6 +93,9 @@ ${shown}${why}
     const good = results.filter((r) => r.res.ok);
     const bad = results.filter((r) => !r.res.ok);
     const out = [];
+    if (mode === "root") {
+      return good.length ? words(lang, `Bot now also searches ${good.map((g) => g.url).join("; ")} by name.`, `Bot מחפש עכשיו גם ב-${good.map((g) => iso(lang, g.url)).join("; ")} לפי שם.`) : words(lang, `Not added: ${(bad[0] && bad[0].res.why) || "unknown reason"}`, `לא נוסף: ${(bad[0] && bad[0].res.why) || "סיבה לא ידועה"}`);
+    }
     if (mode === "folder") {
       return good.length ? words(lang, `Linked ${good[0].url} to ${p.courseName} (read-only).`, `קישרתי את ${iso(lang, good[0].url)} ל${p.courseName} (קריאה בלבד).`) : words(lang, `The folder was NOT linked: ${(bad[0] && bad[0].res.why) || "unknown reason"}`, `התיקייה לא קושרה: ${(bad[0] && bad[0].res.why) || "סיבה לא ידועה"}`);
     }

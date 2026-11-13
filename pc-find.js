@@ -55,6 +55,19 @@ function score(words, name, parents) {
   return hit ? s + (hit === words.length ? 2 : 0) : 0;
 }
 
+// WSL HOMES (2026-11-13): Omri's code often lives in WSL (\\wsl.localhost\<distro>\home\<user>), which is not a default root.
+// Code learns the home ONLY from paths Bot already trusts (the course folders Omri linked), never from a model or a page. Each one
+// must still exist; adding it as a root is a Confirm card in brain.js, checked again by checkRoot at the tap.
+const WSL_HOME = /^(\\\\wsl(?:\.localhost|\$)\\[^\\]+\\home\\[^\\]+)(?:\\|$)/i;
+function wslHomes(paths, exists = (p) => { try { return fs.statSync(p).isDirectory(); } catch (error) { return false; } }) {
+  const out = [];
+  for (const p of paths || []) {
+    const m = WSL_HOME.exec(String(p || ""));
+    if (m && !out.some((x) => same(x, m[1])) && exists(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
 // appDataRule: refuse anything with an "AppData" folder in its path (tests turn it off: their temp folders live under AppData).
 function createFinder({ dataDir, forbidden = [], system = SYSTEM_DIRS(), appDataRule = true, home = os.homedir(), now = () => Date.now(), limits = {} }) {
   const L = { depth: MAX_DEPTH, dirs: MAX_DIRS, ms: MAX_MS, results: MAX_RESULTS, list: MAX_LIST, ...limits };
@@ -181,4 +194,4 @@ function createFinder({ dataDir, forbidden = [], system = SYSTEM_DIRS(), appData
   return { find, list, pick, text, roots: readRoots, addRoot, removeRoot, checkRoot };
 }
 
-module.exports = { createFinder, tokens, score, DEFAULT_ROOTS, MAX_DEPTH, MAX_DIRS, MAX_MS, MAX_RESULTS };
+module.exports = { createFinder, wslHomes, WSL_HOME, tokens, score, DEFAULT_ROOTS, MAX_DEPTH, MAX_DIRS, MAX_MS, MAX_RESULTS };
