@@ -72,7 +72,7 @@ test("the photo button is a round icon button with a preview chip, and photos ar
   assert.match(html, /id="photoChip"/);
   assert.match(html, /createImageBitmap/);
   assert.match(html, /toDataURL\("image\/jpeg"/);
-  assert.match(html, /image: attached\.dataUrl/); // the photo travels with the message
+  assert.match(html, /ask\(task, attached \? attached\.dataUrl : null, false\)/); // the photo travels with the message
 });
 
 test("sending a message starts a background job and the page follows it by polling, not by one long request", () => {
@@ -198,17 +198,13 @@ test("the course screen is never redrawn while you type, or when nothing changed
   assert.strictEqual(page.pending(), 0, "nothing is being read any more, so the checking stops");
 });
 
-test("a course chat is the regular chat screen: same box, same messages, plus a way back to the course", () => {
+test("the course screen has no chats and no question box of its own: questions go to the one conversation", () => {
   assert.ok(!/<textarea/.test(study) && !study.includes('"studyQ"'), "the course screen has no question box of its own any more");
-  assert.match(html, /id="courseBar"[^>]*hidden/); // only shown inside a course chat
-  assert.match(html, /\.coursebar\[hidden\] \{ display: none; \}/);
-  assert.ok(html.includes("courseId: currentCourse.id")); // a new chat in a course says which course
-  assert.ok(html.includes("if (c.courseId) return;")); // course chats are listed in their course, not in the sidebar
+  for (const gone of ['id="courseBar"', 'id="coursePanel"', 'id="chats"', "currentCourse", "currentId", "/api/conversations", "function openChat", "function newChat", "function loadChats"]) assert.ok(!html.includes(gone), gone + " is gone from the page");
+  for (const gone of ["drawChats", "newCourseChat", "/api/conversations", "openChat(", "newChat(", "jobState", "currentId"]) assert.ok(!study.includes(gone), gone + " is gone from the course screen");
   assert.match(html, /result\.mode === "course"/); // the answer shows the file and page chips
   assert.match(html, /studyOpenSource\(result\.courseId, s\.fileId, s\.file, s\.page\)/);
   assert.match(html, /id="sourceDialog"/, "a source opens in a popup over the chat, so the chat stays where it is");
-  assert.match(study, /id = "newCourseChat"|start\.id = "newCourseChat"/);
-  assert.match(study, /Delete the chat/);
   // model and file text only ever through textContent
   assert.doesNotMatch(study, /\.innerHTML\s*=|insertAdjacentHTML|document\.write\(/);
 });
@@ -216,28 +212,23 @@ test("a course chat is the regular chat screen: same box, same messages, plus a 
 test("the phone's Back button works inside a course: a course opened or left is a history step", () => {
   assert.ok(html.includes('showView("study", s.course)')); // Back to a study entry reopens that course
   assert.ok(html.includes("sameCourse(target.course, here.course)"));
-  assert.match(study, /navGo\(\{ view: "study", id: currentId, course: id \}\)/);
+  assert.match(study, /navGo\(\{ view: "study", id: null, course: id \}\)/);
 });
 
-test("the course screen has Sources beside Chats: drop zone, per-file status, tick boxes; the chat bar has Chats, Sources and + New chat", () => {
+test("the course screen has Sources: drop zone, per-file status, tick boxes", () => {
   assert.match(study, /dropzone/);
   assert.match(study, /document\.addEventListener\("drop"/); // drag and drop
   assert.match(study, /picker\.multiple = true/); // several files at once
   assert.match(study, /\/use`, \{ use: tick\.checked \}/); // the tick
-  assert.match(study, /Use in chats: /); // the tick has an accessible name
-  assert.match(html, /id="courseNew"/);
-  assert.match(html, /id="courseChats"/);
-  assert.match(html, /id="courseSources"/);
+  assert.match(study, /Use in answers: /); // the tick has an accessible name
   assert.match(html, /\.course-cols \{[^}]*grid-template-columns/);
-  assert.ok(!html.includes('$("attach").hidden = !!currentCourse'), "the camera button stays in course chats");
   assert.doesNotMatch(study, /\.innerHTML\s*=|insertAdjacentHTML|document\.write\(/);
 });
 
-test("the page polls fast (0.6 s) during the first 40 s of a task, so a front desk reply is not shown up to 2 s late", () => {
-  assert.match(html, /FAST_POLL_WINDOW_MS\s*=\s*40000/);
-  const poll = html.slice(html.indexOf("async function pollJobs"), html.indexOf("window.addEventListener(\"focus\", pollJobs)"));
-  assert.match(poll, /Date\.now\(\) \+ jobState\.offset - j\.startedAt < FAST_POLL_WINDOW_MS/); // the age of the job, by the server's clock
-  assert.match(poll, /\? 600 : jobState\.active\.size \? 2000 : 10000/); // fast, then slow while something long runs, then idle
+test("the page polls fast (0.6 s) during the first 40 s of a message, so a quick reply is not shown up to 2 s late", () => {
+  assert.ok(html.includes("Date.now() + T.offset - j.startedAt < 40000")); // the age of the job, by the server's clock
+  assert.ok(html.includes("nextMs = fast ? 600 : running.length ? 2000 : 10000")); // fast, then slow while something long runs, then idle
+  assert.ok(!html.includes("async function pollJobs"), "the old chat list's own job follower is gone");
 });
 
 test("the message box stays on screen: the page's row cannot grow with the sidebar or a long chat", () => {

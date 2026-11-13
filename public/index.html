@@ -75,7 +75,6 @@
   #studyView .inner { max-width: 1040px; }
   .course-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
   @media (min-width: 820px) { .course-cols { grid-template-columns: minmax(300px, 2fr) minmax(0, 3fr); align-items: start; } }
-  @media (max-width: 819px) { .course-cols > section:nth-child(2) { order: -1; } } /* on a phone the chats come first, the sources below */
   .course-cols h2, .coursepanel h2 { font-size: 1rem; margin: 0 0 8px; }
   .dropzone { border: 2px dashed var(--line); border-radius: 12px; padding: 12px; text-align: center; color: var(--muted); }
   .dropzone.over { border-color: var(--accent); color: var(--text); }
@@ -337,7 +336,6 @@
 
   /* ===== The one conversation. Everything here only matters with body.thread. ===== */
   body.thread nav[aria-label="Conversations"] { display: none; }
-  body.thread .course-cols > section:nth-child(2) { display: none; } /* the old per-course chats */
   body.thread .course-cols { grid-template-columns: minmax(0, 1fr); }
   #thread { position: relative; }
   .tolderrow { display: flex; justify-content: center; margin: 0 0 12px; }
@@ -562,8 +560,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <button id="new">+ New chat</button>
-    <nav aria-label="Conversations"><ul id="chats"></ul></nav>
+    <button id="new" title="Back to the conversation">Conversation</button>
     <button id="quotaBtn" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
     <section aria-label="Reminders">
       <div class="row" style="margin-top:0">
@@ -586,7 +583,7 @@
         <label class="sub"><input type="checkbox" id="morningOn"> On</label>
         <input type="time" id="morningTime" aria-label="Time of the morning brief">
       </div>
-      <div class="sub">Today's calendar and reminders, in a new chat each morning. No model reads them.</div>
+      <div class="sub">Today's calendar and reminders, as one message in the conversation each morning. No model reads them.</div>
       <div class="row">
         <button class="ghost" id="morningNow">Show me one now</button>
         <span class="sub" id="morningNote"></span>
@@ -609,13 +606,8 @@
       <button class="iconbtn" id="menu" aria-label="Show conversations" aria-expanded="false" aria-controls="side">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
-      <div class="titles"><strong>Bot</strong><span id="chatName" dir="auto">New chat</span></div>
+      <div class="titles"><strong>Bot</strong><span id="chatName" dir="auto">One conversation</span></div>
     </div>
-    <div class="coursebar" id="courseBar" hidden>
-      <button type="button" class="ghost" id="courseBack">&lt; Course</button><span id="courseName" dir="auto"></span>
-      <span class="coursetools"><button type="button" class="ghost" id="courseChats" aria-expanded="false">Chats</button><button type="button" class="ghost" id="courseSources" aria-expanded="false">Sources</button><button type="button" id="courseNew">+ New chat</button></span>
-    </div>
-    <div class="coursepanel" id="coursePanel" hidden></div>
     <div id="thread" aria-live="polite"><div class="inner" id="messages"></div></div>
     <form class="composer" id="form">
       <div class="inner">
@@ -740,10 +732,7 @@
   // textContent (never innerHTML). That way an answer can't run code in your browser.
   const $ = (id) => document.getElementById(id);
 
-  let currentId = null; // the open conversation, or null for a new one
-  let currentCourse = null; // { id, name } when the open chat belongs to a course (it then uses that course's materials), else null
   const courseNames = new Map(); // course id -> name, filled by public/study.js
-  let busy = false;
 
   function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -1063,8 +1052,6 @@
       if (result.remembered && result.remembered.id) card.appendChild(undoButton(result.remembered.id));
       // Bot only DRAFTED calendar events. The card is drawn from checked fields; nothing is added until you tap Confirm.
       if (result.calendarAdd && Array.isArray(result.calendarAdd.events)) card.appendChild(calendarCard(result.calendarAdd));
-      // A question about an earlier chat: buttons that open the chats the answer came from.
-      if (Array.isArray(result.chats) && result.chats.length) card.appendChild(chatButtons(result.chats));
       wrap.appendChild(card);
     } else if (result.mode === "course") {
       // An answer from a course chat. The sources were built by the server from the pages it really sent, never from what the model claims.
@@ -1208,17 +1195,6 @@
     return actions;
   }
 
-  function chatButtons(chats) {
-    const actions = el("div", "actions");
-    for (const chat of chats) {
-      const open = el("button", "ghost", "Open: " + chat.title);
-      open.dir = "auto";
-      open.addEventListener("click", () => openChat(chat.id));
-      actions.appendChild(open);
-    }
-    return actions;
-  }
-
   function logDetails(lines) {
     const details = el("details");
     details.appendChild(el("summary", "", "What Bot did"));
@@ -1229,109 +1205,15 @@
 
   const errorCard = (message) => botCard([["Something went wrong", "err"]], el("div", "answer", message));
 
-  function addUser(text) {
-    const m = el("div", "msg");
-    const bubble = el("div", "me", text);
-    bubble.dir = "auto";
-    m.appendChild(bubble);
-    $("messages").appendChild(m);
-    scrollDown();
-    return m;
-  }
-
   function scrollDown() { $("thread").scrollTop = $("thread").scrollHeight; }
 
-  function showEmpty() {
-    $("messages").replaceChildren(el("p", "empty", currentCourse
-      ? "Ask about this course. Bot uses the course materials automatically, searches only this course and shows the file and page each answer came from."
-      : "Ask anything. Follow-up questions remember this conversation."));
-  }
-
-  // ---- Conversation list ----
-  async function loadChats() {
-    try {
-      const { conversations } = await (await fetch("/api/conversations")).json();
-      const list = $("chats");
-      list.replaceChildren();
-      chatTitles.clear();
-      conversations.forEach((c) => {
-        chatTitles.set(c.id, c.title);
-        if (c.courseId) return; // a course chat is listed inside its course
-        const li = el("li", "chat-item" + (c.id === currentId ? " active" : ""));
-        const open = el("button", "open", c.title);
-        open.title = c.title;
-        const mark = chatMarker(c.id); // a pulsing dot while Bot thinks there, a green one for a new answer
-        if (mark) { open.prepend(mark); open.title = mark.title + ": " + c.title; }
-        open.addEventListener("click", () => openChat(c.id));
-        const del = el("button", "del", "x");
-        del.setAttribute("aria-label", "Delete conversation: " + c.title);
-        del.addEventListener("click", () => deleteChat(c.id, c.title));
-        li.append(open, del);
-        list.appendChild(li);
-      });
-      updateChatName();
-    } catch (error) { /* the list is a convenience; the chat still works without it */ }
-  }
-
-  async function openChat(id, fromHistory) {
-    const res = await fetch("/api/conversations/" + id);
-    if (!res.ok) return;
-    const conversation = await res.json();
-    const course = conversation.courseId ? { id: conversation.courseId, name: conversation.courseName || courseNames.get(conversation.courseId) || "Course" } : null;
-    if (!fromHistory) navGo({ view: "chat", id, course: course && course.id });
-    currentId = id;
-    currentCourse = course;
+  // ---- The one conversation ----
+  // Back to the conversation from another screen (the sidebar's "Conversation" button, the phone's tab). A click passes an event; that is fine.
+  function goConversation(fromHistory) {
+    if (fromHistory !== true) navGo({ view: "chat", id: null });
     showView("chat");
-    unreadChats.delete(id);
-    await pollJobs(); // fresh news about running tasks, so the thinking card is right
-    renderConversation(conversation);
-    $("side").classList.remove("open");
-    loadChats();
-  }
-
-  // Draws every saved message of a conversation, plus the "Bot is thinking" card if a task is still running there.
-  function renderConversation(conversation) {
-    $("messages").replaceChildren();
-    conversation.messages.forEach((m) => {
-      if (m.role === "user") addUser(m.text);
-      else {
-        const holder = el("div", "msg");
-        if (m.log && m.log.length) holder.appendChild(logDetails(m.log).details);
-        if (m.error) holder.appendChild(errorCard(m.text.replace(/^Something went wrong: /, "")));
-        else holder.appendChild(m.result ? renderResult(m.result) : botCard([["Answer"]], renderText(m.text)));
-        $("messages").appendChild(holder);
-      }
-    });
-    const last = conversation.messages[conversation.messages.length - 1];
-    if (last && last.role === "user" && !jobState.active.has(conversation.id) && Date.now() - last.at > 15000) {
-      // Bot was restarted (or crashed) while it worked on this message, so no answer will come.
-      $("messages").appendChild(botCard([["No answer", "err"]], el("div", "answer", "Bot was restarted before it could answer this message. Send it again.")));
-    }
-    ensureLiveCard();
-    scrollDown();
-    updateChatName();
-  }
-
-  // course (optional, { id, name }): a new chat inside that course. A click passes an event as the first argument; that is fine.
-  function newChat(fromHistory, course) {
-    course = course && course.id ? course : null;
-    if (fromHistory !== true) navGo({ view: "chat", id: null, course: course && course.id });
-    currentId = null;
-    currentCourse = course;
-    showView("chat");
-    showEmpty();
-    updateChatName();
     if (!session.remote) $("task").focus();
-    loadChats();
     updateComposer();
-  }
-
-  async function deleteChat(id, title) {
-    if (jobState.active.has(id)) return toast("Bot is still working in that chat. Wait for it to finish before deleting it.");
-    if (!confirm(`Delete "${title}"?`)) return;
-    await fetch("/api/conversations/" + id, { method: "DELETE" });
-    if (id === currentId) newChat();
-    else loadChats();
   }
 
   // ---- Photos ----
@@ -1345,13 +1227,6 @@
     $("photoChip").hidden = true;
     $("photoInput").value = "";
     $("photoThumb").removeAttribute("src");
-  }
-
-  function showPhotoIn(msg, p) {
-    const img = document.createElement("img");
-    img.src = p.dataUrl;
-    img.alt = "Photo you sent";
-    msg.firstChild.prepend(img);
   }
 
   async function shrinkPhoto(file) {
@@ -1403,45 +1278,22 @@
   });
   $("photoRemove").addEventListener("click", clearPhoto);
 
-  // ---- Sending a message, and following the task ----
-  // Bot runs each task as a background JOB on the PC (see jobs.js). Sending only starts the job;
-  // the page then asks Bot every couple of seconds how it is going. So you can switch chats, start
-  // a new one, reload, lock the phone or close the app: the task keeps running and the answer is
-  // saved into the chat by the server.
-  const jobState = {
-    active: new Map(), // conversation id -> running job
-    card: null, // the "Bot is thinking" card in the open chat
-    offset: 0, // server clock minus this device's clock, so the timer is right even if the clocks differ
-    polling: false,
-    timer: null,
-    ticker: null,
-  };
-  const chatTitles = new Map(); // conversation id -> title (filled by loadChats)
-  const unreadChats = new Set(); // chats where an answer arrived while you were elsewhere
-  let seenJobs = new Set();
-  try { seenJobs = new Set(JSON.parse(localStorage.getItem("botSeenJobs") || "[]")); } catch (error) { /* private mode: fine */ }
-  function markSeen(id) {
-    seenJobs.add(id);
-    try { localStorage.setItem("botSeenJobs", JSON.stringify([...seenJobs].slice(-60))); } catch (error) { /* ignore */ }
-  }
+  // ---- Sending a message ----
+  // Bot runs each message as a background JOB on the PC (jobs.js startThread). Sending and following the jobs belong to the thread
+  // script below, which fills these two in when it starts. (The old list of chats and its own job follower were removed on 2026-11-13.)
+  let send = () => {};
+  let updateComposer = () => {};
 
   const clock = (ms) => {
     const s = Math.max(0, Math.floor(ms / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   };
-  const elapsedOf = (job) => Date.now() + jobState.offset - job.startedAt;
-
   // A small pop-up message (the same boxes the reminders use).
-  function toast(text, { open } = {}) {
+  function toast(text) {
     const box = el("div", "toast");
     const what = el("div", "what", text);
     what.dir = "auto";
     box.appendChild(what);
-    if (open) {
-      const go = el("button", "", "Open");
-      go.addEventListener("click", () => { box.remove(); openChat(open); });
-      box.appendChild(go);
-    }
     const close = el("button", "ghost", "OK");
     close.addEventListener("click", () => box.remove());
     box.appendChild(close);
@@ -1449,186 +1301,12 @@
     return box;
   }
 
-  // The dot shown next to a chat in the list.
-  function chatMarker(id) {
-    if (jobState.active.has(id)) { const d = el("span", "think-dot"); d.title = "Bot is thinking here"; return d; }
-    if (unreadChats.has(id)) { const d = el("span", "think-dot done-dot"); d.title = "New answer"; return d; }
-    return null;
-  }
-
-  // The Send button and the status line under the box.
-  function updateComposer() {
-    const job = currentId ? jobState.active.get(currentId) : null;
-    $("send").disabled = busy || !!job;
-    if (job) {
-      $("status").textContent = `Bot is thinking... ${clock(elapsedOf(job))}`;
-      $("task").placeholder = "Bot is still working on your last message here. You can write in another chat meanwhile.";
-    } else {
-      if ($("status").textContent.startsWith("Bot is thinking")) $("status").textContent = "";
-      $("task").placeholder = "Type a task. Enter sends, Shift+Enter adds a new line.";
-    }
-  }
-
-  const notifyHint = () =>
-    "Notification" in window && Notification.permission === "granted"
-      ? "You'll get a notification when it's done."
-      : "Turn on notifications in the sidebar to get a ping when it's done.";
-
-  // Makes sure the open chat shows a "Bot is thinking" card if (and only if) a task is running in it.
-  function ensureLiveCard() {
-    let card = jobState.card;
-    if (card && !document.body.contains(card.root)) card = jobState.card = null;
-    const job = currentId ? jobState.active.get(currentId) : null;
-    if (!job) { if (card) { card.root.remove(); jobState.card = null; } return; }
-    if (card && card.jobId !== job.id) { card.root.remove(); card = jobState.card = null; }
-    if (!card) {
-      const root = el("div", "msg");
-      const box = el("div", "bot think");
-      const head = el("div", "step-head");
-      head.append(el("span", "spinner"), el("span", "", "Bot is thinking"), el("span", "badge elapsed", "0:00"));
-      const step = el("div", "think-step", job.step);
-      const partial = el("div", "answer partial"); // the answer so far, filled in by the poll (textContent only)
-      partial.dir = "auto";
-      partial.hidden = true;
-      const hint = el("div", "think-hint", `You can leave this chat, start a new one, or close the app. Bot keeps working on your PC and saves the answer here. ${notifyHint()}`);
-      const details = logDetails([]);
-      box.append(head, step, partial, hint, details.details);
-      root.appendChild(box);
-      $("messages").appendChild(root);
-      card = jobState.card = { jobId: job.id, root, step, partial, pre: details.pre, elapsed: head.querySelector(".elapsed") };
-      scrollDown();
-    }
-    card.step.textContent = job.step + "...";
-    // Streaming: the text written so far (untrusted, so textContent). It is replaced whole each poll, and disappears if a model fails.
-    const text = job.partial || "";
-    if (card.partialText !== text) {
-      card.partialText = text;
-      const th = $("thread");
-      const atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 80; // do not drag the page down if you scrolled up to read
-      fillMarkdown(card.partial, text);
-      if (text && atBottom) scrollDown();
-    }
-    card.partial.hidden = !text;
-    if (job.log) card.pre.textContent = job.log.join("\n");
-    card.elapsed.textContent = clock(elapsedOf(job));
-  }
-
-  // Ticks every second while something is running, so the timers move between polls.
-  function tick() {
-    if (!jobState.active.size) { clearInterval(jobState.ticker); jobState.ticker = null; return; }
-    ensureLiveCard();
-    updateComposer();
-  }
-
-  // A job finished. Show it where it belongs.
-  async function jobFinished(job) {
-    markSeen(job.id);
-    await loadChats();
-    const title = chatTitles.get(job.conversationId) || "chat";
-    if (job.conversationId === currentId) {
-      const res = await fetch("/api/conversations/" + job.conversationId).catch(() => null);
-      if (res && res.ok && job.conversationId === currentId) {
-        renderConversation(await res.json());
-        const line = el("div", job.status === "done" ? "done-line" : "done-line failed", job.status === "done" ? `✓ Done in ${clock(job.finishedAt - job.startedAt)}` : "Bot could not finish this one");
-        const last = $("messages").lastElementChild;
-        if (last) last.prepend(line);
-        $("status").textContent = job.status === "done" ? "Done ✓" : "Failed";
-        setTimeout(() => { if ($("status").textContent === "Done ✓" || $("status").textContent === "Failed") $("status").textContent = ""; }, 5000);
-        scrollDown();
-      }
-      if (document.hidden) systemNotify(job.status === "done" ? "Bot finished" : "Bot could not finish", title, "job-" + job.id);
-    } else {
-      unreadChats.add(job.conversationId);
-      toast(`${job.status === "done" ? "Bot finished" : "Bot could not finish"}: ${title}`, { open: job.conversationId });
-      loadChats();
-    }
-    loadReminders();
-    loadQuota();
-  }
-
-  const FAST_POLL_WINDOW_MS = 40000;
-  async function pollJobs() {
-    if (session.thread) return; // one conversation: the thread script below follows the jobs
-    if (jobState.polling) return;
-    jobState.polling = true;
-    try {
-      // `watching` tells Bot which chat is on screen, so it skips the phone notification for that one.
-      const watching = !document.hidden && currentId ? "?watching=" + encodeURIComponent(currentId) : "";
-      const res = await fetch("/api/jobs" + watching);
-      if (!res.ok) return;
-      const { jobs } = await res.json();
-      const before = [...jobState.active.keys()].sort().join();
-      jobState.active.clear();
-      jobs.filter((j) => j.status === "running").forEach((j) => { jobState.active.set(j.conversationId, j); jobState.offset = j.now - Date.now(); });
-      if ([...jobState.active.keys()].sort().join() !== before) loadChats();
-      if (jobState.active.size && !jobState.ticker) jobState.ticker = setInterval(tick, 1000);
-      ensureLiveCard();
-      updateComposer();
-      for (const job of jobs.filter((j) => j.status !== "running" && !seenJobs.has(j.id)).slice(0, 3)) await jobFinished(job);
-      jobs.filter((j) => j.status !== "running").forEach((j) => markSeen(j.id));
-      updateComposer();
-    } catch (error) { /* offline for a moment: the next poll will catch up */ } finally {
-      jobState.polling = false;
-      clearTimeout(jobState.timer);
-      // Often while something runs, rarely when idle, not at all while the page is hidden (it catches up when shown again).
-      // FAST (0.6 s) while a model is writing, and during the first 40 s of every task: the front desk answers greetings, reminders
-      // and calendar questions in about 3 s, and polling every 2 s made those show up about 1 s late on average.
-      const fast = (j) => j.partial || /^Asking /.test(j.step) || Date.now() + jobState.offset - j.startedAt < FAST_POLL_WINDOW_MS;
-      jobState.timer = document.hidden ? null : setTimeout(pollJobs, [...jobState.active.values()].some(fast) ? 600 : jobState.active.size ? 2000 : 10000);
-    }
-  }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });
-  window.addEventListener("online", pollJobs);
-  window.addEventListener("focus", pollJobs);
-
   // After a message is safely with Bot, take out of the box what was sent. Whatever you typed meanwhile (the round trip takes a moment,
   // longer on the phone) stays: clearing the whole box used to throw away words typed while the message was on its way.
   function clearSentText(sentRaw) {
     const box = $("task");
     if (box.value.startsWith(sentRaw)) box.value = box.value.slice(sentRaw.length).replace(/^\s+/, "");
   }
-  async function send() {
-    const sentRaw = $("task").value;
-    const attached = photo;
-    const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
-    if (!task || busy) return;
-    if (currentId && jobState.active.has(currentId)) return updateComposer(); // one task at a time per chat
-    busy = true;
-    updateComposer();
-    try {
-      const res = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, noPlan: false, conversationId: currentId, ...(currentCourse ? { deeper: false, ...(currentId ? {} : { courseId: currentCourse.id }) } : {}), ...(attached ? { image: attached.dataUrl } : {}) }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `server answered ${res.status}`);
-      const job = body.job;
-      // Only now is the message safely with Bot, so only now the box is cleared.
-      clearSentText(sentRaw);
-      clearPhoto();
-      currentId = job.conversationId;
-      if ($("messages").querySelector(".empty")) $("messages").replaceChildren();
-      const sent = addUser(task);
-      if (attached) showPhotoIn(sent, attached);
-      jobState.offset = job.now - Date.now();
-      jobState.active.set(job.conversationId, job);
-      if (!jobState.ticker) jobState.ticker = setInterval(tick, 1000);
-      ensureLiveCard();
-      loadChats();
-      clearTimeout(jobState.timer);
-      jobState.timer = setTimeout(pollJobs, 1000);
-    } catch (error) {
-      // Not started: your text stays in the box, nothing is lost.
-      toast("Not sent: " + error.message);
-    } finally {
-      busy = false;
-      updateComposer();
-      $("task").focus();
-    }
-  }
-  // (the first pollJobs() call is made by the start-up code at the bottom, once the server has said which mode it is in)
-
   // ---- Quota panel ----
   // The numbers are read from agy only while the pop-up is open (it is a slow call, and nobody sees them otherwise).
   async function loadQuota() {
@@ -1663,12 +1341,7 @@
     // Enter sends; Shift+Enter makes a new line. isComposing avoids sending while typing with an IME.
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
-  $("new").addEventListener("click", newChat);
-  $("courseBack").addEventListener("click", () => {
-    if (!currentCourse) return;
-    navGo({ view: "study", id: currentId, course: currentCourse.id });
-    showView("study", currentCourse.id);
-  });
+  $("new").addEventListener("click", goConversation);
   $("refresh").addEventListener("click", loadQuota);
   $("quotaBtn").addEventListener("click", () => { $("quotaDialog").showModal(); loadQuota(); });
   $("quotaClose").addEventListener("click", () => $("quotaDialog").close());
@@ -1699,15 +1372,6 @@
   // which view, which chat, whether the sidebar is open, and how deep we are (d = 0 is the base screen).
   let navState = { view: "chat", id: null, side: false, d: 0 };
 
-  function updateChatName() {
-    $("chatName").textContent = (currentId && chatTitles.get(currentId)) || "New chat";
-    // A course chat: say which course, and offer the way back, the course's other chats and its sources. The camera works here
-    // too (the photo's text joins the question), and the box becomes "Think harder".
-    $("courseBar").hidden = !currentCourse;
-    if (currentCourse) $("courseName").textContent = currentCourse.name;
-    if (window.studyBarChanged) window.studyBarChanged(currentCourse && currentCourse.id, currentId);
-  }
-
   function setSide(open) {
     $("side").classList.toggle("open", open);
     $("backdrop").classList.toggle("show", open);
@@ -1715,8 +1379,8 @@
   }
 
   // Go somewhere new (another chat, the Improve view). Never adds a duplicate of where we already are.
-  // Where we are now. For a chat screen the course comes from the open chat (a first message may have created a chat since).
-  const herePlace = () => ({ ...navState, id: currentId, course: navState.view === "chat" ? (currentCourse && currentCourse.id) || null : navState.course || null });
+  // Where we are now. `id` is always null (it was the open chat); `course` is the course open on the course page.
+  const herePlace = () => ({ ...navState, id: null, course: navState.view === "chat" ? null : navState.course || null });
   const sameCourse = (a, b) => (a || null) === (b || null);
 
   function navGo(target) {
@@ -1759,8 +1423,6 @@
     if (s.view === "improve") showView("improve");
     else if (s.view === "tstudy") showView("tstudy");
     else if (s.view === "study") showView("study", s.course);
-    else if (s.id && s.id !== currentId) openChat(s.id, true);
-    else if (!s.id && (currentId || !sameCourse(s.course, currentCourse && currentCourse.id))) newChat(true, s.course ? { id: s.course, name: courseNames.get(s.course) || "Course" } : null);
     else showView("chat");
     setSide(!!s.side);
   });
@@ -1813,7 +1475,7 @@
   }
   // Used by the button under Bot's answer when you asked it to change itself.
   function openImproveWith(request) {
-    navGo({ view: "improve", id: currentId });
+    navGo({ view: "improve", id: null });
     showView("improve");
     newImprove(); // a fresh request, not a follow-up to the one that may be open
     $("improveText").value = request;
@@ -2224,11 +1886,11 @@
     $("improveText").focus();
   }
 
-  $("improveBtn").addEventListener("click", () => { navGo({ view: "improve", id: currentId }); showView("improve"); });
+  $("improveBtn").addEventListener("click", () => { navGo({ view: "improve", id: null }); showView("improve"); });
   // Back to chat: step back in history if we came from the chat, else go there.
   $("backToChat").addEventListener("click", () => {
     if (navState.view === "improve" && navState.d > 0) history.back();
-    else { navGo({ view: "chat", id: currentId }); showView("chat"); }
+    else { navGo({ view: "chat", id: null }); showView("chat"); }
   });
   $("restartBtn").addEventListener("click", restartBot);
   $("restartTop").addEventListener("click", restartBot);
@@ -2237,7 +1899,7 @@
   // ---- Phone: the bottom bar of main places, and the keyboard ----
   // The bar is only drawn on narrow screens (CSS). Each tab presses the sidebar button that already does the job, so the thread page's own
   // handlers (Study instead of Courses, Conversation instead of New chat) are used and nothing is done twice.
-  $("tabChat").addEventListener("click", () => { if (navState.side) closeSide(); if (session.thread) $("new").click(); else { navGo({ view: "chat", id: currentId, course: currentCourse && currentCourse.id }); showView("chat"); } });
+  $("tabChat").addEventListener("click", () => { if (navState.side) closeSide(); $("new").click(); });
   $("tabStudy").addEventListener("click", () => $("studyBtn").click());
   $("tabImprove").addEventListener("click", () => $("improveBtn").click());
   $("tabMenu").addEventListener("click", () => { if (navState.side) closeSide(); else openSide(); });
@@ -2468,8 +2130,7 @@
       const res = await fetch("/api/morning/now", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "could not make the brief");
-      await loadChats();
-      await openChat(data.conversationId);
+      window.botThread.refresh(); // the brief is one message in the conversation: show it now
     } catch (error) {
       $("morningNote").textContent = error.message;
     }
@@ -2615,10 +2276,8 @@
     loadBackup();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
-    if (session.thread && window.botThread) window.botThread.start();
-    else { showEmpty(); loadChats(); pollJobs(); }
+    window.botThread.start(); // the one conversation (the thread script below)
     loadQuota();
-    if (matchMedia("(pointer: coarse)").matches && !session.thread) $("task").placeholder = "Type a task..."; // a phone has no Shift+Enter
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up
   })();
 </script>
@@ -2688,7 +2347,7 @@
       keep: { on_track: "On track", behind: (n) => `Behind by ${n} lecture${n === 1 ? "" : "s"}`, ahead: (n) => `Ahead by ${n} lecture${n === 1 ? "" : "s"}`, unknown: "Not told Bot yet", topic: "Told Bot a topic, no date to count" },
       tellText: (name) => `My last ${name} lecture was `,
       noticeTitle: "Hi! Bot is now one conversation",
-      notice: ["Just write here. Bot works out whether it is about a course, your calendar or anything else.", "Your old chats are above (\"Load older messages\"). A deleted message stays 30 days.", "To go back to separate chats: BOT_THREAD=off in .env, then restart Bot.", "A good first step: tell me where you are in each course, for example \"my last Calculus lecture was Monday\". The Study page shows if you are keeping up."],
+      notice: ["Just write here. Bot works out whether it is about a course, your calendar or anything else.", "Your old chats are above (\"Load older messages\"). A deleted message stays 30 days.", "A good first step: tell me where you are in each course, for example \"my last Calculus lecture was Monday\". The Study page shows if you are keeping up."],
       gotIt: "Got it", openStudy: "Open Study", locale: "en-GB",
     },
     he: {
@@ -2702,7 +2361,7 @@
       keep: { on_track: "בקצב", behind: (n) => (n === 1 ? "בפיגור של הרצאה אחת" : `בפיגור של ${n} הרצאות`), ahead: (n) => (n === 1 ? "מקדים בהרצאה אחת" : `מקדים ב-${n} הרצאות`), unknown: "עוד לא עדכנת את Bot", topic: "סיפרת נושא, אין תאריך לספור" },
       tellText: (name) => `ההרצאה האחרונה שלי בקורס ${name} הייתה `,
       noticeTitle: "שלום! Bot הוא עכשיו שיחה אחת",
-      notice: ["פשוט כותבים כאן. Bot מבין לבד אם זה על קורס, על היומן או על משהו אחר.", "השיחות הישנות למעלה (\"Load older messages\"). הודעה שנמחקה נשמרת 30 יום.", "כדי לחזור לשיחות נפרדות: BOT_THREAD=off בקובץ ‎.env ולהפעיל את Bot מחדש.", "התחלה טובה: ספר לי איפה אתה בכל קורס, למשל \"ההרצאה האחרונה שלי בחדוא 2 הייתה ביום שני\". בעמוד Study רואים אם אתה עומד בקצב."],
+      notice: ["פשוט כותבים כאן. Bot מבין לבד אם זה על קורס, על היומן או על משהו אחר.", "השיחות הישנות למעלה (\"Load older messages\"). הודעה שנמחקה נשמרת 30 יום.", "התחלה טובה: ספר לי איפה אתה בכל קורס, למשל \"ההרצאה האחרונה שלי בחדוא 2 הייתה ביום שני\". בעמוד Study רואים אם אתה עומד בקצב."],
       gotIt: "הבנתי", openStudy: "לפתוח את Study", locale: "he-IL",
     },
   };
@@ -3253,29 +2912,6 @@
       }
     }
 
-    // ---- recall buttons: an old chat opens read-only in the popup, never in the thread ----
-    function oldChatButtons(chats) {
-      const actions = el("div", "actions");
-      for (const chat of chats) {
-        const open = el("button", "ghost", "Look at: " + chat.title);
-        open.dir = "auto";
-        open.type = "button";
-        open.addEventListener("click", async () => {
-          try {
-            const conv = await api("/api/conversations/" + encodeURIComponent(chat.id));
-            $("sourceTitle").textContent = conv.title || chat.title;
-            $("sourceActions").replaceChildren();
-            const box = $("sourceBody");
-            box.replaceChildren();
-            (conv.messages || []).forEach((x) => { const row = el("div", x.role === "user" ? "me" : "answer", x.text); row.dir = "auto"; row.style.marginBottom = "8px"; box.appendChild(row); });
-            if (!$("sourceDialog").open) $("sourceDialog").showModal();
-          } catch (error) { toast("This one is part of the conversation above, not a separate chat."); }
-        });
-        actions.appendChild(open);
-      }
-      return actions;
-    }
-
     // ---- files from the composer ----
     // A picture goes with the message (the page's own photo code, the same path for the camera and for a file you pick). Any other file
     // (PDF, pptx, docx, txt, md) waits in the chip above the box until you press Send. Then it goes to POST /api/thread/upload, the route
@@ -3599,18 +3235,9 @@
       });
       scroller().appendChild(ready); // sticky at the bottom of the scrolling area, so it never sits on the box
       scroller().addEventListener("scroll", checkReady, { passive: true });
-      // take over the page's old chat functions
+      // the page's Send and its composer state are the thread's
       send = threadSend;
-      pollJobs = poll;
-      ensureLiveCard = () => {};
       updateComposer = () => { $("send").disabled = T.busy; };
-      loadChats = async () => {};
-      showEmpty = () => {};
-      chatButtons = oldChatButtons;
-      updateChatName = () => { $("chatName").textContent = "One conversation"; $("courseBar").hidden = true; };
-      updateChatName();
-      $("new").textContent = "Conversation";
-      $("new").title = "Back to the conversation";
       $("studyBtn").textContent = "Study";
       $("studyBtn").title = "Where you are in each course, and your files";
       $("studyBtn").addEventListener("click", (e) => { e.stopImmediatePropagation(); navGo({ view: "tstudy", id: null }); showView("tstudy"); }, true);
@@ -3633,7 +3260,7 @@
       loadFirst().then(() => { if (pageLang() === "he") $("micLang").value = "he-IL"; notice(); return loadSuggestions(); }).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
     }
 
-    return { start, showStudy, T };
+    return { start, showStudy, refresh: () => refreshNewest().catch(() => {}), T };
   })();
 </script>
 <script id="comfortScript">

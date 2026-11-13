@@ -22,12 +22,11 @@ function helpers() {
 }
 const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h).getTime();
 
-test("the thread script is its own block, it compiles, and it only starts when the server says so", () => {
+test("the thread script is its own block, it compiles, and the page always starts it", () => {
   assert.ok(threadScript.length > 1000, "the thread script is in the page");
   assert.doesNotThrow(() => new vm.Script(threadScript));
-  assert.match(html, /if \(session\.thread && window\.botThread\) window\.botThread\.start\(\);\s*else \{ showEmpty\(\); loadChats\(\); pollJobs\(\); \}/);
-  // with the switch off nothing of the thread runs: the old poller is also guarded, so the two never both follow jobs
-  assert.match(html, /async function pollJobs\(\) \{\s*if \(session\.thread\) return;/);
+  assert.ok(html.includes("\n    window.botThread.start();"), "the page starts the thread script");
+  assert.ok(!html.includes("session.thread"), "there is no other mode to guard against");
   // start() is the only thing that changes the page: nothing at the top level of the thread script touches the DOM
   const outside = threadScript.replace(/window\.botThread = \(\(\) => \{[\s\S]*\}\)\(\);/, "");
   assert.doesNotMatch(outside, /document\.|\$\(/);
@@ -122,8 +121,7 @@ test("the page keeps what the task asked for: composer open, trash, notice, olde
   assert.match(threadScript, /\/api\/thread\/\$\{m\.id\}\/restore/);
   // paging: older messages by "before"
   assert.match(threadScript, /before=\$\{T\.oldest\}/);
-  // the first-use notice says how to go back
-  assert.match(threadScript, /BOT_THREAD=off/);
+  assert.ok(!html.includes("BOT_THREAD"), "the switch is gone, so the notice no longer names it");
   assert.match(threadScript, /botThreadNotice/);
   // the Study page exists and reaches the old Courses screen for files
   assert.match(html, /id="tstudyView"/);

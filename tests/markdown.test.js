@@ -56,9 +56,9 @@ test("HTML or script inside an answer stays inert text", () => {
   assert.ok(box.textContent.includes("<img src=x onerror=alert(2)>"));
 });
 
-test("both chats use it: answers and the streaming text, and the font is bigger on PC only", () => {
-  assert.match(script, /fillMarkdown\(card\.partial, text\)/);
-  assert.ok(!/card\.partial\.textContent = /.test(script));
+test("the conversation uses it: answers and the streaming text, and the font is bigger on PC only", () => {
+  assert.match(html, /fillMarkdown\(card\.partial, text\)/);
+  assert.ok(!/card\.partial\.textContent = /.test(html));
   assert.match(html, /@media \(min-width: 761px\) \{ html \{ font-size: 18px; \} body \{ font-size: 18px; \} \}/);
   assert.match(html, /body \{[^}]*font: 16px\/1\.5/); // the phone keeps 16px
   const study = fs.readFileSync(path.join(__dirname, "..", "public", "study.js"), "utf8");

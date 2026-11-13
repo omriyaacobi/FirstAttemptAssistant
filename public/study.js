@@ -2,14 +2,13 @@
 // so it can use that script's helpers ($, el, renderText, openSide, navGo, showView).
 // Like the main page, it only ever uses textContent (never innerHTML): file names and model answers are untrusted.
 //
-// A course screen has two columns (stacked on a phone): SOURCES (the materials: drop files, see each one's status, tick the
-// ones the chats may use) and CHATS (start a new one, switch between them). Inside a course chat, the bar above the chat
-// has the same lists in a small panel (Chats, Sources, + New chat), so you never have to leave the chat to switch or upload.
+// A course screen shows its SOURCES (the materials: drop files, see each one's status, tick the ones Bot may use).
+// (Until 2026-11-13 it also listed the course's own chats; Bot is one conversation now, so that list was removed.)
 (function () {
   const view = $("studyView");
   const body = $("studyBody");
   let courses = [];
-  let current = null; // { course, chats } of the open course, or null for the course list
+  let current = null; // { course } of the open course, or null for the course list
   let timer = null;
   let uploadNote = null; // { text, bad }: kept across redraws too, so a refused file is never wiped off the screen
   let uploads = []; // files being sent or refused right now: { name, text, bad }. Only on this page; the server list has the rest.
@@ -46,10 +45,9 @@
     return new Date(ms).toLocaleDateString();
   }
 
-  // ---- polling: only while a file is being read or a chat of this course is thinking, and only while this screen is visible ----
-  const thinking = () => (current ? current.chats.filter((c) => jobState.active.has(c.id)).map((c) => c.id) : []);
+  // ---- polling: only while a file is being read, and only while this screen is visible ----
   function busyNow() {
-    return current && (thinking().length > 0 || current.course.files.some((f) => f.status === "queued" || f.status === "reading"));
+    return current && current.course.files.some((f) => f.status === "queued" || f.status === "reading");
   }
   function schedule() {
     clearTimeout(timer);
@@ -60,7 +58,7 @@
   // What the screen was last drawn from. A refresh redraws ONLY when this changed, and never while you are typing in
   // a box on this screen: a redraw replaces every element, which would throw away the cursor and what you typed.
   let drawn = "";
-  const snapshot = () => JSON.stringify([current, thinking()]);
+  const snapshot = () => JSON.stringify(current);
   // A tick box is not typing: it must not stop the screen from showing its own result.
   const typingHere = () => { const a = document.activeElement; return !!a && body.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox"; };
   async function refresh() {
@@ -91,7 +89,7 @@
     schedule();
     if (focus) openFilePages(focus.fileId, focus.page);
   }
-  const goCourse = (id) => { navGo({ view: "study", id: currentId, course: id }); return openCourse(id).catch(fail); };
+  const goCourse = (id) => { navGo({ view: "study", id: null, course: id }); return openCourse(id).catch(fail); };
 
   function draw() {
     drawn = snapshot();
@@ -103,7 +101,7 @@
   }
 
   function drawList() {
-    body.appendChild(el("p", "sub", "One tab for each course. Upload its slides, exams and notes once, then start chats in it: every chat can use the course materials, and Bot searches only that course and reads only the few pages that matter."));
+    body.appendChild(el("p", "sub", "One tab for each course. Upload its slides, exams and notes once, then ask in the conversation: Bot uses the course materials, searches only that course and reads only the few pages that matter."));
     const grid = el("div", "course-grid");
     courses.forEach((c) => {
       const card = el("button", "card course-card");
@@ -136,7 +134,7 @@
     const { course } = current;
     const head = el("div", "row");
     head.style.marginTop = "0";
-    head.append(button("< All courses", () => { navGo({ view: "study", id: currentId, course: null }); loadList().catch(fail); }), button("+ Add material", () => picker.click(), "primary add-material"));
+    head.append(button("< All courses", () => { navGo({ view: "study", id: null, course: null }); loadList().catch(fail); }), button("+ Add material", () => picker.click(), "primary add-material"));
     body.appendChild(head);
     // The upload messages stay here across redraws, so a refused file is never wiped off the screen.
     const status = el("div", uploadNote && uploadNote.bad ? "status bad" : "status", uploadNote ? uploadNote.text : "");
@@ -149,10 +147,7 @@
     sources.appendChild(dropZone(course));
     sources.appendChild(uploadList());
     sources.appendChild(sourcesList(course, { pages: true }));
-    const chats = el("section");
-    chats.appendChild(el("h2", "", `Chats (${current.chats.length})`));
-    drawChats(chats);
-    cols.append(sources, chats);
+    cols.append(sources);
     body.appendChild(cols);
 
     const danger = el("div", "actions");
@@ -162,52 +157,10 @@
       try { await post(`/api/courses/${course.id}/rename`, { name }); await refresh(); } catch (error) { fail(error); }
     }));
     danger.appendChild(button("Delete course", async () => {
-      if (!confirm(`Delete the course "${course.name}" with all its files and chats? This cannot be undone.`)) return;
+      if (!confirm(`Delete the course "${course.name}" with all its files? This cannot be undone.`)) return;
       try { await api("/api/courses/" + course.id, { method: "DELETE" }); await loadList(); } catch (error) { fail(error); }
     }));
     body.appendChild(danger);
-  }
-
-  // The chats of this course. Opening one shows the regular chat screen (index.html), which sends the messages;
-  // the ticked materials are used automatically by every chat started here.
-  // data: { course, chats } (the course screen's own, or the chat bar panel's). withNew: the + New chat button (the bar has its own).
-  function drawChats(into, { data = current, withNew = true, activeId = null, onPick = () => {}, after = refresh } = {}) {
-    const { course, chats } = data;
-    if (withNew) {
-      if (!course.files.some((f) => f.status === "ready" || f.pages > 0)) into.appendChild(el("p", "sub", course.files.length ? "Bot is reading your first pages. You can already start a chat; it will use them as soon as they are read." : "No material yet. Add a file (PDF, PowerPoint, Word, photo or text) in Sources. You can already start a chat; it will use the materials once they are read."));
-      const start = button("+ New chat", () => { onPick(); newChat(false, { id: course.id, name: course.name }); }, "primary");
-      start.id = "newCourseChat";
-      const row = el("div", "row");
-      row.style.justifyContent = "flex-start";
-      row.appendChild(start);
-      into.appendChild(row);
-    }
-    if (!chats.length) into.appendChild(el("p", "sub", "No chats in this course yet. Start one: Bot answers from this course's materials and shows the file and page."));
-    const list = el("ul", "files");
-    chats.forEach((c) => {
-      const li = el("li", "chat-item" + (c.id === activeId ? " active" : ""));
-      const open = el("button", "open", c.title);
-      open.type = "button";
-      open.dir = "auto";
-      open.title = c.title;
-      const mark = chatMarker(c.id); // the same pulsing dot as the sidebar while Bot thinks in that chat
-      if (mark) open.prepend(mark);
-      open.addEventListener("click", () => { onPick(); openChat(c.id); });
-      const del = el("button", "del", "x");
-      del.type = "button";
-      del.setAttribute("aria-label", "Delete chat: " + c.title);
-      del.addEventListener("click", async () => {
-        if (jobState.active.has(c.id)) return fail(new Error("Bot is still working in that chat. Wait for it to finish before deleting it."));
-        if (!confirm(`Delete the chat "${c.title}"?`)) return;
-        try {
-          await api("/api/conversations/" + c.id, { method: "DELETE" });
-          if (c.id === activeId) { onPick(); newChat(false, { id: course.id, name: course.name }); } else await after();
-        } catch (error) { fail(error); }
-      });
-      li.append(open, el("span", "when", ago(c.updated)), del);
-      list.appendChild(li);
-    });
-    into.appendChild(list);
   }
 
   // ---- sources: drop zone, upload rows, the list of files with their tick boxes ----
@@ -236,7 +189,6 @@
       go.busy = false;
       paintUploads();
       if (!view.hidden && current) await refresh().catch(fail);
-      if (panel) await loadPanel().catch(() => {});
     };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
     wrap.append(input, button("Add from link", go, "ghost"), el("p", "sub", "Bot downloads it itself. Public links only: it never logs in anywhere."));
@@ -294,8 +246,8 @@
     return wrap;
   }
 
-  // The files of a course. Each has a tick: unticked files are left out of the chats of this course (the file stays).
-  // pages: true adds the "View text" panel (course screen only, the chat's small panel stays short).
+  // The files of a course. Each has a tick: unticked files are left out of Bot's answers about this course (the file stays).
+  // pages: true adds the "View text" panel.
   function sourcesList(course, { pages = false, after = refresh } = {}) {
     const list = el("ul", "files");
     if (!course.files.length) list.appendChild(el("li", "sub", "No materials yet."));
@@ -304,8 +256,8 @@
       const tick = el("input");
       tick.type = "checkbox";
       tick.checked = f.use !== false;
-      tick.setAttribute("aria-label", "Use in chats: " + f.name);
-      tick.title = "Tick: the chats of this course use this file";
+      tick.setAttribute("aria-label", "Use in answers: " + f.name);
+      tick.title = "Tick: Bot uses this file when it answers about this course";
       tick.addEventListener("change", async () => {
         try { await post(`/api/courses/${course.id}/files/${f.id}/use`, { use: tick.checked }); f.use = tick.checked; await after(); } catch (error) { tick.checked = !tick.checked; fail(error); }
       });
@@ -343,8 +295,8 @@
 
   // Several files, one after the other (each is a big request). Each gets its own row with its own status.
   let sending = false;
-  // Where new files go: the open course screen, or the course of the open chat while its Sources panel is showing.
-  const targetCourse = () => (!view.hidden && current ? current.course.id : panel && panel.mode === "sources" ? barCourse : null);
+  // Where new files go: the open course screen.
+  const targetCourse = () => (!view.hidden && current ? current.course.id : null);
   async function addFiles(fileList) {
     const courseId = targetCourse();
     if (!courseId || sending) return;
@@ -380,14 +332,13 @@
     const refused = uploads.filter((u) => u.bad).length;
     note(sent ? `${sent} file${sent === 1 ? "" : "s"} added, Bot is reading ${sent === 1 ? "it" : "them"}.` + (refused ? ` ${refused} not added (see the list).` : "") : refused ? "No file was added (see the list)." : "", refused > 0 && !sent);
     if (!view.hidden && current) await refresh().catch(fail);
-    if (panel) await loadPanel().catch(() => {});
   }
   picker.addEventListener("change", () => addFiles(picker.files));
 
   // Drag and drop: anywhere on the course screen (PC). The dashed box lights up while files are over the page.
   const hasFiles = (e) => !!e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
   let dragDepth = 0;
-  const zoneOn = (on) => { for (const z of [$("dropZone"), $("panelDropZone")]) if (z) z.classList.toggle("over", on); };
+  const zoneOn = (on) => { const z = $("dropZone"); if (z) z.classList.toggle("over", on); };
   document.addEventListener("dragenter", (e) => { if (targetCourse() && hasFiles(e)) { e.preventDefault(); dragDepth++; zoneOn(true); } });
   document.addEventListener("dragover", (e) => { if (targetCourse() && hasFiles(e)) e.preventDefault(); });
   document.addEventListener("dragleave", (e) => { if (targetCourse() && hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; zoneOn(false); } });
@@ -474,71 +425,11 @@
   $("sourceClose").addEventListener("click", () => $("sourceDialog").close());
   $("sourceDialog").addEventListener("click", (e) => { if (e.target === $("sourceDialog")) $("sourceDialog").close(); });
 
-  // ---- the bar inside a course chat: Chats, Sources, + New chat ----
-  // The panel below the bar shows one of the two lists. It keeps its own copy of the course (fetched when opened and
-  // after every change, and every few seconds while open, so a file being read shows its progress).
-  let panel = null; // { mode: "chats" | "sources", course, chats } or null when closed
-  let panelTimer = null;
-  let barCourse = null;
-  let barChat = null;
-  const holder = () => $("coursePanel");
-
-  function closePanel() {
-    clearTimeout(panelTimer);
-    panel = null;
-    holder().hidden = true;
-    holder().replaceChildren();
-    for (const id of ["courseChats", "courseSources"]) $(id).setAttribute("aria-expanded", "false");
-  }
-  async function loadPanel() {
-    if (!panel || !barCourse) return;
-    const data = await api("/api/courses/" + barCourse);
-    if (!panel) return;
-    panel.course = data.course;
-    panel.chats = data.chats;
-    paintPanel();
-    clearTimeout(panelTimer);
-    if (data.course.files.some((f) => f.status === "queued" || f.status === "reading")) panelTimer = setTimeout(() => loadPanel().catch(() => {}), 3000);
-  }
-  function paintPanel() {
-    const box = holder();
-    box.hidden = false;
-    box.replaceChildren();
-    $("courseChats").setAttribute("aria-expanded", String(panel.mode === "chats"));
-    $("courseSources").setAttribute("aria-expanded", String(panel.mode === "sources"));
-    if (panel.mode === "chats") {
-      drawChats(box, { data: panel, withNew: false, activeId: barChat, onPick: closePanel, after: loadPanel });
-    } else {
-      box.appendChild(el("h2", "", `Sources (${panel.course.files.length})`));
-      const zone = el("div", "dropzone");
-      zone.id = "panelDropZone";
-      zone.append(button("+ Add material", () => picker.click(), "primary add-material"), el("span", "sub", " or drop files on this page"));
-      zone.appendChild(linkBox(barCourse));
-      box.appendChild(zone);
-      box.appendChild(sourcesList(panel.course, { after: loadPanel }));
-    }
-  }
-  function openPanel(mode) {
-    if (panel && panel.mode === mode) return closePanel();
-    panel = { mode, course: { id: barCourse, files: [] }, chats: [] };
-    loadPanel().catch(fail);
-  }
-  $("courseChats").addEventListener("click", () => barCourse && openPanel("chats"));
-  $("courseSources").addEventListener("click", () => barCourse && openPanel("sources"));
-  $("courseNew").addEventListener("click", () => { if (barCourse) { closePanel(); newChat(false, { id: barCourse, name: courseNames.get(barCourse) || "Course" }); } });
-  // index.html calls this whenever the open chat or its course changes.
-  window.studyBarChanged = (courseId, chatId) => {
-    if (courseId !== barCourse) closePanel();
-    barCourse = courseId || null;
-    barChat = chatId || null;
-    if (panel && panel.mode === "chats") paintPanel();
-  };
-
   // ---- hooks into the main page ----
   window.studyShow = (courseId, focus) => { (courseId ? openCourse(courseId, focus) : loadList()).catch(fail); };
   // A source chip under an answer: that page of that file, in a popup over the chat.
   window.studyOpenSource = showSource;
   window.studyHide = () => { clearTimeout(timer); };
-  $("studyBtn").addEventListener("click", () => { navGo({ view: "study", id: currentId }); showView("study"); });
+  $("studyBtn").addEventListener("click", () => { navGo({ view: "study", id: null }); showView("study"); });
   $("menu3").addEventListener("click", openSide);
 })();
