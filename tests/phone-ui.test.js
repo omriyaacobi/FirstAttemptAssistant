@@ -75,11 +75,14 @@ test("words typed while a message is on its way stay in the box (clearSentText)"
 });
 
 test("no cache can keep the phone on an old page", () => {
-  assert.doesNotMatch(sw, /addEventListener\("fetch"/); // the service worker has no fetch handler: every request goes to the server
-  assert.doesNotMatch(sw, /caches\./); // and it stores nothing
-  assert.match(server, /"Content-Type": "text\/html; charset=utf-8", "Cache-Control": "no-store"/); // the page itself
+  // (2026-11-13) the service worker has a fetch handler now, but only for the Share menu and the "not reachable" page (tests/pwa.test.js
+  // runs it); it never stores a response from the PC: the only cache it touches is the short-lived share box
+  assert.doesNotMatch(sw, /\.put\(\s*(event\.)?request/);
+  assert.deepStrictEqual([...new Set(sw.match(/caches\.\w+\(\s*[\w"-]*/g))].sort(), ["caches.delete(n", "caches.keys(", "caches.open(SHARE_CACHE"]);
+  assert.match(server, /return sendStatic\(req, res, PAGE, "text\/html; charset=utf-8"\);/); // the page itself: no-cache + ETag, so the browser asks every time
+  assert.match(server, /"Cache-Control": "no-cache", ETag: entry\.etag/);
   assert.match(html, /async function checkNewPage\(\)/); // a page left open in the background asks for the page again when you come back
-  assert.match(html, /fetch\("\/", \{ cache: "no-store" \}\)/);
+  assert.match(html, /fetch\("\/", \{ cache: "no-cache" \}\)/);
 });
 
 test("an upload refusal drops your words only when the server really kept the message; a login that ended keeps everything", () => {

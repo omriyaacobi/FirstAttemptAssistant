@@ -35,6 +35,8 @@
 //   GET    /api/backup             -> when the last backup of data/ ran and whether it failed (see backup.js)
 //   GET    /api/morning            -> the morning brief settings; POST to change them; POST /api/morning/now for one right now (see morning.js)
 //   GET    /manifest.webmanifest, /sw.js, /icon-192.png, /icon-512.png -> the phone-app files (a FIXED list, see STATIC)
+//   POST   /share-target           -> Android's Share menu; sw.js catches it on the phone. Here it is only a redirect that reads nothing
+//   (the page and these files are sent gzipped when the browser can read it, and with an ETag, so an unchanged file costs a tiny 304)
 //   GET    /api/session            -> is this the phone, is it logged in, and the key the phone needs for push
 //   POST   /api/login | /api/logout -> the phone login (see auth.js)
 //   POST   /api/push/subscribe | /api/push/unsubscribe | /api/push/test -> push notifications (see webpush.js)
@@ -54,6 +56,8 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const { execFile } = require("node:child_process");
 const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
@@ -141,10 +145,56 @@ function readBody(req, limit = MAX_BODY) {
   });
 }
 
-const sendJson = (res, status, data) => {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-  res.end(JSON.stringify(data));
-};
+// COMPRESSION (2026-11-13): text is sent gzipped when the browser says it can read gzip ("Accept-Encoding").
+// The page shrinks from 197 KB to about 54 KB and the conversation JSON to about a fifth, which matters on the phone's data.
+// Built-in zlib only. Small bodies are sent as they are (gzip would not save anything there).
+const GZIP_MIN = 1024;
+const wantsGzip = (req) => Boolean(req) && /\bgzip\b/i.test(String(req.headers["accept-encoding"] || ""));
+function sendBody(res, status, headers, body, { gz = null, compress = true } = {}) {
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+  if (compress && buffer.length >= GZIP_MIN && wantsGzip(res.req)) {
+    const packed = gz || zlib.gzipSync(buffer);
+    res.writeHead(status, { ...headers, "Content-Encoding": "gzip", Vary: "Accept-Encoding", "Content-Length": packed.length });
+    return res.end(packed);
+  }
+  res.writeHead(status, { ...headers, ...(compress && buffer.length >= GZIP_MIN ? { Vary: "Accept-Encoding" } : {}), "Content-Length": buffer.length });
+  res.end(buffer);
+}
+
+const sendJson = (res, status, data) => sendBody(res, status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, JSON.stringify(data));
+
+// REVALIDATION (2026-11-13): the page and the app files used to be "no-store", so the phone downloaded all 197 KB on every open.
+// Now they are "no-cache" with an ETag (a fingerprint of the file): the browser keeps its copy but ASKS every time, and Bot answers
+// "304 Not Modified" (no body) when the file did not change. A change (Improve Bot, a merge) is seen at the very next open.
+// sw.js stays "no-store": browsers check the service worker themselves. These are fixed public files; no private data is cached.
+const fileTags = new Map(); // path -> { mtimeMs, size, etag, data, gz }
+function readStaticFile(file, callback) {
+  fs.stat(file, (statError, stat) => {
+    if (statError) return callback(statError);
+    const known = fileTags.get(file);
+    if (known && known.mtimeMs === stat.mtimeMs && known.size === stat.size) return callback(null, known);
+    fs.readFile(file, (error, data) => {
+      if (error) return callback(error);
+      const entry = { mtimeMs: stat.mtimeMs, size: stat.size, data, etag: `"${crypto.createHash("sha256").update(data).digest("base64url").slice(0, 22)}"`, gz: null };
+      fileTags.set(file, entry);
+      callback(null, entry);
+    });
+  });
+}
+function sendStatic(req, res, file, type, { revalidate = true } = {}) {
+  readStaticFile(file, (error, entry) => {
+    if (error) return sendJson(res, error.code === "ENOENT" ? 404 : 500, { error: error.code === "ENOENT" ? "not found" : "page missing" });
+    const textual = !/^image\//.test(type); // pictures are already packed; gzip would only cost time
+    if (!revalidate) return sendBody(res, 200, { "Content-Type": type, "Cache-Control": "no-store" }, entry.data, { compress: textual });
+    const headers = { "Content-Type": type, "Cache-Control": "no-cache", ETag: entry.etag };
+    if (String(req.headers["if-none-match"] || "").split(/\s*,\s*/).includes(entry.etag)) {
+      res.writeHead(304, { "Cache-Control": "no-cache", ETag: entry.etag, Vary: "Accept-Encoding" });
+      return res.end();
+    }
+    if (textual && wantsGzip(req) && entry.data.length >= GZIP_MIN && !entry.gz) entry.gz = zlib.gzipSync(entry.data); // packed once per version of the file
+    sendBody(res, 200, headers, entry.data, { gz: textual ? entry.gz : null, compress: textual });
+  });
+}
 
 // Reads a JSON request body. Sends the error response itself and returns null if the request is bad.
 // Only "Content-Type: application/json" is accepted. A web page on another site cannot send JSON
@@ -252,6 +302,15 @@ function createServer({
       return;
     }
 
+    // Android's Share menu posts to /share-target. The phone's service worker (public/sw.js) normally catches it before it leaves the
+    // phone. If it ever reaches Bot (the service worker was not running), Bot reads NOTHING of it: it drops the connection's body and
+    // just opens the page, which then says nothing was shared. Shared files only ever enter Bot through /api/thread/upload.
+    if (req.method === "POST" && String(req.url).split("?")[0] === "/share-target") {
+      res.writeHead(303, { Location: "/?shared=1", "Cache-Control": "no-store", Connection: "close" });
+      res.end(() => req.destroy()); // the answer first, then the unread upload is cut off
+      return;
+    }
+
     // CHECK 2 - browsers say which site a request came from. Refuse anything not from this page.
     // This blocks other websites you have open from sending tasks to this server.
     const origin = req.headers.origin;
@@ -324,23 +383,13 @@ function createServer({
 
     // The page itself
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-      fs.readFile(PAGE, (error, html) => {
-        if (error) return sendJson(res, 500, { error: "page missing" });
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        res.end(html);
-      });
-      return;
+      return sendStatic(req, res, PAGE, "text/html; charset=utf-8");
     }
 
     // The phone-app files (manifest, service worker, icons): only the fixed names in STATIC.
     if (req.method === "GET" && Object.hasOwn(STATIC, url.pathname)) {
       const item = STATIC[url.pathname];
-      fs.readFile(path.join(__dirname, "public", item.file), (error, data) => {
-        if (error) return sendJson(res, 404, { error: "not found" });
-        res.writeHead(200, { "Content-Type": item.type, "Cache-Control": "no-store" });
-        res.end(data);
-      });
-      return;
+      return sendStatic(req, res, path.join(__dirname, "public", item.file), item.type, { revalidate: item.file !== "sw.js" });
     }
 
     // Reminders. They are created from the chat ("remind me ..."); here the page lists, dismisses and cancels them.
@@ -666,7 +715,7 @@ function createServer({
   return server;
 }
 
-module.exports = { createServer, parseUsage, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNING, RESTART_EXIT_CODE };
+module.exports = { createServer, parseUsage, sendBody, MAX_BODY, MAX_TASK_CHARS, MAX_RUNNING, RESTART_EXIT_CODE };
 
 // Start listening only when run directly ("node server.js"), not when a test imports this file.
 if (require.main === module) {
@@ -739,6 +788,12 @@ if (require.main === module) {
   server.listen(PORT, HOST, () => {
     console.log(`Bot web page: http://localhost:${PORT}  (only reachable from this computer)`);
     console.log(auth.enabled ? `Phone access ON for https://${auth.host} (login required)` : `Phone access off: ${auth.reason}`);
+    // Windows tries "localhost" as IPv6 (::1) first. Bot listened on IPv4 only, so EVERY new connection to http://localhost:3000 (the page,
+    // the Moodle extension) waited about 0.2 s for that to fail (measured 2026-11-13). The same Bot also listens on ::1, the IPv6 name
+    // of THIS computer: still only reachable from this computer. Same handler, same checks. If this PC has no IPv6, nothing changes.
+    const v6 = http.createServer((req, res) => server.emit("request", req, res));
+    v6.on("error", (error) => console.log(`[server] also listening on ::1 did not work (${error.code || error.message}); localhost just stays 0.2 s slower`));
+    v6.listen(PORT, "::1");
     try { require("./providers").removeStaleWorkDirs(); } catch (error) { /* only housekeeping */ } // old bot-file-* / bot-photo-* folders from earlier runs
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
