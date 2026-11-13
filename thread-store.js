@@ -48,6 +48,10 @@ function clean(raw, { now }) {
   if (raw.result && typeof raw.result === "object") message.result = raw.result;
   if (Array.isArray(raw.log)) message.log = raw.log.map(String);
   if (raw.error === true) message.error = true;
+  // The part of an earlier message Omri replied to (quote.js checked it). Its own field, never inside the message text (see quote.js).
+  if (raw.quote && typeof raw.quote === "object" && typeof raw.quote.id === "string" && ID_PATTERN.test(raw.quote.id) && typeof raw.quote.text === "string" && raw.quote.text.trim()) {
+    message.quote = { id: raw.quote.id, text: raw.quote.text.slice(0, 1500), role: raw.quote.role === "user" ? "user" : "assistant" };
+  }
   if (raw.ack === true) message.ack = true; // "I got it, the answer comes later" (not an answer: see markUnanswered)
   if (raw.imported && typeof raw.imported === "object") message.imported = raw.imported;
   return message;

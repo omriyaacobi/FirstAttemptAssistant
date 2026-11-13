@@ -28,7 +28,7 @@ test("camera: a button opens the back camera, and its picture goes down the same
   assert.match(html, /button\.attach \{[^}]*width: 44px; height: 44px/);
   // the camera file is handed to the very same photo input, so shrinking, the chip and /api/ask are the old ones
   assert.match(html, /\$\("photoInput"\)\.files = transfer\.files;\s*\$\("photoInput"\)\.dispatchEvent\(new Event\("change"\)\)/);
-  assert.match(html, /ask\(task, attached \? attached\.dataUrl : null, false\)/);
+  assert.match(html, /ask\(task, attached \? attached\.dataUrl : null, false[,)]/); // (2026-11-13: a quote may follow, tests/quote.test.js)
   assert.match(html, /\$\("camera"\)\.addEventListener\("click"/);
 });
 
@@ -70,7 +70,7 @@ test("words typed while a message is on its way stay in the box (clearSentText)"
   box.value = "something else"; sandbox.clearSentText("hello"); assert.strictEqual(box.value, "something else"); // edited at the start: nothing is thrown away
   // every send path uses it instead of emptying the box after the round trip
   assert.doesNotMatch(html, /await ask\([^\n]*\n\s*\$\("task"\)\.value = ""/);
-  assert.match(html, /clearSentText\(sentRaw\);\s*clearPhoto\(\);\s*\$\("tempty"\)\.hidden = true;/);
+  assert.match(html, /clearSentText\(sentRaw\);\s*clearPhoto\(\);\s*(clearQuote\(\);\s*)?\$\("tempty"\)\.hidden = true;/);
   assert.match(html, /startsWith\(sentRaw\)\) \$\("improveText"\)\.value/);
 });
 
