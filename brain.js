@@ -63,7 +63,7 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder"]);
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -493,6 +493,34 @@ ${text}`; } catch (error) {
         if (!best) return "No saved fact like that was found.";
         ctx.extras.forget = { id: best.id, text: best.text };
         return `A card asks Omri whether to forget: "${best.text}". Nothing is removed until Omri confirms.`;
+      },
+      // FOLDERS of course files are LABELS (2026-11-13): moving a file or renaming a folder changes only Bot's label, never a disk
+      // path. The files are picked by CODE (pickFiles; each name must fit exactly one file); the folder text is cleaned by code.
+      file_folder: async ({ course, file, folder, from, to }) => {
+        afterWeb("change file folders");
+        const c = need(course);
+        ctx.course = c;
+        const has = (v) => v !== undefined && v !== null && v !== "";
+        if (has(from)) {
+          const r = courseRoutes.renameFolder(c.id, from, to);
+          if (!r.count) throw new Error(`no file of ${c.name} is in a folder "${r.from}"`);
+          return `Renamed the folder "${r.from}" to "${r.to || "(top level)"}" in ${c.name}: ${r.count} file(s). Only Bot's labels changed. To undo: file_folder with from "${r.to}" and to "${r.from}".`;
+        }
+        if (folder === undefined || folder === null) throw new Error("say the folder to move to (\"\" for the top level), or from + to to rename a folder");
+        const wanted = [].concat(file).filter(has).slice(0, 50);
+        if (!wanted.length) throw new Error("say which file(s) to move");
+        const files = filesOf(c);
+        const isShared = shared(files);
+        const ids = [];
+        for (const w of wanted) {
+          const hits = pickFiles(files, w);
+          if (hits.length !== 1) throw new Error(hits.length ? `"${String(w).slice(0, 80)}" fits more than one file of ${c.name}; pass the id or folder/name of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `no file of ${c.name} like "${String(w).slice(0, 80)}". Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
+          if (!ids.includes(hits[0].id)) ids.push(hits[0].id);
+        }
+        const r = courseRoutes.moveFiles(c.id, ids, folder);
+        const names = ids.map((id) => files.find((f) => f.id === id).name);
+        const back = [...new Set(r.before.map((b) => b.folder))];
+        return `Moved ${ids.length} file(s) of ${c.name} into "${r.folder || "(top level)"}": ${names.slice(0, 12).join(", ")}. Only Bot's labels changed. Before: ${back.map((b) => `"${b || "(top level)"}"`).join(", ")}.`;
       },
       course_note: async ({ course, note }) => {
         afterWeb("save notes");

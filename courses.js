@@ -142,6 +142,23 @@ function createCourses(dir) {
     return file;
   }
 
+  // Several files' folder LABELS at once (file_folder in brain.js): labels = { fileId: "folder" }, "" = top. One read, one save.
+  // Labels only (cleanFolder): nothing on disk moves. Returns how many files changed.
+  function setFolders(id, labels) {
+    const course = get(id);
+    if (!course) throw fail(404, "course not found");
+    let changed = 0;
+    for (const file of course.files) {
+      if (!Object.prototype.hasOwnProperty.call(labels, file.id)) continue;
+      const label = cleanFolder(labels[file.id]);
+      if ((file.folder || "") === label) continue;
+      if (label) file.folder = label; else delete file.folder;
+      changed++;
+    }
+    if (changed) save(course);
+    return changed;
+  }
+
   function getFile(id, fid) {
     const course = get(id);
     return (course && course.files.find((f) => f.id === fid)) || null;
@@ -208,7 +225,7 @@ function createCourses(dir) {
     }
   }
 
-  return { list, get, create, rename, remove, addFile, setFile, getFile, removeFile, originalPath, savePages, getPages, allPages, legacyChat, retireLegacyChat, recover };
+  return { list, get, create, rename, remove, addFile, setFile, setFolders, getFile, removeFile, originalPath, savePages, getPages, allPages, legacyChat, retireLegacyChat, recover };
 }
 
 // Finds the real course a model named. The model's text is only a hint: it must be a course that exists. Order: the exact id, the
