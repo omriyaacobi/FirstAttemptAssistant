@@ -3041,6 +3041,7 @@
       };
       go.addEventListener("click", () => call("confirm", batch.mode === "folder" ? "Linking it. Bot will say here when it is done." : "Working on it. Bot will write one summary here when it is done."));
       no.addEventListener("click", () => call("cancel", batch.mode === "folder" ? "Cancelled. Nothing was linked." : "Cancelled. Nothing was fetched."));
+      if (batch.mode === "folder" && batch.folder) box.append(el("p", "sub", "Folder: " + batch.folder)); // the real path code checked, not the model's words
       box.append(go, no, note);
       if (waiting) note.textContent = "This list is no longer waiting. Ask again.";
       return box;

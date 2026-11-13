@@ -594,7 +594,22 @@ ${text}`; } catch (error) {
         const c = need(course);
         const r = record(c);
         if (!r || !r.projectDir) return `No folder is linked to ${c.name}. Omri can link one by sending its full path.`;
-        const f = projectFolder.readFile(r.projectDir, file);
+        let f;
+        try { f = projectFolder.readFile(r.projectDir, file); } catch (error) {
+          if (!/there is no file/.test(error.message)) throw error;
+          // Not in the linked folder. Maybe next to it (mission2 beside the linked mission1): code looks in the PARENT folder only, by
+          // name, and offers ONE Confirm card to link the parent instead. The model never hands in a path; nothing changes before the tap.
+          // Not after a web page, Moodle or with a photo (like every card that changes something), and one such card per message.
+          const up = linkBatches && !(ctx.sawWeb || ctx.sawPhoto || ctx.sawMoodle) && !ctx.parentCard ? projectFolder.findInParent(r.projectDir, file, { forbidden: [__dirname], ...folderRules }) : null;
+          if (!up) throw error;
+          const ref = refOf(c);
+          const check = (dir) => projectFolder.checkFolder(dir, { forbidden: [__dirname], ...folderRules });
+          const p = linkBatches.propose({ courseId: c.id, courseName: c.name, urls: [up.parent], mode: "folder", lang, source: `It holds ${up.hits.join(", ")}; the folder linked now (${r.projectDir}) does not.`, runOne: async (dir) => { const again = check(dir); coach.tracker.save({ ...coach.tracker.course(ref), projectDir: again }); return { ok: true }; } });
+          ctx.extras.linkBatch = p.card;
+          ctx.parentCard = true;
+          ctx.course = c;
+          return `"${String(file).slice(0, 120)}" is not in the linked folder (${r.projectDir}), but its parent folder ${up.parent} holds: ${up.hits.join(", ")}. A card now asks Omri to link ${up.parent} to ${c.name} instead. It is NOT linked and you have NOT read the file: say that in one short line with the path, and that Bot can read the file after the tap (Omri then asks again).`;
+        }
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         return `${f.rel} (line numbers added by Bot):\n${clip(projectFolder.numbered(f.text), LIMITS.read)}`;
       },

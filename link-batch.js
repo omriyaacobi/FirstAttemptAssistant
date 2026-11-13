@@ -46,12 +46,13 @@ function createLinkBatches({ thread = null, courseRoutes, fetchPage = linkfetch.
     while (pending.size > MAX_PENDING) pending.delete(pending.keys().next().value);
     const shown = urls.slice(0, 15).map((u) => `- ${iso(lang, custom ? oneLine(u, 240) : shortUrl(u))}`).join("\n");
     if (mode === "folder") { // one folder found on the PC (pc-find.js), linked to a course only after the tap
+      const why = source ? `\n${oneLine(source, 300)}` : "";
       const text = words(lang, `Link this folder to ${courseName}?
-${shown}
+${shown}${why}
 Bot can then list and read the text files in it (read-only, never changes or runs anything). Nothing is linked until you tap Confirm.`, `לקשר את התיקייה הזאת ל${courseName}?
-${shown}
+${shown}${why}
 אחר כך Bot יוכל לראות ולקרוא את קבצי הטקסט שבה (קריאה בלבד, בלי לשנות או להריץ כלום). שום דבר לא מקושר לפני לחיצה על אישור.`);
-      return { text, card: { id, mode, count: urls.length, courseName, expiresAt: now() + PENDING_MS } };
+      return { text, card: { id, mode, count: urls.length, courseName, folder: oneLine(urls[0], 240), expiresAt: now() + PENDING_MS } };
     }
     if (mode === "moodle") {
       const more15 = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
