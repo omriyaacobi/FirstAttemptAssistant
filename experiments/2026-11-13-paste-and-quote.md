@@ -37,3 +37,19 @@ Omri: "I want Bot to be comfortable like Claude": paste a PrintScreen / Win+Shif
 | Paste on the PC (+ drag and drop) | small: one listener and tests | none new |
 | Paste on the phone | same code; works only if Gboard hands the file over; needs the phone to check | none new |
 | Quote reply | medium: page button and chip, server check, brain block, thread display, tests | low if the rules above are kept |
+
+## Built (2026-11-13, Omri chose "paste, then quotes")
+
+**Paste and drop** (commit `536629c`, `public/index.html` `setupPasteAndDrop`, `tests/paste.test.js`): Ctrl+V with a picture or a copied file, and dropping a file on the page, hand the FIRST file to the paperclip's input. Text pastes as before; Improve Bot's box and the login keep their own paste. Checked in the browser pane: a pasted PNG became "Photo attached".
+
+**Quote reply** (`quote.js`, `thread-store.js`, `jobs.js`, `server.js` `/api/ask`, `brain.js` `quoteBlock`, page `setupQuotes`, `tests/quote.test.js`):
+- Select text inside one message: a "Reply to this" button appears above the selection on the PC, 30 px below it on the phone (Android's own Copy menu sits above, its drag handles just below). The chip above the box shows the quote with an X.
+- Send carries `{ messageId, text }`. `quote.js` checks the message exists and that the quote's WORDS appear in it in the same order (letters and digits in any language; Markdown marks, spaces and math symbols are ignored, so a selection of a drawn answer matches its saved text). At most 1,500 characters. A failed check is a plain 400 and nothing is saved.
+- The quote is saved in its own `quote` field on Omri's message (never in the text) and shown above that message; a tap jumps to the quoted message.
+- The brain gets `## The part Omri is replying to` with the quote between `<quote>` markers, said to be DATA, before the new message. `allowedUrl` still reads only Omri's text, so a link in a quoted answer is not "a link Omri wrote".
+- A quote goes with a text message or a photo, not with a file (the page says so).
+- Not done: the models' memory of LATER messages does not include the quote (the history shows the message text only). Easy to add if it matters.
+
+Checked in the browser pane on a throwaway server with a fake model: select, click the real button, type, Enter; the fake brain received the quote; the sent message shows it. Phone size: the button sits below the selection.
+
+Not checked: a real long-press selection on the S23 (the pane fakes touch), and pasting from Gboard's clipboard on the phone.

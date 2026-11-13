@@ -27,6 +27,12 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
+## Paste and reply to a part (2026-11-13, branch claude/research-bot-access-8d8430)
+
+- **Paste:** Ctrl+V a screenshot (PrintScreen, Win+Shift+S) or a copied file into Bot, or drop a file on the page: it is attached like the paperclip.
+- **Reply to a part:** select text in a message, tap "Reply to this", write, Send. Code checks the part is really in that message; the brain
+  gets it as a marked quote. Details and what was not checked on the phone: `experiments/2026-11-13-paste-and-quote.md`.
+
 ## Phone app, option A (2026-11-13, branch claude/research-bot-access-8d8430)
 
 - Bot is now in Android's **Share menu**: share a photo, PDF, zip or link from any app, and it lands in Bot's message box. Nothing is
