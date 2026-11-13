@@ -44,56 +44,6 @@ test("without anything told, the first study answer asks where you are and inven
   assert.strictEqual(r.study.courses.every((c) => c.understood === 0), true);
 });
 
-test("the front-desk line is short, from code, and empty when nothing is tracked", () => {
-  const { coach } = make();
-  const line = coach.studyLine();
-  assert.match(line, /^Study \(from the tracker, today 2026-11-07\)/);
-  assert.match(line, /Systems Programming: 6 lectures held, 0 checked as understood, 5 behind, student's position unknown/);
-  assert.ok(line.length < 900);
-  const empty = createStudyCoach({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-coach-")), courses: { list: () => [], allPages: () => [] }, askChain: async () => ({}), now: () => clock.now });
-  assert.strictEqual(empty.studyLine(), "");
-});
-
-test("the studyLine never throws, even when the course list breaks", () => {
-  const c = createStudyCoach({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-coach-")), courses: { list: () => { throw new Error("boom"); }, allPages: () => [] }, askChain: async () => ({}), now: () => clock.now });
-  assert.strictEqual(c.studyLine(), "");
-});
-
-test("'no lecture this week' removes that course's lectures of this week and moves the numbers", async () => {
-  const { coach } = make();
-  const before = coach.tracker.slots("sp").length;
-  const r = await coach.answerStudy({ studyIntent: "update", text: "no Systems Programming lecture this week" });
-  assert.match(r.answer, /Removed Systems Programming: Sunday 1 Nov, Thursday 5 Nov/);
-  assert.strictEqual(coach.tracker.slots("sp").length, before - 2);
-  const p = await coach.answerStudy({ studyIntent: "progress", text: "Systems Programming" });
-  assert.match(p.answer, /4 lectures held so far by the timetable \(cancelled ones removed\)/);
-  const undo = await coach.answerStudy({ studyIntent: "update", text: "there was a Systems Programming lecture on 2026-11-05" });
-  assert.match(undo.answer, /back in the count/);
-  assert.strictEqual(coach.tracker.slots("sp").length, before - 1);
-});
-
-test("a cancelled day, 'no classes' for everyone, and a day with no such lecture", async () => {
-  const { coach } = make();
-  const r1 = await coach.answerStudy({ studyIntent: "update", text: "no classes on 24 Dec" });
-  assert.match(r1.answer, /every course: Thursday 24 Dec/);
-  const r2 = await coach.answerStudy({ studyIntent: "update", text: "no Algorithms lecture on 2026-11-10" });
-  assert.match(r2.answer, /has no lecture on/);
-  const r3 = await coach.answerStudy({ studyIntent: "update", text: "no lecture" });
-  assert.match(r3.answer, /I did not catch/);
-});
-
-test("telling where you are: a weekday, a number, per course on separate lines", async () => {
-  const { coach, sp } = make();
-  const r = await coach.answerStudy({ studyIntent: "update", text: "Systems Programming: my last lecture was Thursday\nCalculus: I'm at lecture 3" });
-  assert.match(r.answer, /Systems Programming: noted that you are up to Thursday 5 Nov/);
-  assert.match(r.answer, /Calculus 2: noted that you are up to Monday 26 Oct/);
-  const p = coach.tracker.progress(sp);
-  assert.strictEqual(p.positionKnown, true);
-  assert.strictEqual(p.understood, 0); // telling is never understanding
-  const bad = await coach.answerStudy({ studyIntent: "update", text: "Algorithms: I'm at lecture 99" });
-  assert.match(bad.answer, /I kept your words.*6 held so far.*could not place lecture 99/); // kept, not dropped
-});
-
 test("a notebook with more lectures than classes held is lined up once, and says it is an assumption", async () => {
   const { coach, calc } = make();
   const r = await coach.answerStudy({ studyIntent: "progress", text: "Calculus 2" });
@@ -116,14 +66,14 @@ test("quiz through the coach uses Argon only and finishes with a real check", as
 
 test("a course question without a course asks which one", async () => {
   const { coach } = make();
-  const r = await coach.answerStudy({ studyIntent: "teach", text: "teach me the next lecture" });
+  const r = await coach.brainTools.teach({ courseId: null, part: "" });
   assert.match(r.answer, /Which course do you mean\?/);
 });
 
 test("every tutor answer says mode study (jobs.js reads result.answer only for that mode; the night check found teach became an empty answer)", async () => {
   const { coach } = make();
-  for (const intent of ["teach", "quiz"]) {
-    const r = await coach.answerStudy({ studyIntent: intent, text: intent + " me lecture 3", courseId: IDS.calc });
+  for (const intent of ["teach", "quiz"]) { // teach comes through the brain's teach_next (brainTools.teach), quiz through answerStudy
+    const r = intent === "teach" ? await coach.brainTools.teach({ courseId: IDS.calc, part: "" }) : await coach.answerStudy({ studyIntent: intent, text: intent + " me lecture 3", courseId: IDS.calc });
     assert.strictEqual(r.mode, "study", intent);
     assert.ok(r.answer.length > 10, intent);
     assert.ok(r.study && r.study.mode, "the tutor's own mode stays in study.mode");
@@ -132,7 +82,7 @@ test("every tutor answer says mode study (jobs.js reads result.answer only for t
 
 test("an assignment message becomes a proposal; nothing is saved until Confirm, and Confirm works once", async () => {
   const { coach, sp } = make();
-  const r = await coach.answerStudy({ studyIntent: "assignment", text: "exercise 4 is due Thursday 12 Nov, write a shell", courseId: IDS.sp });
+  const r = await coach.onUpload({ kind: "assignment", text: "exercise 4 is due Thursday 12 Nov, write a shell", courseId: IDS.sp });
   assert.match(r.answer, /"Exercise 4", due Thursday 12 Nov, needing: fork, pipes/);
   assert.strictEqual(coach.tracker.progress(sp).assignments.length, 0);
   const id = r.proposal.id;
@@ -143,10 +93,10 @@ test("an assignment message becomes a proposal; nothing is saved until Confirm, 
 
 test("'yes' and 'no' reach the latest proposal; an expired one cannot be confirmed", async () => {
   const { coach } = make();
-  await coach.answerStudy({ studyIntent: "assignment", text: "exercise due 2026-11-12", courseId: IDS.sp });
+  await coach.onUpload({ kind: "assignment", text: "exercise due 2026-11-12", courseId: IDS.sp });
   const no = await coach.answerStudy({ studyIntent: "cancel", text: "no" });
   assert.match(no.answer, /Nothing was saved/);
-  const r = await coach.answerStudy({ studyIntent: "assignment", text: "exercise due 2026-11-12", courseId: IDS.sp });
+  const r = await coach.onUpload({ kind: "assignment", text: "exercise due 2026-11-12", courseId: IDS.sp });
   clock.now += 13 * 3600 * 1000;
   assert.strictEqual(coach.confirmProposal(r.proposal.id).ok, false);
 });
@@ -162,57 +112,3 @@ test("material with a date, and material without one, both become proposals poin
   assert.strictEqual(coach.tracker.progress(sp).withMaterial, 1);
 });
 
-test("pause and resume work from chat, with a date, and an unknown intent only shows numbers", async () => {
-  const { coach } = make();
-  const p = await coach.answerStudy({ studyIntent: "pause", text: "pause study reminders until 2026-11-20 I have reserve duty" });
-  assert.match(p.answer, /paused until Friday 20 Nov/);
-  assert.strictEqual(coach.nudges.isPaused(), true);
-  const r = await coach.answerStudy({ studyIntent: "resume", text: "I am back" });
-  assert.match(r.answer, /on again/);
-  assert.strictEqual(coach.nudges.isPaused(), false);
-  const odd = await coach.answerStudy({ studyIntent: "delete-everything", text: "x" });
-  assert.match(odd.answer, /lectures held/);
-});
-
-test("motivate is code-written (no model), honest, and points at the smallest next step", async () => {
-  const { coach, calls, sp } = make();
-  coach.tracker.attachMaterial(sp, "2026-10-22", [{ fileId: "f", from: 1, to: 2 }]);
-  const r = await coach.answerStudy({ studyIntent: "motivate", text: "I do not feel like studying Systems Programming" });
-  assert.match(r.answer, /smallest next step: lecture 2 \(Thursday 22 Oct\)/);
-  assert.strictEqual(calls.length, 0);
-});
-
-test("one message with the place in several courses: the model proposes, code checks each one, the answer lists every course", async () => {
-  const { coach, dir } = make();
-  const proposal = { courses: [
-    { course: "Calculus 2", state: "lecture", lecture: 4 },
-    { course: "Algorithms Planning", state: "upToDate" },
-    { course: "Systems Programming", state: "notStarted" },
-    { course: "High-Performance Systems Programming S1", state: "lecture", lecture: 9 }, // not held yet: refused
-    { course: "Made Up Course", state: "lecture", lecture: 1 }, // not a real course: ignored
-  ] };
-  const coach2 = require("../study-coach").createStudyCoach({ dir, courses: { list: () => COURSES, allPages: () => [] }, askChain: async () => ({ answer: "Sure: " + JSON.stringify(proposal), used: { model: "x" } }), now: () => clock.now });
-  const r = await coach2.answerStudy({ studyIntent: "update", text: "calc lecture 4, algo I'm up to date, systems I haven't started, high performance lecture 9" });
-  assert.match(r.answer, /Calculus 2: up to lecture 4 \(Wednesday 28 Oct\)/);
-  assert.match(r.answer, /Algorithms Planning: up to lecture 6 .*the latest one held/);
-  assert.match(r.answer, /Systems Programming: not started yet/);
-  assert.match(r.answer, /High-Performance Systems Programming S1: lecture 9 has not been held yet/);
-  assert.match(r.answer, /High-Performance Systems Programming S1: you did not say, so I still do not know/);
-  assert.doesNotMatch(r.answer, /Made Up/);
-  const p = coach2.tracker.progress(coach2.tracker.refsFor(COURSES)[0]);
-  assert.strictEqual(p.positionKnown, true);
-  assert.strictEqual(p.position.seenThrough, "2026-10-28");
-});
-
-test("several courses at once: a model that fails or sends junk falls back to the plain rules", async () => {
-  const { coach } = make(); // the fake model answers "?"
-  const r = await coach.answerStudy({ studyIntent: "update", text: "my last Calculus lecture was Monday" });
-  assert.match(r.answer, /Calculus 2: noted that you are up to/);
-});
-
-test("an 'update' that holds no schedule fact (I skip class, help me catch up) shows where you stand instead of 'I did not catch'", async () => {
-  const { coach } = make();
-  const r = await coach.answerStudy({ studyIntent: "update", text: "אני לא מגיע לשיעורים בקורס הזה, עזור לי להשלים את הפער" });
-  assert.doesNotMatch(r.answer, /לא הבנתי|I did not catch/);
-  assert.match(r.answer, /לא יודע|עדיין|הרצאות|איפה/);
-});

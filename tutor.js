@@ -297,7 +297,10 @@ function summary(session, rec) {
 // range: see pickLecture, or { extra: [page-like pieces of the notes the student has covered], label } for a course whose notes are not split by lecture.
 // notes (optional, teach): { chunk: { title, part, parts, text, fromPage, realPages, fileId, fileName, key }, onTaught } = ONE piece of a big notes file chosen by code (catchup.js).
 // through (optional, start): { assignment, concept, index, total, concepts, extra, onTaught } = teach the next idea an assignment needs, from the notes, never from the assignment.
-async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, through = null }) {
+// lang (optional): the language of the reply when the caller knows it (the brain hands it in: its teach_next tool gets only a part name,
+// which says nothing about the language Omri wrote in). Without it the language is read from the message, as before.
+async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, through = null, lang: forcedLang = null }) {
+  const langNow = forcedLang === "he" || forcedLang === "en" ? forcedLang : langOf(message);
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
   const session = tracker.getSession(ref);
@@ -305,7 +308,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
 
   if (continuing && session.mode === "work") {
     let w;
-    try { w = await workText({ askChain, assignment: tracker.course(ref).assignments.find((a) => a.id === session.target.id) || { title: "the assignment" }, message, lang: session.lang, log, onText }); } catch (error) { return finish(unavailable(error.message, langOf(message))); }
+    try { w = await workText({ askChain, assignment: tracker.course(ref).assignments.find((a) => a.id === session.target.id) || { title: "the assignment" }, message, lang: session.lang, log, onText }); } catch (error) { return finish(unavailable(error.message, langNow)); }
     return finish({ answer: w.text, model: w.model, mode: "work" });
   }
   if (continuing) {
@@ -340,7 +343,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
         else { q.hints = Math.min(3, q.hints + 1); const h = await makeHint({ askChain, q, level: q.hints, answer: message, told: g.feedback, material, lang: session.lang, log }); reply = `${g.verdict === "partly" ? tx(session).partly : tx(session).notYet}${g.feedback}\n${tx(session).hint(q.hints)}${h.hint}`; if (g.note) q.note = g.note; }
       }
     } catch (error) {
-      return finish(unavailable(error.message, langOf(message)));
+      return finish(unavailable(error.message, langNow));
     }
     if (q.state === "done") {
       if (q.revealed && !q.verdict) q.verdict = "wrong";
@@ -364,7 +367,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
 
   // ---- teaching one piece of the notes (a course whose notes are not split by lecture) ----
   if (intent === "teach" && notes && notes.chunk) {
-    const c = notes.chunk, lang = isHebrew(message) ? "he" : "en";
+    const c = notes.chunk, lang = langNow;
     const piece = { fileId: `${c.fileId}#${c.key}`, fileName: `${c.fileName} - ${clean(c.title, 80)}${c.parts > 1 ? ` (${c.part}/${c.parts})` : ""}`, page: c.realPages ? c.fromPage : 1, text: c.text };
     const mat = materialFor([], [], [piece]);
     try {
@@ -377,10 +380,10 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
       }
       const head = `**${clean(c.title, 80)}**${c.parts > 1 ? ` (${c.part}/${c.parts})` : ""}\n`; // code names the piece of the notes, so the student knows where it comes from
       return finish({ answer: head + t.text + tail, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: /\[OUT\]/.test(t.text), target: { type: "notes", key: c.key } });
-    } catch (error) { return finish(unavailable(error.message, langOf(message))); }
+    } catch (error) { return finish(unavailable(error.message, langNow)); }
   }
   if (intent === "start" && through && through.assignment) {
-    const a = through.assignment, lang = isHebrew(message) ? "he" : "en";
+    const a = through.assignment, lang = langNow;
     if (through.index >= through.total) { // every idea was taught: from here on, guided work with hints
       tracker.setSession(ref, newSession("work", { type: "assignment", id: a.id }, { lang }));
       if (a.status === "todo") tracker.setAssignment(ref, a.id, { status: "started" });
@@ -397,23 +400,23 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
         tail = "\n\n" + tx({ lang }).back(t.question.q);
       }
       return finish({ answer: intro + t.text + tail, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: !mat.picked.length, target: { type: "assignment", id: a.id } });
-    } catch (error) { return finish(unavailable(error.message, langOf(message))); }
+    } catch (error) { return finish(unavailable(error.message, langNow)); }
   }
 
   // ---- a new session ----
   if (intent === "start") {
     const a = pickAssignment({ tracker, ref, message });
-    if (!a) return finish({ answer: say(langOf(message), "I do not have an assignment saved for this course yet. Send me the file or paste the text with its due date, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה בקורס הזה. אפשר לשלוח את הקובץ או להדביק את הטקסט עם תאריך ההגשה, ואציע אותה לאישור."), needs: "assignment" });
+    if (!a) return finish({ answer: say(langNow, "I do not have an assignment saved for this course yet. Send me the file or paste the text with its due date, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה בקורס הזה. אפשר לשלוח את הקובץ או להדביק את הטקסט עם תאריך ההגשה, ואציע אותה לאישור."), needs: "assignment" });
     let needs = a.needs;
     try {
       const mat = materialFor(pages, [], pickPages(pages, `${a.title} ${needs.join(" ")}`, { k: 6 }));
       if (!needs.length) { const p = await proposeAssignment({ askChain, courseName, text: a.text || a.title, now, log }); needs = p.ok ? p.proposal.needs : []; }
-      if (!needs.length) { tracker.setSession(ref, newSession("work", { type: "assignment", id: a.id })); return finish({ answer: say(langOf(message), `Let us start "${a.title}". First, in your own words: what is it asking you to produce, and what would your first step be? Do not worry about being right. I will guide you with hints, not the solution.`, `מתחילים את "${a.title}". קודם כל, במילים שלך: מה המטלה מבקשת להגיש, ומה יהיה הצעד הראשון? אין צורך להיות מדויקים. אכוון עם רמזים, לא עם הפתרון.`), mode: "work" }); }
-      const made = await makeQuestions({ askChain, courseName, topic: a.title, material: mat, wanted: needs.slice(0, 4), n: Math.min(4, needs.length), lang: isHebrew(message) ? "he" : "en", log });
-      const s = newSession("start", { type: "assignment", id: a.id }, { lang: isHebrew(message) ? "he" : "en", questions: made.questions });
+      if (!needs.length) { tracker.setSession(ref, newSession("work", { type: "assignment", id: a.id })); return finish({ answer: say(langNow, `Let us start "${a.title}". First, in your own words: what is it asking you to produce, and what would your first step be? Do not worry about being right. I will guide you with hints, not the solution.`, `מתחילים את "${a.title}". קודם כל, במילים שלך: מה המטלה מבקשת להגיש, ומה יהיה הצעד הראשון? אין צורך להיות מדויקים. אכוון עם רמזים, לא עם הפתרון.`), mode: "work" }); }
+      const made = await makeQuestions({ askChain, courseName, topic: a.title, material: mat, wanted: needs.slice(0, 4), n: Math.min(4, needs.length), lang: langNow, log });
+      const s = newSession("start", { type: "assignment", id: a.id }, { lang: langNow, questions: made.questions });
       tracker.setSession(ref, s);
       return finish({ answer: say(s.lang, `Before "${a.title}", a quick check that you have what it needs. One question at a time; no solution to the assignment itself.`, `לפני "${a.title}", בדיקה קצרה שיש את מה שצריך בשבילה. שאלה אחת בכל פעם, בלי הפתרון של המטלה עצמה.`) + `\n\n${showQuestion(s)}`, model: made.model, mode: "start", sources: sourcesFor("", mat.picked), outside: !mat.picked.length });
-    } catch (error) { return finish(unavailable(error.message, langOf(message))); }
+    } catch (error) { return finish(unavailable(error.message, langNow)); }
   }
 
   // teach and quiz: a lecture
@@ -426,10 +429,10 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   if (!pick.slot) return finish({ answer: pick.why === "none-held" ? `Lecture ${pick.n} has not been held yet by the timetable. If a class was cancelled, tell me ("no lecture on <date>") and the numbers will move.` : "I do not see a held lecture that still needs work. Tell me about a new one: a topic, a date, or send the slides.", needs: "lecture" });
   const lec = pick.why === "uploaded" ? { material: pick.material, topic: "" } : pick.why === "range" ? { material: [], topic: String(range.label || "").slice(0, 120) || "what you covered" } : tracker.course(ref).lectures[pick.slot.date];
   const topic = (lec && lec.topic) || "";
-  if (!(lec && lec.material.length) && !topic) return finish({ answer: say(langOf(message), `I have nothing about the lecture of ${plan.niceDate(pick.slot.date)} yet. What was it about, or can you send the slides? With only a topic I can still teach it from general knowledge, and I will say so.`, `עדיין אין לי כלום על ההרצאה מ${plan.niceDate(pick.slot.date, "he")}. על מה היא הייתה, או שאפשר לשלוח את השקפים? גם עם נושא בלבד אפשר ללמד מידע כללי, ואציין את זה.`), needs: "material", target: { type: "lecture", date: pick.slot.date } });
+  if (!(lec && lec.material.length) && !topic) return finish({ answer: say(langNow, `I have nothing about the lecture of ${plan.niceDate(pick.slot.date)} yet. What was it about, or can you send the slides? With only a topic I can still teach it from general knowledge, and I will say so.`, `עדיין אין לי כלום על ההרצאה מ${plan.niceDate(pick.slot.date, "he")}. על מה היא הייתה, או שאפשר לשלוח את השקפים? גם עם נושא בלבד אפשר ללמד מידע כללי, ואציין את זה.`), needs: "material", target: { type: "lecture", date: pick.slot.date } });
   const mat = materialFor(pages, lec ? lec.material : [], pick.why === "range" ? range.extra : []);
-  const label = topic || (isHebrew(message) ? `הרצאה ${pick.slot.n}` : `lecture ${pick.slot.n}`);
-  const lang = isHebrew(message) ? "he" : "en";
+  const label = topic || (langNow === "he" ? `הרצאה ${pick.slot.n}` : `lecture ${pick.slot.n}`);
+  const lang = langNow;
   try {
     if (intent === "teach") {
       const t = await teachText({ askChain, courseName, topic: label, material: mat, message, lang, log, onText });
@@ -446,7 +449,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
     const s = newSession("quiz", { type: "lecture", date: pick.slot.date, n: pick.slot.n }, { lang, questions: made.questions });
     tracker.setSession(ref, s);
     return finish({ answer: `${tx(s).quizIntro(label, pick.slot.date ? plan.niceDate(pick.slot.date) : (s.lang === "he" ? "מהקבצים שהעלית" : "from your uploaded files"))}\n\n${showQuestion(s)}`, model: made.model, mode: "quiz", sources: sourcesFor("", mat.picked), outside: !mat.picked.length, target: s.target });
-  } catch (error) { return finish(unavailable(error.message, langOf(message))); }
+  } catch (error) { return finish(unavailable(error.message, langNow)); }
 }
 
 // Explain what the student asked about, from the course files that match their words (no lecture or assignment needs to be saved). If the files do not cover it, teachText says so and uses general knowledge.

@@ -28,9 +28,25 @@ function make({ replies = {}, courseList = COURSES } = {}) {
   const coach = createStudyCoach({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-standing-")), courses, askChain, now: () => NOW });
   const refs = coach.tracker.refsFor(courseList);
   const ref = (c) => refs.find((r) => r.courseId === c.id);
+  READER.set(coach, { replies, courseList });
   return { coach, prompts, ref, pos: (c) => coach.tracker.progress(ref(c)) };
 }
-const say = (coach, text, studyIntent = "update", extra = {}) => coach.answerStudy({ studyIntent, text, ...extra });
+// Since 2026-11-13 the brain's model reads Omri's words and calls study_position with closed fields; the coach no longer has a reader
+// of its own. So "update" here does what the brain does: the fields scripted for these words go to brainTools.position, with the
+// message as Omri's own words (said); "undo" is the brain's study_undo. Everything after that (checks, readback, undo, the one
+// question, the exam card) is the coach's own code, as before.
+const READER = new WeakMap();
+const { langOf } = require("../lang");
+const say = async (coach, text, studyIntent = "update", extra = {}) => {
+  if (studyIntent !== "update") return coach.answerStudy({ studyIntent, text, ...extra });
+  const lang = langOf(text);
+  if (/^\s*(undo|בטל)\s*$/i.test(text)) return { answer: coach.brainTools.undo({ lang }) };
+  const { replies, courseList } = READER.get(coach);
+  const course = courseList.find((c) => text.includes(c.name));
+  const hit = Object.entries(replies).find(([k]) => text.includes(k));
+  const r = coach.brainTools.position({ courseId: course.id, fields: hit ? hit[1] : {}, said: text, lang });
+  return { answer: r.text, ...(r.proposal ? { proposal: r.proposal } : {}) };
+};
 
 test("a description in free words is read, stored and read back; the words stay; nothing becomes understood", async () => {
   const { coach, pos } = make({ replies: { "reading the notes alone": { mode: "selfStudy", where: { type: "fraction", value: 0.5 }, pace: "behind", goal: "concepts", focus: "paging" } } });
@@ -44,18 +60,6 @@ test("a description in free words is read, stored and read back; the words stay;
   assert.strictEqual(p.position.mode, "selfStudy");
   assert.strictEqual(p.position.where.type, "section");
   assert.strictEqual(p.understood, 0);
-});
-
-test("a reply to a position question is read as the answer even when the front desk says progress", async () => {
-  const { coach, pos } = make({ replies: { "page 40": { mode: "selfStudy", where: { type: "pages", from: 1, to: 40 } } } });
-  const ask = await say(coach, "where am I in Databases Demo?", "progress");
-  assert.match(ask.answer, /how far you are in the notes/); // a course without lectures asks a different question
-  assert.doesNotMatch(ask.answer.split("Databases Demo:")[1] || "", /last lecture you went through/);
-  const r = await say(coach, "I'm at page 40, only reading the notes", "progress");
-  assert.match(r.answer, /Understood, Databases Demo/);
-  assert.match(r.answer, /I could not place: pages 1-40 \(these notes have no real page numbers/); // the big document is one page: dropped WITH a reason, words kept
-  assert.strictEqual(pos(DB).position.said, "I'm at page 40, only reading the notes");
-  assert.strictEqual(pos(DB).position.where, undefined);
 });
 
 test("'no' undoes the last reading and restores the old record exactly; a second 'no' does nothing", async () => {
@@ -89,28 +93,6 @@ test("a 'no' while a quiz question is open is an answer, not an undo", async () 
   const r = await say(coach, "no", "cancel");
   assert.doesNotMatch(r.answer, /Undone/);
   assert.strictEqual(pos(DB).position.mode, "selfStudy");
-});
-
-test("at most ONE adaptive question, and not again within 7 days (unless asked 'where am I')", async () => {
-  const { coach } = make({ replies: { "reading alone": { mode: "selfStudy" }, "still reading": { mode: "selfStudy", pace: "behind" } } });
-  const a = await say(coach, "Databases Demo: I'm reading alone");
-  assert.strictEqual((a.answer.match(/One question/g) || []).length, 1);
-  assert.match(a.answer, /how far are you in the notes/);
-  const b = await say(coach, "Databases Demo: I'm still reading");
-  assert.doesNotMatch(b.answer, /One question/);
-  const c = await say(coach, "where am I in Databases Demo?", "progress");
-  assert.match(c.answer, /Databases Demo/); // the report is always available on request
-});
-
-test("a course WITH a timetable asks for the lecture; the question is gone once a place is known", async () => {
-  const { coach, pos } = make({ replies: { "only attending": { mode: "attending" }, "lecture 3": { mode: "attending", where: { type: "lecture", n: 3 } } } });
-  const a = await say(coach, "Systems Programming: I'm only attending");
-  assert.match(a.answer, /One question: which lecture are you in now/);
-  const b = await say(coach, "Systems Programming: I'm at lecture 3 and attending");
-  assert.match(b.answer, /up to lecture 3/);
-  assert.doesNotMatch(b.answer, /One question/);
-  assert.strictEqual(pos(SP).position.where.n, 3);
-  assert.ok(pos(SP).position.seenThrough); // older code keeps working
 });
 
 test("'I'm in lecture 7 now' with 6 held and lecture 7 today: kept as lecture 6 finished, 7 in progress, never 'stored nothing'", async () => {
@@ -155,34 +137,6 @@ test("an exam in N days makes a Confirm card (the date is computed by code); not
   void r2; void ref;
 });
 
-test("'I have no idea where I am': the words are kept, the quiz is offered once, no position question for a week", async () => {
-  const { coach, pos } = make();
-  const r = await say(coach, "I have no idea where I am in Compilers Demo");
-  assert.match(r.answer, /Not knowing where you are is fine/);
-  assert.match(r.answer, /quiz me on Compilers Demo/);
-  assert.strictEqual(pos(CO).positionKnown, true);
-  const again = await say(coach, "how am I doing in Compilers Demo?", "progress");
-  assert.doesNotMatch(again.answer, /So that I do not guess/);
-});
-
-test("a message about two courses is read course by course on its own words; ONE question at most; one 'no' undoes both", async () => {
-  const { coach, pos, prompts } = make({ replies: { "I haven't started": { mode: "notStarted" }, "only attending": { mode: "attending" } } });
-  const r = await say(coach, "Databases Demo, I haven't started. Systems Programming, I'm only attending");
-  assert.match(r.answer, /Understood, Databases Demo: not started yet/);
-  assert.match(r.answer, /Understood, Systems Programming: going to the lectures/);
-  assert.strictEqual((r.answer.match(/One question/g) || []).length, 1);
-  assert.strictEqual(pos(DB).position.mode, "notStarted");
-  assert.strictEqual(pos(SP).position.mode, "attending");
-  // each course got only its own sentence
-  const dbPrompt = prompts.find((p) => /Course: Databases Demo/.test(p));
-  assert.doesNotMatch(dbPrompt.split("<message")[1], /Systems Programming/);
-  const u = await say(coach, "undo", "update");
-  assert.match(u.answer, /^Undone\. .*Databases Demo.* are back to how they were before/);
-  assert.match(u.answer, /Systems Programming/);
-  assert.strictEqual(pos(DB).positionKnown, false);
-  assert.strictEqual(pos(SP).positionKnown, false);
-});
-
 test("'I skipped two weeks in the middle' describes the student's state: it is read, not answered as 'what did I miss today'", async () => {
   const { coach, pos } = make({ replies: { "two weeks": { mode: "attending", gaps: [] } } });
   const r = await say(coach, "I skipped two weeks in the middle of Systems Programming and then came back");
@@ -212,30 +166,6 @@ test("Hebrew: the readback, the undo and the question are written in Hebrew (no 
   assert.match(u.answer, /^בוטל\./);
   // gendered verbs in code-written Hebrew: none of the present-tense masculine/feminine forms used elsewhere
   for (const t of [a.answer, b.answer, u.answer]) assert.doesNotMatch(t, /\b(?:הולך|הולכת|קורא|קוראת|יודע|יודעת|לומד|לומדת)\b/);
-});
-
-test("the front desk line names the course Bot just asked about (P1) and is empty when nothing is open", async () => {
-  const { coach } = make();
-  assert.strictEqual(coach.questionLine(), "");
-  await say(coach, "where am I in Databases Demo?", "progress");
-  assert.match(coach.questionLine(), /asked the user a question about the course Databases Demo/);
-});
-
-test("P1: an answer to Bot's question goes to the course Bot ASKED about, not the course the front desk guessed", async () => {
-  const { coach, pos } = make({ replies: { "reading the notes": { mode: "selfStudy" } } });
-  await say(coach, "where am I in Databases Demo?", "progress"); // Bot asks about Databases Demo
-  // the front desk, looking at the last chat, picks Systems Programming for the answer
-  const r = await say(coach, "I'm only reading the notes", "update", { courseId: SP.id, courseName: SP.name });
-  assert.match(r.answer, /Understood, Databases Demo/);
-  assert.strictEqual(pos(DB).positionKnown, true);
-  assert.strictEqual(pos(SP).positionKnown, false);
-  // two questions asked at the same moment (one report about several courses) are not a clear answer: the desk's course is used
-  const t = make({ replies: { "reading the notes": { mode: "selfStudy" } } });
-  t.coach.tracker.markAsked(t.ref(DB), { position: true });
-  t.coach.tracker.markAsked(t.ref(CO), { position: true }); // same moment
-  const r2 = await say(t.coach, "I'm only reading the notes", "update", { courseId: SP.id, courseName: SP.name });
-  assert.match(r2.answer, /Understood, Systems Programming/);
-  assert.strictEqual(t.coach.questionLine(), "");
 });
 
 test("P2: a file for a course with no timetable gets no lecture-date question", async () => {

@@ -51,9 +51,6 @@ test("COACH (real coach, fake Argon): the first study talk asks where Omri is an
   const first = await coach.answerStudy({ studyIntent: "progress", text: "where am I" });
   assert.match(first.answer, /do not know where you are/i);
   assert.match(first.answer, /So that I do not guess/);
-  assert.match(coach.studyLine(), /student's position unknown/);
-  const upd = await coach.answerStudy({ studyIntent: "update", text: "no Systems Programming lecture this week" });
-  assert.match(upd.answer, /Systems Programming|skip|cancel/i);
   const quiz = await coach.answerStudy({ studyIntent: "quiz", text: "quiz me", courseName: "Calculus 2", courseId: IDS.calc });
   assert.match(quiz.answer, /Question number 1/);
 });
@@ -347,7 +344,7 @@ test("STUDY PAGE: per course where Omri should be, where they are, what is due, 
   assert.strictEqual(sp.you.positionKnown, false);
   assert.ok(sp.questions.some((q) => /Where are you in Systems Programming/.test(q)), "it asks, it does not guess");
   // an assignment with a date shows under "due"
-  const card = (await coach.answerStudy({ studyIntent: "assignment", text: "Exercise 4 is due 2026-11-12, it needs fork and pipes", courseName: "Systems Programming", courseId: IDS.sp })).proposal;
+  const card = (await coach.onUpload({ kind: "assignment", text: "Exercise 4 is due 2026-11-12, it needs fork and pipes", courseName: "Systems Programming", courseId: IDS.sp })).proposal;
   assert.ok(card);
   const withCard = studyOverview({ coach, courseList: COURSES, now: NOW });
   assert.strictEqual(withCard.proposal.id, card.id);
@@ -356,7 +353,7 @@ test("STUDY PAGE: per course where Omri should be, where they are, what is due, 
   assert.strictEqual(after.due[0].due, "2026-11-12");
   assert.strictEqual(after.due[0].daysLeft, 5);
   // the position answer removes the question
-  await coach.answerStudy({ studyIntent: "update", text: "my last Systems Programming lecture was Thursday" });
+  coach.brainTools.position({ courseId: IDS.sp, fields: { mode: "attending", where: { type: "lecture", n: 1 } }, said: "my last Systems Programming lecture was lecture 1" }); // what the brain's study_position hands in
   const told = studyOverview({ coach, courseList: COURSES, now: NOW }).courses.find((c) => c.name === "Systems Programming");
   assert.strictEqual(told.you.positionKnown, true);
   assert.ok(!told.questions.some((q) => /Where are you/.test(q)));
@@ -371,7 +368,7 @@ test("STUDY PAGE (server): GET /api/study and the Confirm tap work, and both are
     assert.strictEqual(overview.status, 200);
     assert.strictEqual(overview.json.courses.length, 4);
     assert.strictEqual((await s.json("GET", "/api/session")).json.study, true);
-    const card = (await coach.answerStudy({ studyIntent: "assignment", text: "Exercise 4 due 2026-11-12", courseName: "Systems Programming", courseId: IDS.sp })).proposal;
+    const card = (await coach.onUpload({ kind: "assignment", text: "Exercise 4 due 2026-11-12", courseName: "Systems Programming", courseId: IDS.sp })).proposal;
     const tap = await s.json("POST", "/api/study/confirm", { id: card.id });
     assert.strictEqual(tap.status, 200);
     assert.match(tap.json.answer, /Saved/);

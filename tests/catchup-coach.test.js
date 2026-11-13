@@ -34,11 +34,14 @@ function make({ courseList = [DB, CO], docs = { [DB.id]: DOC }, choose = [] } = 
   return { coach, prompts, ref, askChain };
 }
 const say = (coach, text, studyIntent, extra = {}) => coach.answerStudy({ studyIntent, text, ...extra });
+// The brain's checked tools (since 2026-11-13 the only way in for teaching, the plan and the exam card): the model hands in the
+// course and the part; code matches the part against the real notes.
+const teach = (coach, course, part = "", lang = "en") => coach.brainTools.teach({ courseId: course.id, part, lang });
 const teachPrompts = (prompts) => prompts.filter((p) => /Teach in 3 short steps|Teach this ONE idea/.test(p));
 
 test("teach the next part of a big notes file: one chunk, cited, one check question, nothing understood", async () => {
   const { coach, prompts, ref } = make();
-  const r = await say(coach, "teach me the next part of Databases Demo", "teach");
+  const r = await teach(coach, DB);
   assert.match(r.answer, /Step 1/);
   assert.match(r.answer, /One question back: What is the main idea\?/);
   assert.doesNotMatch(r.answer, /KEY|X\./, "the key is never shown");
@@ -52,19 +55,19 @@ test("teach the next part of a big notes file: one chunk, cited, one check quest
 
 test("'next part' moves on; a named section is found by code, no model needed", async () => {
   const { coach, prompts } = make();
-  await say(coach, "teach me the next part", "teach", { courseName: DB.name });
+  await teach(coach, DB);
   await say(coach, "the main idea is X because it is", "answer"); // answers the check question
-  await say(coach, "teach me the next part of Databases Demo", "teach");
+  await teach(coach, DB);
   assert.match(teachPrompts(prompts)[1], /Stack and heap/);
   const before = prompts.length;
-  await say(coach, "explain pointers to me, Databases Demo", "teach");
+  await teach(coach, DB, "pointers");
   assert.match(teachPrompts(prompts).pop(), /pointerword/);
   assert.ok(!prompts.slice(before).some((p) => /Pick the 1 to 3 sections/.test(p)), "title words matched: no model call");
 });
 
 test("a topic that is not in the notes is not invented: the real parts are listed and no teaching call is made", async () => {
   const { coach, prompts } = make();
-  const r = await say(coach, "teach me quantum chromodynamics in Databases Demo", "teach");
+  const r = await teach(coach, DB, "quantum chromodynamics");
   assert.match(r.answer, /could not find that in the notes of Databases Demo/);
   assert.match(r.answer, /Stack and heap; Pointers; Paging/);
   assert.strictEqual(teachPrompts(prompts).length, 0);
@@ -72,20 +75,20 @@ test("a topic that is not in the notes is not invented: the real parts are liste
 
 test("English words, Hebrew headings: one model call picks ids, and an invented id is dropped", async () => {
   const { coach, prompts } = make({ courseList: [HE], docs: { [HE.id]: HE_DOC }, choose: ["s999"] });
-  const none = await say(coach, "teach me about dynamic allocation", "teach");
+  const none = await teach(coach, HE, "dynamic allocation");
   assert.match(none.answer, /could not find that/);
   assert.strictEqual(teachPrompts(prompts).length, 0);
   const real = make({ courseList: [HE], docs: { [HE.id]: HE_DOC } });
   const s = (await real.coach.tracker.progress(real.ref(HE)));
   const id = require("../catchup").unitsOf(require("../outline").buildOutline(HE_DOC)).find((u) => /דינמי/.test(u.title)).id;
   const ok = make({ courseList: [HE], docs: { [HE.id]: HE_DOC }, choose: [id, "s999"] });
-  await say(ok.coach, "teach me about dynamic allocation", "teach");
+  await teach(ok.coach, HE, "dynamic allocation");
   assert.match(teachPrompts(ok.prompts)[0], /betaword/);
 });
 
 test("quiz me on what I covered: questions come only from the parts that were taught", async () => {
   const { coach, prompts } = make();
-  await say(coach, "teach me about pointers in Databases Demo", "teach");
+  await teach(coach, DB, "pointers");
   await say(coach, "it is the main idea X", "answer");
   const r = await say(coach, "quiz me on what I covered in Databases Demo", "quiz");
   assert.match(r.answer, /Quiz on Pointers/);
@@ -94,23 +97,10 @@ test("quiz me on what I covered: questions come only from the parts that were ta
   assert.doesNotMatch(q, /pagingword|stackword/);
 });
 
-test("no course named: the only course that fits is used (section words), several that fit are asked", async () => {
-  const two = make({ courseList: [DB, HE], docs: { [DB.id]: DOC, [HE.id]: HE_DOC } });
-  const r = await say(two.coach, "teach me about paging", "teach"); // no course in the words or from the front desk
-  assert.match(r.answer, /Step 1/);
-  assert.match(teachPrompts(two.prompts)[0], /pagingword/);
-  const fresh = make({ courseList: [DB, HE], docs: { [DB.id]: DOC, [HE.id]: HE_DOC } });
-  const amb = await say(fresh.coach, "teach me the next part", "teach");
-  assert.match(amb.answer, /Which course/);
-  const solo = make({ courseList: [DB] });
-  const s = await say(solo.coach, "teach me the next part", "teach");
-  assert.match(s.answer, /Step 1/);
-});
-
 test("catch-up plan: first step with minutes, real dates only, a deadline goes first, ONE exam question once a week", async () => {
   const { coach, ref } = make();
   coach.tracker.addAssignment(ref(CO), { title: "Lexer project", due: "2026-11-09", needs: ["tokens", "regular expressions"], text: "made-up text" });
-  const r = await say(coach, "I'm behind in everything, what should I do today?", "update");
+  const r = coach.brainTools.plan({ todayOnly: true });
   assert.match(r.answer, /about 90 minutes a day/);
   assert.match(r.answer, /Start with: Compilers Demo: assignment "Lexer project" \(60 min\)/, "the deadline in two days first");
   assert.match(r.answer, /teach me through the assignment/);
@@ -118,41 +108,23 @@ test("catch-up plan: first step with minutes, real dates only, a deadline goes f
   assert.match(r.answer, /when are the exams \(Databases Demo, Compilers Demo\)/);
   assert.ok(r.answer.split("\n").length <= 14, "one screen");
   assert.doesNotMatch(r.answer.split("One thing")[0], /2026-1[0-2]-\d\d|Dec/, "no invented date");
-  const again = await say(coach, "what should I do today", "plan");
+  const again = coach.brainTools.plan({ todayOnly: true });
   assert.doesNotMatch(again.answer, /when are the exams/, "asked once");
 });
 
-test("the time budget comes from the student's words, a paused course is left out", async () => {
+test("the time budget the model hands in is used, a paused course is left out", async () => {
   const { coach, ref } = make();
   coach.tracker.setStanding(ref(CO), { mode: "paused" });
-  const r = await say(coach, "what should I do this week? I have 3 hours a day", "plan");
+  const r = coach.brainTools.plan({ minutes: 180 });
   assert.match(r.answer, /about 180 minutes a day/);
   assert.doesNotMatch(r.answer, /Compilers Demo:/);
 });
 
-test("teach through the assignment: the idea is taught from the notes WITHOUT the assignment text, then hints, never a solution", async () => {
-  const { coach, prompts, ref } = make();
-  coach.tracker.addAssignment(ref(DB), { title: "Allocator exercise", due: "2026-11-20", needs: ["pointers", "stack and heap"], text: "SECRET-ASSIGNMENT-TEXT build an allocator" });
-  const r = await say(coach, "teach me through the assignment", "start", { courseName: DB.name });
-  assert.match(r.answer, /needs 2 ideas: pointers; stack and heap/);
-  assert.match(r.answer, /First: pointers/);
-  const t = teachPrompts(prompts)[0];
-  assert.match(t, /pointerword/);
-  assert.doesNotMatch(t, /SECRET-ASSIGNMENT-TEXT|allocator/i, "the assignment is not in the teaching prompt");
-  const a = await say(coach, "the main idea is X", "answer");
-  assert.match(a.answer, /hints, not the solution/);
-  const h = await say(coach, "I think I start by allocating", "answer");
-  assert.match(h.answer, /Nice start/);
-  const n = await say(coach, "teach me the next idea of the assignment", "start", { courseName: DB.name });
-  assert.match(n.answer, /Idea 2 of 2: stack and heap/);
-  assert.match(teachPrompts(prompts)[1], /stackword/);
-});
-
 test("Hebrew: the sentences written by code use no gendered 'you'", async () => {
   const { coach } = make();
-  const r = await say(coach, "תלמד אותי את החלק הבא ב-Databases Demo", "teach");
+  const r = await teach(coach, DB, "", "he");
   assert.match(r.answer, /שאלה אחת לבדיקה/);
-  const plan = await say(coach, "אני מאחור בהכל, מה לעשות היום?", "update");
+  const plan = coach.brainTools.plan({ todayOnly: true, lang: "he" });
   assert.match(plan.answer, /תוכנית ריאלית/);
   assert.doesNotMatch(plan.answer, /\b(?:אתה|את|תכתוב|ענה|תראה|בקש|כתוב)\b/);
   const tutor = fs.readFileSync(path.join(__dirname, "..", "tutor.js"), "utf8");
@@ -162,19 +134,9 @@ test("Hebrew: the sentences written by code use no gendered 'you'", async () => 
 
 const SP = { id: "a".repeat(16), name: "Systems Programming" }; // has the default timetable
 
-test("'I skipped two weeks and came back' keeps the words and asks ONE useful question, once", async () => {
-  const { coach } = make({ courseList: [SP, DB] });
-  const r = await say(coach, "דילגתי על שבועיים באמצע ב-Systems Programming ואז חזרתי", "update");
-  assert.match(r.answer, /שמרתי את מה שכתבת/);
-  assert.strictEqual((r.answer.match(/שאלה אחת כדי להתחיל/g) || []).length, 1);
-  assert.match(r.answer, /מה ההרצאה האחרונה/);
-  const again = await say(coach, "I skipped two weeks of Systems Programming and came back", "update");
-  assert.doesNotMatch(again.answer, /One question so that I start/, "not asked again within a week");
-});
-
 test("a written exam date becomes a Confirm card (not saved before), computed by code", async () => {
   const { coach, ref } = make({ courseList: [SP, DB] });
-  const r = await say(coach, "I'm revising Systems Programming, the exam is on 22 December", "update");
+  const r = coach.brainTools.exam({ courseId: SP.id, date: "2026-12-22" });
   assert.ok(r.proposal && r.proposal.kind === "exam", JSON.stringify(r.proposal));
   assert.strictEqual(r.proposal.date, "2026-12-22");
   assert.ok(!coach.tracker.progress(ref(SP)).position.examDate, "not saved before the tap");
@@ -182,23 +144,12 @@ test("a written exam date becomes a Confirm card (not saved before), computed by
   assert.strictEqual(coach.tracker.progress(ref(SP)).position.examDate, "2026-12-22");
 });
 
-test("a single check question after a lesson can be skipped, and a request for the full solution gets a plain no with guidance", async () => {
-  const { coach, prompts, ref } = make();
-  coach.tracker.addAssignment(ref(DB), { title: "Allocator exercise", due: "2026-11-20", needs: ["pointers"], text: "made-up" });
-  const t = await say(coach, "teach me through the assignment", "start", { courseName: DB.name });
+test("a single check question after a lesson can be skipped, and nothing becomes understood", async () => {
+  const { coach, ref } = make();
+  const t = await teach(coach, DB);
   assert.match(t.answer, /One question back/);
-  const skip = await say(coach, "skip", "answer");
+  const skip = await say(coach, "skip", "answer", { courseId: DB.id, courseName: DB.name });
   assert.match(skip.answer, /Skipped\. Nothing was recorded/);
-  assert.strictEqual(coach.tracker.getSession(ref(DB)).mode, "work", "an assignment lesson goes on to guided hints");
   assert.strictEqual(coach.tracker.progress(ref(DB)).understood, 0);
-  const s = await say(coach, "give me the full solution code for the assignment", "start", { courseName: DB.name });
-  assert.match(s.answer, /^I will not write the full solution of an assignment/);
-  assert.doesNotMatch(prompts.filter((p) => /Teach this ONE idea|working on an assignment/.test(p)).join("\n"), /made-up|SECRET/, "no assignment text in teaching prompts");
-});
-
-test("a sentence with only an exam date (no 'I') still reaches the exam card", async () => {
-  const { coach } = make({ courseList: [SP, DB] });
-  const r = await say(coach, "the exam in Systems Programming is on 22 December", "update");
-  assert.ok(r.proposal && r.proposal.kind === "exam" && r.proposal.date === "2026-12-22", r.answer);
 });
 

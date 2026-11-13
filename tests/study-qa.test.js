@@ -33,27 +33,6 @@ function make() {
 }
 const pos = (coach, ref) => coach.tracker.progress(ref);
 
-test("a), 'my last linear algebra lecture was lecture 1' is saved as the position (no timetable needed)", async () => {
-  const { coach } = make();
-  const ref = coach.tracker.refsFor(COURSES)[0];
-  const r = await coach.answerStudy({ studyIntent: "update", text: "my last linear algebra lecture was lecture 1" });
-  assert.match(r.answer, /Linear Algebra Demo: noted that you are up to lecture 1/);
-  assert.strictEqual(pos(coach, ref).positionKnown, true);
-  assert.doesNotMatch(r.answer, /0 lectures held/);
-  assert.strictEqual(pos(coach, ref).understood, 0); // a position never marks anything understood
-});
-
-test("a), the answer to Bot's own 'where are you' question ('it was last Thursday') is saved for the course it asked about", async () => {
-  const { coach } = make();
-  const refs = coach.tracker.refsFor(COURSES);
-  const ask = await coach.answerStudy({ studyIntent: "progress", text: "where am I?" });
-  assert.match(ask.answer, /where are you in Linear Algebra Demo, Intro Programming Demo/);
-  const r = await coach.answerStudy({ studyIntent: "update", text: "it was last Thursday" });
-  assert.match(r.answer, /Linear Algebra Demo: noted that you are up to Thursday 5 Nov/);
-  assert.strictEqual(pos(coach, refs[0]).positionKnown, true);
-  assert.strictEqual(pos(coach, refs[1]).positionKnown, false); // the other course stays unknown, nothing invented
-});
-
 test("a), a message about homework or a claim is NOT saved as a position", async () => {
   const { coach } = make();
   const refs = coach.tracker.refsFor(COURSES);
@@ -83,13 +62,6 @@ test("b), a question about homework answers from the saved assignments and never
   assert.strictEqual(calls.length, 0);
 });
 
-test("b), a question with nothing saved says so and still creates no card", async () => {
-  const { coach } = make();
-  const r = await coach.answerStudy({ studyIntent: "assignment", text: "do I have any assignments?" });
-  assert.match(r.answer, /no assignment saved/i);
-  assert.strictEqual(coach.pendingProposal(), null);
-});
-
 test("c), the Study page lists a confirmed assignment even when the course has no timetable", () => {
   const { coach } = make();
   const ref = coach.tracker.refsFor(COURSES)[0];
@@ -113,23 +85,6 @@ test("c), uploaded-lecture quiz never sets 'understood' by itself", async () => 
   assert.strictEqual(pos(coach, ref).understood, 0);
 });
 
-test("c), 'I skipped class today' says what was missed in a few lines, not the status wall", async () => {
-  const { coach } = make();
-  const r = await coach.answerStudy({ studyIntent: "progress", text: "I skipped class today, what did I miss?" });
-  assert.ok(r.answer.split("\n").length <= 4, r.answer);
-  assert.match(r.answer, /timetable/i);
-  assert.doesNotMatch(r.answer, /Material in Bot for/);
-});
-
-test("c), 'I skipped class today' with a timetable names the lecture that was missed", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-qa-"));
-  const calc = { id: "b".repeat(16), name: "Calculus 2" };
-  const coach = createStudyCoach({ dir, courses: { list: () => [calc], allPages: () => [] }, askChain: async () => ({ answer: "?" }), now: () => new Date("2026-11-09T18:00:00+02:00").getTime() }); // a Monday evening
-  const r = await coach.answerStudy({ studyIntent: "progress", text: "I skipped class today, what did I miss?" });
-  assert.match(r.answer, /Calculus 2 lecture \d+/);
-  assert.ok(r.answer.split("\n").length <= 4, r.answer);
-});
-
 test("c), 'today's class in <course> was cancelled' for a course with no timetable is understood and explained", async () => {
   const { coach } = make();
   const r = await coach.answerStudy({ studyIntent: "update", text: "today's class in Intro Programming was cancelled" });
@@ -139,24 +94,4 @@ test("c), 'today's class in <course> was cancelled' for a course with no timetab
   assert.doesNotMatch(r.answer, /Calculus|Systems Programming|Algorithms/);
 });
 
-test("b), the same question classed as 'progress' by the front desk also answers from the saved assignments", async () => {
-  const { coach } = make();
-  const ref = coach.tracker.refsFor(COURSES)[0];
-  coach.tracker.addAssignment(ref, { title: "Homework 1", needs: [] });
-  const r = await coach.answerStudy({ studyIntent: "progress", text: "Which course do I have a homework for?" });
-  assert.match(r.answer, /Homework 1.*Linear Algebra Demo/);
-  assert.strictEqual(coach.pendingProposal(), null);
-});
-
 // QA round 2: a file was filed and its assignment card waits for Confirm. Asking "which homework do I have?" must mention it.
-test("r2), a question about homework mentions the card that waits for Confirm (no dead end)", async () => {
-  const { coach } = make();
-  const ref = coach.tracker.refsFor(COURSES)[0];
-  const up = await coach.onUpload({ courseId: ref.courseId, files: [{ fileId: "f1", fileName: "hw1.txt", pages: 1 }], text: "Homework 1. Write a function.", dateText: "this is the homework" });
-  assert.ok(up.proposal, "a card is waiting");
-  const r = await coach.answerStudy({ studyIntent: "progress", text: "Which course do I have a homework for?" });
-  assert.match(r.answer, /Invented title/);
-  assert.match(r.answer, /Confirm/i);
-  assert.match(r.answer, /Linear Algebra Demo/);
-  assert.ok(coach.pendingProposal(), "the card is still there, nothing was saved or created");
-});

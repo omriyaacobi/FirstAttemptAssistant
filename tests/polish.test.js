@@ -57,7 +57,7 @@ test("teach streams through the coach (onText), the page-visible text never hold
     return { answer, used: { model: chain[0].model } };
   };
   const coach = createStudyCoach({ dir, courses: { list: () => COURSES, allPages: (id) => (id === IDS.calc ? NOTEBOOK : []) }, askChain, now: () => NOW });
-  const r = await coach.answerStudy({ studyIntent: "teach", text: "teach me the next lecture of Calculus 2", courseId: IDS.calc, courseName: "Calculus 2", onText: (t) => seen.push(t) });
+  const r = await coach.brainTools.teach({ courseId: IDS.calc, part: "", onText: (t) => seen.push(t) });
   assert.ok(seen.length >= 3, "text arrived in pieces");
   assert.ok(seen.every((t) => !/SECRETKEY|KEY:|QUESTION/.test(t)), "never the key or the marker");
   assert.ok(seen.some((t) => /Lesson part one/.test(t)));

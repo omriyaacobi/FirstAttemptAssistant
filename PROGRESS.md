@@ -54,8 +54,10 @@ The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. T
 - **Finish removing the old chat list.** The page (`public/index.html`) and the server still carry the old list-of-chats code
   (`jobs.start`, `/api/conversations`, the non-thread parts of the page). Nothing reaches it from chat; old chats can only be read.
   It needs its own session, with the page checked in a browser after every step.
-- **Trim `study-coach.js`.** It still holds the intent branches and word lists (regexes) from the front desk days. The brain only calls
-  `progress`, `quiz`, `answer`, `confirm`, `cancel` and the new `brainTools`. Remove the rest with its tests.
+- **`study-coach.js` trimmed (2026-11-13):** the front desk's intents and word lists are gone (979 -> about 610 lines); tests of what
+  is still used now go through `brainTools`. Found on the way: telling Bot that a class was cancelled ("no lecture this week") only
+  worked through the old intents, so the brain cannot do it today. It needs a checked tool (proposal 5.6 in
+  `experiments/2026-11-13-fable-review.md`). `tutor.js` still holds the "teach through the assignment" mode that nothing reaches.
 - **Two things the brain changed that I should decide on:** (1) the model that sees my profile can also search the web (before, web
   models never got the profile); (2) every message now takes one of the 2 slots, so a reminder can wait behind two long answers.
 - **Moodle, smarter (asked 2026-11-11, when there is quota):** a quiet morning check for new announcements, files and deadlines (offered,

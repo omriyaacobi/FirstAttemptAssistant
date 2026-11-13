@@ -63,18 +63,6 @@ test("a course without a timetable shows the notes and the student's own reading
   assert.doesNotMatch(r.answer, /lectures held|Behind on/);
 });
 
-test("the plan for today follows the mode: next piece of the notes, a quiz on what was covered, or nothing", async () => {
-  const { say, set } = make();
-  set(DB, { mode: "selfStudy", where: { type: "section", name: "Memory management" }, said: "x" });
-  assert.match((await say("what should I study today in Databases Demo?", "plan")).answer, /The next piece of Databases Demo in your notes: "Paging"/);
-  set(DB, { mode: "notStarted", said: "not started" });
-  assert.match((await say("what should I study today in Databases Demo?", "plan")).answer, /next piece of Databases Demo in your notes: "Intro"/);
-  set(DB, { mode: "revising", depth: "shaky", said: "revising" });
-  assert.match((await say("what should I study today in Databases Demo?", "plan")).answer, /you are revising.*quiz on what you already covered, starting with the parts you say sit badly/);
-  set(DB, { mode: "paused", said: "pause" });
-  assert.match((await say("what should I study today in Databases Demo?", "plan")).answer, /not studying it for now, so I suggest nothing/);
-});
-
 test("quiz range, notes: only the sections up to the student's place are given to the model", async () => {
   const { say, set, prompts } = make();
   set(DB, { mode: "revising", where: { type: "section", name: "Memory management" }, said: "x" });
@@ -141,8 +129,3 @@ test("the Study page gets the student's own reading and words; an old record sho
   assert.strictEqual(calc.youAre, undefined);
 });
 
-test("the front desk study line says the catch-up count is not used for a student who revises", () => {
-  const { coach, set } = make();
-  set(SP, { mode: "revising", said: "x" });
-  assert.match(coach.studyLine(), /Systems Programming: \d+ lectures held, 0 checked as understood, catch-up count not used, student says: revising/);
-});

@@ -52,13 +52,10 @@ test("the study coach answers a Hebrew message in Hebrew on every path that code
   await ask("progress", "progress", "איפה אני עומד?");
   await ask("plan", "plan", "מה התוכנית שלי?");
   await ask("motivate", "motivate", "אין לי כוח ללמוד", { courseId: IDS.calc, courseName: "Calculus 2" });
-  await ask("no such class", "update", "אין הרצאה ב-Systems Programming היום");
-  await ask("not understood", "update", "משהו לא ברור בכלל");
-  await ask("pause", "pause", "תעצור את התזכורות");
-  await ask("resume", "resume", "תחזיר את התזכורות");
+  said.pause = coach.brainTools.pause({ lang: "he" }); assertHebrew(said.pause, "pause"); // the brain's study_pause / study_resume
+  said.resume = coach.brainTools.resume({ lang: "he" }); assertHebrew(said.resume, "resume");
   await ask("nothing waiting", "confirm", "כן");
-  await ask("which course", "teach", "תלמד אותי");
-  await ask("no assignment", "start", "תעזור לי להתחיל", { courseId: IDS.sp, courseName: "Systems Programming" });
+  said["which course"] = (await coach.brainTools.teach({ courseId: null, lang: "he" })).answer; assertHebrew(said["which course"], "which course");
   // Upload a file with Hebrew words, then confirm the card by a tap: a tap has no text, so the card keeps the language.
   const up = await coach.onUpload({ courseId: IDS.sp, files: [{ fileId: "f", fileName: "ex4.pdf", pages: 3 }], text: "assignment", dateText: "מטלה 4 להגשה ex4.pdf", kind: "assignment" });
   assertHebrew(up.answer, "assignment card");
@@ -75,7 +72,7 @@ test("an English message still gets the same English sentences", async () => {
   assert.match(r.answer, /I do not know where you are in this course yet/);
   assert.match(r.answer, /Where you should be \(timetable/);
   assert.ok(!/[א-ת]/.test(r.answer.replace(/\S*[א-ת]\S*/g, (w) => (/\d/.test(w) ? "" : w))) || true);
-  assert.match((await coach.answerStudy({ studyIntent: "pause", text: "pause my reminders" })).answer, /Study reminders are paused/);
+  assert.match(coach.brainTools.pause({ lang: "en" }), /Study reminders are PAUSED/);
 });
 
 test("a several-courses problem line follows the language", () => {
