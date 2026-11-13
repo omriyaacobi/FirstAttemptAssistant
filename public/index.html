@@ -1930,7 +1930,7 @@
   if (window.visualViewport) window.visualViewport.addEventListener("resize", () => setTimeout(keyboardCheck, 100));
 
   // ---- Is there a newer page on the PC? ----
-  // The page file is never cached (the server says no-store and the service worker has no fetch handler), but a page that stays open in the
+  // The page file is never used without asking the PC (the server says no-cache with an ETag, and the service worker never stores it), but a page that stays open in the
   // background keeps running its old code. So when you come back to it, ask the PC for the page again and compare a fingerprint.
   let pageStamp = null, stampAt = 0;
   const fingerprint = (text) => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0; return h + ":" + text.length; };
@@ -1938,7 +1938,7 @@
     if (Date.now() - stampAt < 60000) return;
     stampAt = Date.now();
     try {
-      const res = await fetch("/", { cache: "no-store" });
+      const res = await fetch("/", { cache: "no-cache" }); // asks the PC every time; an unchanged page comes back as a tiny "304" and the browser's copy is used
       if (!res.ok) return;
       const now = fingerprint((await res.text()).replace(/\r\n/g, "\n"));
       if (pageStamp === null) { pageStamp = now; return; }
@@ -2878,6 +2878,19 @@
       T.timer = setTimeout(poll, 700);
     }
 
+    // A line at the top when the PC stops answering while the page is open (laptop asleep, no internet), gone at the next answer.
+    // Two failed checks in a row, so one lost request does not flash it.
+    function reachable(ok) {
+      T.fails = ok ? 0 : (T.fails || 0) + 1;
+      let note = $("offlineNote");
+      if (ok || T.fails < 2) { if (note) note.remove(); return; }
+      if (note) return;
+      note = el("div", "toast", "");
+      note.id = "offlineNote";
+      note.appendChild(el("div", "what", "Bot isn't reachable right now (the laptop is off or asleep, or there is no internet). It keeps trying."));
+      $("toasts").prepend(note);
+    }
+
     // ---- following the jobs ----
     async function poll() {
       if (T.polling || !T.on) return;
@@ -2905,7 +2918,8 @@
         if (finished.length) { loadReminders(); loadQuota(); }
         const fast = running.some((j) => j.partial || /^Asking |^Reading /.test(j.step || "") || Date.now() + T.offset - j.startedAt < 40000);
         nextMs = fast ? 600 : running.length ? 2000 : 10000;
-      } catch (error) { /* offline for a moment: the next poll catches up */ } finally {
+        reachable(true);
+      } catch (error) { reachable(false); /* offline for a moment: the next poll catches up */ } finally {
         T.polling = false;
         clearTimeout(T.timer);
         T.timer = document.hidden ? null : setTimeout(poll, nextMs);
@@ -2935,6 +2949,54 @@
       attachedFile = null;
       chipMode(false);
     }
+    // ---- Shared from another app (Android's Share menu, 2026-11-13) ----
+    // sw.js caught the share on the phone and opened "/?shared=1". Take the words and the first file out of the "bot-share" cache,
+    // delete it at once, and put them in the message box exactly as if typed and picked with the paperclip. Nothing is sent: you
+    // press Send, and the file then takes the normal upload road with all its checks. Any open of Bot clears a leftover share.
+    async function takeShared() {
+      if (!("caches" in window)) return;
+      const shared = new URLSearchParams(location.search).get("shared") === "1";
+      if (shared) history.replaceState(null, "", "/");
+      let meta = null, fileRes = null;
+      try {
+        if (shared) {
+          const cache = await caches.open("bot-share");
+          const metaRes = await cache.match("/shared/meta");
+          meta = metaRes ? await metaRes.json() : null;
+          fileRes = await cache.match("/shared/file");
+        }
+      } catch (error) { meta = { note: "failed" }; }
+      try { await caches.delete("bot-share"); } catch (error) { /* nothing was there */ }
+      if (!shared) return;
+      if (!meta || Date.now() - Number(meta.at || 0) > 10 * 60000) { $("status").textContent = "Nothing was shared, or it waited too long. Share it again."; return; }
+      const words = typeof meta.words === "string" ? meta.words.slice(0, 8000) : "";
+      if (words) {
+        const box = $("task");
+        box.value = box.value.trim() ? box.value + "\n" + words : words;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (fileRes) {
+        try {
+          const blob = await fileRes.blob();
+          const name = decodeURIComponent(fileRes.headers.get("X-Bot-Name") || "shared") || "shared";
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([blob], name, { type: blob.type }));
+          $("photoInput").files = transfer.files;
+          $("photoInput").dispatchEvent(new Event("change")); // the paperclip's own path: a picture becomes the photo, any other file pickFile
+        } catch (error) { meta.note = "failed"; }
+      }
+      const notes = { many: "Bot takes one file per message, so only the first one is attached.", big: "That file is too big for Bot (the most is 200 MB for a zip, 50 MB for a file).", failed: "Could not take what was shared. Try the paperclip instead." };
+      if (notes[meta.note]) $("status").textContent = notes[meta.note];
+      else if (!$("status").textContent) $("status").textContent = "Shared into Bot. Add words if you like, then press Send.";
+    }
+
+    // The "New message" shortcut (long-press Bot's icon; manifest.webmanifest "shortcuts") opens "/?new=1": the box gets the keyboard.
+    function newMessageShortcut() {
+      if (new URLSearchParams(location.search).get("new") !== "1") return;
+      history.replaceState(null, "", "/");
+      $("task").focus();
+    }
+
     function pickFile(file) {
       clearFile();
       if (photo) clearPhoto();
@@ -3258,7 +3320,7 @@
       document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
       window.addEventListener("focus", () => { poll(); });
       window.addEventListener("online", () => { poll(); });
-      loadFirst().then(() => { if (pageLang() === "he") $("micLang").value = "he-IL"; notice(); return loadSuggestions(); }).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
+      loadFirst().then(() => { if (pageLang() === "he") $("micLang").value = "he-IL"; notice(); takeShared(); newMessageShortcut(); return loadSuggestions(); }).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
     }
 
     return { start, showStudy, refresh: () => refreshNewest().catch(() => {}), T };

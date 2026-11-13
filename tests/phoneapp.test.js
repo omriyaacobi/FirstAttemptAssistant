@@ -142,9 +142,12 @@ test("the page script still parses, and still never uses innerHTML", () => {
   }
 });
 
-test("the service worker caches nothing", () => {
+test("the service worker stores nothing from the PC (only the short-lived share box, see tests/pwa.test.js)", () => {
   const sw = fs.readFileSync(path.join(__dirname, "..", "public", "sw.js"), "utf8").replace(/\/\/.*$/gm, "");
-  assert.ok(!/caches\.|\.addAll|cache\.put|addEventListener\("fetch"/.test(sw));
+  assert.ok(!/\.addAll|\.put\(\s*(event\.)?request/.test(sw));
+  const puts = sw.match(/\.put\([^,]*/g) || [];
+  assert.ok(puts.length > 0);
+  for (const put of puts) assert.match(put, /^\.put\("\/shared\/(meta|file)"$/); // every put names one of the two share keys
 });
 
 test("the manifest file in public/ is valid JSON that points at icons that exist", () => {
