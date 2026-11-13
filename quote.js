@@ -1,12 +1,12 @@
 // quote.js
 // Replying to a marked part of a message (2026-11-13), like Claude's "quote". Omri selects text in one message on the page and taps
-// "Reply to this"; the page sends { messageId, text } with his message. CODE checks it here before it may reach a model:
+// "Reply to this"; the page sends { messageId, text } with Omri's message. CODE checks it here before it may reach a model:
 //   - the message exists in the thread (thread-store.js find, so a deleted one is not found)
 //   - the quote is really a part of that message: its words appear in that message, in the same order. Words, not characters,
 //     because the page draws answers from Markdown (bold, lists, math), so the selected text never matches the saved text exactly.
 //   - it has at least one word and at most MAX_QUOTE_CHARS characters
 // The brain then gets it in a marked block as DATA (brain.js quoteBlock). The quote is kept in its OWN field on Omri's message, never
-// inside the message text, so a link inside a quoted Bot answer never counts as "a link Omri wrote" (brain.js allowedUrl reads only his text).
+// inside the message text, so a link inside a quoted Bot answer never counts as "a link Omri wrote" (brain.js allowedUrl reads only Omri's text).
 
 const MAX_QUOTE_CHARS = 1500;
 const { ID_PATTERN } = require("./thread-store"); // m_ + hex: the same rule the store uses
