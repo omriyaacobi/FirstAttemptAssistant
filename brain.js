@@ -428,7 +428,7 @@ ${text}`; } catch (error) {
         const label = (f) => fileLabel(c, f, isShared);
         if (!hits.length) throw new Error(`no readable file like "${String(file).slice(0, 80)}" in ${c.name}. Files: ${readable.slice(0, 30).map(label).join("; ")}`);
         // Several files with that name: pick by id. (Before, the first one with the name was read, mixing pages of all of them.)
-        if (new Set(hits.map((f) => f.id)).size > 1) throw new Error(`more than one file of ${c.name} is called that; pass the id of the one you mean: ${hits.slice(0, 12).map(label).join("; ")}`);
+        if (new Set(hits.map((f) => f.id)).size > 1) throw new Error(`more than one file of ${c.name} is called that; pass the id (or folder/name) of the one you mean: ${hits.slice(0, 12).map(label).join("; ")}`);
         const hit = fullName(hits[0]);
         const from = Math.max(1, Number(from_page) || 1);
         const mine = pages.filter((p) => p.fileId === hits[0].id).sort((a, b) => a.page - b.page);
@@ -652,7 +652,7 @@ ${text}`; } catch (error) {
           const files = filesOf(c);
           const hits = pickFiles(files, file);
           const isShared = shared(files);
-          if (hits.length !== 1) throw new Error(hits.length ? `more than one file of ${c.name} fits; pass the id of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `which file of ${c.name}? Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
+          if (hits.length !== 1) throw new Error(hits.length ? `more than one file of ${c.name} fits; pass the id (or folder/name) of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `which file of ${c.name}? Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
           const original = courses.originalPath(c.id, hits[0].id);
           if (!original) throw new Error("that file's original is not kept");
           const r = opener.openCopy(original, hits[0].name);
