@@ -13,6 +13,7 @@
 // Everything that decides or counts is code (study-plan.js, study-tracker.js). Models (Argon only) are used for teaching, writing
 // questions, grading and reading an assignment, always through tutor.js and always checked by code.
 
+const path = require("node:path");
 const plan = require("./study-plan");
 // The language of the reply being written (Hebrew when the student wrote Hebrew). The Hebrew sentences avoid "you" and "I" verbs that
 // show a gender. T(english, hebrew) picks one.
@@ -24,6 +25,7 @@ const NOTE_HE = { "not started yet": "עוד לא התחיל" };
 const noteText = (note) => (curLang === "he" && NOTE_HE[note]) || note;
 const niceDate = (iso) => plan.niceDate(iso, curLang);
 const { createTracker, clean } = require("./study-tracker");
+const { createProgressLog } = require("./progress-log");
 const { createNudges } = require("./study-nudges");
 const tutor = require("./tutor");
 const { lectureIndex, askedLectures } = require("./study");
@@ -39,7 +41,9 @@ const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8,
 const DAYWORDS = { sunday: 0, sun: 0, "ראשון": 0, monday: 1, mon: 1, "שני": 1, tuesday: 2, tue: 2, "שלישי": 2, wednesday: 3, wed: 3, "רביעי": 3, thursday: 4, thu: 4, "חמישי": 4, friday: 5, fri: 5, "שישי": 5 };
 
 function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), timezone = plan.TIMEZONE, log = () => {} }) {
-  const tracker = createTracker({ dir, now, timezone });
+  // The progress log (progress-log.js): code writes one line per real study event, the morning brief reads yesterday's lines.
+  const progressLog = createProgressLog({ dir: path.join(dir, "progress"), now, timezone });
+  const tracker = createTracker({ dir, now, timezone, progressLog });
   const nudges = createNudges({ tracker, courseList: () => courses.list(), now, timezone });
   const proposals = new Map();
   let proposalCounter = 0;
@@ -625,7 +629,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   };
 
 
-  return { brainTools, answerStudy, morningBlock: () => nudges.morningBlock(), onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, tracker, nudges, INTENTS };
+  return { brainTools, answerStudy, morningBlock: () => nudges.morningBlock(), progressLog, onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };

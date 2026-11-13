@@ -211,6 +211,7 @@ function createServer({
     handle: threadHandle,
     thread,
     summaries,
+    onMessage: morning ? () => morning.early() : null, // the first message before the brief time starts the brief (morning.js)
     courses: () => (courseRoutes ? courseRoutes.list() : []),
     courseName: courseRoutes ? (id) => courseRoutes.name(id) : null,
     cardNote: (add, options) => calendarCards.note(add, options), // the chat history tells the next message what the calendar cards held and what happened to them
@@ -694,7 +695,14 @@ if (require.main === module) {
   const coach = createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log });
   const summaries = createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, log: console.log });
   threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
-  const morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, study: coach, thread, log: console.log });
+  // The morning NEWSPAPER (2026-11-13): news.js (feeds every 3 h, a very-big-news alert, the brief's pick) and brief-me.js (the "You" part).
+  // Both use Gemini Flash high under the slim agent (only the Flash pool; never Argon or Claude), and code checks every line they hand back.
+  // Background work: nobody waits, and Flash high thinks long on 200 headlines (measured 2026-11-13: over 90 s), so 4 minutes.
+  const flashAsk = (provider, model, question) => require("./providers").ask(provider, model, question, () => {}, { agent: true, timeoutMs: 4 * 60 * 1000 });
+  let morning = null;
+  const news = require("./news").createNews({ dir: path.join(__dirname, "data", "news"), askChain: require("./providers").askChain, askOne: flashAsk, onAlert: (a) => morning.alert(a), enabled: () => morning.settings().on, log: console.log });
+  const aboutMe = () => require("./brief-me").aboutMeBlock({ log: coach.progressLog, tracker: coach.tracker, courseList: coursesStore.list(), today: coach.tracker.today(), paused: coach.nudges.isPaused(), askChain: require("./providers").askChain, askOne: flashAsk, logLine: console.log });
+  morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, study: coach, thread, news, aboutMe, log: console.log });
   const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
   {
     const purge = () => { try { const n = thread.purgeTrash(); if (n) console.log(`Thread trash: removed ${n} message(s) older than 30 days.`); } catch (error) { console.error("Thread trash:", error.message); } };
@@ -735,6 +743,7 @@ if (require.main === module) {
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
+    news.start(); // the news check every 3 hours, only while the morning brief is on (news.js)
     if (brainRef) brainRef.warmUp();
     // Look the quota pools up once at start (2026-11-13): before, the first message after a restart knew nothing, treated every
     // pool as full and could use Argon at 10%. Runs in the background; a failed lookup changes nothing.

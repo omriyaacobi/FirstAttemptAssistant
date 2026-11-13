@@ -17,6 +17,7 @@ function setup(replies, extra = {}) {
     refsFor: (list) => list.map((c) => ({ key: c.id, courseId: c.id, name: c.name })),
     course: (ref) => seen.notes.find((n) => n.key === ref.key) || { key: ref.key, assignments: [], position: {} },
     save: (rec) => { seen.notes = seen.notes.filter((n) => n.key !== rec.key).concat([rec]); },
+    addNote: (ref, text, keep) => { const rec = tracker.course(ref); tracker.save({ ...rec, brainNotes: [...(rec.brainNotes || []), { at: 1, text }].slice(-keep) }); },
     getSession: () => null,
     timetable: () => ({ courses: [{ key: "c2", match: "calculus|חדו" }] }),
   };

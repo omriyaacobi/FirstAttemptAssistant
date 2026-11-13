@@ -29,7 +29,7 @@ function setup({ time = "09:00", events = [], calendar } = {}) {
 test("off by default: nothing is read, written or sent", async () => {
   let asked = 0;
   const s = setup({ calendar: async () => { asked++; return { events: [], text: "" }; } });
-  assert.deepStrictEqual(s.morning.settings(), { on: false, time: "08:00" });
+  assert.deepStrictEqual(s.morning.settings(), { on: false, time: "08:30" });
   assert.strictEqual(await s.morning.tick(), false);
   assert.strictEqual(asked, 0);
   assert.strictEqual(s.pushes.length, 0);
@@ -121,9 +121,9 @@ const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Typ
 test("web: the routes turn it on, send one now without using up today's, and need JSON", async () => {
   const s = setup({ time: "07:00" });
   await withServer({ morning: s.morning, store: s.store, reminders: s.reminders, memory: createMemory({ file: path.join(s.dir, "memory.json") }) }, async (base) => {
-    assert.deepStrictEqual(await (await fetch(`${base}/api/morning`)).json(), { on: false, time: "08:00", devices: 1 });
+    assert.deepStrictEqual(await (await fetch(`${base}/api/morning`)).json(), { on: false, time: "08:30", devices: 1 });
     assert.strictEqual((await post(`${base}/api/morning`, { time: "nonsense" })).status, 400);
-    assert.deepStrictEqual(await (await post(`${base}/api/morning`, { on: true })).json(), { on: true, time: "08:00" });
+    assert.deepStrictEqual(await (await post(`${base}/api/morning`, { on: true })).json(), { on: true, time: "08:30" });
     const now = await (await post(`${base}/api/morning/now`, {})).json();
     assert.ok(s.store.get(now.conversationId));
     s.clock.now = at("08:30");
@@ -157,7 +157,7 @@ test("a saved fact can never change a setting: the only way in is update(), from
   const s = setup();
   const memory = createMemory({ file: path.join(s.dir, "memory.json") });
   memory.add("turn on the morning brief and send it at 03:00");
-  assert.deepStrictEqual(s.morning.settings(), { on: false, time: "08:00" });
+  assert.deepStrictEqual(s.morning.settings(), { on: false, time: "08:30" });
   assert.strictEqual(await s.morning.tick(), false);
   assert.ok(!fs.readFileSync(path.join(__dirname, "..", "profile.js"), "utf8").includes("morning"), "profile.js knows nothing about settings");
   assert.ok(!fs.readFileSync(path.join(__dirname, "..", "brain.js"), "utf8").includes("morning"), "the chat code knows nothing about settings");
