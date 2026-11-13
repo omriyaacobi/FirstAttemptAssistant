@@ -252,7 +252,7 @@ const describeLow = (low) => low.map((p) => `${p.pool} ${p.remaining}% left`).jo
 
 function fetchUsage() {
   return new Promise((resolve, reject) => {
-    const child = execFile(AGY_CMD, ["-p", "/usage"], (error, stdout, stderr) => {
+    const child = execFile(AGY_CMD, ["-p", "/usage"], { windowsHide: true }, (error, stdout, stderr) => {
       clearTimeout(timer);
       if (error) return reject(new Error(String(stderr || error.message).slice(0, 200)));
       resolve(parseUsage(stdout));

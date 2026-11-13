@@ -118,7 +118,7 @@ function parseUsage(text) {
 
 function getUsage() {
   return new Promise((resolve, reject) => {
-    execFile(AGY_CMD, ["-p", "/usage"], { timeout: 60000 }, (error, stdout, stderr) => {
+    execFile(AGY_CMD, ["-p", "/usage"], { windowsHide: true, timeout: 60000 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(String(stderr || error.message).slice(0, 200)));
       resolve(parseUsage(stdout));
     });

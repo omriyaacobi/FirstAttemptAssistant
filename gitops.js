@@ -15,7 +15,7 @@ const { execFile } = require("node:child_process");
 function createGitOps({ repoDir }) {
   const git = (args, timeout = 30000) =>
     new Promise((resolve, reject) => {
-      execFile("git", ["-c", "core.quotepath=false", ...args], { cwd: repoDir, timeout, maxBuffer: 1e7 }, (error, stdout, stderr) => {
+      execFile("git", ["-c", "core.quotepath=false", ...args], { windowsHide: true, cwd: repoDir, timeout, maxBuffer: 1e7 }, (error, stdout, stderr) => {
         if (error) return reject(new Error(String(stderr || error.message).trim().slice(0, 400)));
         resolve(String(stdout) + String(stderr)); // git push reports its progress on stderr
       });

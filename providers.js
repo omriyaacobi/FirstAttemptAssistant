@@ -54,7 +54,7 @@ function timeoutFor(model) {
 // Kills a child process AND everything it started. On Windows claude runs inside cmd.exe, and
 // child.kill() would only stop cmd.exe and leave claude running, so we use taskkill /T (whole tree).
 function killTree(child) {
-  if (process.platform === "win32") execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], () => {});
+  if (process.platform === "win32") execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => {});
   else child.kill("SIGKILL");
 }
 
@@ -187,7 +187,7 @@ const tell = (fn, value) => { if (fn && value) { try { fn(value); } catch (error
 // onUsage (optional) gets the tokens the call cost (readUsage), when the CLI reports them.
 function askClaude(question, model, { onUsage = null } = {}) {
   return new Promise((resolve, reject) => {
-    const child = exec(`${claudeCommand(model)} --output-format stream-json --verbose`, { cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+    const child = exec(`${claudeCommand(model)} --output-format stream-json --verbose`, { windowsHide: true, cwd: sandbox(), env: claudeEnv(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
       const out = readClaudeStream(stdout);
       for (const info of out.infos) for (const fn of rateLimitListeners) { try { fn(info); } catch (listenerError) { /* quota can never break an answer */ } }
       tell(onUsage, out.usage);
@@ -205,7 +205,7 @@ function askClaude(question, model, { onUsage = null } = {}) {
 function askAgy(question, model) {
   checkModelName(model);
   return new Promise((resolve, reject) => {
-    const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: sandbox(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+    const child = execFile(AGY_CMD, ["-p", question, "--model", model], { windowsHide: true, cwd: sandbox(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(stderr || error.message));
       resolve(stdout.trim());
     });
@@ -285,7 +285,7 @@ function askAgyStructured(question, model, schema, { signal, timeoutMs } = {}) {
   checkModelName(model);
   const args = ["-p", question, "--model", model, "--output-format", "json", "--json-schema", JSON.stringify(schema)];
   return new Promise((resolve, reject) => {
-    const child = execFile(AGY_CMD, args, { maxBuffer: 1e7, cwd: sandbox() }, (error, stdout, stderr) => {
+    const child = execFile(AGY_CMD, args, { windowsHide: true, maxBuffer: 1e7, cwd: sandbox() }, (error, stdout, stderr) => {
       if (error) return reject(new Error(stderr || error.message));
       try {
         const envelope = JSON.parse(stdout);
@@ -350,7 +350,7 @@ async function askAgyWithFile(model, question, filePath, { timeoutMs = 6 * 60 * 
     const copy = path.join(dir, "material" + path.extname(filePath));
     if (content) fs.writeFileSync(copy, content); else fs.copyFileSync(filePath, copy);
     return await new Promise((resolve, reject) => {
-      const child = execFile(AGY_CMD, ["-p", question, "--model", model], { cwd: dir, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+      const child = execFile(AGY_CMD, ["-p", question, "--model", model], { windowsHide: true, cwd: dir, maxBuffer: 5e7 }, (error, stdout, stderr) => {
         if (error) return reject(new Error(stderr || error.message));
         resolve(stdout.trim());
       });
@@ -375,7 +375,7 @@ async function askClaudeWithFile(model, question, filePath, { timeoutMs = 6 * 60
     const copy = path.join(dir, "material" + path.extname(filePath));
     if (content) fs.writeFileSync(copy, content); else fs.copyFileSync(filePath, copy);
     return await new Promise((resolve, reject) => {
-      const child = exec(command, { cwd: dir, env: claudeEnv(), maxBuffer: 5e7 }, (error, stdout, stderr) => {
+      const child = exec(command, { windowsHide: true, cwd: dir, env: claudeEnv(), maxBuffer: 5e7 }, (error, stdout, stderr) => {
         let envelope = null;
         try { envelope = JSON.parse(stdout); } catch (parseError) { /* not JSON: handled below */ }
         if (!envelope) return reject(new Error(String(stderr || stdout || (error && error.message) || "claude gave no output").trim().slice(0, 200)));
@@ -420,7 +420,7 @@ ${question}
 function askWeb(depth, question, model) {
   checkModelName(model);
   return new Promise((resolve, reject) => {
-    const child = execFile(AGY_CMD, ["-p", webPrompt(depth, question), "--model", model], { cwd: sandbox(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
+    const child = execFile(AGY_CMD, ["-p", webPrompt(depth, question), "--model", model], { windowsHide: true, cwd: sandbox(), maxBuffer: 1e7 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(stderr || error.message));
       resolve(stdout.trim());
     });

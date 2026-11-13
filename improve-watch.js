@@ -55,7 +55,7 @@ function runTests() {
   try { git("worktree", "remove", "--force", COPY); } catch (error) { /* no copy left over: the normal case */ }
   git("worktree", "add", "--detach", COPY, "main");
   try {
-    const run = spawnSync(process.execPath, ["--test", "--test-timeout=120000"], { cwd: COPY, encoding: "utf8", timeout: 400000, maxBuffer: 50 * 1024 * 1024 });
+    const run = spawnSync(process.execPath, ["--test", "--test-timeout=120000"], { windowsHide: true, cwd: COPY, encoding: "utf8", timeout: 400000, maxBuffer: 50 * 1024 * 1024 });
     const text = `${run.stdout || ""}${run.stderr || ""}`;
     const lines = text.split(/\r?\n/);
     const count = (name) => (lines.find((l) => l.startsWith(`ℹ ${name} `)) || "").replace("ℹ ", "") || `${name} unknown`;

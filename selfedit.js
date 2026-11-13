@@ -60,7 +60,7 @@ When you finish, reply with a short summary (3 to 6 lines): what you changed, wh
 
 const git = (cwd, args) =>
   new Promise((resolve, reject) => {
-    execFile("git", ["-c", "core.quotepath=false", ...args], { cwd, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+    execFile("git", ["-c", "core.quotepath=false", ...args], { windowsHide: true, cwd, maxBuffer: 5e7 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(`git ${args[0]} failed: ${String(stderr || error.message).trim().slice(0, 300)}`));
       resolve(String(stdout));
     });
@@ -81,7 +81,7 @@ function nodeTests(cwd) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   return new Promise((resolve) => {
-    execFile(process.execPath, ["--test", "--test-reporter=spec"], { cwd, env, timeout: 240000, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+    execFile(process.execPath, ["--test", "--test-reporter=spec"], { windowsHide: true, cwd, env, timeout: 240000, maxBuffer: 5e7 }, (error, stdout, stderr) => {
       const output = String(stdout) + String(stderr);
       const { total, failed } = parseTestSummary(output);
       resolve({ ok: !error && failed === 0 && total > 0, total, failed, tail: output.trim().split("\n").slice(-25).join("\n") });
@@ -134,7 +134,7 @@ function claudeEditor({ worktree, request, model, feedback = "", onProgress = ()
       const said = describeStreamLine(line);
       if (said) onProgress(said);
     };
-    const child = exec(cmd, { cwd: worktree, env: claudeEnv(), timeout: EDITOR_TIMEOUT_MS, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+    const child = exec(cmd, { windowsHide: true, cwd: worktree, env: claudeEnv(), timeout: EDITOR_TIMEOUT_MS, maxBuffer: 5e7 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(String(stderr || error.message).trim().slice(0, 300)));
       if (buffer.trim()) handleLine(buffer);
       resolve((finalText || lastText).trim());
