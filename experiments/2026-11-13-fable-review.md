@@ -60,6 +60,21 @@ of `data/` is being made. That is for Omri to set (`.env`, the passphrase is the
 |---|---|---|---|
 | 5.1 | The Moodle tools do not tell the brain which course they worked on, so an answer after a Moodle lookup is labelled with the course talked about before, and the NEXT message is answered with that old course's material (seen on 2026-11-12). Fix: `moodle_course`, `moodle_news`, `moodle_fetch`, `moodle_link` set the course when it maps to a Bot course. | S | done |
 | 5.2 | Long answers on the phone: code knows when a message comes from the phone (`fromPhone`); tell the model so it keeps the reply to about one phone screen unless Omri asks for more. | S | done |
+| 5.3 | Trim `study-coach.js` (= 3.4, second half). The brain calls `answerStudy` only with progress (always the fixed text "where am I"), quiz, answer, confirm and cancel. The intents update / plan / motivate / assignment / teach / start / pause / resume, the word lists that rerouted Omri's words between them, and `studyLine` / `questionLine` / `interpretUpdate` (front desk prompt lines) are reached by nothing. Delete them and the tests that only test them; keep brainTools, onUpload, the cards, progress, quiz and answer. | M | backed out, plan below |
+| 5.4 | `moodle_link` also sets the answer's course (as 5.1 did for the other Moodle tools). | S | done |
+| 5.5 | The old chat list (`jobs.start`, `/api/conversations`, the non-thread parts of `public/index.html`): remove only if the page can be checked; otherwise a written plan. | M | proposal: own session that starts a test copy of Bot on another port and checks the page in a browser after each step |
+
+**Plan for 5.3 (the code change was made and backed out on 2026-11-13).** The cut itself is easy and was done: `answerStudy` keeps
+progress / quiz / answer / confirm / cancel; removing the rest and then everything that became unused takes `study-coach.js` from 979 to
+about 600 lines (the word lists `SKIP_WORDS`, `MISSED`, `ALL_BEHIND`, `DURATION`, ... the model reader `maybeReadStanding` /
+`interpretPositions`, `interpretUpdate`, `studyLine`, `questionLine`, `throughArgs`, `nextStep`, ...). The saved patch and two small
+helper scripts are in the manager's shared notes folder (`study-coach-trim.patch`, `unused.js`, `cut.js`). The hard part is the tests:
+73 fail after the cut. About 30 test only removed routing (the "update" intent reading free text, the front desk lines, "motivate",
+the "assignment" intent): delete them. About 40 test LIVE shared code (teaching one part of the notes, the plan, storing a position,
+the exam card, the "no" undo, Hebrew wording) through the removed entry points: port them to `coach.brainTools.teach / plan /
+position / exam / undo` (as `tests/brain-study.test.js` does) instead of deleting, so coverage does not drop. The list of the 73 with
+a first sorting is `study-coach-trim-failing-tests.txt` in the same folder. Also then: `study-positions.js` keeps only
+`POSITION_CHAIN` for `standing.js` (`checkPositions` / `proposePositions` would be test-only). Do it in a fresh session (big context).
 
 ## Not changed on purpose
 

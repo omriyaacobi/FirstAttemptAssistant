@@ -158,6 +158,15 @@ test("a Moodle lookup sets the answer's course from the name the tool was given,
   assert.strictEqual(r2.courseName, "Systems Programming");
 });
 
+test("moodle_link: the Bot course it links becomes the answer's course; 'none' changes nothing (review 5.4)", async () => {
+  const moodle = { link: async () => "Linked.", explain: (e) => e.message };
+  const hist = { history: [{ role: "assistant", text: "...", courseId: "c1", at: Date.now() - 60000 }] };
+  const a = setup(['CALL {"tool":"moodle_link","moodle":"Infi 2 (id 7)","course":"Calculus 2"}\nLinked.'], { moodle });
+  assert.strictEqual((await run(a.brain, "that moodle course is calculus 2", hist)).courseName, "Calculus 2");
+  const b = setup(['CALL {"tool":"moodle_link","moodle":"Sports (id 9)","course":"none"}\nNoted.'], { moodle });
+  assert.strictEqual((await run(b.brain, "sports has no bot course", hist)).courseName, "Systems Programming");
+});
+
 test("a found folder is linked only after Omri taps Confirm on the card", async () => {
   const { brain, seen, linkBatches, d } = setup(['CALL {"tool":"pc_find","words":["assignment","3"],"kind":"folder"}', 'CALL {"tool":"link_folder","course":"Systems Programming","found":1}\nThe card waits for your tap.']);
   const r = await run(brain, "find my SP assignment folder and link it");

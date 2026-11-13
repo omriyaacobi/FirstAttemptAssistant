@@ -600,6 +600,7 @@ ${text}`; } catch (error) {
       moodle_link: async ({ moodle: which, course }) => {
         afterWeb("link courses", { moodleOk: true });
         if (!moodle) throw new Error("Moodle access is not set up in this Bot.");
+        if (course !== undefined && course !== "" && course !== "none") aboutCourse(course); // the Bot course named in the link
         return moodle.link(which, course === undefined || course === "" ? null : course, patternFor);
       },
       // Files of Omri's own Moodle course into the matching Bot course (the upload road). Not after an internet page in the same message.
