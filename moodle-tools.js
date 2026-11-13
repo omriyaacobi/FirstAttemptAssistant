@@ -211,8 +211,13 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
 
   // The download list: real items of the course (files, folders), by number or name, or "new" (not downloaded before).
   async function plan(m, items) {
-    const { items: all } = await contents(m);
+    const { sections, items: all } = await contents(m);
     const kinds = all.filter((i) => i.module === "resource" || i.module === "folder");
+    // The Moodle section each item sits in, as a folder LABEL for the filed file ("Week 3"; a folder item adds its own name below it).
+    // Moodle text is data: cleaned by code (courses.js cleanFolder), only shown, never a path.
+    const part = (t) => oneLine(t, 60).replace(/[\/]+/g, "-"); // one folder level: a "/" in a Moodle title must not make a deeper folder
+    const sectionOf = new Map();
+    for (const s of sections) for (const id of s.cms || []) if (!sectionOf.has(Number(id))) sectionOf.set(Number(id), part(s.title) || (Number.isInteger(s.number) ? `Section ${s.number}` : ""));
     const fetched = readMap().fetched[m.id] || {};
     const want = [].concat(items == null ? [] : items).slice(0, 200);
     let chosen = [];
@@ -227,10 +232,11 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     // a folder is opened to count (and later fetch) its files
     const jobs = [];
     for (const i of chosen) {
-      if (i.module === "resource") { jobs.push({ cm: i.id, kind: "file", label: oneLine(i.name, 120) }); continue; }
+      const section = sectionOf.get(i.id) || "";
+      if (i.module === "resource") { jobs.push({ cm: i.id, kind: "file", label: oneLine(i.name, 120), folder: section }); continue; }
       try {
         const { data } = await bridge.ask("folder", { cmid: i.id });
-        for (const f of (Array.isArray(data) ? data : []).filter((x) => Number.isInteger(x.index))) jobs.push({ cm: i.id, kind: "folderfile", index: f.index, label: `${oneLine(i.name, 60)}/${oneLine(f.name, 100)}` });
+        for (const f of (Array.isArray(data) ? data : []).filter((x) => Number.isInteger(x.index))) jobs.push({ cm: i.id, kind: "folderfile", index: f.index, label: `${oneLine(i.name, 60)}/${oneLine(f.name, 100)}`, folder: [section, part(i.name)].filter(Boolean).join("/") });
       } catch (error) { missing.push(`${oneLine(i.name, 60)} (${explain(error)})`); }
     }
     return { jobs, missing };
@@ -241,7 +247,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     const { file } = await bridge.ask(job.kind, job.kind === "file" ? { cmid: job.cm } : { cmid: job.cm, index: job.index });
     if (!file || !file.bytes || !file.bytes.length) return { ok: false, why: "empty", bytes: 0 };
     try {
-      const r = courseRoutes.fileFetched(botId, botCourseName, { bytes: file.bytes, name: file.name }, lang);
+      const r = courseRoutes.fileFetched(botId, botCourseName, { bytes: file.bytes, name: file.name, folder: job.folder || "" }, lang);
       return { ok: true, filed: r.filedCount, bytes: file.bytes.length, name: file.name };
     } catch (error) {
       return { ok: false, why: oneLine(error.message, 120), bytes: file.bytes.length, name: file.name, duplicate: /already|duplicate|קיים/i.test(error.message) };
