@@ -92,6 +92,11 @@ function askWarm(provider, model, question, onText, extra = {}) {
   return ask(provider, model, question, onText, { onUsage });
 }
 // "2 model calls, 31,204 tokens" from the calls one message made (each: { model, input, output, thinking, cacheRead }).
+// True when one model call ran agy's own web search (the tool names watchSteps saw inside that call).
+function usedWebSearch(inner) {
+  return Array.isArray(inner) && inner.some((name) => /search_web/i.test(String(name)));
+}
+
 function costOf(spent) {
   const tokens = spent.reduce((a, c) => a + (c.input || 0) + (c.output || 0) + (c.thinking || 0) + (c.cacheRead || 0), 0);
   // agy's own tool (web search) ran inside a call: each use is one more model turn that read the whole prompt again.
@@ -713,7 +718,9 @@ ${r.cardText}`; }
     const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
     const askRaw = image ? (provider, model, q, onText) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {})) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
-    const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => spent.push({ model, ...u }) });
+    // agy's OWN web search (search_web inside one agy call) is seen in its step events (providers.js watchSteps -> u.inner). A page read
+    // that way counts as a web page for the afterWeb rule: no doing-tool may run after it in this message (Omri, 2026-11-13).
+    const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => { spent.push({ model, ...u }); if (usedWebSearch(u && u.inner)) ctx.sawWeb = true; } });
     if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
     else if (!image && paced.note) log(`[brain] ${paced.note}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
@@ -827,4 +834,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, parseReply, looksLikeCall, urlsIn, pathInText, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, parseReply, looksLikeCall, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
