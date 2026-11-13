@@ -6,6 +6,7 @@
 //   GET    /                       -> the page itself (public/index.html)
 //   GET    /api/usage              -> your agy quota, as JSON
 //   POST   /api/ask                -> start a task (inside a conversation) as a BACKGROUND JOB; answers at once with its id
+//                                     (optional quote: { messageId, text }, the marked part Omri replies to; checked by quote.js)
 //   GET    /api/jobs               -> running jobs and recently finished ones (progress, plain-words step)
 //   GET    /api/jobs/:id           -> one job (see jobs.js: the answer is saved into the conversation by the server)
 //   GET    /api/thread?before=<ms>&limit=<n> -> THE conversation: the newest messages, older ones by "before"
@@ -74,6 +75,7 @@ const { createSummaries } = require("./thread-summary");
 const { studyOverview } = require("./study-page");
 const { visibleProposals } = require("./suggestion-filter");
 const { readRawBody } = require("./upload");
+const { checkQuote } = require("./quote");
 const { MAX_ZIP_BYTES } = require("./unzip");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
@@ -665,6 +667,12 @@ function createServer({
       if (!task) return sendJson(res, 400, { error: "task is empty" });
       if (task.length > MAX_TASK_CHARS) return sendJson(res, 413, { error: `task is longer than ${MAX_TASK_CHARS} characters` });
 
+      // An optional quote: the part of an earlier message Omri marked and replies to. Code checks it is really in that message (quote.js).
+      let quote = null;
+      if (input.quote !== undefined && input.quote !== null) {
+        try { quote = checkQuote(thread, input.quote); } catch (error) { return sendJson(res, error.status || 400, { error: error.message }); }
+      }
+
       // An optional photo: really check it (size, then the first bytes) and save it under a random name.
       let image = null;
       if (input.image !== undefined) {
@@ -679,7 +687,7 @@ function createServer({
       if (!thread) { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 503, { error: "the conversation is not set up on this server" }); }
       try {
         if (input.route !== undefined && input.route !== "general") { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 400, { error: 'route can only be "general"' }); }
-        const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote });
+        const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote });
         return sendJson(res, 202, { job });
       } catch (error) {
         if (image) fs.rmSync(image.path, { force: true }); // the job never started, so nothing else will delete the photo

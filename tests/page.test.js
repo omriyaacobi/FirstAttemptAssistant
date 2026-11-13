@@ -72,7 +72,7 @@ test("the photo button is a round icon button with a preview chip, and photos ar
   assert.match(html, /id="photoChip"/);
   assert.match(html, /createImageBitmap/);
   assert.match(html, /toDataURL\("image\/jpeg"/);
-  assert.match(html, /ask\(task, attached \? attached\.dataUrl : null, false\)/); // the photo travels with the message
+  assert.match(html, /ask\(task, attached \? attached\.dataUrl : null, false[,)]/); // the photo travels with the message (and a quote may follow)
 });
 
 test("sending a message starts a background job and the page follows it by polling, not by one long request", () => {
