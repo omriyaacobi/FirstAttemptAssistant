@@ -27,6 +27,14 @@ test("a zip with a/README.pdf and b/README.pdf keeps both, each with its folder"
   assert.deepStrictEqual(files.map((f) => [f.folder, f.name]), [["op/a", "README.pdf"], ["op/b", "README.pdf"], ["", "top.pdf"]]);
 });
 
+test("a Hebrew name without the zip's UTF-8 flag is read as UTF-8; bytes that are not UTF-8 are still read as Latin-1", () => {
+  const z = makeZip({ "מטלה 1/README.pdf": PDF("he"), "x.pdf": PDF("l") }); // testzip.js never sets the flag
+  const at = z.indexOf(Buffer.from("x.pdf"));
+  z[at] = 0xe9; z[z.lastIndexOf(Buffer.from("x.pdf"))] = 0xe9; // "\xe9.pdf" in both headers: not valid UTF-8
+  const { files } = unzip(z);
+  assert.deepStrictEqual(files.map((f) => [f.folder, f.name]), [["מטלה 1", "README.pdf"], ["", "é.pdf"]]);
+});
+
 test("'..' and absolute entries are still skipped, and never become a folder", () => {
   const { files, skipped } = unzip(makeZip({ "../evil/x.pdf": PDF("1"), "/abs/y.pdf": PDF("2"), "C:/win/z.pdf": PDF("3"), "ok/w.pdf": PDF("4") }));
   assert.deepStrictEqual(files.map((f) => f.folder), ["ok"]);

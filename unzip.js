@@ -84,7 +84,10 @@ function readDirectory(bytes) {
     });
     pos += 46 + nameLen + extraLen + commentLen;
   }
-  return list.map((e) => ({ ...e, name: e.raw.toString(e.utf8 ? "utf8" : "latin1") }));
+  // A name is UTF-8 when the zip says so (flag 0x800), and ALSO when it does not say so but its bytes are valid UTF-8: some zippers
+  // (macOS, many tools) write UTF-8 names without the flag, and read as Latin-1 a Hebrew name turns into garbage. ASCII is the same both ways.
+  const utf8 = (raw) => { try { return new TextDecoder("utf-8", { fatal: true }).decode(raw); } catch (error) { return null; } };
+  return list.map((e) => ({ ...e, name: (e.utf8 ? e.raw.toString("utf8") : utf8(e.raw)) ?? e.raw.toString("latin1") }));
 }
 
 // Why is this name not acceptable? Returns text, or null if it is fine. The name is only ever DISPLAYED (see top of file).
