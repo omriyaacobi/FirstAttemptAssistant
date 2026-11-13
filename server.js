@@ -179,6 +179,8 @@ const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /stil
 function createServer({
   handle = null, // tests only: a fake that answers a message. The real Bot answers with the brain (makeBrain).
   usage = getUsage,
+  // Your Claude plan's windows as Bot last saw them (from real Claude answers or the tiny probe; quota.js). Memory only, never a call.
+  claudeUsage = async () => (await require("./quota").getPoolRows()).filter((r) => /^Claude plan/.test(r.pool) && Number.isFinite(r.remaining) && Date.parse(r.resets) > Date.now()),
   store = createStore(path.join(__dirname, "data", "conversations")),
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
@@ -399,7 +401,8 @@ function createServer({
     // Quota panel
     if (req.method === "GET" && url.pathname === "/api/usage") {
       try {
-        return sendJson(res, 200, { rows: await usage() });
+        const claude = await Promise.resolve().then(claudeUsage).catch(() => []); // a failure here never hides the agy rows
+        return sendJson(res, 200, { rows: [...(await usage()), ...claude] });
       } catch (error) {
         return sendJson(res, 502, { error: error.message });
       }

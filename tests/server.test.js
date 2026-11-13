@@ -43,6 +43,7 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
     handle, store, selfEdit, gitOps, supervised,
     restart: () => restarts.push(Date.now()),
     usage: async () => [{ pool: "P", window: "W", remaining: 50, resets: "x" }],
+    claudeUsage: async () => [{ pool: "Claude plan", window: "Five Hour Limit Remaining", remaining: 70, resets: "y" }],
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
@@ -207,7 +208,7 @@ test("limits how many tasks run at once", async () => {
 test("usage endpoint returns rows; unknown routes are 404", async () => {
   const s = await start();
   const usage = await s.request("GET", "/api/usage");
-  assert.deepStrictEqual(JSON.parse(usage.body).rows[0].remaining, 50);
+  assert.deepStrictEqual(JSON.parse(usage.body).rows.map((r) => [r.pool, r.remaining]), [["P", 50], ["Claude plan", 70]]); // agy rows, then the Claude plan
   assert.strictEqual((await s.request("GET", "/nope")).status, 404);
   await s.close();
 });
