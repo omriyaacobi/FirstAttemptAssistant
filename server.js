@@ -772,6 +772,12 @@ if (require.main === module) {
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
     if (brainRef) brainRef.warmUp();
+    // Look the quota pools up once at start (2026-11-13): before, the first message after a restart knew nothing, treated every
+    // pool as full and could use Argon at 10%. Runs in the background; a failed lookup changes nothing.
+    try {
+      const quota = require("./quota");
+      quota.refreshQuota().then(() => quota.getPoolLevels()).then((levels) => console.log(`[quota] at start: ${levels.map((p) => `${p.pool} ${p.remaining}%`).join(", ") || "nothing known yet"}`)).catch(() => {});
+    } catch (error) { /* quota can never stop Bot from starting */ }
     console.log(process.env.BOT_SUPERVISED === "1" ? "Started by start-web.cmd: the Restart button works. Close this window to stop." : "Press Ctrl+C to stop.");
   });
 }
