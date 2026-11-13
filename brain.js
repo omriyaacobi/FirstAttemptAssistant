@@ -225,6 +225,25 @@ function createBrain({
   const refOf = (course) => (coach ? coach.tracker.refsFor([course])[0] : null);
   const record = (course) => { try { const ref = refOf(course); return ref ? coach.tracker.course(ref) : null; } catch (error) { return null; } };
   const filesOf = (course) => { try { return (courseRoutes.courseFiles(course.id) || {}).files || []; } catch (error) { return []; } };
+  // Files that share a name (a zip of missions, each with its own README.pdf) are told apart by their id and the first line of their
+  // text (2026-11-13: the zip's folder names were not kept, so "the mission 2 readme" could not be found). The line is file text: data.
+  function firstLine(c, fileId) {
+    const p = courses.allPages(c.id).filter((x) => x.fileId === fileId).sort((a, b) => a.page - b.page)[0];
+    const line = String((p && p.text) || "").replace(/<[^>]*>/g, " ").split(/\r?\n/).map((s) => s.replace(/^[#>*\s-]+|[*`]+/g, "").trim()).find(Boolean) || "";
+    return line.slice(0, 70);
+  }
+  const shared = (files) => { const n = new Map(); for (const f of files) n.set(f.name, (n.get(f.name) || 0) + 1); return (f) => n.get(f.name) > 1; };
+  const fileLabel = (c, f, isShared) => (isShared(f) ? `${f.name} [id ${f.id}, starts: "${firstLine(c, f.id)}"]` : f.name);
+  // A file the model named: its id first (exact), then the old name match. Returns the matching files.
+  function pickFiles(files, file) {
+    const want = String(file || "").toLowerCase().trim();
+    if (!want) return [];
+    const byId = files.filter((f) => String(f.id).toLowerCase() === want);
+    if (byId.length) return byId;
+    const low = (f) => String(f.name).toLowerCase();
+    const exact = files.filter((f) => low(f) === want);
+    return exact.length ? exact : files.filter((f) => low(f).includes(want) || want.includes(low(f).replace(/\.\w{2,5}$/, "")));
+  }
   const isAssignmentName = (n) => /assign|exercis|homework|\bhw\b|(^|[^a-z])ex[ _-]?\d|תרגיל|מטלה|עבודה/i.test(String(n));
 
   // ---- the context code gives the model with every message ----
@@ -377,18 +396,24 @@ ${text}`; } catch (error) {
         const c = need(course);
         const files = filesOf(c);
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
-        return files.length ? files.slice(0, 200).map((f) => `${f.name} (${f.status}${f.pages ? `, ${f.pages} page(s)` : ""})`).join("\n") : "This course has no files.";
+        const isShared = shared(files);
+        const note = files.some(isShared) ? "\nSome files share a name: they show their id and first line. Pass the id as \"file\" to course_read or open_on_pc." : "";
+        return files.length ? files.slice(0, 200).map((f) => `${fileLabel(c, f, isShared)} (${f.status}${f.pages ? `, ${f.pages} page(s)` : ""})`).join("\n") + note : "This course has no files.";
       },
       course_read: async ({ course, file, from_page }) => {
         const c = need(course);
-        const want = String(file || "").toLowerCase().trim();
         const pages = courses.allPages(c.id);
-        const names = [...new Set(pages.map((p) => p.fileName))];
-        const base = (n) => String(n).toLowerCase();
-        const hit = names.find((n) => base(n) === want) || names.find((n) => base(n).includes(want) || want.includes(base(n).replace(/\.\w{2,5}$/, "")));
-        if (!want || !hit) throw new Error(`no readable file like "${String(file).slice(0, 80)}" in ${c.name}. Files: ${names.slice(0, 30).join("; ")}`);
+        const readable = [];
+        for (const p of pages) if (!readable.some((f) => f.id === p.fileId)) readable.push({ id: p.fileId, name: p.fileName });
+        const isShared = shared(readable);
+        const hits = pickFiles(readable, file);
+        const label = (f) => fileLabel(c, f, isShared);
+        if (!hits.length) throw new Error(`no readable file like "${String(file).slice(0, 80)}" in ${c.name}. Files: ${readable.slice(0, 30).map(label).join("; ")}`);
+        // Several files with that name: pick by id. (Before, the first one with the name was read, mixing pages of all of them.)
+        if (new Set(hits.map((f) => f.id)).size > 1) throw new Error(`more than one file of ${c.name} is called that; pass the id of the one you mean: ${hits.slice(0, 12).map(label).join("; ")}`);
+        const hit = hits[0].name;
         const from = Math.max(1, Number(from_page) || 1);
-        const mine = pages.filter((p) => p.fileName === hit).sort((a, b) => a.page - b.page);
+        const mine = pages.filter((p) => p.fileId === hits[0].id).sort((a, b) => a.page - b.page);
         const end = mine[mine.length - 1].page;
         if (from > end) return `${hit} has ${end} page${end === 1 ? "" : "s"}, so there is nothing from page ${from} on. That was the end of the file.`;
         let text = "", last = from - 1;
@@ -579,11 +604,9 @@ ${text}`; } catch (error) {
           afterWeb("open files");
           const c = need(course);
           const files = filesOf(c);
-          const want = String(file || "").toLowerCase().trim();
-          const low = (f) => String(f.name).toLowerCase();
-          const exact = files.filter((f) => low(f) === want);
-          const hits = !want ? [] : exact.length ? exact : files.filter((f) => low(f).includes(want) || want.includes(low(f).replace(/\.\w{2,5}$/, "")));
-          if (hits.length !== 1) throw new Error(hits.length ? `more than one file of ${c.name} fits: ${hits.slice(0, 8).map((f) => `"${f.name}"`).join(", ")}` : `which file of ${c.name}? Its files: ${files.slice(0, 30).map((f) => `"${f.name}"`).join(", ")}`);
+          const hits = pickFiles(files, file);
+          const isShared = shared(files);
+          if (hits.length !== 1) throw new Error(hits.length ? `more than one file of ${c.name} fits; pass the id of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `which file of ${c.name}? Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
           const original = courses.originalPath(c.id, hits[0].id);
           if (!original) throw new Error("that file's original is not kept");
           const r = opener.openCopy(original, hits[0].name);
