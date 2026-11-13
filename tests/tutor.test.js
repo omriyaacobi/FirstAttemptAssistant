@@ -200,35 +200,6 @@ test("assignment proposal: dates and needs are checked by code", async () => {
   assert.strictEqual(bad.ok, false);
 });
 
-test("get me started: checks the knowledge it needs first, then guides with hints and never a solution", async () => {
-  const s = setup(), f = fake();
-  s.t.addAssignment(SP, { title: "Exercise 3", due: "2026-11-12", needs: ["fork and exec", "pipes", "signals"], text: "Write a shell. SECRET-SOLUTION-MARKER is not in here." });
-  const r = await run(s, f, "help me start exercise 3", "start");
-  assert.strictEqual(r.mode, "start");
-  assert.match(r.answer, /Question 1 of 3/);
-  assert.match(f.calls[0].prompt, /One question for each of these pieces of knowledge: fork and exec; pipes; signals/);
-  await run(s, f, "RIGHT", "answer");
-  await run(s, f, "RIGHT", "answer");
-  const last = await run(s, f, "wrong try", "answer");
-  assert.match(last.answer, /Not yet/);
-  await run(s, f, "again", "answer");
-  const end = await run(s, f, "and again", "answer");
-  assert.match(end.answer, /Those are the gaps/);
-  assert.strictEqual(s.t.progress(SP).assignments[0].status, "started");
-  assert.strictEqual(s.t.progress(SP).understood, 0); // an assignment check never marks a lecture understood
-  const work = await run(s, f, "I think I read the input with fgets", null);
-  assert.strictEqual(work.mode, "work");
-  assert.match(f.calls[f.calls.length - 1].prompt, /Do NOT solve it/);
-  assert.ok(work.answer.length < 900);
-});
-
-test("get me started with no assignment saved asks for one", async () => {
-  const s = setup(), f = fake();
-  const r = await run(s, f, "help me start", "start");
-  assert.strictEqual(r.needs, "assignment");
-  assert.strictEqual(f.calls.length, 0);
-});
-
 test("a lecture is found by number, by weekday, or as the earliest one not understood", () => {
   const s = setup();
   const pick = (message) => tutor.pickLecture({ tracker: s.t, ref: SP, message, now: NOW });

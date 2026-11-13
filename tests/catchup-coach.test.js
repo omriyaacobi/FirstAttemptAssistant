@@ -103,7 +103,7 @@ test("catch-up plan: first step with minutes, real dates only, a deadline goes f
   const r = coach.brainTools.plan({ todayOnly: true });
   assert.match(r.answer, /about 90 minutes a day/);
   assert.match(r.answer, /Start with: Compilers Demo: assignment "Lexer project" \(60 min\)/, "the deadline in two days first");
-  assert.match(r.answer, /teach me through the assignment/);
+  assert.match(r.answer, /help me start the assignment/);
   assert.match(r.answer, /Databases Demo: "Intro"/);
   assert.match(r.answer, /when are the exams \(Databases Demo, Compilers Demo\)/);
   assert.ok(r.answer.split("\n").length <= 14, "one screen");

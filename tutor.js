@@ -292,14 +292,14 @@ function summary(session, rec) {
 }
 
 // The one entry point. ctx: { tracker, ref, pages, courseName, askChain, now, log }.
-// intent: "teach" | "quiz" | "start" | "answer" | null (null: continue the open session if there is one).
+// intent: "teach" | "quiz" | "answer" | null (null: continue the open session if there is one). The old "start" (teach through an
+// assignment) went on 2026-11-13: nothing reached it since the brain. A "work" session saved before that still continues below.
 // Returns { answer, outside, sources, model, mode, done, needs }.
 // range: see pickLecture, or { extra: [page-like pieces of the notes the student has covered], label } for a course whose notes are not split by lecture.
 // notes (optional, teach): { chunk: { title, part, parts, text, fromPage, realPages, fileId, fileName, key }, onTaught } = ONE piece of a big notes file chosen by code (catchup.js).
-// through (optional, start): { assignment, concept, index, total, concepts, extra, onTaught } = teach the next idea an assignment needs, from the notes, never from the assignment.
 // lang (optional): the language of the reply when the caller knows it (the brain hands it in: its teach_next tool gets only a part name,
 // which says nothing about the language Omri wrote in). Without it the language is read from the message, as before.
-async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, through = null, lang: forcedLang = null }) {
+async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, lang: forcedLang = null }) {
   const langNow = forcedLang === "he" || forcedLang === "en" ? forcedLang : langOf(message);
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
@@ -382,43 +382,6 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
       return finish({ answer: head + t.text + tail, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: /\[OUT\]/.test(t.text), target: { type: "notes", key: c.key } });
     } catch (error) { return finish(unavailable(error.message, langNow)); }
   }
-  if (intent === "start" && through && through.assignment) {
-    const a = through.assignment, lang = langNow;
-    if (through.index >= through.total) { // every idea was taught: from here on, guided work with hints
-      tracker.setSession(ref, newSession("work", { type: "assignment", id: a.id }, { lang }));
-      if (a.status === "todo") tracker.setAssignment(ref, a.id, { status: "started" });
-      return finish({ answer: say(lang, `We went through all the ideas of "${a.title}". Now write what you think the first step is, or paste what you have so far: I will give hints, not the solution.`, `עברנו על כל הרעיונות של "${a.title}". עכשיו אפשר לכתוב מה הצעד הראשון לדעתך, או להדביק מה שיש עד עכשיו: אתן רמזים, לא פתרון.`), mode: "work" });
-    }
-    const mat = materialFor(pages, [], through.extra || pickPages(pages, through.concept, { k: 3 }));
-    try {
-      const t = await teachText({ askChain, courseName, topic: through.concept, material: mat, message: through.concept, lang, log, onText, style: "concept" });
-      if (through.onTaught) through.onTaught();
-      const intro = through.index === 0 ? say(lang, `"${a.title}" needs ${through.total} idea${through.total === 1 ? "" : "s"}: ${through.concepts.join("; ")}. We take them one at a time. First: ${through.concept}.\n\n`, `"${a.title}" דורשת ${through.total} רעיונות: ${through.concepts.join("; ")}. לוקחים אחד אחד. קודם: ${through.concept}.\n\n`) : say(lang, `Idea ${through.index + 1} of ${through.total}: ${through.concept}.\n\n`, `רעיון ${through.index + 1} מתוך ${through.total}: ${through.concept}.\n\n`);
-      let tail = "";
-      if (t.question) {
-        tracker.setSession(ref, newSession("quiz", { type: "assignment", id: a.id }, { lang, questions: [{ id: "q1", q: t.question.q, key: t.question.key, topic: clean(through.concept, 80), attempts: 0, hints: 0, state: "open", verdict: null, revealed: false }], fromTeach: true }));
-        tail = "\n\n" + tx({ lang }).back(t.question.q);
-      }
-      return finish({ answer: intro + t.text + tail, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: !mat.picked.length, target: { type: "assignment", id: a.id } });
-    } catch (error) { return finish(unavailable(error.message, langNow)); }
-  }
-
-  // ---- a new session ----
-  if (intent === "start") {
-    const a = pickAssignment({ tracker, ref, message });
-    if (!a) return finish({ answer: say(langNow, "I do not have an assignment saved for this course yet. Send me the file or paste the text with its due date, and I will propose it for you to confirm.", "עדיין אין לי מטלה שמורה בקורס הזה. אפשר לשלוח את הקובץ או להדביק את הטקסט עם תאריך ההגשה, ואציע אותה לאישור."), needs: "assignment" });
-    let needs = a.needs;
-    try {
-      const mat = materialFor(pages, [], pickPages(pages, `${a.title} ${needs.join(" ")}`, { k: 6 }));
-      if (!needs.length) { const p = await proposeAssignment({ askChain, courseName, text: a.text || a.title, now, log }); needs = p.ok ? p.proposal.needs : []; }
-      if (!needs.length) { tracker.setSession(ref, newSession("work", { type: "assignment", id: a.id })); return finish({ answer: say(langNow, `Let us start "${a.title}". First, in your own words: what is it asking you to produce, and what would your first step be? Do not worry about being right. I will guide you with hints, not the solution.`, `מתחילים את "${a.title}". קודם כל, במילים שלך: מה המטלה מבקשת להגיש, ומה יהיה הצעד הראשון? אין צורך להיות מדויקים. אכוון עם רמזים, לא עם הפתרון.`), mode: "work" }); }
-      const made = await makeQuestions({ askChain, courseName, topic: a.title, material: mat, wanted: needs.slice(0, 4), n: Math.min(4, needs.length), lang: langNow, log });
-      const s = newSession("start", { type: "assignment", id: a.id }, { lang: langNow, questions: made.questions });
-      tracker.setSession(ref, s);
-      return finish({ answer: say(s.lang, `Before "${a.title}", a quick check that you have what it needs. One question at a time; no solution to the assignment itself.`, `לפני "${a.title}", בדיקה קצרה שיש את מה שצריך בשבילה. שאלה אחת בכל פעם, בלי הפתרון של המטלה עצמה.`) + `\n\n${showQuestion(s)}`, model: made.model, mode: "start", sources: sourcesFor("", mat.picked), outside: !mat.picked.length });
-    } catch (error) { return finish(unavailable(error.message, langNow)); }
-  }
-
   // teach and quiz: a lecture
   const byNotes = range && Array.isArray(range.extra) && range.extra.length && intent === "quiz" && !askedLectures(message).length;
   let pick = byNotes ? { slot: { date: null, n: null }, why: "range" } : pickLecture({ tracker, ref, message, now, intent, range });

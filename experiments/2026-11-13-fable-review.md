@@ -64,7 +64,7 @@ of `data/` is being made. That is for Omri to set (`.env`, the passphrase is the
 | 5.4 | `moodle_link` also sets the answer's course (as 5.1 did for the other Moodle tools). | S | done |
 | 5.5 | The old chat list (`jobs.start`, `/api/conversations`, the non-thread parts of `public/index.html`): remove only if the page can be checked; otherwise a written plan. | M | proposal: own session that starts a test copy of Bot on another port and checks the page in a browser after each step |
 | 5.6 | **Cancelled classes:** CLAUDE.md says cancelled classes are told to Bot in chat. That only worked through the old "update" intent (removed in 5.3; the brain could not reach it since 2026-11-12). Proposal: a checked tool `class_cancelled {"course","date"}` whose date code checks against the timetable (a real lecture of that course), with an undo, like study_position. Needs Omri's yes (it changes the study record). | S | proposal |
-| 5.7 | `tutor.js` still has the "teach through the assignment" mode (`through`, `workText`) and `study-positions.js` the old multi-course reader; nothing reaches them since 5.3. Remove with their tests. | S | todo |
+| 5.7 | `tutor.js` still has the "teach through the assignment" mode (`through`, `workText`) and `study-positions.js` the old multi-course reader; nothing reaches them since 5.3. Remove with their tests. | S | done |
 
 **How 5.3 was done (planned after a first try was backed out; finished the same night).** The cut itself is easy and was done: `answerStudy` keeps
 progress / quiz / answer / confirm / cancel; removing the rest and then everything that became unused takes `study-coach.js` from 979 to

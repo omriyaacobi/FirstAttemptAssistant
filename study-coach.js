@@ -241,7 +241,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const focusTitles = pos.focus ? new Set(catchup.matchSections(v.outline, pos.focus, undefined, v.pages).map((u) => u.title)) : new Set();
       for (const c of rest.slice(0, 10)) out.push({ ...base, kind: "chunk", focus: focusTitles.has(c.title), label: `${ref.name}: "${clean(c.title, 50)}"${c.parts > 1 ? ` ${c.part}/${c.parts}` : ""}`, minutes: catchup.MINUTES.chunk, say: T(`teach me the next part of ${ref.name}`, `תלמד אותי את החלק הבא ${bet(ref.name)}`) });
     }
-    for (const a of p.assignments) out.push({ ...base, kind: "assignment", deadline: a.due || null, label: `${ref.name}: ${T("assignment", "מטלה")} "${clean(a.title, 40)}"`, minutes: catchup.MINUTES.assignment, say: T("teach me through the assignment", "תלמד אותי דרך המטלה") });
+    for (const a of p.assignments) out.push({ ...base, kind: "assignment", deadline: a.due || null, label: `${ref.name}: ${T("assignment", "מטלה")} "${clean(a.title, 40)}"`, minutes: catchup.MINUTES.assignment, say: T("help me start the assignment", "תעזור לי להתחיל את המטלה") });
     if (exam && plan.daysBetween(today(), exam) <= 14) out.push({ ...base, kind: "review", label: `${ref.name}: ${T("review before the exam", "חזרה לפני המבחן")}`, minutes: catchup.MINUTES.review, say: T(`quiz me on ${ref.name}`, `תבחן אותי ${bet(ref.name)}`) });
     return out;
   }
@@ -539,7 +539,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const align = maybeAlign(ref);
     const noSolution = SOLUTION_ASK.test(text) ? T("I will not write the full solution of an assignment: that is the part that teaches the most. I can guide step by step, so here is how.\n\n", "פתרון מלא של מטלה אני לא כותב: זה החלק שהכי מלמד. אפשר ללוות צעד אחר צעד, אז הנה איך.\n\n") : "";
     const savedNow = await autoSavePageAssignments(ref).catch(() => []);
-    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes: null, through: null });
+    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes: null });
     if (savedNow.length) r.answer = T(`I saved "${savedNow.join('", "')}" from the file you uploaded to ${ref.name}.\n\n`, `שמרתי את "${savedNow.join('", "')}" מהקובץ שהעלית ${bet(ref.name)}.\n\n`) + r.answer;
     return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
@@ -573,7 +573,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const align = maybeAlign(ref);
       const pick = await notesPick(ref, text);
       if (pick && pick.say) return { mode: "study", answer: pick.say };
-      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, through: null, lang }); // the brain knows the language; the part name alone does not say it
+      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, lang }); // the brain knows the language; the part name alone does not say it
       return { ...r, mode: "study", answer: r.answer + align, study: { course: ref.name, mode: r.mode, done: r.done } };
     },
     // An exam date becomes a Confirm card; it is stored only when Omri confirms.

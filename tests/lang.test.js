@@ -7,7 +7,6 @@ const os = require("node:os");
 const path = require("node:path");
 const { mostlyHebrew, langOf, HEBREW_RULE, say, bet } = require("../lang");
 const { createStudyCoach } = require("../study-coach");
-const { checkPositions } = require("../study-positions");
 
 const NOW = new Date("2026-11-07T12:00:00+02:00").getTime();
 const IDS = { sp: "a".repeat(16), calc: "b".repeat(16), hpsp: "c".repeat(16), algo: "d".repeat(16) };
@@ -75,12 +74,3 @@ test("an English message still gets the same English sentences", async () => {
   assert.match(coach.brainTools.pause({ lang: "en" }), /Study reminders are PAUSED/);
 });
 
-test("a several-courses problem line follows the language", () => {
-  const ref = { key: "x", name: "Calculus 2" };
-  const heldOf = () => [];
-  const raw = { courses: [{ name: "Calculus 2", state: "lecture", lecture: 3 }] };
-  const he = checkPositions(raw, [ref], heldOf, "2026-11-07", "he");
-  const en = checkPositions(raw, [ref], heldOf, "2026-11-07");
-  assert.deepStrictEqual(he.items, en.items);
-  for (const p of he.problems) assert.ok(/[א-ת]/.test(p), p);
-});
