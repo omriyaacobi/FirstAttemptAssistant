@@ -27,6 +27,28 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
+## Morning newspaper (2026-11-13, branch claude/morning-brief-27f031, NOT merged yet)
+
+The morning brief is now a small newspaper. Choices and reasons: `experiments/2026-11-13-morning-brief-options.md` (option B).
+- **When:** at the brief time (default now 08:30; set it in the page, the box must be ON) Bot fetches the news one last time and sends
+  the brief right after, with a push that shows counts only. If I write to Bot between 05:00 and the brief time, my first message
+  starts the brief at once; it arrives a little after the answer, and the timer does not send a second one.
+- **News (`news.js`):** 9 fixed public feeds (Times of Israel, Ynetnews, Jerusalem Post; BBC, NPR, Guardian; BBC Technology,
+  Ars Technica, The Verge), read by code every 3 hours while the brief is on (no tokens). Before the brief, ONE Gemini Flash high call
+  picks by NUMBER: Israel at most 2 and only if big, world at most 2, tech at most 1 and only if very big. Code checks the numbers and
+  prints the site's own headline and name. During the day, if a check finds a very big event, Bot posts "Big news" at once (at most
+  2 a day; push without the headline; no push 22:00-08:00).
+- **You (`brief-me.js`, `progress-log.js`):** code now writes my study day as it happens (graded quizzes, lessons, my notes,
+  positions, assignments, exam dates, cancelled classes; `data/study/progress/`). The brief gives Flash high a numbered ledger of
+  yesterday + what is due + held lectures not checked; every line it writes must cite the ledger, and code drops a line with an
+  invented number or an "understood" without a passed graded quiz. If Flash fails, code writes the ledger itself.
+- **Safety:** headlines are data inside `<news-data>` markers (also in the brain's memory), never facts, out of recall and the daily
+  summary, and nothing can act on them. Only the Flash pool is used (Omri agreed); never Argon or Claude.
+- **To try after the merge:** turn the morning brief on in the page and set 08:30; "Show me one now" makes one at once (it uses the
+  news pile). The log lines start with `[news]` and `[brief]` in `data/bot.log`.
+- **Open:** Flash high vs medium was not measured with real calls (Omri agreed to high). Links are in the alerts, not in the brief
+  (to keep it one screen).
+
 ## Review of 2026-11-13 (branch claude/fable-improve-c73f00, NOT merged yet)
 
 The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. The main finds:
