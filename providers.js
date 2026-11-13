@@ -437,10 +437,11 @@ const PROVIDERS = {
 
 // onText (optional) gets the answer so far while it is written. Only agy can do that; every other provider ignores it
 // and its answer simply arrives whole, as before.
-// extra (optional): { agent, onUsage } for the brain (the slim agent, and what the call cost in tokens).
+// extra (optional): { agent, onUsage } for the brain (the slim agent, and what the call cost in tokens). timeoutMs: a different limit,
+// for background work nobody waits on (the morning brief's news and "You" calls, server.js).
 function ask(provider, model, question, onText, extra = {}) {
   if (!PROVIDERS[provider]) throw new Error(`Unknown provider: ${provider}`);
-  if (onText && provider === "agy") return askAgyStream(question, model, onText, { agent: extra.agent === true, onUsage: extra.onUsage || null });
+  if (onText && provider === "agy") return askAgyStream(question, model, onText, { agent: extra.agent === true, onUsage: extra.onUsage || null, timeoutMs: extra.timeoutMs || null });
   if (provider === "claude") return askClaude(question, model, { onUsage: extra.onUsage || null });
   return PROVIDERS[provider](question, model);
 }

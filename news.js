@@ -274,7 +274,8 @@ function createNews({ dir, askChain, get = httpGet, feeds = FEEDS, now = () => D
     try { await check({ alert: false }); } catch (error) { log(`[news] last check failed: ${error.message}`); }
     const s = state();
     const since = s.lastBriefAt || now() - 24 * 3600 * 1000;
-    const pile = items().filter((x) => x.seenAt > since).sort((a, b) => (b.published || b.seenAt) - (a.published || a.seenAt)).slice(0, MAX_PILE);
+    // New to the pile AND (when the site gave a time) published since the last brief: after days off, old stories are not "the night's news".
+    const pile = items().filter((x) => x.seenAt > since && (!x.published || x.published > since - 3600 * 1000)).sort((a, b) => (b.published || b.seenAt) - (a.published || a.seenAt)).slice(0, MAX_PILE);
     const head = "News since the last brief";
     if (!pile.length) return { text: `${head}\n  No headlines were collected (the news sites could not be reached).`, count: 0 };
     let pick;

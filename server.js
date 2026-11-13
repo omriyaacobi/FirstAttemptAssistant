@@ -733,7 +733,8 @@ if (require.main === module) {
   threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
   // The morning NEWSPAPER (2026-11-13): news.js (feeds every 3 h, a very-big-news alert, the brief's pick) and brief-me.js (the "You" part).
   // Both use Gemini Flash high under the slim agent (only the Flash pool; never Argon or Claude), and code checks every line they hand back.
-  const flashAsk = (provider, model, question) => require("./providers").ask(provider, model, question, () => {}, { agent: true });
+  // Background work: nobody waits, and Flash high thinks long on 200 headlines (measured 2026-11-13: over 90 s), so 4 minutes.
+  const flashAsk = (provider, model, question) => require("./providers").ask(provider, model, question, () => {}, { agent: true, timeoutMs: 4 * 60 * 1000 });
   let morning = null;
   const news = require("./news").createNews({ dir: path.join(__dirname, "data", "news"), askChain: require("./providers").askChain, askOne: flashAsk, onAlert: (a) => morning.alert(a), enabled: () => morning.settings().on, log: console.log });
   const aboutMe = () => require("./brief-me").aboutMeBlock({ log: coach.progressLog, tracker: coach.tracker, courseList: coursesStore.list(), today: coach.tracker.today(), paused: coach.nudges.isPaused(), askChain: require("./providers").askChain, askOne: flashAsk, logLine: console.log });

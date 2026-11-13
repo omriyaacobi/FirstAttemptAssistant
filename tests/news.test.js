@@ -152,3 +152,11 @@ test("the 3-hour timer does nothing while the morning brief is off, and a broken
   assert.strictEqual(r.failed.length, 3);
   assert.strictEqual(r.added, 0);
 });
+
+test("the brief's pile: a story published days ago (Bot was off) is not the night's news, even when it is new to the pile", async () => {
+  const pages = { "https://world.example.org/feed": rss([{ title: "Made-up story from last week", link: "https://world.example.org/old", at: NOW - 5 * 24 * H }, { title: "Made-up story from tonight", link: "https://world.example.org/new", at: NOW - 2 * H }]) };
+  const s = setup({ pages, answers: ['{"israel":[],"world":[1],"tech":[]}'] });
+  const block = await s.news.briefBlock();
+  assert.ok(!s.asked[0].prompt.includes("last week"));
+  assert.match(block.text, /World: Made-up story from tonight/);
+});
