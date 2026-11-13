@@ -96,7 +96,7 @@ test("a file in the folder next to the linked one: ONE card to link the parent, 
   assert.strictEqual(r.linkBatch.folder, d.ops); // the card shows the real path code found
   assert.match(seen.prompts[1], /card now asks Omri to link/);
   assert.match(seen.prompts[1], /mission2\/agents\.c/);
-  assert.doesNotMatch(seen.prompts[1], /find_agent/); // the file was NOT read before the tap
+  assert.doesNotMatch(seen.prompts[1], /return id \* 2/); // the file was NOT read before the tap
   assert.strictEqual(seen.saved[0].projectDir, d.linked); // nothing changed yet
   await linkBatches.confirm(r.linkBatch.id).done;
   assert.strictEqual(seen.saved[0].projectDir, d.ops);

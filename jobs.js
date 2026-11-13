@@ -42,7 +42,7 @@ const TOOL_WORDS = {
   save_links: "Listing the links in the file", set_reminder: "Setting your reminder", add_events: "Preparing your calendar card",
   remember: "Noting that down", forget: "Looking for that fact", course_note: "Noting where you are", quiz: "Preparing your quiz",
   quiz_answer: "Checking your answer", card_reply: "Saving your answer to the card", improve_bot: "Preparing a pointer to Improve Bot",
-  project_files: "Looking at your project folder", project_read: "Reading your code", link_folder: "Linking your project folder",
+  project_files: "Looking at your project folder", project_read: "Reading your code", project_grep: "Searching your code", working_on: "Noting what you work on", link_folder: "Linking your project folder",
   pc_find: "Searching your PC by name", pc_list: "Looking inside the folder", pc_roots: "Checking the search folders",
   open_on_pc: "Opening it on the PC", moodle_courses: "Reading Moodle", moodle_course: "Reading the Moodle course",
   moodle_news: "Reading the Moodle announcements", moodle_fetch: "Downloading from Moodle", moodle_link: "Matching the Moodle course",
