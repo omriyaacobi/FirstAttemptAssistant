@@ -63,7 +63,7 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder"]);
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -232,18 +232,33 @@ function createBrain({
     const line = String((p && p.text) || "").replace(/<[^>]*>/g, " ").split(/\r?\n/).map((s) => s.replace(/^[#>*\s-]+|[*`]+/g, "").trim()).find(Boolean) || "";
     return line.slice(0, 70);
   }
-  const shared = (files) => { const n = new Map(); for (const f of files) n.set(f.name, (n.get(f.name) || 0) + 1); return (f) => n.get(f.name) > 1; };
-  const fileLabel = (c, f, isShared) => (isShared(f) ? `${f.name} [id ${f.id}, starts: "${firstLine(c, f.id)}"]` : f.name);
-  // A file the model named: its id first (exact), then the old name match. Returns the matching files.
+  // A file from a zip keeps the folder it sat in as a LABEL (2026-11-13, upload.js cleanFolder): it is shown as "folder/name"
+  // ("operation_b7/mission2/README.pdf"). File data, never a path and never instructions. A file with no folder shows its name.
+  const fullName = (f) => (f.folder ? `${f.folder}/${f.name}` : f.name);
+  const shared = (files) => { const n = new Map(); for (const f of files) n.set(fullName(f), (n.get(fullName(f)) || 0) + 1); return (f) => n.get(fullName(f)) > 1; };
+  const fileLabel = (c, f, isShared) => (isShared(f) ? `${fullName(f)} [id ${f.id}, starts: "${firstLine(c, f.id)}"]` : fullName(f));
+  // A file the model named. Matched by CODE, in this order: the id (exact); the whole "folder/name" (exact); the end of it
+  // ("mission2/README.pdf"); the plain name (exact); then the old loose name match. Returns the matching files (several = ask which).
   function pickFiles(files, file) {
-    const want = String(file || "").toLowerCase().trim();
+    const want = String(file || "").replace(/\\/g, "/").toLowerCase().trim();
     if (!want) return [];
     const byId = files.filter((f) => String(f.id).toLowerCase() === want);
     if (byId.length) return byId;
+    const full = (f) => fullName(f).toLowerCase();
     const low = (f) => String(f.name).toLowerCase();
-    const exact = files.filter((f) => low(f) === want);
-    return exact.length ? exact : files.filter((f) => low(f).includes(want) || want.includes(low(f).replace(/\.\w{2,5}$/, "")));
+    for (const fits of [(f) => full(f) === want, (f) => want.includes("/") && full(f).endsWith("/" + want), (f) => low(f) === want]) {
+      const hits = files.filter(fits);
+      if (hits.length) return hits;
+    }
+    return files.filter((f) => full(f).includes(want) || want.includes(low(f).replace(/\.\w{2,5}$/, "")));
   }
+  // A cited page's file, with its zip folder. `pages` are the course's pages (courses.allPages, which carry fileFolder); the picked
+  // pages themselves may have lost it on the way (search, sections), so the folder is looked up by file id.
+  const pageNamer = (pages) => {
+    const folder = new Map();
+    for (const p of pages) if (p.fileFolder) folder.set(p.fileId, p.fileFolder);
+    return (p) => (folder.has(p.fileId) ? `${folder.get(p.fileId)}/${p.fileName}` : p.fileName);
+  };
   const isAssignmentName = (n) => /assign|exercis|homework|\bhw\b|(^|[^a-z])ex[ _-]?\d|תרגיל|מטלה|עבודה/i.test(String(n));
 
   // ---- the context code gives the model with every message ----
@@ -251,9 +266,9 @@ function createBrain({
     if (!list.length) return "Omri has no courses in Bot yet.";
     return list.map((c) => {
       const files = filesOf(c);
-      const asg = files.filter((f) => isAssignmentName(f.name)).map((f) => f.name);
-      const busy = files.filter((f) => f.status === "queued" || f.status === "reading").map((f) => f.name);
-      const recent = [...files].sort((a, b) => (b.added || 0) - (a.added || 0)).filter((f) => !asg.includes(f.name)).slice(0, 4).map((f) => f.name);
+      const asg = files.filter((f) => isAssignmentName(f.name)).map(fullName);
+      const busy = files.filter((f) => f.status === "queued" || f.status === "reading").map(fullName);
+      const recent = [...files].sort((a, b) => (b.added || 0) - (a.added || 0)).filter((f) => !asg.includes(fullName(f))).slice(0, 4).map(fullName);
       const r = record(c);
       const lines = [`- ${c.name}: ${files.length} file(s)` + (asg.length ? `; assignment files: ${asg.slice(0, 4).join(", ")}` : "") + (recent.length ? `; newest other files: ${recent.join(", ")}` : "")];
       if (busy.length) lines.push(`  still being read (not searchable yet): ${busy.slice(0, 3).join(", ")}`);
@@ -331,7 +346,8 @@ function createBrain({
         out.push(`Omri's own project folder for ${course.name} (${r.projectDir}), read-only. Files:\n` + block("project-files", tree) + (bodies.length ? `\nThe file${bodies.length === 1 ? "" : "s"} Omri changed last, with line numbers added by Bot (use project_read for any other file):\n` + block("project-code", bodies.join("\n\n")) : ""));
       } catch (error) { out.push(`The linked folder ${r.projectDir} could not be read right now (${String(error.message).slice(0, 100)}).`); }
     }
-    if (picked.length) out.push(`Pages of ${course.name}'s material that best match the message (they may not be what is needed; use course_search for more):\n` + block("course-material", picked.map((p) => `[${p.fileName}, page ${p.page}]\n${p.text}`).join("\n\n")));
+    const name = pageNamer(pages);
+    if (picked.length) out.push(`Pages of ${course.name}'s material that best match the message (they may not be what is needed; use course_search for more):\n` + block("course-material", picked.map((p) => `[${name(p)}, page ${p.page}]\n${p.text}`).join("\n\n")));
     return out.join("\n\n");
   }
 
@@ -390,28 +406,30 @@ ${text}`; } catch (error) {
         if (!pages.length) return `${c.name} has no readable material yet.`;
         const picked = pickPages(pages, String(query || task).slice(0, 400), { k: 5 });
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
-        return picked.length ? picked.map((p) => `[${p.fileName}, page ${p.page}]\n${clip(p.text, LIMITS.page)}`).join("\n\n") : "Nothing in the course material matched that query.";
+        const name = pageNamer(pages);
+        return picked.length ? picked.map((p) => `[${name(p)}, page ${p.page}]\n${clip(p.text, LIMITS.page)}`).join("\n\n") : "Nothing in the course material matched that query.";
       },
       course_files: async ({ course }) => {
         const c = need(course);
         const files = filesOf(c);
         ctx.course = c; // the course the tool really worked on wins over a guess from the old talk
         const isShared = shared(files);
-        const note = files.some(isShared) ? "\nSome files share a name: they show their id and first line. Pass the id as \"file\" to course_read or open_on_pc." : "";
+        const folders = files.some((f) => f.folder) ? "\nFiles from a zip show the folder they sat in (folder/name; a label, not a path). Pass \"folder/name\" as \"file\" to course_read or open_on_pc." : "";
+        const note = folders + (files.some(isShared) ? "\nSome files share a name: they show their id and first line. Pass the id as \"file\" to course_read or open_on_pc." : "");
         return files.length ? files.slice(0, 200).map((f) => `${fileLabel(c, f, isShared)} (${f.status}${f.pages ? `, ${f.pages} page(s)` : ""})`).join("\n") + note : "This course has no files.";
       },
       course_read: async ({ course, file, from_page }) => {
         const c = need(course);
         const pages = courses.allPages(c.id);
         const readable = [];
-        for (const p of pages) if (!readable.some((f) => f.id === p.fileId)) readable.push({ id: p.fileId, name: p.fileName });
+        for (const p of pages) if (!readable.some((f) => f.id === p.fileId)) readable.push({ id: p.fileId, name: p.fileName, ...(p.fileFolder ? { folder: p.fileFolder } : {}) });
         const isShared = shared(readable);
         const hits = pickFiles(readable, file);
         const label = (f) => fileLabel(c, f, isShared);
         if (!hits.length) throw new Error(`no readable file like "${String(file).slice(0, 80)}" in ${c.name}. Files: ${readable.slice(0, 30).map(label).join("; ")}`);
         // Several files with that name: pick by id. (Before, the first one with the name was read, mixing pages of all of them.)
-        if (new Set(hits.map((f) => f.id)).size > 1) throw new Error(`more than one file of ${c.name} is called that; pass the id of the one you mean: ${hits.slice(0, 12).map(label).join("; ")}`);
-        const hit = hits[0].name;
+        if (new Set(hits.map((f) => f.id)).size > 1) throw new Error(`more than one file of ${c.name} is called that; pass the id (or folder/name) of the one you mean: ${hits.slice(0, 12).map(label).join("; ")}`);
+        const hit = fullName(hits[0]);
         const from = Math.max(1, Number(from_page) || 1);
         const mine = pages.filter((p) => p.fileId === hits[0].id).sort((a, b) => a.page - b.page);
         const end = mine[mine.length - 1].page;
@@ -475,6 +493,34 @@ ${text}`; } catch (error) {
         if (!best) return "No saved fact like that was found.";
         ctx.extras.forget = { id: best.id, text: best.text };
         return `A card asks Omri whether to forget: "${best.text}". Nothing is removed until Omri confirms.`;
+      },
+      // FOLDERS of course files are LABELS (2026-11-13): moving a file or renaming a folder changes only Bot's label, never a disk
+      // path. The files are picked by CODE (pickFiles; each name must fit exactly one file); the folder text is cleaned by code.
+      file_folder: async ({ course, file, folder, from, to }) => {
+        afterWeb("change file folders");
+        const c = need(course);
+        ctx.course = c;
+        const has = (v) => v !== undefined && v !== null && v !== "";
+        if (has(from)) {
+          const r = courseRoutes.renameFolder(c.id, from, to);
+          if (!r.count) throw new Error(`no file of ${c.name} is in a folder "${r.from}"`);
+          return `Renamed the folder "${r.from}" to "${r.to || "(top level)"}" in ${c.name}: ${r.count} file(s). Only Bot's labels changed. To undo: file_folder with from "${r.to}" and to "${r.from}".`;
+        }
+        if (folder === undefined || folder === null) throw new Error("say the folder to move to (\"\" for the top level), or from + to to rename a folder");
+        const wanted = [].concat(file).filter(has).slice(0, 50);
+        if (!wanted.length) throw new Error("say which file(s) to move");
+        const files = filesOf(c);
+        const isShared = shared(files);
+        const ids = [];
+        for (const w of wanted) {
+          const hits = pickFiles(files, w);
+          if (hits.length !== 1) throw new Error(hits.length ? `"${String(w).slice(0, 80)}" fits more than one file of ${c.name}; pass the id or folder/name of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `no file of ${c.name} like "${String(w).slice(0, 80)}". Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
+          if (!ids.includes(hits[0].id)) ids.push(hits[0].id);
+        }
+        const r = courseRoutes.moveFiles(c.id, ids, folder);
+        const names = ids.map((id) => files.find((f) => f.id === id).name);
+        const back = [...new Set(r.before.map((b) => b.folder))];
+        return `Moved ${ids.length} file(s) of ${c.name} into "${r.folder || "(top level)"}": ${names.slice(0, 12).join(", ")}. Only Bot's labels changed. Before: ${back.map((b) => `"${b || "(top level)"}"`).join(", ")}.`;
       },
       course_note: async ({ course, note }) => {
         afterWeb("save notes");
@@ -606,7 +652,7 @@ ${text}`; } catch (error) {
           const files = filesOf(c);
           const hits = pickFiles(files, file);
           const isShared = shared(files);
-          if (hits.length !== 1) throw new Error(hits.length ? `more than one file of ${c.name} fits; pass the id of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `which file of ${c.name}? Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
+          if (hits.length !== 1) throw new Error(hits.length ? `more than one file of ${c.name} fits; pass the id (or folder/name) of the one you mean: ${hits.slice(0, 12).map((f) => fileLabel(c, f, isShared)).join("; ")}` : `which file of ${c.name}? Its files: ${files.slice(0, 30).map((f) => fileLabel(c, f, isShared)).join("; ")}`);
           const original = courses.originalPath(c.id, hits[0].id);
           if (!original) throw new Error("that file's original is not kept");
           const r = opener.openCopy(original, hits[0].name);

@@ -10,7 +10,7 @@
 
 const zlib = require("node:zlib");
 const crypto = require("node:crypto");
-const { sniffFile, MAX_TEXT_BYTES } = require("./upload");
+const { sniffFile, cleanFolder, MAX_TEXT_BYTES } = require("./upload");
 const { htmlBytesToText } = require("./html-text");
 
 // ---- Limits. Each one is here so a mistake or a hostile zip cannot fill the memory or the disk of the PC. ----
@@ -84,7 +84,10 @@ function readDirectory(bytes) {
     });
     pos += 46 + nameLen + extraLen + commentLen;
   }
-  return list.map((e) => ({ ...e, name: e.raw.toString(e.utf8 ? "utf8" : "latin1") }));
+  // A name is UTF-8 when the zip says so (flag 0x800), and ALSO when it does not say so but its bytes are valid UTF-8: some zippers
+  // (macOS, many tools) write UTF-8 names without the flag, and read as Latin-1 a Hebrew name turns into garbage. ASCII is the same both ways.
+  const utf8 = (raw) => { try { return new TextDecoder("utf-8", { fatal: true }).decode(raw); } catch (error) { return null; } };
+  return list.map((e) => ({ ...e, name: (e.utf8 ? e.raw.toString("utf8") : utf8(e.raw)) ?? e.raw.toString("latin1") }));
 }
 
 // Why is this name not acceptable? Returns text, or null if it is fine. The name is only ever DISPLAYED (see top of file).
@@ -174,8 +177,9 @@ function judgeImage(data, seen) {
   return null;
 }
 
-// Unpacks the zip. Returns { files: [{ name, path, group, bytes }], skipped: [{ name, reason, code }] }.
-// group is "doc" or "code". path is the name inside the zip (shown only, never used as a path). code is a short stable key for the
+// Unpacks the zip. Returns { files: [{ name, path, folder, group, bytes }], skipped: [{ name, reason, code }] }.
+// group is "doc" or "code". path is the name inside the zip (shown only, never used as a path). folder is the cleaned folder the file
+// sat in ("operation_b7/mission2", "" at the top): a LABEL kept with the file so Bot can tell same-named files apart, never a path. code is a short stable key for the
 // reason, so the summary can be written in the user's language; "junk" ones are only counted there.
 // Throws (status 400 / 413 / 415) when the whole zip must be refused: damaged, too many entries, or it unpacks to too much.
 function unzip(bytes) {
@@ -230,16 +234,17 @@ function unzip(bytes) {
     }
     if (group === "code" && !looksLikeText(data)) { skip("not really text (it looks like a binary file)", "notext"); continue; }
     const base = e.name.split("/").pop();
+    const folder = cleanFolder(e.name.split("/").slice(0, -1).join("/")); // a LABEL only ("mission2"), never a path (upload.js cleanFolder)
     if (group === "html") { // the text of the page, as plain UTF-8 bytes (the page itself is never kept)
       const text = htmlBytesToText(data);
       if (text === null) { skip("not really text (it does not look like a web page)", "notext"); continue; }
       if (!text) { skip("a web page with no text", "empty"); continue; }
       const out = Buffer.from(text, "utf8");
       if (out.length > MAX_TEXT_BYTES) { skip(`the text of this page is over ${Math.round(MAX_TEXT_BYTES / 1048576)} MB`, "big"); continue; }
-      files.push({ name: base, path: shown, group: "doc", kind: "text", bytes: out });
+      files.push({ name: base, path: shown, folder, group: "doc", kind: "text", bytes: out });
       continue;
     }
-    files.push({ name: base, path: shown, group, kind: kindOf(e.name, group), bytes: data });
+    files.push({ name: base, path: shown, folder, group, kind: kindOf(e.name, group), bytes: data });
   }
   return { files, skipped };
 }

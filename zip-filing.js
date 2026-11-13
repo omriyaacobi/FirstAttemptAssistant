@@ -47,6 +47,8 @@ function zipSummary(lang, zipName, filed, skipped, waiting) {
   else parts.push(words(lang, `Nothing from "${zipName}" was filed.`, `שום דבר מתוך "${iso(lang, zipName)}" לא תויק.`));
   if (waiting) parts.push(words(lang, `${waiting} more file${waiting === 1 ? "" : "s"} wait for you: which course are they for? Tap one below. Nothing is saved until you choose.`, `עוד ${waiting} קבצים מחכים: לאיזה קורס הם שייכים? אפשר ללחוץ על אחד למטה. שום דבר לא נשמר לפני הבחירה.`));
   if (dup) parts.push(words(lang, `${dup} ${dup === 1 ? "was" : "were"} already in the course.`, dup === 1 ? "קובץ אחד כבר היה בקורס." : `${dup} קבצים כבר היו בקורס.`));
+  const labelled = skipped.filter((s) => s.code === "dup" && s.labelled).length; // a re-upload gave old files their zip folder names
+  if (labelled) parts.push(words(lang, `I added folder names to ${labelled} file${labelled === 1 ? "" : "s"} you already had (no second copy).`, labelled === 1 ? "הוספתי שם תיקייה לקובץ אחד שכבר היה (בלי עותק נוסף)." : `הוספתי שמות תיקיות ל-${labelled} קבצים שכבר היו (בלי עותק נוסף).`));
   if (listed.length) parts.push(words(lang, `Skipped ${listed.length}:\n${skipLines}${extra ? `\n...and ${extra} more` : ""}`, `דולגו ${listed.length}:\n${skipLines}${extra ? `\n...ועוד ${extra}` : ""}`));
   if (junk) parts.push(words(lang, `Also skipped ${junk} compiled/binary file${junk === 1 ? "" : "s"}.`, `בנוסף דולגו ${junk} קבצים מקומפלים/בינאריים.`));
   if (small) parts.push(words(lang, `Skipped ${small} small, empty or repeated image${small === 1 ? "" : "s"} (icons, lines, formulas).`, small === 1 ? "תמונה אחת קטנה, ריקה או כפולה דולגה." : `דולגו ${small} תמונות קטנות, ריקות או כפולות (אייקונים, קווים, נוסחאות).`));
@@ -55,14 +57,15 @@ function zipSummary(lang, zipName, filed, skipped, waiting) {
   return parts.join("\n\n");
 }
 
-// Files from a zip, into one course. Adds to `filed` and `skipped`. addUpload(courseId, bytes, name) throws a status error when refused.
+// Files from a zip, into one course. Adds to `filed` and `skipped`. addUpload(courseId, bytes, name, folder) throws a status error when
+// refused; a duplicate that only got its missing folder label (courses.js addFile) says labelled: true and is counted as such.
 function fileMany(addUpload, courseId, courseName, items, filed, skipped) {
   for (const item of items) {
     try {
-      addUpload(courseId, item.bytes, item.name);
+      addUpload(courseId, item.bytes, item.name, item.folder || "");
       filed.push({ name: item.name, courseName, group: item.group, kind: item.kind });
     } catch (error) {
-      skipped.push({ name: item.name, reason: error.status === 409 ? "already in the course" : String(error.message).slice(0, 120), code: error.status === 409 ? "dup" : "refused" });
+      skipped.push({ name: item.name, reason: error.status === 409 ? "already in the course" : String(error.message).slice(0, 120), code: error.status === 409 ? "dup" : "refused", ...(error.labelled ? { labelled: true } : {}) });
     }
   }
 }
@@ -70,5 +73,14 @@ function fileMany(addUpload, courseId, courseName, items, filed, skipped) {
 // The name a zip file is filed under. A code file keeps the end of its path (src/parser.c), because many projects have several
 // files with the same short name (Makefile, main.c). Only shown as text, never a path.
 const filedName = (item) => (item.group === "code" ? showName(String(item.path || item.name).split("/").slice(-3).join("/")) : showName(item.name));
+// The folder LABEL it is filed with (unzip.js item.folder, already cleaned): the folders ABOVE what the name already holds, so
+// folder + "/" + name is the file's whole place in the zip, with no folder twice. A label only, never a path.
+function filedFolder(item) {
+  const parts = String(item.folder || "").split("/").filter(Boolean);
+  const inName = filedName(item).split("/").length - 1; // a code file's name already carries up to 2 folders
+  return parts.slice(0, Math.max(0, parts.length - inName)).join("/");
+}
+// The items fileMany takes, from unzip.js files.
+const zipItems = (files) => files.map((f) => ({ bytes: f.bytes, name: filedName(f), folder: filedFolder(f), group: f.group, kind: f.kind }));
 
-module.exports = { zipSummary, fileMany, filedName, showName };
+module.exports = { zipSummary, fileMany, filedName, filedFolder, zipItems, showName };

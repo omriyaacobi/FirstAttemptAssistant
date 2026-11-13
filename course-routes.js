@@ -23,10 +23,10 @@
 const fs = require("node:fs");
 const { validId } = require("./courses");
 const { openPdf } = require("./pdfcut");
-const { sniffFile, readRawBody, cleanName } = require("./upload");
+const { sniffFile, readRawBody, cleanName, cleanFolder } = require("./upload");
 const { unzip, looksLikeZip, MAX_ZIP_BYTES } = require("./unzip");
 const { sniffOffice } = require("./office");
-const { zipSummary, fileMany, filedName } = require("./zip-filing");
+const { zipSummary, fileMany, zipItems } = require("./zip-filing");
 const { say: words, bet } = require("./lang");
 const linkfetch = require("./linkfetch");
 
@@ -83,9 +83,10 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
 
   // The SAME checks as the upload route below (real first bytes, 50 MB, 400 MB per course, no duplicate), for a file that arrives with a
   // message in the thread. Throws errors with a status. Returns the saved file entry; reading starts in the background.
-  function addUpload(courseId, bytes, name) {
+  // folder: the zip folder LABEL (zip-filing.js), "" for a single file; display text only, never a path.
+  function addUpload(courseId, bytes, name, folder = "") {
     const { kind, ext } = sniffFile(bytes);
-    const file = courses.addFile(courseId, { bytes, kind, ext, name: cleanName(name) });
+    const file = courses.addFile(courseId, { bytes, kind, ext, name: cleanName(name), folder });
     enqueue(courseId, file.id);
     return file;
   }
@@ -93,25 +94,27 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   // there; a zip that must be refused whole throws a status error with a plain reason), then each file takes the single-upload road
   // (addUpload). Returns what the page shows on the row of the zip: counts and the same short summary as the chat (in English: the
   // page has no message to take a language from). The study coach is not asked about each file.
-  function addZip(courseId, courseName, bytes, name, lang = "en") {
+  // base: a folder LABEL the whole zip goes under (a Moodle section, fileFetched); each file's own zip folder is added below it.
+  function addZip(courseId, courseName, bytes, name, lang = "en", base = "") {
     const clean = cleanName(name, "archive.zip");
     const opened = unzip(bytes);
     const filed = [];
     const skipped = [...opened.skipped];
-    fileMany(addUpload, courseId, courseName, opened.files.map((f) => ({ bytes: f.bytes, name: filedName(f), group: f.group, kind: f.kind })), filed, skipped);
+    fileMany(addUpload, courseId, courseName, zipItems(opened.files).map((i) => ({ ...i, folder: cleanFolder([base, i.folder].filter(Boolean).join("/")) })), filed, skipped);
     return { name: clean, filedCount: filed.length, skippedCount: skipped.length, summary: zipSummary(lang, clean, filed, skipped, 0) };
   }
   // A file that came from a LINK (linkfetch.js fetched the bytes; they are untrusted like any upload). The SAME roads as above: a zip is opened
   // by addZip (unzip.js limits), anything else by addUpload (real first bytes, 50 MB, course size, no duplicate). Throws a status error when
   // refused. Returns what to tell the user, in `lang`.
-  function fileFetched(courseId, courseName, { bytes, name, repo = null }, lang = "en") {
+  // folder: a LABEL saying where the file came from (a Moodle section / folder item, moodle-tools.js); "" = none. Never a path.
+  function fileFetched(courseId, courseName, { bytes, name, repo = null, folder = "" }, lang = "en") {
     const clean = cleanName(name, "download");
     if (/\.zip$/i.test(clean) && looksLikeZip(bytes) && !sniffOffice(bytes)) {
-      const z = addZip(courseId, courseName, bytes, clean, lang);
+      const z = addZip(courseId, courseName, bytes, clean, lang, folder);
       const from = repo ? words(lang, `Downloaded the GitHub repository ${repo}. `, `הורדתי את מאגר הגיטהאב ${repo}. `) : words(lang, "Downloaded the zip from your link. ", "הורדתי את ה-zip מהקישור שלך. ");
       return { kind: "zip", filedCount: z.filedCount, skippedCount: z.skippedCount, summary: from + z.summary };
     }
-    const file = addUpload(courseId, bytes, clean);
+    const file = addUpload(courseId, bytes, clean, folder);
     courses.setFile(courseId, file.id, { via: "page" });
     return { kind: "file", filedCount: 1, skippedCount: 0, fileId: file.id, summary: words(lang, `Downloaded "${file.name}" from your link and filed it in ${courseName}. Bot is reading it now.`, `הורדתי את "${file.name}" מהקישור שלך ותייקתי אותו ${bet(courseName)}. Bot קורא אותו עכשיו.`) };
   }
@@ -296,9 +299,35 @@ function createCourseRoutes({ courses, store, askCourse, ingestFile, askFile, ab
   // The files of one course with their reading state, for the thread (brain.js waits while any is queued or reading). Names are shown to the user.
   const courseFiles = (courseId) => {
     const c = courses.get(courseId);
-    return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
+    return { files: c ? c.files.map((f) => ({ id: f.id, name: f.name, ...(f.folder ? { folder: f.folder } : {}), status: f.status, pages: f.pages || 0, pagesTotal: f.pagesTotal || 0, bytes: f.bytes || 0 })) : [] };
   };
-  return { handle, answer, addUpload, addLink, fileFetched, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
+  // FOLDER LABELS changed by the brain's checked tool file_folder (brain.js). Labels only (upload.js cleanFolder): files stay stored by
+  // id and nothing on disk moves. moveFiles: these file ids to one folder ("" = top). renameFolder: a folder and everything under it.
+  function moveFiles(courseId, fileIds, folder) {
+    const c = courses.get(courseId);
+    if (!c) throw Object.assign(new Error("course not found"), { status: 404 });
+    const label = cleanFolder(folder);
+    const before = new Map(c.files.map((f) => [f.id, f.folder || ""]));
+    const ids = fileIds.filter((id) => before.has(id));
+    const changed = courses.setFolders(courseId, Object.fromEntries(ids.map((id) => [id, label])));
+    return { folder: label, changed, before: ids.map((id) => ({ id, folder: before.get(id) })) };
+  }
+  function renameFolder(courseId, from, to) {
+    const c = courses.get(courseId);
+    if (!c) throw Object.assign(new Error("course not found"), { status: 404 });
+    const old = cleanFolder(from);
+    const now = cleanFolder(to);
+    if (!old) throw Object.assign(new Error("say which folder to rename"), { status: 400 });
+    const labels = {};
+    for (const f of c.files) {
+      const fo = f.folder || "";
+      if (fo.toLowerCase() === old.toLowerCase()) labels[f.id] = now;
+      else if (fo.toLowerCase().startsWith(old.toLowerCase() + "/")) labels[f.id] = [now, fo.slice(old.length + 1)].filter(Boolean).join("/");
+    }
+    const count = Object.keys(labels).length;
+    return { from: old, to: now, count, changed: count ? courses.setFolders(courseId, labels) : 0 };
+  }
+  return { handle, answer, addUpload, moveFiles, renameFolder, addLink, fileFetched, linkFiles, fileInfo, courseFiles, list: () => courses.list().map(({ id, name }) => ({ id, name })), exists: (id) => !!courses.get(id), name: (id) => (courses.get(id) || {}).name || null, idle: () => queue.length === 0 && !reading };
 }
 
 module.exports = { createCourseRoutes };

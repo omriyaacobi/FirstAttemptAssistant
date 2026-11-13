@@ -13,7 +13,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { cleanName } = require("./upload");
+const { cleanName, cleanFolder } = require("./upload");
 
 const ID_PATTERN = /^[a-f0-9]{16}$/;
 const MAX_COURSES = 12;
@@ -106,15 +106,25 @@ function createCourses(dir) {
 
   // Saves the bytes under a random name and lists the file as "queued" (waiting to be read).
   // The same bytes twice in one course are refused: a second copy would cost a whole second read and teach nothing new.
-  function addFile(id, { bytes, kind, ext, name }) {
+  // folder: the folder the file sat in inside a zip ("mission2"), a display LABEL only (cleanFolder), never part of a path; "" = none.
+  // RE-UPLOAD: a duplicate that has no folder yet GETS the new folder label (nothing else changes, no second copy). The 409 then says
+  // labelled: true, so the zip summary can say "added folder names to N files you already had".
+  function addFile(id, { bytes, kind, ext, name, folder = "" }) {
     const course = get(id);
     if (!course) throw fail(404, "course not found");
-    if (course.files.length >= MAX_FILES_PER_COURSE) throw fail(400, `at most ${MAX_FILES_PER_COURSE} files per course`);
-    if (bytesOf(course) + bytes.length > MAX_COURSE_BYTES) throw fail(413, "this course is full (400 MB of files)");
+    const label = cleanFolder(folder);
     const hash = sha256(bytes);
     const same = course.files.find((f) => f.bytes === bytes.length && fingerprint(course, f) === hash);
-    if (same) throw fail(409, `this file is already in the course, as "${same.name}"`);
-    const file = { id: newId(), name: cleanName(name), kind, ext, bytes: bytes.length, sha256: hash, status: "queued", pages: 0, progress: "", error: "", added: Date.now() };
+    if (same) {
+      if (label && !same.folder) {
+        setFile(id, same.id, { folder: label });
+        throw Object.assign(fail(409, `this file is already in the course, as "${same.name}"; its folder name "${label}" was added`), { labelled: true });
+      }
+      throw fail(409, `this file is already in the course, as "${same.name}"`);
+    }
+    if (course.files.length >= MAX_FILES_PER_COURSE) throw fail(400, `at most ${MAX_FILES_PER_COURSE} files per course`);
+    if (bytesOf(course) + bytes.length > MAX_COURSE_BYTES) throw fail(413, "this course is full (400 MB of files)");
+    const file = { id: newId(), name: cleanName(name), ...(label ? { folder: label } : {}), kind, ext, bytes: bytes.length, sha256: hash, status: "queued", pages: 0, progress: "", error: "", added: Date.now() };
     fs.writeFileSync(filePath(id, file.id, ext), bytes, { flag: "wx" });
     course.files.push(file);
     save(course);
@@ -130,6 +140,23 @@ function createCourses(dir) {
     Object.assign(file, patch);
     save(course);
     return file;
+  }
+
+  // Several files' folder LABELS at once (file_folder in brain.js): labels = { fileId: "folder" }, "" = top. One read, one save.
+  // Labels only (cleanFolder): nothing on disk moves. Returns how many files changed.
+  function setFolders(id, labels) {
+    const course = get(id);
+    if (!course) throw fail(404, "course not found");
+    let changed = 0;
+    for (const file of course.files) {
+      if (!Object.prototype.hasOwnProperty.call(labels, file.id)) continue;
+      const label = cleanFolder(labels[file.id]);
+      if ((file.folder || "") === label) continue;
+      if (label) file.folder = label; else delete file.folder;
+      changed++;
+    }
+    if (changed) save(course);
+    return changed;
   }
 
   function getFile(id, fid) {
@@ -173,7 +200,7 @@ function createCourses(dir) {
     const out = [];
     for (const file of course.files) {
       if (file.use === false) continue;
-      for (const p of getPages(id, file.id)) out.push({ ...p, fileId: file.id, fileName: file.name });
+      for (const p of getPages(id, file.id)) out.push({ ...p, fileId: file.id, fileName: file.name, ...(file.folder ? { fileFolder: file.folder } : {}) });
     }
     return out;
   }
@@ -198,7 +225,7 @@ function createCourses(dir) {
     }
   }
 
-  return { list, get, create, rename, remove, addFile, setFile, getFile, removeFile, originalPath, savePages, getPages, allPages, legacyChat, retireLegacyChat, recover };
+  return { list, get, create, rename, remove, addFile, setFile, setFolders, getFile, removeFile, originalPath, savePages, getPages, allPages, legacyChat, retireLegacyChat, recover };
 }
 
 // Finds the real course a model named. The model's text is only a hint: it must be a course that exists. Order: the exact id, the

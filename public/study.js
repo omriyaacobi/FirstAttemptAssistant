@@ -262,7 +262,7 @@
         try { await post(`/api/courses/${course.id}/files/${f.id}/use`, { use: tick.checked }); f.use = tick.checked; await after(); } catch (error) { tick.checked = !tick.checked; fail(error); }
       });
       const text = el("div", "body");
-      const name = el("strong", "name", f.name);
+      const name = el("strong", "name", (f.folder ? f.folder + "/" : "") + f.name); // a zip file shows the folder it sat in (a label)
       name.dir = "auto";
       const state = f.status === "ready" ? `ready, ${f.pages} page${f.pages === 1 ? "" : "s"}` : f.status === "failed" ? "could not read" : f.status === "reading" ? "reading... " + f.progress : "waiting";
       text.append(name, el("div", f.status === "failed" ? "sub err" : "sub", state));
