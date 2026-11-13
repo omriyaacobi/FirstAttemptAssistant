@@ -2997,6 +2997,44 @@
       $("task").focus();
     }
 
+    // ---- Paste and drop (2026-11-13) ----
+    // A picture pasted with Ctrl+V (PrintScreen, Win+Shift+S) or a file copied in Explorer, or a file dropped on the page, goes to the
+    // paperclip's own input, exactly like the Share menu: a picture becomes the photo (shrunk, sent with the message, counts as a photo),
+    // any other file goes to pickFile (the upload road with its checks). Nothing is sent until Send. Pasting TEXT works as before.
+    // Only one attachment per message, so only the first file is used. Other boxes on the page (Improve Bot, the login) are left alone.
+    function firstFile(list) {
+      return list && list.length ? list[0] : null;
+    }
+    function attachFromOutside(files, what) {
+      const file = firstFile(files);
+      if (!file) return false;
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      $("photoInput").files = transfer.files;
+      $("photoInput").dispatchEvent(new Event("change")); // the paperclip's own path
+      if (files.length > 1) $("status").textContent = "Bot takes one file per message, so only the first " + what + " file is attached.";
+      return true;
+    }
+    function composerShown() { return $("task").offsetParent !== null; }
+    function setupPasteAndDrop() {
+      document.addEventListener("paste", (e) => {
+        const target = e.target;
+        if (target && target !== $("task") && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || "")) return; // another box: its own paste
+        if (!composerShown() || !e.clipboardData) return;
+        const files = [...(e.clipboardData.files || [])];
+        if (!files.length) return; // plain text: the browser pastes it as usual
+        e.preventDefault();
+        attachFromOutside(files, "pasted");
+      });
+      const hasFiles = (e) => Boolean(e.dataTransfer) && [...(e.dataTransfer.types || [])].includes("Files");
+      document.addEventListener("dragover", (e) => { if (hasFiles(e) && composerShown()) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+      document.addEventListener("drop", (e) => {
+        if (!hasFiles(e) || !composerShown()) return;
+        e.preventDefault(); // otherwise Chrome opens the file in the tab and Bot's page is gone
+        attachFromOutside([...e.dataTransfer.files], "dropped");
+      });
+    }
+
     function pickFile(file) {
       clearFile();
       if (photo) clearPhoto();
@@ -3316,6 +3354,7 @@
         else { clearFile(); } // a picture replaces a waiting file (one attachment at a time); the old photo code goes on from here
       }, true);
       $("photoRemove").addEventListener("click", clearFile);
+      setupPasteAndDrop();
       $("tabStudyText").textContent = "Study";
       document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
       window.addEventListener("focus", () => { poll(); });
