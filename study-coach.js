@@ -1,7 +1,7 @@
 // study-coach.js
 // The one door to the study coach. What is connected from outside:
 //
-//   coach.brainTools.*               the brain's checked study tools (pause, resume, plan, teach, exam, position, undo; brain.js)
+//   coach.brainTools.*               the brain's checked study tools (pause, resume, plan, teach, exam, position, classCancelled, undo; brain.js)
 //   coach.answerStudy({...})         the brain's study_status, quiz, quiz_answer and card_reply (progress, quiz, answer, confirm, cancel)
 //   coach.morningBlock()             the study line of the morning brief (also given to createMorning as `study`)
 //   coach.onUpload({...})            material or an assignment arrived: returns a PROPOSAL (nothing is saved until confirmed)
@@ -350,11 +350,15 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const NO_ONLY = /^\s*(?:no|nope|no\s+thanks|wrong|that['’]?s\s+(?:not\s+right|wrong)|לא|לא\s+נכון|זה\s+לא\s+נכון)[.!\s]*$/i;
   const UNDO_MS = 2 * 3600 * 1000;
   const V2_KEYS = ["mode", "where", "pace", "behindBy", "gaps", "depth", "goal", "focus"];
-  let lastUndo = null; // { items: [{ ref, position, pending }], proposalIds: [], at } (memory only: it lives for 2 hours)
+  let lastUndo = null; // { items: [{ ref, position, pending }], proposalIds: [], at } or { skip: { ref, date }, at } (memory only: it lives for 2 hours)
 
   function undoReading() {
     const u = lastUndo;
     lastUndo = null;
+    if (u.skip) { // a cancelled class: the date goes back into the timetable
+      tracker.removeSkip({ date: u.skip.date, course: u.skip.ref.key });
+      return T(`Undone. The ${u.skip.ref.name} lecture on ${niceDate(u.skip.date)} is back in the timetable.`, `בוטל. ההרצאה של ${u.skip.ref.name} ב-${niceDate(u.skip.date)} חזרה למערכת.`);
+    }
     for (const it of u.items) tracker.restoreStanding(it.ref, it.position, it.pending);
     for (const id of u.proposalIds) proposals.delete(id); // the exam card of that reading goes too
     const names = u.items.map((it) => it.ref.name).join(", ");
@@ -594,10 +598,28 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       lastUndo = { items: [out.undo], proposalIds: [out.proposalId].filter(Boolean), at: now() };
       return { text: out.answer, ...(out.proposal ? { proposal: out.proposal } : {}) };
     },
-    // Takes back the last position() (within 2 hours): the old record returns.
+    // A class that was cancelled (Bot cannot know by itself): the date must be a real lecture of that course in the timetable.
+    // It is removed from the timetable's count, so the lecture numbers after it move up and Bot does not call that class "behind".
+    classCancelled({ courseId, date, lang = "en" } = {}) {
+      curLang = lang;
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      const all = tracker.timetableDates(ref.key);
+      if (!all.length) throw new Error(`${ref.name} has no lectures in the timetable, so there is no class to cancel`);
+      if (!plan.isIsoDate(date)) throw new Error("date must be a real date (YYYY-MM-DD)");
+      if (!all.includes(date)) {
+        const near = [...all.filter((d) => d < date).slice(-2), ...all.filter((d) => d > date).slice(0, 2)];
+        throw new Error(`${ref.name} has no lecture on ${date} in the timetable. Its lectures around that date: ${near.join(", ")}. Ask Omri which one if it is not clear`);
+      }
+      if (!tracker.slotOn(ref.key, date)) return T(`That was already noted: no ${ref.name} lecture on ${niceDate(date)}.`, `זה כבר רשום: אין הרצאה של ${ref.name} ב-${niceDate(date)}.`);
+      tracker.addSkip({ date, course: ref.key });
+      lastUndo = { skip: { ref, date }, at: now() };
+      return T(`Noted: no ${ref.name} lecture on ${niceDate(date)}. It is out of the count, so the lecture numbers after it move up by one.`, `נרשם: אין הרצאה של ${ref.name} ב-${niceDate(date)}. היא ירדה מהספירה, ולכן מספרי ההרצאות שאחריה זזים באחד.`);
+    },
+    // Takes back the last position() or classCancelled() (within 2 hours): the old record returns.
     undo({ lang = "en" } = {}) {
       curLang = lang;
-      if (!lastUndo || now() - lastUndo.at >= UNDO_MS) throw new Error("there is nothing to undo (only the last stored position, within 2 hours)");
+      if (!lastUndo || now() - lastUndo.at >= UNDO_MS) throw new Error("there is nothing to undo (only the last stored position or cancelled class, within 2 hours)");
       return undoReading();
     },
   };

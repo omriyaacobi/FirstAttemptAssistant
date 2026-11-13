@@ -104,6 +104,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
 
   const slots = (key) => plan.slotsOf(timetable(), key, state().skips);
   const slotOn = (key, date) => slots(key).find((s) => s.date === date) || null;
+  const timetableDates = (key) => [...new Set(plan.slotsOf(timetable(), key, []).map((s) => s.date))]; // every lecture date of the timetable, cancelled ones too
 
   // ---- where the student is ----
   // Only these three facts are ever accepted: a date (a real lecture date), a lecture number, or a topic note.
@@ -304,7 +305,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE }
     };
   }
 
-  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, setPosition, setStanding, pendingQuestion, restoreStanding, setExamDate, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
+  return { timetable, state, saveState, addSkip, removeSkip, skipWeek, course, save, refsFor, slots, slotOn, timetableDates, setPosition, setStanding, pendingQuestion, restoreStanding, setExamDate, attachMaterial, alignNotebook, suggestSlot, slotsToAskAbout, goodTimeToAsk, markAsked, addAssignment, setAssignment, recordCheck, markTaught, markActivity, getSession, setSession, progress, today };
 }
 
 module.exports = { createTracker, BOX_DAYS, MIN_QUESTIONS, PASS_SCORE, GRACE_DAYS, clean };

@@ -63,7 +63,7 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "save_links", "open_on_pc", "pc_roots"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots"]);
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -639,6 +639,14 @@ ${r.cardText}`; }
         if (r.proposal) ctx.extras.proposal = r.proposal;
         ctx.course = c;
         return `STORED for ${c.name} (Omri can ask to undo it). What code kept, and what it dropped and why:\n${r.text}`;
+      },
+      class_cancelled: async ({ course, date }) => {
+        afterWeb("change the study record");
+        const c = need(course);
+        if (!study) return "The study tracker is off.";
+        const text = study.classCancelled({ courseId: c.id, date: String(date || "").trim(), lang });
+        ctx.course = c;
+        return `${text} (Omri can ask to undo it.)`;
       },
       study_undo: async () => { afterWeb("change the study record"); if (!study) return "The study tracker is off."; return study.undo({ lang }); },
       improve_bot: async ({ request }) => {
