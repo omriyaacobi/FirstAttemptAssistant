@@ -86,7 +86,28 @@ function readFile(root, rel) {
   return { rel: want, text, bytes: st.size, mtime: st.mtimeMs };
 }
 
+// THE PARENT FOLDER (2026-11-13). Omri linked .../operation_b7/mission1, moved on to mission2 and said "check my function": the file is
+// one folder up, next to the linked one. findInParent looks ONLY in the linked folder's parent (one level, never higher) for files with
+// the asked name. It returns { parent, hits: ["mission2/agents.c", ...] } or null. It never links anything: brain.js turns a hit into a
+// Confirm card, and only Omri's tap changes the link. The parent must pass checkFolder (no drive root, home, system or Bot folder), and
+// a Linux home (/home/<user>, also inside WSL: \\wsl.localhost\<distro>\home\<user>) or /home itself is refused too: too wide to link.
+const LINUX_HOME = /^(?:\\\\wsl(?:\.localhost|\$)\\[^\\]+)?[\\/]home(?:[\\/][^\\/]+)?[\\/]?$/i;
+function findInParent(root, rel, rules = {}) {
+  const want = String(rel || "").trim().replace(/\\/g, "/").replace(/^\.?\//, "").toLowerCase();
+  const base = want.split("/").pop();
+  if (!base || base === ".." || base === ".") return null;
+  let linked;
+  try { linked = fs.realpathSync(root); } catch (error) { return null; }
+  const parent = path.dirname(linked);
+  if (same(parent, linked) || LINUX_HOME.test(parent)) return null;
+  let real;
+  try { real = checkFolder(parent, rules); } catch (error) { return null; }
+  if (LINUX_HOME.test(real)) return null;
+  const hits = listFiles(real).files.map((f) => f.rel).filter((r) => r.toLowerCase() === want || r.toLowerCase().endsWith("/" + want) || r.split("/").pop().toLowerCase() === base);
+  return hits.length ? { parent: real, hits: hits.slice(0, 6) } : null;
+}
+
 // Line numbers, so an answer can say "line 42".
 const numbered = (text) => String(text).replace(/\r\n/g, "\n").split("\n").map((l, i) => `${i + 1}: ${l}`).join("\n");
 
-module.exports = { checkFolder, listFiles, readFile, numbered, MAX_FILE_BYTES, MAX_ENTRIES, SKIP_DIRS };
+module.exports = { checkFolder, listFiles, readFile, findInParent, LINUX_HOME, numbered, MAX_FILE_BYTES, MAX_ENTRIES, SKIP_DIRS };
