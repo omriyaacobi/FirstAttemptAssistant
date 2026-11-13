@@ -33,7 +33,7 @@ const { listFound } = require("./recall");
 const { pickPages, defang } = require("./study");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
 const { fixMath } = require("./tutor");
-const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, refreshQuota, noteFailure } = require("./quota");
+const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, claudeFirst, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
 const { wslHomes } = require("./pc-find");
@@ -914,13 +914,18 @@ ${r.cardText}`; }
     const rows = image ? [] : await (async () => { try { const r = await poolRows(); return Array.isArray(r) ? r : []; } catch (error) { return []; } })();
     const paced = paceOrder(chain, rows, { now: now(), lead: paceLead });
     if (!image) paceLead = paced.lead;
-    const order = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
+    const normal = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
+    // CLAUDE FIRST (quota.js claudeFirst): when the Claude plan's 5-hour window is above 60%, Argon's week under 50% and Claude's week on
+    // pace, Claude Code answers first. Never with a photo (only agy can see it).
+    const early = image ? { chain: normal, note: "" } : claudeFirst(normal, rows, { now: now() });
+    const order = early.chain;
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
     const askRaw = image ? (provider, model, q, onText, extra = {}) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {}), { onUsage: extra.onUsage || null }) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
     // agy's OWN web search (search_web inside one agy call) is seen in its step events (providers.js watchSteps -> u.inner). A page read
     // that way counts as a web page for the afterWeb rule: no doing-tool may run after it in this message (Omri, 2026-11-13).
     const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => { spent.push({ model, ...u }); if (usedWebSearch(u && u.inner)) ctx.sawWeb = true; } });
-    if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
+    if (early.note) log(`[brain] ${early.note}: asking ${order[0].model} first`);
+    else if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
     else if (!image && paced.note) log(`[brain] ${paced.note}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
     const attempts = [];
