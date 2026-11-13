@@ -27,6 +27,14 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
+## Phone app, option A (2026-11-13, branch claude/research-bot-access-8d8430)
+
+- Bot is now in Android's **Share menu**: share a photo, PDF, zip or link from any app, and it lands in Bot's message box. Nothing is
+  sent until I press Send. Bot is lighter to open (the page is gzipped and an unchanged page costs almost nothing), shows its own
+  "Bot isn't reachable" screen when the laptop is off, and has a "New message" shortcut (long-press the icon).
+- **To do once on the phone:** open Bot, then make sure it is installed through Chrome's menu, "Install app". If Bot is not in the
+  Share menu, remove the icon and install it again. Details, numbers and what was not checked: `experiments/2026-11-13-bot-access-options.md`.
+
 ## Folders for course files (2026-11-13, branch claude/zip-folders-721aaa)
 
 - Files from a zip now keep the folder they sat in as a label (`mission2/README.pdf`), so Bot can find "the README inside mission2".

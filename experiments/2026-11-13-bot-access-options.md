@@ -96,3 +96,24 @@ Recommendation: no. "Always up" is already covered by the scheduled task (2026-1
 | E. Server | none (maybe worse) | same | works with laptop off | none | none | money, logins | very high |
 
 Sources: Chrome's Web Share Target docs (developer.chrome.com/docs/capabilities/web-apis/web-share-target); Android developer verification reports (androidauthority.com, 9to5google.com, Aug to Sep 2026); Telegram Bot API limits (grammy.dev/guide/files); The Register, 14 May 2026, on `claude -p` billing; Anthropic help article 11145838.
+
+## Built: option A (2026-11-13, Omri chose it)
+
+Commits `b5d908d` (server) and `90e9f78` (phone app) on `claude/research-bot-access-8d8430`.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Gzip | `server.js` `sendBody`, `sendJson` | Page 197 KB -> about 56 KB; JSON over 1 KB gzipped (thread about -80%). Pictures never gzipped. |
+| Revalidation | `server.js` `sendStatic` | Page, `study.js`, manifest, icons: `no-cache` + ETag. Unchanged = `304`, no body. `sw.js` stays `no-store`. The page's "new page?" check uses it too, so it no longer downloads 197 KB each minute you come back. |
+| IPv6 | `server.js` main | Also listens on `::1` (still this PC only), so `http://localhost:3000` no longer waits 0.2 s per new connection. Also helps the Moodle extension, which polls `localhost` every 2 s. |
+| Share menu | `manifest.webmanifest` `share_target`, `sw.js` `takeShare`, `index.html` `takeShared` | The phone keeps the shared words and the FIRST file for a moment in the `bot-share` cache, opens `/?shared=1`, and the page puts them in the box (paperclip road: a picture becomes the photo, other files `pickFile`) and deletes the cache. Nothing is sent until Send; then `/api/thread/upload` or `/api/ask` with every check and the login. A share older than 10 minutes is dropped. More than one file: only the first, the page says so. If the share ever reaches the PC, `POST /share-target` is only a redirect that reads nothing. |
+| Not reachable | `sw.js` `OFFLINE_PAGE`, `index.html` `reachable` | Opening Bot when the PC cannot be reached: Bot's own screen that retries every 10 s, not Chrome's error. Already open: a note after two failed checks, gone at the next answer. Nothing is stored for this. |
+| Shortcut | manifest `shortcuts` | Long-press the icon: "New message" opens Bot with the keyboard up. |
+
+Not built: Server-Sent Events (only new words while an answer streams). It is the biggest remaining data saving per message, but it changes how the page follows jobs. Better as its own step after A has been used for a while.
+
+Checked: 1022 tests, 1021 pass, 0 fail, 1 skipped (new `tests/pwa.test.js` runs `sw.js` in a sandbox with real `Request`/`FormData`). On a throwaway server: gzip and 304 with curl; the page side of a share in the browser pane (words in the box, file chip with a Hebrew name, cache emptied, address cleaned). The browser pane refuses every service worker, so the service worker itself was only tested in the sandbox.
+
+Not checked (needs the real phone): that Bot appears in the Share menu, that a real share arrives, the offline screen, the shortcut, and that `tailscale serve` passes gzip through.
+
+What Omri does once on the phone: open Bot so the new service worker loads, then check Bot is installed with Chrome's menu, "Install app" (not "Add to home screen", which makes a plain shortcut). If Bot is not in the Share menu, remove the home-screen icon and install it again from Chrome's menu. Then share a photo from Gallery to Bot.
