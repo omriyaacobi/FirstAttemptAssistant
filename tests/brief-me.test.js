@@ -25,7 +25,7 @@ test("the ledger is code only: yesterday's log, due work, review topics, held le
   assert.strictEqual(ledger[1].understood, false);
   assert.match(ledger[2].text, /"Exercise 4" is due .*in 2 days/);
   assert.ok(!ledger.some((l) => /Far away/.test(l.text)), "only the next 7 days");
-  assert.match(ledger[4].text, /2 held lectures not checked by a graded quiz yet/);
+  assert.strictEqual(ledger[4].text, "Made-up Calculus: 2 lectures not checked by a quiz yet"); // short: a count, no list of dates
 });
 
 test("revising or paused courses get no 'behind' line, and paused study reminders leave only yesterday", () => {
@@ -35,19 +35,27 @@ test("revising or paused courses get no 'behind' line, and paused study reminder
   assert.deepStrictEqual(paused.map((l) => l.part), ["done", "done"]);
 });
 
-test("checked lines: an invented number, an unearned 'understood' and a line without real citations are dropped", () => {
+test("checked lines (light, Omri 2026-11-14): only an unearned 'understood' and a line with no real ledger number are dropped", () => {
   const ledger = buildLedger({ log: log(YESTERDAY), tracker: tracker(PROGRESS), courseList: COURSES, today: TODAY });
+  const why = [];
   const kept = checkLines({ lines: [
-    { text: "Yesterday you passed the quiz on Monday's lecture with 83% [1]", refs: [1] },
+    { text: "Yesterday you passed the quiz on Monday's lecture with 83%", refs: [1] },
     { text: "You understood the lecture of Wed 11 Nov", refs: [2] }, // a lesson is not a passed quiz
-    { text: "You scored 95% on the quiz", refs: [1] }, // 95 is not in item 1
-    { text: "Exercise 4 is due in 2 days", refs: [3] },
+    { text: "Exercise 4 is due in 2 days [3]" }, // refs written at the end of the text count
     { text: "No citation at all", refs: [] },
     { text: "Citing an item that does not exist", refs: [42] },
-    { text: "Two held lectures are still not checked", refs: [5] },
-  ] }, ledger);
-  assert.deepStrictEqual(kept, ["Yesterday you passed the quiz on Monday's lecture with 83%", "Exercise 4 is due in 2 days", "Two held lectures are still not checked"]);
+    { text: "Calculus is behind by a few lectures", refs: [5, 42] }, // one real number is enough
+  ] }, ledger, why);
+  assert.deepStrictEqual(kept, ["Yesterday you passed the quiz on Monday's lecture with 83%", "Exercise 4 is due in 2 days", "Calculus is behind by a few lectures"]);
+  assert.deepStrictEqual(why, ["understood without a passed quiz", "no real ledger number", "no real ledger number"]);
   assert.deepStrictEqual(checkLines("nonsense", ledger), []);
+});
+
+test("the day's notes from the end-of-day review are 'done' items, so a day of real work is never 'nothing was recorded'", async () => {
+  const ledger = buildLedger({ log: log([]), tracker: tracker({ c1: course() }), courseList: COURSES, today: TODAY, dayNotes: [{ text: "Fixed the crash in the made-up assignment" }] });
+  assert.deepStrictEqual(ledger.map((l) => [l.part, l.text, l.understood]), [["done", "In the talk: Fixed the crash in the made-up assignment", false]]);
+  const block = await aboutMeBlock({ log: log([]), tracker: tracker({ c1: course() }), courseList: COURSES, today: TODAY, dayNotes: [{ text: "Fixed the crash in the made-up assignment" }], askChain: async () => { throw new Error("quota"); } });
+  assert.strictEqual(block.text, "You\n  Yesterday: Fixed the crash in the made-up assignment");
 });
 
 test("the block: Flash only, the ledger inside the prompt, and the code ledger when the model fails", async () => {
@@ -58,7 +66,7 @@ test("the block: Flash only, the ledger inside the prompt, and the code ledger w
   assert.match(asked[0].prompt, /\[1\] \(done\) Made-up Calculus: Graded quiz/);
   const failed = await aboutMeBlock({ log: log([]), tracker: tracker(PROGRESS), courseList: COURSES, today: TODAY, askChain: async () => { throw new Error("quota"); } });
   assert.match(failed.text, /^You\n {2}Yesterday: nothing was recorded with Bot\.\n {2}To do: /);
-  assert.match(failed.text, /Behind: Made-up Calculus: 2 held lectures/);
+  assert.match(failed.text, /Behind: Made-up Calculus: 2 lectures not checked by a quiz yet/);
 });
 
 test("nothing to say: no block; paused with nothing done: one honest line", async () => {
@@ -67,4 +75,9 @@ test("nothing to say: no block; paused with nothing done: one honest line", asyn
   assert.strictEqual(await aboutMeBlock({ log: log([]), tracker: tracker(empty), courseList: COURSES, today: TODAY, askChain: never }), null);
   assert.deepStrictEqual(await aboutMeBlock({ log: log([]), tracker: tracker(empty), courseList: COURSES, today: TODAY, paused: true, askChain: never }), { text: "You\n  Study reminders are paused." });
   assert.deepStrictEqual(plainLines([]), []);
+});
+
+test("passing code tests is not 'understood': only quiz words need a passed graded quiz", () => {
+  const ledger = [{ n: 1, part: "done", text: "In the talk: Passed the made-up Stage B tests", understood: false }];
+  assert.deepStrictEqual(checkLines({ lines: [{ text: "You passed the made-up Stage B tests", refs: [1] }, { text: "You passed the quiz", refs: [1] }] }, ledger), ["You passed the made-up Stage B tests"]);
 });

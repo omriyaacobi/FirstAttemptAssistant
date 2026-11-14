@@ -53,7 +53,28 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **To do once after the merge:** upload the assignment zip again (chat or course page). No second copy is made; the summary says
   "I added folder names to N files you already had".
 
-## Morning newspaper (2026-11-13, branch claude/morning-brief-27f031, NOT merged yet)
+## Morning brief fixes after the first real brief (2026-11-14, branch claude/morning-brief-27f031, NOT merged yet)
+
+The first real brief (2026-11-14) had four problems; Omri's answers fixed them:
+- **Israel had nothing:** the prompt said "only if big". Now it always gives the 2 biggest Israel stories.
+- **A bare headline said nothing** ("What's really at stake in the Jensen Huang saga"). Now every item is 1-2 sentences of real fact
+  written from that article's own feed text, with the site's name. A teaser with no fact is left out. Code checks the sentences
+  share real words with that article (so a made-up story cannot slip in), else it uses the site's own description.
+- **"You" said nothing was recorded** although the day was full of work on the C assignment (the progress log only counts quizzes
+  and lessons). Now the daily summary is an END-OF-DAY review: at 23:45 Gemini Flash high reads the day's messages and writes
+  "done" notes (each must point at a real message of that day). If the talk goes on after 23:45, or the PC was off at night, it is
+  made again at the next start or before the brief, and the brief waits for it. Facts still only come from Omri's own words and
+  only through a card; web, file and photo text never becomes a fact.
+- **Too strict:** all 5 "You" lines were dropped by the "every number must match" check. Now only two checks stay: a line must cite
+  a real ledger item, and "understood" (or "passed the quiz") needs a passed graded quiz. Why a line was dropped is logged.
+  The "behind" line is a short count per course instead of a list of dates.
+- Flash high timed out twice on the news pick (4-minute limit; Flash medium then answered). Omri said time does not matter, so the
+  brief's Flash calls now get 8 minutes; the brief may arrive around 08:40.
+- **Needs Omri's OK for CLAUDE.md** (not edited): the DAILY SUMMARY line still says "runs lazily at the first message of a new day
+  (Argon low, Flash medium, never Claude)". Proposed: "runs at the end of each day (23:45) and catches up at the next start or before
+  the brief (Flash high, then Flash medium, never Argon or Claude); its 'done' notes feed the brief's You part".
+
+## Morning newspaper (2026-11-13, branch claude/morning-brief-27f031, merged)
 
 The morning brief is now a small newspaper. Choices and reasons: `experiments/2026-11-13-morning-brief-options.md` (option B).
 - **When:** at the brief time (default now 08:30; set it in the page, the box must be ON) Bot fetches the news one last time and sends
