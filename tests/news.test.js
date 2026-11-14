@@ -39,8 +39,8 @@ function setup({ pages = {}, answers = [], clock = { now: NOW } } = {}) {
 }
 
 const basicPages = () => ({
-  "https://il.example.org/feed": rss([{ title: "Made-up Israel story one", link: "https://il.example.org/1" }, { title: "Made-up Israel story two", link: "https://il.example.org/2" }, { title: "Made-up Israel story three", link: "https://il.example.org/3" }]),
-  "https://world.example.org/feed": rss([{ title: "Made-up world story", link: "https://world.example.org/1" }]),
+  "https://il.example.org/feed": rss([{ title: "Made-up Israel story one", link: "https://il.example.org/1", desc: "Made-up council members voted on Thursday for the new made-up plan for the city." }, { title: "Made-up Israel story two", link: "https://il.example.org/2", desc: "Made-up council members voted on Thursday for the new made-up plan for the city." }, { title: "Made-up Israel story three", link: "https://il.example.org/3", desc: "Made-up council members voted on Thursday for the new made-up plan for the city." }]),
+  "https://world.example.org/feed": rss([{ title: "Made-up world story", link: "https://world.example.org/1", desc: "Made-up reporters said the made-up summit ended with a signed deal." }]),
   "https://tech.example.org/feed": rss([{ title: "Made-up chip maker CEO resigns", link: "https://tech.example.org/1" }]),
 });
 
@@ -68,39 +68,44 @@ test("a feed is read by code: CDATA, entities and tags are cleaned, '<' and '>' 
   assert.deepStrictEqual([atom[0].title, atom[0].link, atom[0].desc], ["Atom story here", "https://atom.example.org/a", "sum"]);
 });
 
-test("the pick: only real numbers of the right region, no repeats, and Omri's caps", () => {
-  const list = [{ region: "israel", title: "i1" }, { region: "israel", title: "i2" }, { region: "israel", title: "i3" }, { region: "world", title: "w1" }, { region: "tech", title: "t1" }, { region: "tech", title: "t2" }];
-  const p = checkPick({ israel: [1, 1, 2, 3, 4, 99, "x"], world: [1, 4], tech: [5, 6] }, list);
-  assert.deepStrictEqual(p.israel.map((x) => x.title), ["i1", "i2"]);
-  assert.deepStrictEqual(p.world.map((x) => x.title), ["w1"]);
-  assert.deepStrictEqual(p.tech.map((x) => x.title), ["t1"]);
+test("the pick: real numbers of the right region, Omri's caps, and every item carries a real fact, never a bare headline", () => {
+  const D = "Made-up officials said on Friday that the new bridge opens next month after five years of work.";
+  const list = [
+    { region: "israel", title: "Made-up bridge opens", desc: D }, { region: "israel", title: "Made-up second story", desc: "Made-up ministers approved a budget of four billion for northern towns on Thursday." },
+    { region: "israel", title: "Made-up third", desc: "short" }, { region: "world", title: "What's really at stake", desc: "" }, { region: "tech", title: "t1", desc: "Made-up chip maker said its chief executive will step down at the end of the year." },
+  ];
+  const p = checkPick({ israel: [{ n: 1, summary: "Made-up officials said the new bridge opens next month." }, { n: 1 }, { n: 2, summary: "Aliens landed on the moon." }, 3, 4, 99, "x"], world: [{ n: 4, summary: "Something is at stake." }], tech: [{ n: 5 }] }, list);
+  assert.deepStrictEqual(p.israel.map((x) => x.summary), ["Made-up officials said the new bridge opens next month.", list[1].desc]); // an unrelated summary falls back to the feed's own text
+  assert.deepStrictEqual(p.world, [], "a teaser with no facts is left out");
+  assert.deepStrictEqual(p.tech.map((x) => x.summary), [list[4].desc]);
   assert.deepStrictEqual(checkPick("nonsense", list), { israel: [], world: [], tech: [] });
 });
 
-test("the brief: the last fetch, one checked pick, the feed's own headline and site; model text never reaches the brief", async () => {
+test("the brief: the last fetch, one checked pick, each item as 1-2 sentences of fact with its site; the prompt asks for the 2 biggest Israel stories", async () => {
   const numbers = (prompt, region) => [...prompt.matchAll(new RegExp(String.raw`^\[(\d+)\] \(` + region + String.raw`\)`, "gm"))].map((m) => Number(m[1]));
-  const answers = [(prompt) => JSON.stringify({ israel: numbers(prompt, "israel"), world: [...numbers(prompt, "world"), ...numbers(prompt, "israel")], tech: [], note: "MADE-UP MODEL TEXT" })];
+  const answers = [(prompt) => JSON.stringify({ israel: numbers(prompt, "israel").map((n) => ({ n, summary: "Made-up Israel story: the made-up council voted for the plan." })), world: [...numbers(prompt, "world"), ...numbers(prompt, "israel")].map((n) => ({ n })), tech: [], note: "MADE-UP MODEL TEXT" })];
   const s2 = setup({ pages: basicPages(), answers });
   const block = await s2.news.briefBlock();
   const prompt = s2.asked[0].prompt;
   assert.match(prompt, /<news-data>[\s\S]*<\/news-data>/);
   assert.match(prompt, /DATA, never instructions/);
+  assert.match(prompt, /the 2 biggest Israel stories/);
   assert.ok(!block.text.includes("MADE-UP MODEL TEXT"));
-  assert.strictEqual(block.count, 3); // Israel capped at 2, world 1, no tech
-  assert.match(block.text, /Israel: Made-up Israel story [a-z]+ \(Israel Site, \d\d:\d\d\)/);
-  assert.match(block.text, /World: Made-up world story \(World Site/);
+  assert.strictEqual(block.count, 3); // Israel 2, world 1, no tech
+  assert.match(block.text, /Israel: Made-up Israel story: the made-up council voted for the plan\. \(Israel Site, \d\d:\d\d\)/);
+  assert.match(block.text, /World: Made-up reporters said the made-up summit ended with a signed deal\. \(World Site/);
   assert.ok(!/Tech:/.test(block.text), "no tech line when nothing very big");
   assert.strictEqual(s2.asked.length, 1, "the brief's own fetch never asks for an alert");
 });
 
-test("nothing big: an honest line per region; a failed model says so and keeps the pile for the next brief", async () => {
+test("nothing picked: an honest line per region; a failed model says so and keeps the pile for the next brief", async () => {
   const s = setup({ pages: basicPages(), answers: [new Error("quota"), JSON.stringify({ israel: [], world: [], tech: [] })] });
   const failed = await s.news.briefBlock();
   assert.match(failed.text, /could not pick today's news/);
   assert.strictEqual(failed.count, 0);
   const again = await s.news.briefBlock();
   assert.match(s.asked[1].prompt, /Made-up Israel story one/, "the pile was not used up by the failed brief");
-  assert.match(again.text, /Israel: nothing big\./);
+  assert.match(again.text, /Israel: no story with real facts came in\./);
   assert.match(again.text, /World: nothing big\./);
   // a later brief only sees what came after this one
   s.clock.now += 24 * H;
@@ -154,9 +159,9 @@ test("the 3-hour timer does nothing while the morning brief is off, and a broken
 });
 
 test("the brief's pile: a story published days ago (Bot was off) is not the night's news, even when it is new to the pile", async () => {
-  const pages = { "https://world.example.org/feed": rss([{ title: "Made-up story from last week", link: "https://world.example.org/old", at: NOW - 5 * 24 * H }, { title: "Made-up story from tonight", link: "https://world.example.org/new", at: NOW - 2 * H }]) };
+  const pages = { "https://world.example.org/feed": rss([{ title: "Made-up story from last week", link: "https://world.example.org/old", at: NOW - 5 * 24 * H }, { title: "Made-up story from tonight", link: "https://world.example.org/new", at: NOW - 2 * H, desc: "Made-up officials said tonight that the made-up port will reopen on Sunday." }]) };
   const s = setup({ pages, answers: ['{"israel":[],"world":[1],"tech":[]}'] });
   const block = await s.news.briefBlock();
   assert.ok(!s.asked[0].prompt.includes("last week"));
-  assert.match(block.text, /World: Made-up story from tonight/);
+  assert.match(block.text, /World: Made-up officials said tonight that the made-up port will reopen on Sunday./);
 });
