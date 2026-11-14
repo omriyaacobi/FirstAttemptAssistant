@@ -751,7 +751,17 @@ if (require.main === module) {
   { try { const n = thread.markUnanswered(); if (n) console.log(`Thread: ${n} question(s) had no answer because Bot was stopped; each now says so.`); } catch (error) { console.error("Thread:", error.message); } } // nothing is lost silently after a restart
   const coach = createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log });
   // The daily summary: Flash high at the end of each day (23:45) and at the next start if the PC was off; it feeds the brief's "You" part.
-  const summaries = createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log });
+  // It also keeps track of where Omri is in each course (Omri, 2026-11-14): Flash proposes from Omri's own quoted words, the coach
+  // checks and stores (study-coach.js reviewPositions), and what changed is said in ONE code-written message, with undo for 48 hours.
+  const summaries = createSummaries({
+    thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log,
+    courseNames: () => coach.tracker.refsFor(coursesStore.list()).map((r) => r.name),
+    onStudy: (day, items) => {
+      const r = coach.reviewPositions(items, { lang: require("./lang").langOf(items.map((i) => i.quote).join(" ")), day });
+      if (r.text) thread.append({ role: "assistant", text: r.text, topic: "general", at: Date.now(), result: { mode: "single", rule: "study review", reason: "the end-of-day review updated where Omri stands", chain: [], used: { provider: "code", model: "Gemini Flash proposed it, code checked and wrote it" }, answer: r.text, seconds: 0 } });
+      return r;
+    },
+  });
   threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
   // The morning NEWSPAPER (2026-11-13): news.js (feeds every 3 h, a very-big-news alert, the brief's pick) and brief-me.js (the "You" part).
   // Both use Gemini Flash high under the slim agent (only the Flash pool; never Argon or Claude), and code checks every line they hand back.

@@ -13,6 +13,7 @@
 // Everything that decides or counts is code (study-plan.js, study-tracker.js). Models (Argon only) are used for teaching, writing
 // questions, grading and reading an assignment, always through tutor.js and always checked by code.
 
+const fs = require("node:fs");
 const path = require("node:path");
 const plan = require("./study-plan");
 // The language of the reply being written (Hebrew when the student wrote Hebrew). The Hebrew sentences avoid "you" and "I" verbs that
@@ -356,14 +357,44 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const V2_KEYS = ["mode", "where", "pace", "behindBy", "gaps", "depth", "goal", "focus"];
   let lastUndo = null; // { items: [{ ref, position, pending }], proposalIds: [], at } or { skip: { ref, date }, at } (memory only: it lives for 2 hours)
 
+  // The LAST change of each course (a stored position, a cancelled class) is ALSO kept on disk for 48 hours (undo.json), so a change
+  // Bot made by itself at the end of the day can be taken back the next day, and after a restart. One entry per course and kind
+  // (a cancelled class: per date). An entry: { kind: "position", key, position, pending, proposalIds, by, at } | { kind: "skip", key, date, at }.
+  const UNDO_KEEP_MS = 48 * 3600 * 1000;
+  const undoFile = path.join(dir, "undo.json");
+  const readUndo = () => {
+    try { const l = JSON.parse(fs.readFileSync(undoFile, "utf8")); return (Array.isArray(l) ? l : []).filter((e) => e && typeof e.key === "string" && Number.isFinite(e.at) && now() - e.at < UNDO_KEEP_MS); } catch (error) { return []; }
+  };
+  const writeUndo = (list) => {
+    try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(undoFile + ".tmp", JSON.stringify(list.slice(-40))); fs.renameSync(undoFile + ".tmp", undoFile); } catch (error) { log(`[standing] could not save the undo list: ${error.message}`); }
+  };
+  const sameUndo = (a, b) => a.key === b.key && a.kind === b.kind && (a.kind !== "skip" || a.date === b.date);
+  const keepUndo = (entry) => writeUndo([...readUndo().filter((e) => !sameUndo(e, entry)), { ...entry, at: now() }]);
+  const dropUndo = (entry) => writeUndo(readUndo().filter((e) => !sameUndo(e, entry)));
+  // Takes back one saved entry. The reply names the course, so Omri sees exactly what went back.
+  function undoSaved(e) {
+    dropUndo(e);
+    const ref = refs().find((r) => r.key === e.key);
+    if (!ref) throw new Error("that course is not in the study tracker any more");
+    if (lastUndo && (lastUndo.skip ? lastUndo.skip.ref.key === e.key : lastUndo.items.some((it) => it.ref.key === e.key))) lastUndo = null;
+    if (e.kind === "skip") {
+      tracker.removeSkip({ date: e.date, course: ref.key });
+      return T(`Undone. The ${ref.name} lecture on ${niceDate(e.date)} is back in the timetable.`, `בוטל. ההרצאה של ${ref.name} ב-${niceDate(e.date)} חזרה למערכת.`);
+    }
+    tracker.restoreStanding(ref, e.position, e.pending);
+    for (const id of e.proposalIds || []) proposals.delete(id);
+    return T(`Undone. ${ref.name} is back to how it was before. Tell me again in your own words when you want.`, `בוטל. ${ref.name} חזר למצב שהיה קודם. אפשר לכתוב שוב במילים שלך מתי שנוח.`);
+  }
+
   function undoReading() {
     const u = lastUndo;
     lastUndo = null;
     if (u.skip) { // a cancelled class: the date goes back into the timetable
+      dropUndo({ kind: "skip", key: u.skip.ref.key, date: u.skip.date });
       tracker.removeSkip({ date: u.skip.date, course: u.skip.ref.key });
       return T(`Undone. The ${u.skip.ref.name} lecture on ${niceDate(u.skip.date)} is back in the timetable.`, `בוטל. ההרצאה של ${u.skip.ref.name} ב-${niceDate(u.skip.date)} חזרה למערכת.`);
     }
-    for (const it of u.items) tracker.restoreStanding(it.ref, it.position, it.pending);
+    for (const it of u.items) { tracker.restoreStanding(it.ref, it.position, it.pending); dropUndo({ kind: "position", key: it.ref.key }); }
     for (const id of u.proposalIds) proposals.delete(id); // the exam card of that reading goes too
     const names = u.items.map((it) => it.ref.name).join(", ");
     return T(`Undone. ${names} ${u.items.length === 1 ? "is" : "are"} back to how ${u.items.length === 1 ? "it was" : "they were"} before. Tell me again in your own words when you want.`, `בוטל. ${names} חזרו למצב שהיה קודם. אפשר לכתוב שוב במילים שלך מתי שנוח.`);
@@ -600,6 +631,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const out = storeReading(ref, String(said), fields && typeof fields === "object" ? fields : {}, standingContext(ref), false, { byBrain: true });
       if (!out) throw new Error("none of the fields could be used (they must be values from the closed lists, and a place must exist in the timetable or the notes)");
       lastUndo = { items: [out.undo], proposalIds: [out.proposalId].filter(Boolean), at: now() };
+      keepUndo({ kind: "position", key: ref.key, position: out.undo.position, pending: out.undo.pending, proposalIds: lastUndo.proposalIds, by: "brain" });
       return { text: out.answer, ...(out.proposal ? { proposal: out.proposal } : {}) };
     },
     // A class that was cancelled (Bot cannot know by itself): the date must be a real lecture of that course in the timetable.
@@ -618,18 +650,66 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       if (!tracker.slotOn(ref.key, date)) return T(`That was already noted: no ${ref.name} lecture on ${niceDate(date)}.`, `זה כבר רשום: אין הרצאה של ${ref.name} ב-${niceDate(date)}.`);
       tracker.addSkip({ date, course: ref.key });
       lastUndo = { skip: { ref, date }, at: now() };
+      keepUndo({ kind: "skip", key: ref.key, date });
       return T(`Noted: no ${ref.name} lecture on ${niceDate(date)}. It is out of the count, so the lecture numbers after it move up by one.`, `נרשם: אין הרצאה של ${ref.name} ב-${niceDate(date)}. היא ירדה מהספירה, ולכן מספרי ההרצאות שאחריה זזים באחד.`);
     },
-    // Takes back the last position() or classCancelled() (within 2 hours): the old record returns.
-    undo({ lang = "en" } = {}) {
+    // Takes back the last position() or classCancelled(): the old record returns. With a course: the last change of THAT course
+    // (also one the end-of-day review made), kept for 48 hours. Without one: the change just made, else the newest kept one.
+    undo({ lang = "en", courseId = null } = {}) {
       curLang = lang;
-      if (!lastUndo || now() - lastUndo.at >= UNDO_MS) throw new Error("there is nothing to undo (only the last stored position or cancelled class, within 2 hours)");
-      return undoReading();
+      const wanted = courseId ? refOfCourse(courseId) : null;
+      if (courseId && !wanted) throw new Error("that course is not in the study tracker");
+      const lastKeys = !lastUndo ? [] : lastUndo.skip ? [lastUndo.skip.ref.key] : lastUndo.items.map((it) => it.ref.key);
+      if (lastUndo && now() - lastUndo.at < UNDO_MS && (!wanted || lastKeys.includes(wanted.key))) return undoReading();
+      const saved = readUndo().filter((e) => !wanted || e.key === wanted.key).sort((a, b) => b.at - a.at)[0];
+      if (!saved) throw new Error(`there is nothing to undo${wanted ? ` for ${wanted.name}` : ""} (only the last stored position or cancelled class of a course, within 48 hours)`);
+      return undoSaved(saved);
     },
   };
 
 
-  return { brainTools, answerStudy, morningBlock: () => nudges.morningBlock(), progressLog, onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, tracker, nudges, INTENTS };
+  // THE END-OF-DAY REVIEW (thread-summary.js, Omri 2026-11-14): Bot keeps track of where Omri is by itself. The review model PROPOSED
+  // these from the day's talk; each item already carries a word-for-word quote of one of OMRI'S OWN messages (checked there).
+  // Here they pass the same checks as study_position (standing.checkStanding: closed lists, the timetable, the notes' outline):
+  //   - a course that is not one of Omri's, fields that do not fit, or nothing new -> skipped, silently (nothing is invented);
+  //   - a record that is NEWER than the quoted message (Omri told Bot something later, or the brain stored it live) -> skipped;
+  //   - what is stored: the old record is kept for undo (48 hours, "undo <course>"), and Omri is told in one line per course.
+  // It never touches "understood" (only a graded quiz does) and never makes an exam card.
+  // items: [{ course (exact name), fields, quote, at }]. Returns { lines: [{ course, text, quote }], text } (text "" = nothing changed).
+  function reviewPositions(items = [], { lang = "en", day = "" } = {}) {
+    curLang = lang;
+    const lines = [];
+    const firstBefore = new Map();
+    for (const it of [...(Array.isArray(items) ? items : [])].sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0)).slice(0, 12)) {
+      const ref = it && refs().find((r) => r.name === it.course);
+      if (!ref || !it.fields || typeof it.fields !== "object") continue;
+      const old = tracker.course(ref).position;
+      if (!firstBefore.has(ref.key) && Number(old.at) >= Number(it.at)) continue;
+      const raw = {};
+      for (const k of V2_KEYS) if (it.fields[k] !== undefined) raw[k] = it.fields[k];
+      const ctx = standingContext(ref);
+      const res = standing.checkStanding(raw, ctx);
+      if (!res.any) continue;
+      if (Object.keys(res.fields).every((k) => JSON.stringify(res.fields[k]) === JSON.stringify(old[k]))) continue; // already known
+      const before = { position: old, pending: tracker.pendingQuestion(ref) };
+      const out = storeReading(ref, String(it.quote || ""), raw, ctx, false, { byBrain: true });
+      if (!out) continue;
+      if (out.proposalId) proposals.delete(out.proposalId);
+      if (!firstBefore.has(ref.key)) firstBefore.set(ref.key, before);
+      lines.push({ course: ref.name, text: standing.describe(res.fields, res.notes, lang).join("; "), quote: clean(it.quote, 120) });
+    }
+    for (const [key, b] of firstBefore) keepUndo({ kind: "position", key, position: b.position, pending: b.pending, proposalIds: [], by: "review" });
+    if (!lines.length) return { lines, text: "" };
+    const when = !plan.isIsoDate(day) || day === today() ? T("today", "היום") : T(`on ${niceDate(day)}`, `ב-${niceDate(day)}`);
+    const list = lines.map((l) => T(`- ${l.course}: ${l.text} (you wrote: "${l.quote}")`, `- ${l.course}: ${l.text} (נכתב: "${l.quote}")`)).join("\n");
+    const first = lines[0].course;
+    const text = T(
+      `From what you wrote ${when} I updated where you are:\n${list}\nIf one is wrong, tell me "undo ${first}" (it works for 48 hours). This is only where you are: "understood" still comes only from my quiz.`,
+      `לפי מה שנכתב ${when} עודכן המצב בקורסים:\n${list}\nאם משהו לא נכון, אפשר לכתוב "בטל ${first}" (אפשרי במשך 48 שעות). זה רק המקום בקורס: "הובן" נקבע רק לפי הבוחן.`);
+    return { lines, text };
+  }
+
+  return { brainTools, reviewPositions, answerStudy, morningBlock: () => nudges.morningBlock(), progressLog, onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };
