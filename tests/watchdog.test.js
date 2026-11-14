@@ -93,6 +93,8 @@ test("the scheduled task runs hidden, as the user, with normal rights", () => {
   assert.match(ps, /<RunLevel>LeastPrivilege<\/RunLevel>/);
   assert.doesNotMatch(ps, /HighestAvailable/);
   assert.match(ps, /<Interval>PT5M<\/Interval>/);
+  // the 5-minute check also starts right after install, not only at the next login (Bot stayed down a night, 2026-11-14)
+  assert.match(ps, /<TimeTrigger>[\s\S]*<StartBoundary>\$start<\/StartBoundary>[\s\S]*<Interval>PT5M<\/Interval>[\s\S]*<\/TimeTrigger>/);
   assert.match(ps, /<MultipleInstancesPolicy>IgnoreNew<\/MultipleInstancesPolicy>/);
   assert.match(ps, /worktrees/); // refuses to point the task at a Claude Code worktree
   const vbs = fs.readFileSync(path.join(ROOT, "bot-watchdog.vbs"), "utf8");

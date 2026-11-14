@@ -4,6 +4,7 @@
 # The task (you can see it in Task Scheduler, Task Scheduler Library -> "Bot"):
 #   - runs as YOU, only while you are logged in, with normal rights (not as administrator);
 #   - starts 30 seconds after you log in, then repeats every 5 minutes for as long as you are logged in;
+#     a second (time) trigger starts the same 5-minute check right after install, without waiting for a login;
 #   - runs bot-watchdog.vbs with wscript //B: no window, and no error box can ever pop up over a game;
 #   - bot-watchdog.vbs runs watchdog.cmd, which starts Bot if it is not running and restarts it if it hangs;
 #   - runs on battery too, never starts a second copy of itself, and is stopped if it ever takes over 10 minutes.
@@ -36,6 +37,10 @@ if ($Action -eq 'remove') {
   return
 }
 
+# The login trigger's 5-minute repeat only begins at the NEXT login, so a task installed while logged in never repeated
+# (Bot stayed down a whole night, 2026-11-14). The time trigger starts the same 5-minute check one minute after install.
+$start = (Get-Date).AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:ss')
+
 $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -52,6 +57,14 @@ $xml = @"
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
     </LogonTrigger>
+    <TimeTrigger>
+      <Enabled>true</Enabled>
+      <StartBoundary>$start</StartBoundary>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
