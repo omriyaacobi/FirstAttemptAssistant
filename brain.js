@@ -804,7 +804,7 @@ ${r.cardText}`; }
         ctx.course = c;
         return `${text} (Omri can ask to undo it.)`;
       },
-      study_undo: async () => { afterWeb("change the study record"); if (!study) return "The study tracker is off."; return study.undo({ lang }); },
+      study_undo: async ({ course }) => { afterWeb("change the study record"); if (!study) return "The study tracker is off."; const c = course ? need(course) : null; if (c) ctx.course = c; return study.undo({ lang, courseId: c ? c.id : null }); },
       improve_bot: async ({ request }) => {
         ctx.extras.improve = { request: String(request || task).slice(0, 2000) };
         return "A button that opens Improve Bot with this request is shown to Omri. Nothing changes until Omri starts it there. Say that in one line.";

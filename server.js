@@ -751,7 +751,17 @@ if (require.main === module) {
   { try { const n = thread.markUnanswered(); if (n) console.log(`Thread: ${n} question(s) had no answer because Bot was stopped; each now says so.`); } catch (error) { console.error("Thread:", error.message); } } // nothing is lost silently after a restart
   const coach = createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log });
   // The daily summary: Flash high at the end of each day (23:45) and at the next start if the PC was off; it feeds the brief's "You" part.
-  const summaries = createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log });
+  // It also keeps track of where Omri is in each course (Omri, 2026-11-14): Flash proposes from Omri's own quoted words, the coach
+  // checks and stores (study-coach.js reviewPositions), and what changed is said in ONE code-written message, with undo for 48 hours.
+  const summaries = createSummaries({
+    thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log,
+    courseNames: () => coach.tracker.refsFor(coursesStore.list()).map((r) => r.name),
+    onStudy: (day, items) => {
+      const r = coach.reviewPositions(items, { lang: require("./lang").langOf(items.map((i) => i.quote).join(" ")), day });
+      if (r.text) thread.append({ role: "assistant", text: r.text, topic: "general", at: Date.now(), result: { mode: "single", rule: "study review", reason: "the end-of-day review updated where Omri stands", chain: [], used: { provider: "code", model: "Gemini Flash proposed it, code checked and wrote it" }, answer: r.text, seconds: 0 } });
+      return r;
+    },
+  });
   threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
   // The morning NEWSPAPER (2026-11-13): news.js (feeds every 3 h, a very-big-news alert, the brief's pick) and brief-me.js (the "You" part).
   // Both use Gemini Flash high under the slim agent (only the Flash pool; never Argon or Claude), and code checks every line they hand back.
@@ -777,8 +787,18 @@ if (require.main === module) {
   // THE BRAIN (brain.js): one model with a toolbox reads every message. It is the only way Bot answers (no switch).
   let brainRef = null;
   const moodleBridge = require("./moodle-bridge").createBridge(); // only fills when the Chrome extension is installed and Omri asks about Moodle
+  // Moodle with the phone app's read TOKEN (moodle-ws.js; MOODLE_TOKEN in .env, set once by `node moodle-token.js`): no Chrome and no
+  // login each time. Without a token, or when Moodle refuses it, the Chrome extension above is used when it is connected.
+  const moodleWsLib = require("./moodle-ws");
+  const moodleSource = moodleWsLib.createMoodleSource({ ws: moodleWsLib.createMoodleWs({ getToken: moodleWsLib.tokenReader(path.join(__dirname, ".env")) }), bridge: moodleBridge, log: console.log });
+  const moodleTools = require("./moodle-tools").createMoodleTools({ bridge: moodleSource, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches });
+  // THE MOODLE WATCH (moodle-watch.js): every 3 hours, read-only, code only (no model): what is new in the courses, told in the thread.
+  const moodleWatch = require("./moodle-watch").createMoodleWatch({
+    source: moodleSource, tools: moodleTools, courseRoutes, file: path.join(__dirname, "data", "moodle-watch.json"), thread, push, log: console.log,
+    patternFor: (c) => { try { const ref = coach.tracker.refsFor([c])[0]; const p = ref && (coach.tracker.timetable().courses || []).find((x) => x.key === ref.key); return p ? new RegExp(p.match, "i") : null; } catch (error) { return null; } },
+  });
   const makeBrain = () => (brainRef = require("./brain").createBrain({
-    courses: coursesStore, courseRoutes, linkBatches, moodle: require("./moodle-tools").createMoodleTools({ bridge: moodleBridge, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches }), coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
+    courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
     tokenLog: require("./tokenlog").createTokenLog({ file: path.join(__dirname, "data", "token-log.json") }), // what the answers cost, numbers only
     // Omri's PC: find folders and files by name under the search roots (data/pc-roots.json), never in Bot's own folder (pc-find.js).
@@ -815,6 +835,7 @@ if (require.main === module) {
     morning.start(); // does nothing until you turn the morning brief on in the page
     news.start(); // the news check every 3 hours, only while the morning brief is on (news.js)
     summaries.start(); // the end-of-day review at 23:45, and any day the PC missed (thread-summary.js)
+    moodleWatch.start(); // a read-only look at Moodle every 3 hours (moodle-watch.js); does nothing without a token or Chrome
     if (brainRef) brainRef.warmUp();
     // Look the quota pools up once at start (2026-11-13): before, the first message after a restart knew nothing, treated every
     // pool as full and could use Argon at 10%. Runs in the background; a failed lookup changes nothing.
