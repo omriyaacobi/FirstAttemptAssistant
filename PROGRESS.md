@@ -39,7 +39,9 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
     (Moodle's default is about 12 weeks), run it again. `node moodle-token.js --check` tests it.
   - **TESTED WITH THE REAL TOKEN (2026-11-14), every read job once:** 5 courses, their sections and items, the announcements of all
     5, one discussion's posts, 12 deadlines, a folder's file list and one real PDF download (6.5 MB). All worked with no code change.
-    Not tried yet: the same through the running Bot (a Moodle question in chat, and the watch's first real "Moodle check" message).
+    Then, with Chrome's Moodle tabs CLOSED, Bot's own Moodle tools ran through the token: the course list (4 of my 5 Moodle
+    courses map to Bot courses; the fifth, the AI-and-humanities course, has no Bot course), each course's contents with deadlines
+    and newest posts, and one announcement's full text. Not done on purpose: a download INTO a real course (it changes my data).
   - **My decision (2026-11-14): Bot names itself `node` to Moodle** (true: that is the program). Not a browser, not the phone
     app; it must never become either. The constant is `USER_AGENT` in `moodle-ws.js`.
 - **2. Moodle watch.** `moodle-watch.js`: every 3 hours while Bot runs (first look 2 minutes after a start if one is due), code only,
@@ -47,7 +49,10 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
   lecturers." with the items (their numbers in [brackets]) and the first lines of up to 3 lecturer messages; a push with counts only,
   none between 22:00 and 08:00. Nothing is downloaded: I say "download them" and the normal `moodle_fetch` road runs (over 10 files
   is still a card). The models see the Moodle part inside `<moodle-data>` as data. State: `data/moodle-watch.json`. Log lines start
-  with `[moodle watch]`. A dead token is said once.
+  with `[moodle watch]`. A dead token is said once. Also told: a deadline that is new or moved. A linked course is headed by my
+  own name for it ("Calculus 2"). One look is about 12 reads and takes about 8 seconds.
+  REAL RUN (2026-11-14, on a copy): first look silent, second "nothing new", and after making the copy forget 2 items and 1
+  discussion per course it wrote a correct message (9 files, 5 lecturer messages, Hebrew fine). The running Bot did its first silent look.
 - **3. Bot keeps track of where I am.**
   - During the day: `brain-brief.md` now tells the brain to call `study_position` also when I mention my state in passing, and to add
     one line ("noted ..., say undo").
@@ -57,6 +62,11 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
     message "From what you wrote today I updated where you are: ..." (no push).
   - Undo: `study_undo` takes a course now. The last change of each course is kept in `data/study/undo.json` for 48 hours, so
     "undo Calculus 2" works the next morning and after a restart. "Understood" still comes only from a graded quiz.
+  - REAL DRY RUN (2026-11-14, real Flash high, my real thread of 12-14 Nov, study data COPIED so nothing was stored): 12 Nov: it
+    proposed "Calculus 2: through lecture 3" from my own Hebrew sentence, the checks passed, and the message was right. 13 Nov:
+    nothing proposed (right: I said nothing about my place). 14 Nov: it proposed "HPSP: missed lecture 4" from my Moodle request,
+    and nothing was stored because the brain had ALREADY stored exactly that, live, at 14:10 (so the daytime part works for real
+    too). Each day's review took 2 to 4 minutes; no wrong proposal in the three days.
 - **CLAUDE.md is updated (I approved, 2026-11-14):** the MOODLE line (token route, the watch's limits), WHERE I AM (the
   end-of-day review may update a position by itself, with undo) and one clause in DAILY SUMMARY.
 - **Not done / to watch:** the watch has no on/off switch in the page (stop it by removing the token and closing Chrome, or ask
