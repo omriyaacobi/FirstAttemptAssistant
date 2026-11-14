@@ -58,8 +58,8 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
     message "From what you wrote today I updated where you are: ..." (no push).
   - Undo: `study_undo` takes a course now. The last change of each course is kept in `data/study/undo.json` for 48 hours, so
     "undo Calculus 2" works the next morning and after a restart. "Understood" still comes only from a graded quiz.
-- **CLAUDE.md is NOT changed yet.** Two rule texts wait for my OK (they are in the hand-over message of this branch): the MOODLE
-  line (token route, the watch's limits) and WHERE I AM (the end-of-day review may update a position by itself, with undo).
+- **CLAUDE.md is updated (I approved, 2026-11-14):** the MOODLE line (token route, the watch's limits), WHERE I AM (the
+  end-of-day review may update a position by itself, with undo) and one clause in DAILY SUMMARY.
 - **Not done / to watch:** the watch has no on/off switch in the page (stop it by removing the token and closing Chrome, or ask
   Claude Code); recorded lectures (the video block) are not in Moodle's item list, so the watch does not see them; Flash may
   misread a sentence: check the first few "From what you wrote" messages and say "undo <course>" when one is wrong.
