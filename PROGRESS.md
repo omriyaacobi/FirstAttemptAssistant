@@ -163,6 +163,9 @@ The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. T
 - To let Bot search `C:Assingnemt` too, write in chat: "also search C:Assingnemt" (a new root needs its full path in my own message).
 - After the PC-hands merge, try once: "open the last lecture of Calculus 2" and "find my SP assignment folder and link it", to see the windows open while Bot runs hidden.
 - A leftover test copy of Bot may still run on port 3100; `stop-bot.cmd` stops every `node server.js`.
+- WHEN I HAVE TIME AND QUOTA (with Fable): Bot reads my UNIVERSITY Gmail (read-only, like the calendar login) and tells me
+  when a relevant mail comes in. Possible blocks: BGU's Google admin may forbid outside apps reading mail; a Google login in
+  "testing" mode expires every 7 days.
 - WHEN I HAVE TIME: Share from the Gallery to Bot. The phone app is a real WebAPK (chrome://webapks) but was last updated 8 Nov,
   before share_target existed; its update says "Scheduled". Close Bot, open it from its icon, and check chrome://webapks shows a
   new update date. If not: uninstall the icon, then Chrome -> Bot address -> menu -> Install app.
