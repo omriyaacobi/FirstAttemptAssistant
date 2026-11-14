@@ -27,6 +27,43 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
+## Study autonomy (2026-11-14, branch claude/study-autonomy-6afa6b, NOT merged yet)
+
+Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `tests/study-review.test.js` (1,080 tests pass).
+
+- **1. Moodle without logging in every time.** BGU has the Moodle phone app's web service switched on, and its edge lets plain Node
+  through (it refused the NAME we used, "Bot-...", not scripts as such). `moodle-ws.js` reads Moodle with a token (a long secret that
+  stands in for a login) from `.env`: one address, 7 read-only functions, token in the request body, never logged. If there is no
+  token or Moodle refuses it, the Chrome extension is used as before. Research: `experiments/2026-11-14-moodle-token.md`.
+  - **I MUST DO ONCE:** in the project folder run `node moodle-token.js`, type my Moodle user name and password (hidden; sent to
+    Moodle only, never saved). It writes `MOODLE_TOKEN` into `.env` and checks it. `node moodle-token.js --check` tests it later.
+  - **NOT TESTED WITH A REAL TOKEN YET.** Everything up to the token works against real Moodle; the calls after it are written from
+    Moodle's documentation and tested against a fake. First real run: tell Claude Code what `--check` printed and try "what is new
+    in <course> on Moodle" and one file download. If my login is only the Microsoft 365 page, the script will say the password is
+    wrong: then ask my friend how they got their token (`node moodle-token.js --paste` saves one).
+  - **A decision of mine to confirm:** Bot names itself `node` to Moodle (true: that is the program). Not a browser, not the phone
+    app. If I think that is too close to "getting past the edge", change `USER_AGENT` in `moodle-ws.js` back and only Chrome works.
+- **2. Moodle watch.** `moodle-watch.js`: every 3 hours while Bot runs (first look 2 minutes after a start if one is due), code only,
+  no model, read-only. First look at a course is silent. After that: ONE message "Moodle check: 2 new files, 1 new message from
+  lecturers." with the items (their numbers in [brackets]) and the first lines of up to 3 lecturer messages; a push with counts only,
+  none between 22:00 and 08:00. Nothing is downloaded: I say "download them" and the normal `moodle_fetch` road runs (over 10 files
+  is still a card). The models see the Moodle part inside `<moodle-data>` as data. State: `data/moodle-watch.json`. Log lines start
+  with `[moodle watch]`. A dead token is said once.
+- **3. Bot keeps track of where I am.**
+  - During the day: `brain-brief.md` now tells the brain to call `study_position` also when I mention my state in passing, and to add
+    one line ("noted ..., say undo").
+  - End of day: the 23:45 review (Flash high, same call as before, no extra quota) also proposes position updates. Each needs a
+    word-for-word quote from MY message and an exact course name (`thread-summary.js`), then passes the same timetable / notes checks
+    as `study_position` (`reviewPositions` in `study-coach.js`). Skipped when I told Bot something newer. What changed is posted as one
+    message "From what you wrote today I updated where you are: ..." (no push).
+  - Undo: `study_undo` takes a course now. The last change of each course is kept in `data/study/undo.json` for 48 hours, so
+    "undo Calculus 2" works the next morning and after a restart. "Understood" still comes only from a graded quiz.
+- **CLAUDE.md is NOT changed yet.** Two rule texts wait for my OK (they are in the hand-over message of this branch): the MOODLE
+  line (token route, the watch's limits) and WHERE I AM (the end-of-day review may update a position by itself, with undo).
+- **Not done / to watch:** the watch has no on/off switch in the page (stop it by removing the token and closing Chrome, or ask
+  Claude Code); recorded lectures (the video block) are not in Moodle's item list, so the watch does not see them; Flash may
+  misread a sentence: check the first few "From what you wrote" messages and say "undo <course>" when one is wrong.
+
 ## Message times (2026-11-14, branch claude/message-times-bc0b67)
 
 - Every message in the conversation (mine, Bot's answers and Bot's short "got it" lines) shows when it was sent in small muted text:
