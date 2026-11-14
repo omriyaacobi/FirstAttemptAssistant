@@ -27,6 +27,12 @@ process.stdin.once("data", () => {
   setTimeout(() => {
     if (mode === "die") return process.exit(1);
     if (mode === "status") return out({ event: "result", result: { status: "ERROR" } });
+    if (mode === "tool") {
+      out({ event: "step_update", step_update: { step_index: 2, step_type: "tool", tool_name: "read_file", state: "ACTIVE" } });
+      out({ event: "step_update", step_update: { step_index: 2, step_type: "tool", tool_name: "read_file", state: "DONE" } });
+      piece(3, "The answer.");
+      return out({ event: "result", result: { status: "SUCCESS", response: "Hello \\n\\nThe answer." } });
+    }
     if (mode === "twosteps") { piece(3, "second"); return out({ event: "result", result: { status: "SUCCESS", response: "first\\n\\nsecond" } }); }
     piece(1, "world");
     out({ event: "result", result: { status: "SUCCESS", response: "Hello world" } });
@@ -47,6 +53,13 @@ test("askAgyStream: a second reply step starts a new paragraph", async () => {
   const seen = [];
   await withMode("twosteps", () => askAgyStream("q", "gemini-3.8-flash-low", (t) => seen.push(t), opts));
   assert.strictEqual(seen[seen.length - 1], "Hello \n\nsecond");
+});
+
+test("askAgyStream: text written before one of agy's own tools is thinking: dropped from the answer and cleared on the page", async () => {
+  const seen = [];
+  const answer = await withMode("tool", () => askAgyStream("q", "gemini-3.8-flash-low", (t) => seen.push(t), opts));
+  assert.strictEqual(answer, "The answer.");
+  assert.deepStrictEqual(seen, ["Hello ", "", "The answer."]);
 });
 
 test("askAgyStream: rejects if agy dies midway or reports an error, and a broken onText does not matter", async () => {

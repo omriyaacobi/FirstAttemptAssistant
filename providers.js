@@ -229,7 +229,7 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
   if (agent) args.push("--agent", ensureAgent(cwd || BRAIN_DIR));
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: cwd || (agent ? BRAIN_DIR : sandbox()), windowsHide: true });
-    let buffer = "", text = "", step = null, settled = false;
+    let buffer = "", text = "", step = null, settled = false, lastTool = null;
     const steps = watchSteps();
     const finish = (fn, value) => { if (!settled) { settled = true; fn(value); } };
     for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", () => {}); // a broken pipe is handled by "close"
@@ -253,12 +253,19 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
           step = u.step_index;
           text += u.text_delta;
           try { onText(text); } catch (error) { /* showing the text must never break the answer */ }
+        } else if (event.event === "step_update" && u && u.step_type === "tool" && u.step_index !== lastTool) {
+          // What the model wrote BEFORE one of agy's own tools (opening the photo, a web search) is it thinking out loud, not the
+          // answer: Omri once got "Wait no! Read the prompt carefully..." and the photo's temp path (2026-11-14). Only the text after
+          // the last tool is kept, and the page is cleared so the half-thought disappears from the screen too.
+          lastTool = u.step_index;
+          if (text) { text = ""; step = null; try { onText(""); } catch (error) { /* showing the text must never break the answer */ } }
         } else if (event.event === "result") {
           const result = event.result || {};
           killTree(child);
           tell(onUsage, usageWithSteps(result.usage, steps)); // a failed call was paid for too
           if (result.status && result.status !== "SUCCESS") finish(reject, new Error("agy status " + result.status));
-          else finish(resolve, String(result.response ?? text).trim());
+          // after a tool, agy's own "response" glues every step together (the thinking too), so the text after the tool wins
+          else finish(resolve, String(lastTool !== null && text.trim() ? text : (result.response ?? text)).trim());
         }
       }
     });
