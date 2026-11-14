@@ -165,7 +165,9 @@ The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. T
 - A leftover test copy of Bot may still run on port 3100; `stop-bot.cmd` stops every `node server.js`.
 - WHEN I HAVE TIME AND QUOTA (with Fable): Bot reads my UNIVERSITY Gmail (read-only, like the calendar login) and tells me
   when a relevant mail comes in. Possible blocks: BGU's Google admin may forbid outside apps reading mail; a Google login in
-  "testing" mode expires every 7 days.
+  "testing" mode expires every 7 days. My choices (2026-11-14): relevant = changes or cancellations of lectures and TA
+  sessions, updates and publications about assignments; also Flash high reads each mail and tells me if something extremely
+  important or out of the ordinary comes up. How: a line in the thread + a phone push (counts only).
 - WHEN I HAVE TIME: Share from the Gallery to Bot. The phone app is a real WebAPK (chrome://webapks) but was last updated 8 Nov,
   before share_target existed; its update says "Scheduled". Close Bot, open it from its icon, and check chrome://webapks shows a
   new update date. If not: uninstall the icon, then Chrome -> Bot address -> menu -> Install app.
