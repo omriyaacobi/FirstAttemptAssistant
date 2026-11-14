@@ -27,6 +27,14 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Tests:** `node --test` (about 1,000 tests, about 45 s). All pass.
 - **Going back:** the tag `before-fable-2026-11-10` is the code before the brain; the commit before this cleanup is `c3162c5`. Both are on GitHub.
 
+## Message times (2026-11-14, branch claude/message-times-bc0b67)
+
+- Every message in the conversation (mine, Bot's answers and Bot's short "got it" lines) shows when it was sent in small muted text:
+  "14:32" today, "Thu 13 Nov, 14:32" on another day, with the year only when it is not this year. Browser's own time (Israel).
+- Page only: each stored message already has `at` (milliseconds) and `/api/thread` already sends it. The helper is `tTimeLabel` in
+  `public/index.html` (tested in `tests/thread-page.test.js`). The time is its own left-to-right line, so Hebrew messages keep their layout.
+  A "working" card has no time; the finished answer that replaces it has one.
+
 ## Paste and reply to a part (2026-11-13, branch claude/research-bot-access-8d8430)
 
 - **Paste:** Ctrl+V a screenshot (PrintScreen, Win+Shift+S) or a copied file into Bot, or drop a file on the page: it is attached like the paperclip.

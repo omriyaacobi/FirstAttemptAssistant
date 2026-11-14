@@ -17,7 +17,7 @@ const pure = (threadScript.match(/\/\/ <thread-pure>([\s\S]*?)\/\/ <\/thread-pur
 function helpers() {
   const sandbox = {};
   vm.createContext(sandbox);
-  vm.runInContext(pure + "\nthis.out = { tDayKey, tDayLabel, tDayOpen, tRoute, tStudyLines, T_PAGE };", sandbox);
+  vm.runInContext(pure + "\nthis.out = { tDayKey, tDayLabel, tTimeLabel, tDayOpen, tRoute, tStudyLines, T_PAGE };", sandbox);
   return sandbox.out;
 }
 const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h).getTime();
@@ -152,4 +152,17 @@ test("Study page lines read the REAL /api/study shape (copied from a running ser
   assert.strictEqual(r.question, "Where are you in Calculus 2? (+1 more)");
   const none = h.tStudyLines({ ...real, you: { positionKnown: false, position: null, withMaterial: 0, understood: 0 } });
   assert.match(none.at, /^You have not told Bot yet/);
+});
+
+test("each message shows when it was sent: the time today, the day and date before, the year only when it differs", () => {
+  const { tTimeLabel } = helpers();
+  const now = new Date(2026, 10, 14, 18, 0).getTime(); // Sat 14 Nov 2026
+  assert.strictEqual(tTimeLabel(new Date(2026, 10, 14, 9, 5).getTime(), now), "09:05");
+  assert.strictEqual(tTimeLabel(new Date(2026, 10, 13, 14, 32).getTime(), now), "Fri 13 Nov, 14:32");
+  assert.strictEqual(tTimeLabel(new Date(2025, 11, 31, 23, 59).getTime(), now), "Wed 31 Dec 2025, 23:59");
+  assert.strictEqual(tTimeLabel(undefined, now), "");
+  assert.strictEqual(tTimeLabel(0, now), "");
+  // both kinds of message get the time line, and it is left-to-right so a Hebrew message does not flip it
+  assert.strictEqual((threadScript.match(/const when = timeLine\(m\);/g) || []).length, 2);
+  assert.match(threadScript, /t\.dir = "ltr";/);
 });
