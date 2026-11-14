@@ -750,15 +750,22 @@ if (require.main === module) {
   const thread = createThreadStore(path.join(__dirname, "data", "thread"));
   { try { const n = thread.markUnanswered(); if (n) console.log(`Thread: ${n} question(s) had no answer because Bot was stopped; each now says so.`); } catch (error) { console.error("Thread:", error.message); } } // nothing is lost silently after a restart
   const coach = createStudyCoach({ dir: path.join(__dirname, "data", "study"), courses: coursesStore, askChain: require("./providers").askChain, log: console.log });
-  const summaries = createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, log: console.log });
+  // The daily summary: Flash high at the end of each day (23:45) and at the next start if the PC was off; it feeds the brief's "You" part.
+  const summaries = createSummaries({ thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log });
   threadFiles = createThreadFiles({ thread, courseRoutes, coach, log: console.log });
   // The morning NEWSPAPER (2026-11-13): news.js (feeds every 3 h, a very-big-news alert, the brief's pick) and brief-me.js (the "You" part).
   // Both use Gemini Flash high under the slim agent (only the Flash pool; never Argon or Claude), and code checks every line they hand back.
-  // Background work: nobody waits, and Flash high thinks long on 200 headlines (measured 2026-11-13: over 90 s), so 4 minutes.
-  const flashAsk = (provider, model, question) => require("./providers").ask(provider, model, question, () => {}, { agent: true, timeoutMs: 4 * 60 * 1000 });
+  // Background work: nobody waits, and Flash high thinks long on 100-200 headlines (2026-11-14: over 4 minutes; Omri: time does not matter), so 8 minutes.
+  const flashAsk = (provider, model, question) => require("./providers").ask(provider, model, question, () => {}, { agent: true, timeoutMs: 8 * 60 * 1000 });
   let morning = null;
   const news = require("./news").createNews({ dir: path.join(__dirname, "data", "news"), askChain: require("./providers").askChain, askOne: flashAsk, onAlert: (a) => morning.alert(a), enabled: () => morning.settings().on, log: console.log });
-  const aboutMe = () => require("./brief-me").aboutMeBlock({ log: coach.progressLog, tracker: coach.tracker, courseList: coursesStore.list(), today: coach.tracker.today(), paused: coach.nudges.isPaused(), askChain: require("./providers").askChain, askOne: flashAsk, logLine: console.log });
+  // "You": first yesterday's end-of-day review (made now if the PC was off at night), then the checked lines (brief-me.js).
+  const aboutMe = async () => {
+    try { await summaries.catchUp(); } catch (error) { console.log(`[brief] daily summary catch-up failed: ${error.message}`); }
+    const today = coach.tracker.today();
+    const dayNotes = summaries.doneOf(require("./study-plan").addDays(today, -1));
+    return require("./brief-me").aboutMeBlock({ log: coach.progressLog, tracker: coach.tracker, courseList: coursesStore.list(), today, paused: coach.nudges.isPaused(), dayNotes, askChain: require("./providers").askChain, askOne: flashAsk, logLine: console.log });
+  };
   morning = createMorning({ file: path.join(__dirname, "data", "morning.json"), store, reminders: getReminders(), push, study: coach, thread, news, aboutMe, log: console.log });
   const backup = createBackupScheduler({ dataDir: path.join(__dirname, "data"), repoDir: __dirname, config: loadBackupConfig(path.join(__dirname, ".env")) });
   {
@@ -807,6 +814,7 @@ if (require.main === module) {
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
     news.start(); // the news check every 3 hours, only while the morning brief is on (news.js)
+    summaries.start(); // the end-of-day review at 23:45, and any day the PC missed (thread-summary.js)
     if (brainRef) brainRef.warmUp();
     // Look the quota pools up once at start (2026-11-13): before, the first message after a restart knew nothing, treated every
     // pool as full and could use Argon at 10%. Runs in the background; a failed lookup changes nothing.
