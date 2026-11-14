@@ -38,6 +38,9 @@ const SUMMARY_CHAIN = [MODELS.flashHigh, MODELS.flashMedium];
 const END_OF_DAY = 23 * 60 + 45; // minutes after midnight, local time
 const TICK_MS = 60 * 1000;
 const MAX_DONE = 6;
+// After a failed run, wait this long before asking the models again: the timer ticks every minute, and a failing Flash must not be
+// asked 60 times an hour (quota). The morning brief then simply goes without that day's notes.
+const RETRY_AFTER_MS = 30 * 60 * 1000;
 const MAX_DAYS_PER_RUN = 3;
 const LOOKBACK_DAYS = 7;
 const MIN_MESSAGES = 2;
@@ -124,6 +127,8 @@ function createSummaries({ thread, dir, askChain, askOne = null, now = Date.now,
   const fileFor = (day) => path.join(dir, day + ".json");
   let running = null;
   let timer = null;
+  let failedAt = -Infinity;
+  const coolingDown = () => now() - failedAt < RETRY_AFTER_MS;
 
   function read(day) {
     try { return JSON.parse(fs.readFileSync(fileFor(day), "utf8")); } catch (error) { return null; }
@@ -180,12 +185,13 @@ function createSummaries({ thread, dir, askChain, askOne = null, now = Date.now,
   function endOfDay() {
     const p = plan.parts(now(), timezone);
     if (p.minutes < END_OF_DAY || running) return running || Promise.resolve(null);
+    if (coolingDown()) return Promise.resolve(null);
     const day = dayOf(now());
     const d = thread.days().find((x) => x.day === day);
     if (!d || d.messages < MIN_MESSAGES || !stale(read(day), day)) return Promise.resolve(null);
     running = summarizeDay(day)
       .then((record) => { if (!record) write({ day, madeAt: now(), summary: "", facts: [], tasks: [], openQuestions: [], done: [], dropped: 0, skipped: true }); log(`[summary] ${day} (end of day): ${record ? `${record.done.length} done item(s)` : "nothing to summarize"}`); return record; })
-      .catch((error) => { log(`[summary] ${day} (end of day) failed: ${error.message}`); return null; })
+      .catch((error) => { failedAt = now(); log(`[summary] ${day} (end of day) failed: ${error.message}`); return null; })
       .finally(() => { running = null; });
     return running;
   }
@@ -204,6 +210,7 @@ function createSummaries({ thread, dir, askChain, askOne = null, now = Date.now,
   // Called (without waiting) by every new message. One run at a time; a failure is logged and tried again at the next message.
   function catchUp() {
     if (running) return running;
+    if (coolingDown()) return Promise.resolve([]);
     const todo = missingDays().slice(0, MAX_DAYS_PER_RUN);
     if (!todo.length) return Promise.resolve([]);
     running = (async () => {
@@ -215,8 +222,9 @@ function createSummaries({ thread, dir, askChain, askOne = null, now = Date.now,
           else write({ day, madeAt: now(), summary: "", facts: [], tasks: [], openQuestions: [], done: [], dropped: 0, skipped: true }); // nothing to say: do not look again (unless new messages come)
           log(`[summary] ${day}: ${record ? `${record.facts.length} fact(s), ${record.tasks.length} task(s), ${record.dropped} dropped` : "nothing to summarize"}`);
         } catch (error) {
-          log(`[summary] ${day} failed: ${error.message}`);
-          break; // the same model chain would fail again; try at the next message
+          failedAt = now();
+          log(`[summary] ${day} failed: ${error.message} (next try in ${RETRY_AFTER_MS / 60000} minutes)`);
+          break; // the same model chain would fail again; try after the wait
         }
       }
       return made;

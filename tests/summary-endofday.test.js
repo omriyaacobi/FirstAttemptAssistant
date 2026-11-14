@@ -84,3 +84,20 @@ test("the PC was off at night: the next morning catches up yesterday, also when 
   assert.deepStrictEqual(await t.summaries.catchUp(), ["2026-11-13"]);
   assert.deepStrictEqual(s.summaries.doneOf("2099-01-01"), []);
 });
+
+test("after a failed run the models are not asked again for 30 minutes (the timer ticks every minute)", async () => {
+  const s = setup();
+  s.say("user", "I study at a made-up university", T(10, 0, 13));
+  s.say("assistant", "Noted", T(10, 1, 13));
+  s.answers.push("not json at all");
+  s.clock.now = T(9);
+  await s.summaries.catchUp(); // fails: no JSON
+  assert.strictEqual(s.asked.length, 1);
+  s.clock.now = T(9, 10);
+  await s.summaries.catchUp();
+  assert.strictEqual(s.asked.length, 1); // still waiting
+  s.clock.now = T(9, 31);
+  await s.summaries.catchUp();
+  assert.strictEqual(s.asked.length, 2); // tried again after the wait, and this time it worked
+  assert.ok(s.summaries.read("2026-11-13").summary);
+});
