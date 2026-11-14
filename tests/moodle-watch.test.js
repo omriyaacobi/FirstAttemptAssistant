@@ -18,7 +18,7 @@ const NIGHT = Date.parse("2026-11-16T21:30:00Z"); // 23:30 in Israel
 function setup({ at = NOON } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-watch-"));
   const world = {
-    connected: true, fail: null, asked: [],
+    connected: true, fail: null, asked: [], events: [], failEvents: null,
     courses: [{ id: 5, name: "Systems Programming" }, { id: 6, name: "Algebra" }],
     items: { 5: [{ id: 100, name: "Announcements", module: "forum" }, { id: 101, name: "Lecture 1", module: "resource", files: 1 }, { id: 102, name: "Exercises", module: "folder", files: 2 }], 6: [{ id: 200, name: "Syllabus", module: "resource", files: 1 }] },
     talks: { 100: [{ d: 1, title: "Welcome", time: 1700000000 }] },
@@ -33,13 +33,14 @@ function setup({ at = NOON } = {}) {
       if (kind === "course") return { data: { sections: [{ title: "Week 1", cms: (world.items[args.courseid] || []).map((i) => i.id) }], items: world.items[args.courseid] || [] } };
       if (kind === "forum") return { data: world.talks[args.cmid] || [] };
       if (kind === "posts") return { data: world.posts[args.discussionid] || [] };
+      if (kind === "events") { if (world.failEvents) throw Object.assign(new Error("no"), { code: world.failEvents }); return { data: world.events }; }
       throw Object.assign(new Error(`the watch must not ask for ${kind}`), { code: "refused" });
     },
   };
   const posted = [], pushes = [];
   let clock = at;
   const watch = createMoodleWatch({
-    source, tools: { autoMap: (list) => ({ [list[0].id]: "c1" }) }, courseRoutes: { list: () => [{ id: "c1", name: "Systems Programming" }] },
+    source, tools: { autoMap: (list) => ({ [list[0].id]: "c1" }) }, courseRoutes: { list: () => [{ id: "c1", name: "SP" }] },
     file: path.join(dir, "moodle-watch.json"), thread: { append: (m) => { posted.push(m); return { id: "x" }; } }, push: { notifyAll: async (p) => { pushes.push(p); } }, now: () => clock,
   });
   return { watch, world, posted, pushes, tick: (ms) => { clock += ms; }, dir };
@@ -62,7 +63,7 @@ test("new files, a grown folder and a lecturer's message are told once, with cou
   t.world.items[5][2].files = 4;
   t.world.talks[100].unshift({ d: 2, title: "HW2 moved", time: 1700000900 });
   const r = await t.watch.check();
-  assert.deepStrictEqual(r.counts, { files: 3, items: 1, talks: 1 });
+  assert.deepStrictEqual(r.counts, { files: 3, items: 1, talks: 1, deadlines: 0 });
   assert.strictEqual(t.posted.length, 1);
   const m = t.posted[0];
   assert.strictEqual(m.role, "assistant");
@@ -70,7 +71,7 @@ test("new files, a grown folder and a lecturer's message are told once, with cou
   const [head, ...rest] = m.text.split("\n\n");
   assert.strictEqual(head, "Moodle check: 3 new files, 1 new message from lecturers, 1 other new item.");
   const body = rest.join("\n\n");
-  assert.match(body, /Systems Programming\n- new file \[103\] Lecture 2 \(Week 1\)/);
+  assert.match(body, /^SP\n- new file \[103\] Lecture 2 \(Week 1\)/, "a linked course is headed by Bot's own name for it");
   assert.match(body, /- new zoom meeting \[104\] Zoom/);
   assert.match(body, /- 2 more files in the folder \[102\] Exercises/);
   assert.match(body, /- new message by Dr\. A \(.*\): HW2 moved\n {2}The deadline moved\.\n/);
@@ -78,7 +79,7 @@ test("new files, a grown folder and a lecturer's message are told once, with cou
   assert.ok(!/[<>]/.test(body), "no '<' or '>' from Moodle is ever shown");
   assert.match(body, /tell me "download them"/);
   // nothing was downloaded and nothing but reads was asked
-  assert.ok(t.world.asked.every((k) => ["courses", "course", "forum", "posts"].includes(k)));
+  assert.ok(t.world.asked.every((k) => ["courses", "course", "forum", "posts", "events"].includes(k)));
   // the models see the Moodle part as data
   const seen = markNews(m.text, m.result);
   assert.ok(seen.startsWith(head + "\n\n<moodle-data>"));
@@ -91,6 +92,43 @@ test("new files, a grown folder and a lecturer's message are told once, with cou
   const again = await t.watch.check();
   assert.strictEqual(again.posted, false);
   assert.strictEqual(t.posted.length, 1);
+});
+
+test("deadlines: the first list is only saved; a new one or a moved one is told once; a past one and a layout item are not", async () => {
+  const t = setup();
+  const soon = Math.floor(NOON / 1000) + 5 * 86400;
+  t.world.events = [{ name: "HW1", courseId: 5, due: soon }];
+  await t.watch.check();
+  assert.strictEqual(t.posted.length, 0, "the first list is a silent start");
+  t.world.events = [{ name: "HW1", courseId: 5, due: soon + 86400 }, { name: "HW2 <b>", courseId: 6, due: soon }, { name: "Old", courseId: 5, due: Math.floor(NOON / 1000) - 3600 }];
+  t.world.items[5].push({ id: 150, name: "Part A", module: "subsection" });
+  const r = await t.watch.check();
+  assert.deepStrictEqual(r.counts, { files: 0, items: 0, talks: 0, deadlines: 2 });
+  assert.match(t.posted[0].text, /^Moodle check: 2 new or changed deadlines\.\n\nSP\n- new or changed deadline: HW1, due .*\n\nAlgebra \(not linked to one of my courses yet\)\n- new or changed deadline: HW2, due /);
+  assert.ok(!t.posted[0].text.includes("Old") && !t.posted[0].text.includes("Part A"));
+  assert.ok(!t.posted[0].text.includes("download them"), "no files: no download line");
+  assert.strictEqual((await t.watch.check()).posted, false, "told once");
+  // the deadlines list failing does not stop the rest of the look
+  t.world.failEvents = "moodle";
+  t.world.items[6].push({ id: 201, name: "Notes", module: "resource" });
+  assert.strictEqual((await t.watch.check()).counts.files, 1);
+});
+
+test("a look that breaks halfway tells nothing and loses nothing: the next good look finds it all", async () => {
+  const t = setup();
+  await t.watch.check();
+  t.world.items[5].push({ id: 103, name: "Lecture 2", module: "resource" });
+  t.world.items[6].push({ id: 201, name: "Notes", module: "resource" });
+  const file = path.join(t.dir, "moodle-watch.json");
+  const before = JSON.parse(fs.readFileSync(file, "utf8")).courses;
+  // the FIRST course is read fine; reading the second one fails once (the token died in the middle of the look)
+  const secondCourse = t.world.items[6];
+  let reads = 0;
+  Object.defineProperty(t.world.items, 6, { configurable: true, get() { reads++; if (reads === 1) throw Object.assign(new Error("gone"), { code: "token" }); return secondCourse; } });
+  assert.deepStrictEqual(await t.watch.check(), { ok: false, code: "token" });
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")).courses, before, "the snapshot was not moved forward");
+  const r = await t.watch.check();
+  assert.strictEqual(r.counts.files, 2, "both new files are still told");
 });
 
 test("a course that appears later starts silent; an unlinked course is said to be unlinked", async () => {

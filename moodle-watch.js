@@ -7,6 +7,7 @@
 // them with a saved snapshot (data/moodle-watch.json: item numbers and discussion numbers only).
 //
 // Rules in code (tests/moodle-watch.test.js):
+//   - also told: a deadline in Moodle's "coming up" list that is new or whose time changed (one more read per look).
 //   - READ-ONLY, and nothing is downloaded here. New files are LISTED with their numbers; Omri says "download them" and the brain's
 //     moodle_fetch does it on the normal checked road (more than 10 files is still a Confirm card).
 //   - the first look at a course only saves the snapshot and says nothing (otherwise everything would be "new").
@@ -31,6 +32,7 @@ const MAX_POSTS_READ = 3; // lecturers' messages whose first lines are shown, pe
 const POST_CHARS = 400;
 const RULE = "moodle watch";
 const DOWNLOADABLE = new Set(["resource", "folder"]);
+const STRUCTURE = new Set(["subsection"]); // how the page is laid out, not something to tell Omri about
 const KIND = { resource: "file", folder: "folder", assign: "assignment", forum: "forum", url: "link", page: "page", quiz: "quiz", label: "text", lti: "external tool", zoom: "zoom meeting", book: "book" };
 
 // Moodle text for showing: one line, no control characters, no '<' '>' (so it can never close the data marker), short.
@@ -64,7 +66,7 @@ function diffCourse(old, { items = [], talks = null }) {
 }
 
 function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => null, file, thread = null, push = null, now = () => Date.now(), timezone = plan.TIMEZONE, log = () => {}, everyMs = EVERY_MS }) {
-  const read = () => { try { const s = JSON.parse(fs.readFileSync(file, "utf8")); return { lastCheck: Number(s.lastCheck) || 0, lastTry: Number(s.lastTry) || 0, broken: s.broken || "", courses: s.courses && typeof s.courses === "object" ? s.courses : {} }; } catch (error) { return { lastCheck: 0, lastTry: 0, broken: "", courses: {} }; } };
+  const read = () => { try { const s = JSON.parse(fs.readFileSync(file, "utf8")); return { lastCheck: Number(s.lastCheck) || 0, lastTry: Number(s.lastTry) || 0, broken: s.broken || "", courses: s.courses && typeof s.courses === "object" ? s.courses : {}, events: s.events && typeof s.events === "object" ? s.events : undefined }; } catch (error) { return { lastCheck: 0, lastTry: 0, broken: "", courses: {} }; } };
   const write = (s) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file + ".tmp", JSON.stringify(s)); fs.renameSync(file + ".tmp", file); };
   let running = false;
   let timer = null;
@@ -84,13 +86,30 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
       const bots = courseRoutes.list();
       const map = tools.autoMap(list.map((c) => ({ id: c.id, name: safe(c.name, 200) })), bots, patternFor);
       const blocks = [];
-      const counts = { files: 0, items: 0, talks: 0 };
+      const counts = { files: 0, items: 0, talks: 0, deadlines: 0 };
       let postsRead = 0;
+      // Deadlines (Moodle's own "coming up" list, one read): a deadline that is new, or whose time or name changed, is told once.
+      // The first time the list is read it is only saved.
+      const dueNews = new Map(); // Moodle course id -> lines
+      try {
+        const events = ((await source.ask("events")).data || []).filter((e) => e && Number.isInteger(e.courseId) && Number(e.due) > 0);
+        const known = state.events;
+        const nextEvents = {};
+        for (const e of events) {
+          const key = `${e.courseId}|${e.due}|${safe(e.name, 80)}`;
+          nextEvents[key] = 1;
+          if (known && !known[key] && e.due * 1000 > now()) dueNews.set(e.courseId, [...(dueNews.get(e.courseId) || []), `- new or changed deadline: ${safe(e.name, 120)}, due ${when(e.due)}`]);
+        }
+        state.events = nextEvents;
+      } catch (error) {
+        if (error.code === "token" || error.code === "loggedout" || error.code === "offline" || error.code === "blocked") throw error;
+        log(`[moodle watch] deadlines skipped: ${error.code || ""} ${error.message}`);
+      }
       for (const c of list) {
         let got;
         try {
           const course = await source.ask("course", { courseid: c.id });
-          const items = ((course.data && course.data.items) || []).filter((i) => Number.isInteger(i.id));
+          const items = ((course.data && course.data.items) || []).filter((i) => Number.isInteger(i.id) && !STRUCTURE.has(i.module));
           const sectionOf = new Map();
           for (const s of (course.data && course.data.sections) || []) for (const id of s.cms || []) sectionOf.set(Number(id), safe(s.title, 50));
           const forum = items.find((i) => i.module === "forum");
@@ -128,17 +147,19 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
           }
           lines.push(head);
         }
+        for (const line of dueNews.get(c.id) || []) { counts.deadlines++; lines.push(line); }
         if (!lines.length) continue;
         const bot = map[c.id] ? (bots.find((b) => b.id === map[c.id]) || {}).name : null;
         const more = lines.length > MAX_LINES_PER_COURSE ? [`- and ${lines.length - MAX_LINES_PER_COURSE} more (ask me for the Moodle course to see all)`] : [];
-        blocks.push([`${safe(c.name, 120)}${bot ? "" : " (not linked to one of my courses yet)"}`, ...lines.slice(0, MAX_LINES_PER_COURSE), ...more].join("\n"));
+        // The heading: my own name for the course when it is linked (short, the one Omri uses), else Moodle's name.
+        blocks.push([bot ? safe(bot, 120) : `${safe(c.name, 120)} (not linked to one of my courses yet)`, ...lines.slice(0, MAX_LINES_PER_COURSE), ...more].join("\n"));
       }
-      const total = counts.files + counts.items + counts.talks;
+      const total = counts.files + counts.items + counts.talks + counts.deadlines;
       const wasBroken = state.broken;
       write({ ...state, lastCheck: now(), lastTry: now(), broken: "" });
       if (wasBroken) log("[moodle watch] Moodle is reachable again");
       if (!total) { log("[moodle watch] nothing new"); return { ok: true, posted: false, counts }; }
-      const parts = [counts.files ? plural(counts.files, "new file") : "", counts.talks ? plural(counts.talks, "new message") + " from lecturers" : "", counts.items ? plural(counts.items, "other new item") : ""].filter(Boolean);
+      const parts = [counts.files ? plural(counts.files, "new file") : "", counts.talks ? plural(counts.talks, "new message") + " from lecturers" : "", counts.deadlines ? plural(counts.deadlines, "new or changed deadline") : "", counts.items ? plural(counts.items, "other new item") : ""].filter(Boolean);
       const head = `Moodle check: ${parts.join(", ")}.`;
       const tail = counts.files ? "\n\nTo put the new files into the course, tell me \"download them\"." : "";
       post(`${head}\n\n${blocks.join("\n\n")}${tail}`, "the Moodle watch found something new");
@@ -152,7 +173,8 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
       log(`[moodle watch] could not look: ${code} ${error.message}`);
       // Told once, and only for the thing Omri can fix: the token. (Chrome closed or logged out is normal life; the log has it.)
       if (code === "token" && state.broken !== "token") post("Moodle check: I could not look at Moodle because the token stopped working (they last a few months). On the PC, run this once in the project folder: node moodle-token.js\nUntil then I only see Moodle through Chrome when you are logged in there.", "the Moodle token stopped working");
-      write({ ...read(), courses: state.courses, lastTry: now(), broken: code === "token" ? "token" : state.broken });
+      // The snapshot on disk is NOT touched: a look that broke halfway told Omri nothing, so the next good look must still find it all.
+      write({ ...read(), lastTry: now(), broken: code === "token" ? "token" : state.broken });
       return { ok: false, code };
     } finally { running = false; }
   }

@@ -61,6 +61,23 @@ with the old name this road is closed and the extension stays the only way.
 - The exact fields BGU's Moodle returns from `core_course_get_contents` and `mod_forum_get_forum_discussions` (written
   from Moodle's documentation, tested only against a fake).
 
+## Update, same day: run with Omri's real token
+Omri ran `node moodle-token.js` (so `login/token.php` accepts their user name and password) and `--check` printed
+"The token works: Moodle shows 5 course(s) in progress." Then every read job of `moodle-ws.js` was run once against real
+Moodle, printing counts only:
+
+| Job | Result |
+|---|---|
+| courses | 5, ids and names present |
+| course (all 5) | 13 to 22 sections, 13 to 127 items; kinds seen: forum, zoom, label, resource, folder, url, page, assign, quiz, groupselect, choicegroup, questionnaire, subsection, lti, wooclap |
+| forum (first forum of each) | 3, 4, 10, 16 and 24 discussions, every one with a title and a time |
+| posts (one discussion) | subject, author, time and message present |
+| events | 12, all with a due time and a course id |
+| folder | 9 files listed |
+| file | one PDF, 6,513,529 bytes, starts with `%PDF-` (so the token in the request BODY is accepted for files too) |
+
+No code change was needed. So of the list above only this is still unknown: how long BGU's tokens last.
+
 ## Not tried, on purpose
 - Any browser-like or app-like User-Agent, cookie replay from Chrome, or keeping a browser session alive.
 - The calendar-export and forum-feed addresses: not needed once the web service answered.
