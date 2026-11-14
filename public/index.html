@@ -218,6 +218,7 @@
   #quoteBtn[hidden] { display: none; }
   .quote-chip { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; padding: 6px 8px 6px 10px; border-inline-start: 3px solid var(--accent); background: var(--mine); border-radius: 8px; }
   .quote-chip[hidden] { display: none; }
+  .quote-chip .qtext { line-height: 1.4; max-height: 4.2em; } /* 3 lines at most even where line-clamp is not supported; the full text is still sent */
   .quote-chip .qtext, .tquote { flex: 1; min-width: 0; color: var(--muted); font-size: .85rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: pre-wrap; overflow-wrap: anywhere; }
   .quote-chip button { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: .95rem; line-height: 1; flex: none; }
   .tquote { border-inline-start: 3px solid var(--accent); padding: 2px 8px; margin: 0 0 4px auto; width: fit-content; max-width: 78%; cursor: pointer; }
@@ -477,14 +478,17 @@
   #form.composer { padding: 6px 22px 18px; border-top: 0; background: transparent; }
   #form.composer .inner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 6px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 26px; padding: 6px 8px; transition: border-color .15s, box-shadow .15s; }
   #form.composer .inner:focus-within { border-color: color-mix(in srgb, var(--accent) 70%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
-  #form .photo-chip { grid-column: 1 / -1; grid-row: 1; margin: 6px 6px 4px; }
-  #form textarea#task { grid-column: 2; grid-row: 2; min-height: 44px; height: 44px; max-height: 220px; resize: none; border: 0; border-radius: 0; background: transparent; padding: 11px 4px; outline: none; line-height: 1.4; }
-  #form .row:not(.tools-row) { grid-column: 1 / -1; grid-row: 3; margin: 0; padding: 0 8px; min-height: 0; }
+  /* Every child of this grid needs its own place. Without one, the quote chip fell into the first free cell (row 1, the
+     narrow "auto" column on the left); an auto column grows to fit a long quote, so the text box was squeezed (2026-11-14). */
+  #form .quote-chip { grid-column: 1 / -1; grid-row: 1; margin: 6px 6px 4px; }
+  #form .photo-chip { grid-column: 1 / -1; grid-row: 2; margin: 6px 6px 4px; }
+  #form textarea#task { grid-column: 2; grid-row: 3; min-height: 44px; height: 44px; max-height: 220px; resize: none; border: 0; border-radius: 0; background: transparent; padding: 11px 4px; outline: none; line-height: 1.4; }
+  #form .row:not(.tools-row) { grid-column: 1 / -1; grid-row: 4; margin: 0; padding: 0 8px; min-height: 0; }
   #form .row:not(.tools-row) .status { max-width: 100%; white-space: normal; padding: 2px 0 4px; }
   #form .row:not(.tools-row) .status:empty { display: none; }
   #form .tools-row { display: contents; }
-  #form .tools-row > .tools:first-child { grid-column: 1; grid-row: 2; gap: 0; }
-  #form .tools-row > .tools:last-child { grid-column: 3; grid-row: 2; gap: 6px; }
+  #form .tools-row > .tools:first-child { grid-column: 1; grid-row: 3; gap: 0; }
+  #form .tools-row > .tools:last-child { grid-column: 3; grid-row: 3; gap: 6px; }
   #form button.attach { width: 40px; height: 44px; border: 0; color: var(--muted); border-radius: 12px; }
   #form button.attach:hover { color: var(--accent); }
   #form button.attach svg { width: 21px; height: 21px; }
