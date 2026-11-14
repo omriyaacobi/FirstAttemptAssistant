@@ -370,6 +370,9 @@
   .tnotice { margin-bottom: 16px; }
   .tnotice button { min-height: 44px; margin-top: 10px; }
   .twork .bot.think { margin-top: 4px; }
+  /* When a message was sent: small and muted, on its own line, so it never mixes into a right-to-left (Hebrew) text. */
+  .ttime { display: block; color: var(--muted); font-size: .75rem; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tq .ttime { text-align: right; }
   .tstudy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; margin: 12px 0; }
   .tcourse { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .tcourse strong { font-size: 1.05rem; overflow-wrap: anywhere; }
@@ -2421,6 +2424,18 @@
     const question = text(c.question) || text(c.openQuestion) || (qs.length ? qs[0].trim().slice(0, 300) + (qs.length > 1 ? ` ${S.more(qs.length - 1)}` : "") : null);
     return { should, at, due, question, keeping: tKeeping(c.keepingUp, lang) };
   }
+  // When a message was sent, in the browser's own time: "14:32" today, "Thu 13 Nov, 14:32" on another day (and the year when it is
+  // not this year). Names are written out here, not taken from the browser's language, so every phone shows the same thing.
+  const T_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const T_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function tTimeLabel(ms, nowMs) {
+    if (!Number.isFinite(ms) || ms <= 0) return "";
+    const d = new Date(ms);
+    const time = `${tPad(d.getHours())}:${tPad(d.getMinutes())}`;
+    if (tDayKey(ms) === tDayKey(nowMs)) return time;
+    const year = d.getFullYear() !== new Date(nowMs).getFullYear() ? ` ${d.getFullYear()}` : "";
+    return `${T_WEEKDAYS[d.getDay()]} ${d.getDate()} ${T_MONTHS[d.getMonth()]}${year}, ${time}`;
+  }
   // </thread-pure>
 
   window.botThread = (() => {
@@ -2538,13 +2553,26 @@
     function revealOnTap(node) {
       node.addEventListener("click", (e) => { if (e.target.closest("button, a, summary, input, select, textarea, details")) return; node.classList.toggle("sel"); });
     }
+    // The small time line under a message (nothing when the time is missing). dir="ltr": "14:32" reads the same in a Hebrew message.
+    function timeLine(m) {
+      const label = tTimeLabel(m.at, Date.now());
+      if (!label) return null;
+      const t = el("time", "ttime", label);
+      t.dir = "ltr";
+      t.dateTime = new Date(m.at).toISOString();
+      t.title = new Date(m.at).toLocaleString();
+      return t;
+    }
     function questionNode(m) {
       const node = el("div", "msg tmsg tq");
       node.dataset.id = m.id;
       const bubble = el("div", "me", m.text);
       bubble.dir = "auto";
       if (m.quote && m.quote.text) node.appendChild(quoteLine(m));
-      node.append(bubble, deleteButton(m, node));
+      node.appendChild(bubble);
+      const when = timeLine(m);
+      if (when) node.appendChild(when);
+      node.appendChild(deleteButton(m, node));
       revealOnTap(node);
       return node;
     }
@@ -2576,6 +2604,8 @@
       if (proposal && proposal.id) node.appendChild(proposalButtons(proposal));
       if (m.result && m.result.fileChoice && m.result.fileChoice.id) node.appendChild(fileChoiceButtons(m.result.fileChoice));
       if (m.result && m.result.linkBatch && m.result.linkBatch.id) node.appendChild(linkBatchButtons(m.result.linkBatch));
+      const when = timeLine(m);
+      if (when) node.appendChild(when);
       node.appendChild(deleteButton(m, node));
       revealOnTap(node);
       return node;
