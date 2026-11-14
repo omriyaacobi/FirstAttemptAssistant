@@ -32,7 +32,7 @@ const { matchCourse } = require("./courses");
 const { listFound } = require("./recall");
 const { pickPages, defang } = require("./study");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
-const { fixMath } = require("./tutor");
+const { fixMath, openQuestion } = require("./tutor");
 const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, claudeFirst, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
@@ -294,7 +294,9 @@ function createBrain({
         const open = (r.assignments || []).filter((a) => a && a.status !== "done").map((a) => `${a.title}${a.due ? ` (due ${a.due})` : ""}`);
         if (open.length) lines.push(`  saved assignments: ${open.slice(0, 3).join("; ")}`);
         if (r.work && (r.work.now || r.work.next)) lines.push(`  Omri works on now: ${r.work.now || "(not said)"}; next: ${r.work.next || "(not said)"} (working_on, set ${new Date(r.work.at || 0).toISOString().slice(0, 10)})`);
-        try { const s = coach.tracker.getSession(refOf(c)); if (s && Array.isArray(s.questions) && s.questions.some((q) => q.state === "open")) lines.push("  A QUIZ IS OPEN in this course: if Omri's message answers its question, call quiz_answer."); } catch (error) { /* no session */ }
+        // The question itself is shown, so the brain calls quiz_answer only for a reply to THAT question (2026-11-14: a reply to a
+        // question the brain asked in the talk went to an old quiz question instead).
+        try { const q = openQuestion(coach.tracker.getSession(refOf(c))); if (q) lines.push(`  A QUIZ QUESTION IS OPEN in this course: "${clip(noCtl(q), 300)}". Call quiz_answer ONLY if Omri's message answers THIS question; a reply to something asked in the recent talk is not a quiz answer.`); } catch (error) { /* no session */ }
       }
       return lines.join("\n");
     }).join("\n");

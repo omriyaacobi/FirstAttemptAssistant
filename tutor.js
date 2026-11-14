@@ -265,7 +265,13 @@ async function workText({ askChain, assignment, message, lang = "en", log, onTex
 
 // ---- the session ----
 const newSession = (mode, target, extra = {}) => ({ lang: extra.lang || "en", id: crypto.randomBytes(4).toString("hex"), mode, target, questions: [], current: 0, startedAt: Date.now(), ...extra });
-const open = (s) => s && s.questions.length && s.questions.some((q) => q.state === "open");
+// A one-question check after a lesson stays open 6 hours at most: one from 2026-11-08 was still open on 2026-11-14 and took Omri's
+// reply to a different question (the upper Darboux sum) as a wrong answer to it. A full quiz (3 questions) stays open until it ends.
+const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
+const stale = (s, now = Date.now()) => Boolean(s && s.fromTeach && now - (s.startedAt || 0) > CHECK_TTL_MS);
+const open = (s, now) => Boolean(s && s.questions.length && s.questions.some((q) => q.state === "open") && !stale(s, now));
+// The open question's text (for the brain's context), or null when nothing is open.
+const openQuestion = (s, now = Date.now()) => (open(s, now) ? s.questions.find((q) => q.state === "open").q : null);
 // Words the CODE writes (the model answers in the student's language by itself). Hebrew when the student wrote Hebrew.
 const isHebrew = (text) => mostlyHebrew(text);
 const TX = {
@@ -304,7 +310,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
   const session = tracker.getSession(ref);
-  const continuing = session && (intent === "answer" || !intent) && (open(session) || session.mode === "work");
+  const continuing = session && (intent === "answer" || !intent) && (open(session, now) || session.mode === "work");
 
   if (continuing && session.mode === "work") {
     let w;
@@ -423,4 +429,4 @@ async function teachTopic({ askChain, courseName, message, pages, log, onText = 
   return { answer: t.text, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: !mat.picked.length || /\[OUT\]/.test(t.text) };
 }
 
-module.exports = { teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS };
+module.exports = { teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS, openQuestion, CHECK_TTL_MS };
