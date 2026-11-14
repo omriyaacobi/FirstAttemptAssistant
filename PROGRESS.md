@@ -77,6 +77,9 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
 - **Paste:** Ctrl+V a screenshot (PrintScreen, Win+Shift+S) or a copied file into Bot, or drop a file on the page: it is attached like the paperclip.
 - **Reply to a part:** select text in a message, tap "Reply to this", write, Send. Code checks the part is really in that message; the brain
   gets it as a marked quote. Details and what was not checked on the phone: `experiments/2026-11-13-paste-and-quote.md`.
+- **Fixed 2026-11-14 (branch claude/reply-layout-55f522):** a long quote squeezed the typing box into a thin strip on the laptop. Cause: the
+  message box is a CSS grid and the "Replying to" chip had no row of its own, so it fell into the narrow left column and stretched it.
+  Now the chip has its own full-width row above the text (at most 3 lines; the whole quote is still sent). Test: `tests/reply-layout.test.js`.
 
 ## Phone app, option A (2026-11-13, branch claude/research-bot-access-8d8430)
 
