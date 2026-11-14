@@ -36,7 +36,10 @@ const fail = (message, code = "tool") => Object.assign(new Error(message), { cod
 // Plain words for the bridge's errors (what Omri must do).
 function explain(error, lang = "en") {
   const c = error && error.code;
-  if (c === "offline") return say(lang, "Moodle cannot be reached: Chrome with the Bot Moodle extension is not open on the PC. Open Chrome (the extension is in moodle-extension/) and ask again.", "אין גישה למודל: כרום עם התוסף של Bot לא פתוח במחשב. צריך לפתוח את כרום ולשאול שוב.");
+  if (c === "token") return say(lang, "Moodle cannot be reached: the Moodle token is missing or stopped working, and Chrome is not connected. On the PC, run once in the project folder: node moodle-token.js (or open Chrome and log in to Moodle), then ask again.", "אין גישה למודל: הטוקן של מודל חסר או הפסיק לעבוד, וכרום לא מחובר. במחשב צריך להריץ פעם אחת בתיקיית הפרויקט: node moodle-token.js (או לפתוח את כרום ולהתחבר למודל), ואז לשאול שוב.");
+  if (c === "blocked") return say(lang, "Moodle's edge refused Bot before Moodle was reached, and Chrome is not connected. Open Chrome, log in to Moodle and ask again.", "השער של מודל חסם את Bot לפני שהגיע למודל, וכרום לא מחובר. צריך לפתוח את כרום, להתחבר למודל ולשאול שוב.");
+  if (c === "network") return say(lang, "Moodle could not be reached (no connection). Try again in a minute.", "לא הייתה גישה למודל (אין חיבור). אפשר לנסות שוב בעוד דקה.");
+  if (c === "offline") return say(lang, "Moodle cannot be reached: there is no Moodle token (node moodle-token.js sets one up, once) and Chrome with the Bot Moodle extension is not open on the PC. Do one of the two and ask again.", "אין גישה למודל: כרום עם התוסף של Bot לא פתוח במחשב. צריך לפתוח את כרום ולשאול שוב.");
   if (c === "loggedout") return say(lang, "Moodle logged you out. Log in to Moodle in Chrome on the PC, then ask again.", "המודל ניתק את החיבור. צריך להתחבר למודל בכרום במחשב ולשאול שוב.");
   if (c === "timeout") return say(lang, "Moodle did not answer in time. Try again in a minute.", "המודל לא ענה בזמן. אפשר לנסות שוב בעוד דקה.");
   if (c === "toobig") return say(lang, "That file is bigger than 50 MB, so Bot did not download it.", "הקובץ גדול מ-50 מגה-בייט ולכן לא הורד.");

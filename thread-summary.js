@@ -51,7 +51,7 @@ const NOTE_CHARS_PER_DAY = 600;
 const NOTE_DAYS = 3;
 const MAX_ITEMS = 8;
 const MIN_QUOTE_CHARS = 8;
-const PRIVATE_RULES = new Set(["calendar (read-only)", "morning brief", "news alert"]);
+const PRIVATE_RULES = new Set(["calendar (read-only)", "morning brief", "news alert", "moodle watch"]);
 const DAY = 24 * 3600 * 1000;
 
 const norm = (s) => String(s).replace(/\s+/g, " ").trim();
