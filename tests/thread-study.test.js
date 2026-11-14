@@ -272,10 +272,13 @@ test("SUMMARY: lazy and catching up: only past days, at most 3 per run, oldest f
   const t2 = createThreadStore(tmp());
   fillDay(t2, DAYS(1));
   fail = true;
-  const s2 = createSummaries({ thread: t2, dir: tmp(), askChain, now: () => NOW, log: () => {} });
+  let later = NOW;
+  const s2 = createSummaries({ thread: t2, dir: tmp(), askChain, now: () => later, log: () => {} });
   assert.deepStrictEqual(await s2.catchUp(), []);
   assert.strictEqual(s2.missingDays().length, 1);
   fail = false;
+  assert.deepStrictEqual(await s2.catchUp(), []); // 30 minutes' wait after a failure (2026-11-14: the timer ticks every minute)
+  later = NOW + 31 * 60 * 1000;
   assert.strictEqual((await s2.catchUp()).length, 1);
   // two calls at once make one run
   const t3 = createThreadStore(tmp());
