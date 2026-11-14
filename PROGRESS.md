@@ -35,12 +35,11 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
   through (it refused the NAME we used, "Bot-...", not scripts as such). `moodle-ws.js` reads Moodle with a token (a long secret that
   stands in for a login) from `.env`: one address, 7 read-only functions, token in the request body, never logged. If there is no
   token or Moodle refuses it, the Chrome extension is used as before. Research: `experiments/2026-11-14-moodle-token.md`.
-  - **I MUST DO ONCE:** in the project folder run `node moodle-token.js`, type my Moodle user name and password (hidden; sent to
-    Moodle only, never saved). It writes `MOODLE_TOKEN` into `.env` and checks it. `node moodle-token.js --check` tests it later.
-  - **NOT TESTED WITH A REAL TOKEN YET.** Everything up to the token works against real Moodle; the calls after it are written from
-    Moodle's documentation and tested against a fake. First real run: tell Claude Code what `--check` printed and try "what is new
-    in <course> on Moodle" and one file download. If my login is only the Microsoft 365 page, the script will say the password is
-    wrong: then ask my friend how they got their token (`node moodle-token.js --paste` saves one).
+  - **DONE (2026-11-14): I ran `node moodle-token.js`; the token is in `.env` and works.** When Bot says the token stopped working
+    (Moodle's default is about 12 weeks), run it again. `node moodle-token.js --check` tests it.
+  - **TESTED WITH THE REAL TOKEN (2026-11-14), every read job once:** 5 courses, their sections and items, the announcements of all
+    5, one discussion's posts, 12 deadlines, a folder's file list and one real PDF download (6.5 MB). All worked with no code change.
+    Not tried yet: the same through the running Bot (a Moodle question in chat, and the watch's first real "Moodle check" message).
   - **My decision (2026-11-14): Bot names itself `node` to Moodle** (true: that is the program). Not a browser, not the phone
     app; it must never become either. The constant is `USER_AGENT` in `moodle-ws.js`.
 - **2. Moodle watch.** `moodle-watch.js`: every 3 hours while Bot runs (first look 2 minutes after a start if one is due), code only,
