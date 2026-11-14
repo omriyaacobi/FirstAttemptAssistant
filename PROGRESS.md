@@ -41,8 +41,8 @@ Three parts. Tests: `tests/moodle-ws.test.js`, `tests/moodle-watch.test.js`, `te
     Moodle's documentation and tested against a fake. First real run: tell Claude Code what `--check` printed and try "what is new
     in <course> on Moodle" and one file download. If my login is only the Microsoft 365 page, the script will say the password is
     wrong: then ask my friend how they got their token (`node moodle-token.js --paste` saves one).
-  - **A decision of mine to confirm:** Bot names itself `node` to Moodle (true: that is the program). Not a browser, not the phone
-    app. If I think that is too close to "getting past the edge", change `USER_AGENT` in `moodle-ws.js` back and only Chrome works.
+  - **My decision (2026-11-14): Bot names itself `node` to Moodle** (true: that is the program). Not a browser, not the phone
+    app; it must never become either. The constant is `USER_AGENT` in `moodle-ws.js`.
 - **2. Moodle watch.** `moodle-watch.js`: every 3 hours while Bot runs (first look 2 minutes after a start if one is due), code only,
   no model, read-only. First look at a course is silent. After that: ONE message "Moodle check: 2 new files, 1 new message from
   lecturers." with the items (their numbers in [brackets]) and the first lines of up to 3 lecturer messages; a push with counts only,
