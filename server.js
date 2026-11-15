@@ -792,9 +792,14 @@ if (require.main === module) {
   const moodleWsLib = require("./moodle-ws");
   const moodleSource = moodleWsLib.createMoodleSource({ ws: moodleWsLib.createMoodleWs({ getToken: moodleWsLib.tokenReader(path.join(__dirname, ".env")) }), bridge: moodleBridge, log: console.log });
   const moodleTools = require("./moodle-tools").createMoodleTools({ bridge: moodleSource, courseRoutes, dataDir: path.join(__dirname, "data"), linkBatches });
-  // THE MOODLE WATCH (moodle-watch.js): every 3 hours, read-only, code only (no model): what is new in the courses, told in the thread.
+  // THE MOODLE WATCH (moodle-watch.js): every 3 hours, read-only: what is new in the courses, told in the thread. Code finds what is new;
+  // ONE Hydrogen low call (Gemini Models pool) only labels new lecturer messages important / routine, and routine ones are not posted (Omri, 2026-11-15).
+  const watchSort = require("./moodle-watch").makeSorter({
+    askChain: require("./providers").askChain, chain: [require("./router").MODELS.hydrogenLow],
+    askOne: (provider, model, question) => require("./providers").ask(provider, model, question, () => {}, { agent: true, timeoutMs: 2 * 60 * 1000 }), log: console.log,
+  });
   const moodleWatch = require("./moodle-watch").createMoodleWatch({
-    source: moodleSource, tools: moodleTools, courseRoutes, file: path.join(__dirname, "data", "moodle-watch.json"), thread, push, log: console.log,
+    source: moodleSource, tools: moodleTools, courseRoutes, file: path.join(__dirname, "data", "moodle-watch.json"), thread, push, sort: watchSort, log: console.log,
     patternFor: (c) => { try { const ref = coach.tracker.refsFor([c])[0]; const p = ref && (coach.tracker.timetable().courses || []).find((x) => x.key === ref.key); return p ? new RegExp(p.match, "i") : null; } catch (error) { return null; } },
   });
   const makeBrain = () => (brainRef = require("./brain").createBrain({
