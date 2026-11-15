@@ -717,13 +717,27 @@ ${text}`; } catch (error) {
         if (remove) { afterWeb("change the search roots"); return `Search root REMOVED. The roots now: ${finder.removeRoot(remove).roots.join("; ") || "none"}`; }
         return `The search roots: ${finder.roots().join("; ")}`;
       },
-      open_on_pc: async ({ url, moodle: mcourse, item, course, file, found }) => {
+      open_on_pc: async ({ url, moodle: mcourse, item, course, file, found, linked, vscode }) => {
         const given = (v) => v !== undefined && v !== null && v !== "";
         const where = ctx.fromPhone ? " (on the PC: Omri wrote from the phone, so say it opened on the computer)" : "";
+        const editor = vscode === true || vscode === "true";
         if (given(found)) {
           afterWeb("open things");
           if (!finder) throw new Error("searching the PC is not set up in this Bot");
-          const r = opener.openLocal(finder.pick(found).path);
+          const r = opener.openLocal(finder.pick(found).path, { editor });
+          return `OPENED ${r.target} in ${r.how}${where}.`;
+        }
+        // The course's LINKED folder (Bot's own record, set only by Omri; 2026-11-15: "open the folder on VS code" failed because the
+        // folder is outside the search roots). The folder is checked again as when it was linked; a file must really be inside it.
+        if (given(linked)) {
+          afterWeb("open files");
+          const c = need(linked);
+          const rec = record(c);
+          if (!rec || !rec.projectDir) throw new Error(`${c.name} has no linked folder yet; Omri can write its full path, or pc_find it and link_folder`);
+          const root = projectFolder.checkFolder(rec.projectDir, { forbidden: [__dirname], ...folderRules });
+          const target = given(file) ? projectFolder.locate(root, file) : root;
+          const r = opener.openLocal(target, { editor });
+          ctx.course = c;
           return `OPENED ${r.target} in ${r.how}${where}.`;
         }
         if (given(url)) {

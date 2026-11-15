@@ -60,6 +60,25 @@ function listFiles(root) {
   return { files: out, more };
 }
 
+// Where one file of the folder really is, for OPENING it (2026-11-15): the same rules as reading (inside the folder after links are
+// followed, a name that is not a secret), but any size and type: pc-open.js then decides by the type whether and how it opens.
+function locate(root, rel) {
+  let want = String(rel || "").trim().replace(/\\/g, "/").replace(/^\.?\//, "");
+  if (!want) throw fail("which file?");
+  let full = path.resolve(root, want);
+  if (!inside(full, root) || !fs.existsSync(full)) {
+    const base = want.split("/").pop().toLowerCase();
+    const hits = listFiles(root).files.filter((f) => f.rel.toLowerCase() === want.toLowerCase() || f.rel.split("/").pop().toLowerCase() === base);
+    if (hits.length !== 1) throw fail(hits.length ? `several files are called "${base}": ${hits.slice(0, 6).map((h) => h.rel).join(", ")}` : `there is no file "${want.slice(0, 120)}" in the linked folder`);
+    full = path.resolve(root, hits[0].rel);
+  }
+  let real;
+  try { real = fs.realpathSync(full); } catch (error) { throw fail(`there is no file "${want.slice(0, 120)}" in the linked folder`); }
+  if (!inside(real, fs.realpathSync(root))) throw fail("that file is outside the linked folder, so Bot will not open it");
+  if (SECRET_NAME.test(path.basename(real))) throw fail("Bot never opens files that look like secrets (.env, keys, credentials)");
+  return real;
+}
+
 // The text of one file of the folder. `rel` is a path inside it ("src/MemoryBlock.cpp"), or just a file name that exists once.
 function readFile(root, rel) {
   let want = String(rel || "").trim().replace(/\\/g, "/").replace(/^\.?\//, "");
@@ -181,4 +200,4 @@ function workingNow(root, rules = {}, now = Date.now()) {
 // Line numbers, so an answer can say "line 42".
 const numbered = (text) => String(text).replace(/\r\n/g, "\n").split("\n").map((l, i) => `${i + 1}: ${l}`).join("\n");
 
-module.exports = { checkFolder, listFiles, readFile, findInParent, grepFiles, workingNow, LINUX_HOME, numbered, MAX_GREP_HITS, MAX_FILE_BYTES, MAX_ENTRIES, SKIP_DIRS };
+module.exports = { checkFolder, listFiles, locate, readFile, findInParent, grepFiles, workingNow, LINUX_HOME, numbered, MAX_GREP_HITS, MAX_FILE_BYTES, MAX_ENTRIES, SKIP_DIRS };

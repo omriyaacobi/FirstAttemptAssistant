@@ -194,3 +194,34 @@ test("a new search root must be written in full in Omri's own message", async ()
   const r = await run(b.brain, `also search ${extra}`);
   assert.strictEqual(r.answer, "Added.");
 });
+
+test("the course's LINKED folder opens in VS Code when asked, a file inside it too; never a file outside it (2026-11-15)", async () => {
+  const s = setup(['CALL {"tool":"open_on_pc","linked":"Systems Programming","vscode":true}\nOpened the folder in VS Code.']);
+  const dir = path.join(s.d.root, "SP", "Assignment3");
+  s.seen.saved.push({ key: "c1", assignments: [], position: {}, projectDir: dir });
+  const r = await run(s.brain, "open the assignment folder on vs code");
+  assert.strictEqual(r.answer, "Opened the folder in VS Code.");
+  assert.deepStrictEqual(s.seen.started.map((x) => [x.exe, x.args[0], x.opts.shell]), [[PROGRAMS.code, fs.realpathSync(dir), false]]);
+  // a file inside: by name; code goes to VS Code anyway
+  const f = setup(['CALL {"tool":"open_on_pc","linked":"Systems Programming","file":"main.cpp"}\nOpened main.cpp.']);
+  f.seen.saved.push({ key: "c1", assignments: [], position: {}, projectDir: path.join(f.d.root, "SP", "Assignment3") });
+  await run(f.brain, "open main.cpp");
+  assert.deepStrictEqual(f.seen.started.map((x) => [x.exe, path.basename(x.args[0])]), [[PROGRAMS.code, "main.cpp"]]);
+  // without "vscode" a folder still opens in Explorer; a file outside the folder or a program is refused
+  const e = setup(['CALL {"tool":"open_on_pc","linked":"Systems Programming"}\nOpened.']);
+  e.seen.saved.push({ key: "c1", assignments: [], position: {}, projectDir: path.join(e.d.root, "SP", "Assignment3") });
+  await run(e.brain, "open the assignment folder");
+  assert.strictEqual(e.seen.started[0].exe, PROGRAMS.explorer);
+  const bad = setup(['CALL {"tool":"open_on_pc","linked":"Systems Programming","file":"../../pc-roots.json"}\nOpened.', 'CALL {"tool":"open_on_pc","linked":"Systems Programming","file":"build.bat"}\nOpened.', "Could not open it."]);
+  bad.seen.saved.push({ key: "c1", assignments: [], position: {}, projectDir: path.join(bad.d.root, "SP", "Assignment3") });
+  await run(bad.brain, "open it");
+  assert.strictEqual(bad.seen.started.length, 0);
+  assert.match(lastPrompt(bad.seen), /FAILED, nothing was done: Bot does not open "\.bat"/);
+});
+
+test("a course with no linked folder: a plain reason, nothing opens", async () => {
+  const s = setup(['CALL {"tool":"open_on_pc","linked":"Calculus 2","vscode":true}', "Calculus 2 has no linked folder yet."]);
+  await run(s.brain, "open the calculus folder in vs code");
+  assert.strictEqual(s.seen.started.length, 0);
+  assert.match(lastPrompt(s.seen), /Calculus 2 has no linked folder yet/);
+});

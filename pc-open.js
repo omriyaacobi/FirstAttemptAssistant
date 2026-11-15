@@ -105,9 +105,12 @@ function createOpener({ spawn = realSpawn, programs = null, tempRoot = path.join
     return { how: "the default browser (Chrome was not found)", target: href };
   }
 
-  function openLocal(target) {
+  // editor: a FOLDER opens in VS Code instead of Explorer (Omri, 2026-11-15: "open the folder on VS code"). VS Code opening a folder
+  // runs nothing by itself (its Workspace Trust asks before any task); the folder is still passed as ONE argument, no shell.
+  function openLocal(target, { editor = false } = {}) {
     const c = checkLocal(target);
     const p = prog();
+    if (c.kind === "folder" && editor && p.code) { start(p.code, c.real); return { how: "VS Code", target: c.real, kind: c.kind }; }
     if (c.kind === "folder") { start(p.explorer, c.real); return { how: "Explorer", target: c.real, kind: c.kind }; }
     if (c.kind === "default") { start(p.explorer, c.real); return { how: "its normal app", target: c.real, kind: c.kind }; }
     if (c.kind === "page" && p.chrome) { start(p.chrome, c.real); return { how: "Chrome", target: c.real, kind: c.kind }; }
