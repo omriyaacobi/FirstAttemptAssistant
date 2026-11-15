@@ -245,17 +245,18 @@ function paceOrder(chain, rows, { now = Date.now(), margin = PACE_MARGIN, lead =
   return { chain: out, lead: first.model, note };
 }
 
-// ---- Claude first (Omri, 2026-11-13) ----
-// Claude Code (the Pro plan) is normally the brain's LAST resort. But its 5-hour window refills every 5 hours and is wasted when
-// unused, while Argon's weekly quota is scarce. So Claude Code answers FIRST when ALL of these hold (all read from real rows):
-//   - the Claude plan's 5-hour window has more than 60% left (a window whose reset time has passed is full again),
-//   - Argon's WEEKLY quota has less than 50% left,
-//   - the Claude plan's weekly quota is on pace or ahead (paceOf >= 0; the Sonnet weekly too, when Claude reports one),
-//     so Bot can never eat the week that Omri's own coding needs.
+// ---- Claude first, by pace (Omri, 2026-11-15; replaces the 2026-11-13 rule "5-hour above 60%, Argon under 50%") ----
+// Claude Code (the Pro plan, which Omri's own Claude Code work shares) is normally the brain's LAST resort. It answers FIRST when
+// ALL of these hold (all read from real rows):
+//   - the Claude plan's WEEK is at least PACE_MARGIN points ahead of its pace (paceOf: quota left minus week left; the Sonnet
+//     weekly too, when Claude reports one), so Bot never pushes the week below its fair line: the rest stays for Omri's coding,
+//   - Claude's pace is at least PACE_MARGIN points better than the best pace of the agy pools in the chain (Argon, agy's Claude
+//     pool): when Argon falls behind its own pace, Claude takes over until Argon catches up,
+//   - the 5-hour window has more than half left (a window whose reset time has passed is full again), so a working session
+//     is never starved for the next hours.
 // Anything unknown means no: the normal order stays. Pure. Returns { chain, note }.
-const CLAUDE_FIRST_FIVE_HOUR = 60;
-const CLAUDE_FIRST_ARGON_BELOW = 50;
-function claudeFirst(chain, rows, { now = Date.now(), fiveHourAbove = CLAUDE_FIRST_FIVE_HOUR, argonBelow = CLAUDE_FIRST_ARGON_BELOW, argonPool = "Gemini 4 Argon" } = {}) {
+const CLAUDE_FIRST_FIVE_HOUR = 50;
+function claudeFirst(chain, rows, { now = Date.now(), fiveHourAbove = CLAUDE_FIRST_FIVE_HOUR, margin = PACE_MARGIN } = {}) {
   const same = { chain: chain.slice(), note: "" };
   const at = chain.findIndex((m) => m && m.provider === "claude");
   if (at <= 0) return same; // no Claude Code in this chain, or it is already first
@@ -263,15 +264,19 @@ function claudeFirst(chain, rows, { now = Date.now(), fiveHourAbove = CLAUDE_FIR
   const five = known.find((r) => r.pool === CLAUDE_PLAN && /five hour/i.test(String(r.window)));
   if (!five) return same;
   const fiveLeft = Date.parse(five.resets) > now ? five.remaining : 100;
-  const argon = known.find((r) => r.pool === argonPool && /week/i.test(String(r.window)) && Date.parse(r.resets) > now);
   const weekPace = paceOf(rows, CLAUDE_PLAN, now);
   const hasSonnetWeek = known.some((r) => r.pool === CLAUDE_SONNET_WEEK);
-  const sonnetPace = hasSonnetWeek ? paceOf(rows, CLAUDE_SONNET_WEEK, now) : 0;
-  if (!(fiveLeft > fiveHourAbove) || !argon || !(argon.remaining < argonBelow) || weekPace === null || weekPace < 0 || sonnetPace === null || sonnetPace < 0) return same;
+  const sonnetPace = hasSonnetWeek ? paceOf(rows, CLAUDE_SONNET_WEEK, now) : weekPace;
+  const agyPaces = [...new Set(chain.filter((m) => m && m.provider === "agy").flatMap((m) => poolsOf(m)))].map((p) => ({ pool: p, pace: paceOf(rows, p, now) })).filter((p) => p.pace !== null);
+  if (!agyPaces.length || weekPace === null || sonnetPace === null || !(fiveLeft > fiveHourAbove)) return same;
+  const claudePace = Math.min(weekPace, sonnetPace);
+  const best = agyPaces.reduce((a, b) => (b.pace > a.pace ? b : a));
+  if (claudePace < margin || claudePace - best.pace < margin) return same;
   const out = chain.slice();
   const [claude] = out.splice(at, 1);
   out.unshift(claude);
-  return { chain: out, note: `Claude first: its 5-hour window has ${fiveLeft}% left and its week is on pace, while Argon's week has ${argon.remaining}% left` };
+  const sign = (n) => (n > 0 ? `+${n}` : String(n));
+  return { chain: out, note: `pacing the week: Claude Code's week is ${sign(claudePace)} against its pace, ${best.pool} only ${sign(best.pace)}` };
 }
 
 // "Gemini 4 Argon 4% left, Claude plan 0% left"

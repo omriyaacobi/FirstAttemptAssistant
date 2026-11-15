@@ -932,8 +932,8 @@ ${r.cardText}`; }
     const paced = paceOrder(chain, rows, { now: now(), lead: paceLead });
     if (!image) paceLead = paced.lead;
     const normal = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
-    // CLAUDE FIRST (quota.js claudeFirst): when the Claude plan's 5-hour window is above 60%, Argon's week under 50% and Claude's week on
-    // pace, Claude Code answers first. Never with a photo (only agy can see it).
+    // CLAUDE FIRST (quota.js claudeFirst, 2026-11-15): when the Claude plan's week is 10+ points ahead of its pace AND 10+ points ahead of
+    // the agy pools' pace, with more than half of its 5-hour window left, Claude Code answers first. Never with a photo (only agy can see it).
     const early = image ? { chain: normal, note: "" } : claudeFirst(normal, rows, { now: now() });
     const order = early.chain;
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
