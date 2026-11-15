@@ -1,0 +1,338 @@
+{
+  "m-alt-trap:A": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-alt-trap:B": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-alt-trap:C": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-alt-trap:D": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-pseries-log:A": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-pseries-log:B": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-pseries-log:C": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-pseries-log:D": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-symmetry:A": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-symmetry:B": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-symmetry:C": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-symmetry:D": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-hard-integral:A": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-hard-integral:B": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-hard-integral:C": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-hard-integral:D": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-proof-root:A": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-proof-root:B": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "m-proof-root:C": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-proof-root:D": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "m-proof-root:E": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-proof-root:F": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "m-proof-root:G": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  },
+  "m-proof-root:H": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-la-param:A": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-la-param:B": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "m-la-param:C": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-la-param:D": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-la-param:E": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "m-la-param:F": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  },
+  "m-la-param:G": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "m-la-param:H": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-lhopital-trap:A": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-lhopital-trap:B": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-lhopital-trap:C": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "m-lhopital-trap:D": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-interval:A": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "m-interval:B": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "m-interval:C": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "m-interval:D": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "cpp-slicing:A": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "cpp-slicing:B": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "cpp-slicing:C": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "cpp-slicing:D": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "cpp-ub:A": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "cpp-ub:B": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "cpp-ub:C": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "cpp-ub:D": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "cpp-ub:E": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "cpp-ub:F": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "cpp-ub:G": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  },
+  "cpp-ub:H": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "java-wait-deadlock:A": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "java-wait-deadlock:B": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "java-wait-deadlock:C": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "java-wait-deadlock:D": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "java-wait-deadlock:E": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "java-wait-deadlock:F": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "java-wait-deadlock:G": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  },
+  "java-wait-deadlock:H": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "algo-minmax:A": {
+    "model": "gemini-4-argon-low",
+    "rep": 1
+  },
+  "algo-minmax:B": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "algo-minmax:C": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "algo-minmax:D": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "hint-1:1": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "hint-1:2": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "hint-1:3": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "hint-1:4": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "hint-1:5": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  },
+  "hint-1:6": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "hint-1:7": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "hint-2:1": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "hint-2:2": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  },
+  "hint-2:3": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "hint-2:4": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "hint-2:5": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "hint-2:6": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "hint-3:1": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 1
+  },
+  "hint-3:2": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 1
+  },
+  "hint-3:3": {
+    "model": "gemini-4-argon-medium",
+    "rep": 1
+  },
+  "hint-3:4": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 3
+  },
+  "hint-3:5": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 2
+  },
+  "hint-3:6": {
+    "model": "gemini-4-hydrogen-medium",
+    "rep": 3
+  },
+  "hint-3:7": {
+    "model": "gemini-4-hydrogen-high",
+    "rep": 2
+  }
+}
