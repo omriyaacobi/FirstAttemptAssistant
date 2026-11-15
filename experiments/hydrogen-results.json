@@ -1,0 +1,455 @@
+{
+  "date": "2026-11-15T11:13:14.590Z",
+  "usage": {
+    "before": [
+      "Gemini Models / Weekly: 99%",
+      "Gemini Models / Five Hour: 100%",
+      "Claude and GPT models / Weekly: 7%",
+      "Claude and GPT models / Five Hour: 100%",
+      "Gemini 4 Argon / Gemini 4 Argon Weekly: 62%"
+    ],
+    "after gemini-4-hydrogen-low": [
+      "Gemini Models / Weekly: 99%",
+      "Gemini Models / Five Hour: 99%",
+      "Claude and GPT models / Weekly: 7%",
+      "Claude and GPT models / Five Hour: 100%",
+      "Gemini 4 Argon / Gemini 4 Argon Weekly: 62%"
+    ],
+    "after gemini-4-hydrogen-medium": [
+      "Gemini Models / Weekly: 99%",
+      "Gemini Models / Five Hour: 99%",
+      "Claude and GPT models / Weekly: 7%",
+      "Claude and GPT models / Five Hour: 100%",
+      "Gemini 4 Argon / Gemini 4 Argon Weekly: 62%"
+    ],
+    "after gemini-4-argon-low": [
+      "Gemini Models / Weekly: 99%",
+      "Gemini Models / Five Hour: 99%",
+      "Claude and GPT models / Weekly: 7%",
+      "Claude and GPT models / Five Hour: 100%",
+      "Gemini 4 Argon / Gemini 4 Argon Weekly: 61%"
+    ],
+    "after gemini-3.8-flash-medium": [
+      "Gemini Models / Weekly: 98%",
+      "Gemini Models / Five Hour: 99%",
+      "Claude and GPT models / Weekly: 7%",
+      "Claude and GPT models / Five Hour: 100%",
+      "Gemini 4 Argon / Gemini 4 Argon Weekly: 61%"
+    ]
+  },
+  "runs": [
+    {
+      "model": "gemini-4-hydrogen-low",
+      "test": "chat",
+      "seconds": 8.4,
+      "usage": {
+        "input": 7721,
+        "output": 408,
+        "thinking": 334,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "Put **2 hours into the C++ assignment** first—it's due Tuesday, so getting it done (or to a clean stopping point) takes the pressure off.\n\nUse the last **1 hour for Calculus** to review the main quiz topics and note anything you're shaky on, since you still have until Thursday to drill it."
+    },
+    {
+      "model": "gemini-4-hydrogen-low",
+      "test": "calculus",
+      "seconds": 8.9,
+      "usage": {
+        "input": 7732,
+        "output": 515,
+        "thinking": 290,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "**1. $\\int_0^{\\pi/2} x \\sin(x)\\,dx$**\n\nUse integration by parts with $u = x$ ($du = dx$) and $dv = \\sin(x)\\,dx$ ($v = -\\cos(x)$):\n$$\\left[-x\\cos(x)\\right]_0^{\\pi/2} + \\int_0^{\\pi/2} \\cos(x)\\,dx = (0 - 0) + \\left[\\sin(x)\\right]_0^{\\pi/2} = 1$$\n\n**2. $\\lim_{x \\to 0} \\frac{1 - \\cos x}{x^2}$**\n\nIt's a $\\frac{0}{0}$ form, so apply L'Hôpital's rule:\n$$\\lim_{x \\to 0} \\frac{\\sin x}{2x} = \\frac{1}{2} \\lim_{x \\to 0} \\frac{\\sin x}{x} = \\frac{1}{2}$$"
+    },
+    {
+      "model": "gemini-4-hydrogen-low",
+      "test": "cpp",
+      "seconds": 7.5,
+      "usage": {
+        "input": 7730,
+        "output": 590,
+        "thinking": 265,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "When you call a `virtual` function through a `Base*` pointer, C++ uses **dynamic dispatch** via the **vtable**:\n\n1. **The vtable & vptr:** Every class with at least one `virtual` function gets a static **vtable** (an array of function pointers for its virtual functions). Every object of that class has a hidden pointer (**vptr**) pointing to its class's vtable.\n2. **The call:** When you do `ptr->foo()`, the program follows `ptr`'s `vptr` to the *actual* object's vtable at runtime and calls the function stored there.\n\n```cpp\nstruct Base {\n    virtual void speak() { cout << \"Base\\n\"; }\n};\nstruct Derived : Base {\n    void speak() override { cout << \"Derived\\n\"; }\n};\n\nBase* p = new Derived();\np->speak(); // follows p's vptr -> Derived's vtable -> prints \"Derived\"\n```\n\n**If `~Base()` is NOT `virtual`:**\n`delete p;` uses static dispatch (based on the pointer type `Base*`), so it only runs `~Base()` and **skips `~Derived()`**. Any resources `Derived` allocated (memory, files, etc.) will leak, and technically it's undefined behavior.\n\nQuick check: if `Derived` overrides `speak()`, what happens if you forget `virtual` on `Base::speak()` and call `p->speak()`?"
+    },
+    {
+      "model": "gemini-4-hydrogen-low",
+      "test": "tool",
+      "seconds": 7.4,
+      "usage": {
+        "input": 7702,
+        "output": 182,
+        "thinking": 116,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "set_reminder"
+        ],
+        "validCall": true
+      },
+      "text": "CALL {\"tool\":\"set_reminder\",\"text\":\"send the linear algebra homework\",\"when\":\"2026-11-16T09:00\"}\nReminder set for tomorrow (Monday, Nov 16) at 09:00: send the linear algebra homework."
+    },
+    {
+      "model": "gemini-4-hydrogen-low",
+      "test": "hebrew",
+      "seconds": 13.6,
+      "usage": {
+        "input": 7717,
+        "output": 850,
+        "thinking": 495,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [],
+        "hebrew": true
+      },
+      "text": "ההבדל המרכזי הוא איך הם יושבים בזיכרון:\n\n- **Array (מערך):** יושב בבלוק רציף בזיכרון. בגלל זה יש גישה ישירה לכל איבר לפי index ב-$O(1)$, והוא גם מהיר יותר בסריקה (ידידותי ל-cache). החיסרון: הגודל קבוע (או שצריך להקצות מחדש ולהעתיק), והכנסה או מחיקה באמצע/בהתחלה דורשת להזיז איברים — $O(n)$.\n- **Linked List (רשימה מקושרת):** כל node יושב במקום אחר בזיכרון ומחזיק pointer לאיבר הבא. הגודל דינמי, והכנסה/מחיקה (כשכבר יש לך מצביע למקום) לוקחת $O(1)$. החיסרון: כדי להגיע לאיבר ה-$i$ חייבים לטייל מההתחלה ב-$O(n)$, ויש עוד קצת זיכרון שהולך על המצביעים.\n\n**מתי עדיף כל אחד?**\n- **Array:** כשצריך הרבה גישה לפי index, או כשקוראים את המידע ברצף והגודל יחסית ידוע.\n- **Linked List:** כשיש הרבה הכנסות ומחיקות בהתחלה או באמצע, והגודל משתנה כל הזמן.\n\nאיזה מהם היית בוחר כדי לממש **Queue** (מוסיפים לסוף ומוציאים מההתחלה), ולמה?"
+    },
+    {
+      "model": "gemini-4-hydrogen-low",
+      "test": "photo",
+      "seconds": 13.6,
+      "usage": {
+        "input": 18908,
+        "output": 865,
+        "thinking": 588,
+        "cacheRead": 13517,
+        "turns": 2,
+        "inner": [
+          "read_file"
+        ]
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "add_events",
+          "add_events"
+        ],
+        "validCall": true,
+        "callText": "{\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"weekday\":\"Wednesday\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"}],\"repeat\":\"weekly\",\"until\":\"2027-01-31\"}"
+      },
+      "text": "CALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"weekday\":\"Wednesday\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"}],\"repeat\":\"weekly\",\"until\":\"2027-01-31\"}\nCALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"start\":\"09:00\",\"end\":\"10:00\",\"location\":\"\"}],\"repeat\":\"none\"}\n\nPrepared both calendar cards for your tap:\n- **Data Structures lecture** — Wednesdays 14:00–16:00, Building 90, hall 123 (weekly until 2027-01-31).\n- **Data Structures Quiz 2 (trees, heaps)** — Dec 3, 2026 (set 09:00–10:00 as a placeholder since no time was listed)."
+    },
+    {
+      "model": "gemini-4-hydrogen-medium",
+      "test": "calculus",
+      "seconds": 8.3,
+      "usage": {
+        "input": 7730,
+        "output": 776,
+        "thinking": 490,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "**1. $\\int_0^{\\pi/2} x \\sin(x)\\,dx$**\n\nUse integration by parts with $u = x$ ($du = dx$) and $dv = \\sin(x)\\,dx$ ($v = -\\cos(x)$):\n$$\\int_0^{\\pi/2} x \\sin(x)\\,dx = \\Big[-x\\cos(x)\\Big]_0^{\\pi/2} + \\int_0^{\\pi/2} \\cos(x)\\,dx = \\Big[-x\\cos(x) + \\sin(x)\\Big]_0^{\\pi/2}$$\nEvaluating at the bounds:\n$$(0 + 1) - (0 + 0) = \\mathbf{1}$$\n\n---\n\n**2. $\\lim_{x \\to 0} \\frac{1 - \\cos x}{x^2}$**\n\nIt is an indeterminate form $\\frac{0}{0}$, so apply L'Hôpital's rule twice:\n$$\\lim_{x \\to 0} \\frac{1 - \\cos x}{x^2} = \\lim_{x \\to 0} \\frac{\\sin x}{2x} = \\lim_{x \\to 0} \\frac{\\cos x}{2} = \\mathbf{\\frac{1}{2}}$$"
+    },
+    {
+      "model": "gemini-4-hydrogen-medium",
+      "test": "tool",
+      "seconds": 7.5,
+      "usage": {
+        "input": 7701,
+        "output": 362,
+        "thinking": 301,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "set_reminder"
+        ],
+        "validCall": true
+      },
+      "text": "CALL {\"tool\":\"set_reminder\",\"text\":\"Send the Linear Algebra homework\",\"when\":\"2026-11-16T09:00\"}\nReminder set for tomorrow (Monday) at 09:00 to send the Linear Algebra homework."
+    },
+    {
+      "model": "gemini-4-hydrogen-medium",
+      "test": "hebrew",
+      "seconds": 11.4,
+      "usage": {
+        "input": 7713,
+        "output": 1118,
+        "thinking": 685,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [],
+        "hebrew": true
+      },
+      "text": "ההבדל המרכזי הוא איך הם יושבים בזיכרון:\n\n* **Array:** תאים צמודים אחד לשני בזיכרון. בזכות זה אפשר לקפוץ ישירות לאיבר ה-`i` (`arr[i]`) ב-`O(1)`, וגם מעבר רציף על האיברים מהיר מאוד (בגלל ה-cache). מצד שני, הכנסה או מחיקה באמצע/בהתחלה דורשת להזיז את שאר האיברים (`O(n)`), והגדלה של ה-array דורשת הקצאה חדשה והעתקה.\n* **Linked list:** כל `node` יכול לשבת במקום אחר בזיכרון, והוא מחזיק `pointer` לאיבר הבא. אין קפיצה ישירה לאינדקס — צריך לטייל מההתחלה (`O(n)`). אבל אם כבר יש לך `pointer` למיקום מסוים, הכנסה או מחיקה שם היא `O(1)` (רק משנים כמה מצביעים), והגודל דינמי בלי להעתיק הכל מחדש.\n\n**מתי עדיף מה?**\n* **Array:** כשצריך גישה מהירה לפי אינדקס, כשיודעים בערך את הגודל מראש, או כשעיקר העבודה היא קריאה ומעבר על הנתונים.\n* **Linked list:** כשמכניסים ומוחקים הרבה בהתחלה או באמצע (כשכבר מחזיקים `pointer` למיקום), או כשהגודל משתנה כל הזמן.\n\nלבדיקה קצרה: נניח שאתה מממש מערכת של `undo` שבה רק מוסיפים פעולה לסוף ומוחקים מהסוף (בלי לגשת לאמצע), אבל לא יודעים מראש כמה פעולות יהיו — איזה מבנה היית בוחר, או שאפשר להסתדר עם שניהם?"
+    },
+    {
+      "model": "gemini-4-argon-low",
+      "test": "chat",
+      "seconds": 9.7,
+      "usage": {
+        "input": 7200,
+        "output": 129,
+        "thinking": 0,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "Put **2 hours into the C++ assignment** first and **1 hour into the Calculus quiz** after. \n\n- **C++ first (2 hours):** It's due Tuesday (two days earlier), and coding bugs or edge cases are unpredictable—you don't want to discover a blocker tomorrow night. Do it while your mind is freshest.\n- **Calculus second (1 hour):** You still have Tuesday and Wednesday to practice, and starting tonight with a focused hour of reviewing topics or doing a few practice problems lets your brain consolidate the material earlier.\n\nHow much is left on the C++ assignment?"
+    },
+    {
+      "model": "gemini-4-argon-low",
+      "test": "calculus",
+      "seconds": 10.7,
+      "usage": {
+        "input": 7209,
+        "output": 379,
+        "thinking": 0,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "**1. $\\int_0^{\\pi/2} x \\sin(x) \\, dx$**\n\nUse integration by parts ($\\int u \\, dv = uv - \\int v \\, du$):\n- Let $u = x \\implies du = dx$\n- Let $dv = \\sin(x) \\, dx \\implies v = -\\cos(x)$\n\n$$\\int_0^{\\pi/2} x \\sin(x) \\, dx = \\Big[-x \\cos(x)\\Big]_0^{\\pi/2} + \\int_0^{\\pi/2} \\cos(x) \\, dx$$\n$$= (0 - 0) + \\Big[\\sin(x)\\Big]_0^{\\pi/2} = 1 - 0 = \\mathbf{1}$$\n\n---\n\n**2. $\\lim_{x \\to 0} \\frac{1 - \\cos(x)}{x^2}$**\n\nThis is a $\\frac{0}{0}$ indeterminate form. Using L'Hôpital's rule twice (or the Taylor expansion $\\cos(x) = 1 - \\frac{x^2}{2} + O(x^4)$):\n\n$$\\lim_{x \\to 0} \\frac{1 - \\cos(x)}{x^2} \\stackrel{\\text{L'H}}{=} \\lim_{x \\to 0} \\frac{\\sin(x)}{2x} \\stackrel{\\text{L'H}}{=} \\lim_{x \\to 0} \\frac{\\cos(x)}{2} = \\mathbf{\\frac{1}{2}}$$\n\nAre you practicing these for Thursday's Calculus quiz, or is there a trickier integral/limit from the practice sheet you want to try next?"
+    },
+    {
+      "model": "gemini-4-argon-low",
+      "test": "cpp",
+      "seconds": 12.3,
+      "usage": {
+        "input": 7207,
+        "output": 400,
+        "thinking": 0,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "When you call a `virtual` function through a `Base*` pointer, C++ resolves the call at **runtime** (dynamic dispatch) based on the actual object type in memory, not the pointer's type.\n\n**How the vtable works:**\n- Any class with virtual functions gets a hidden static table of function pointers called a **vtable** (one per class).\n- Every object of that class contains a hidden pointer (`vptr`) pointing to its class's vtable, set by the constructor.\n- When you call `ptr->speak()`, the program follows `ptr->vptr` to the vtable, looks up the slot for `speak()`, and jumps to that function (`Derived::speak()`).\n\n```cpp\nstruct Base {\n    virtual void speak() { cout << \"Base\\n\"; }\n    virtual ~Base() {} \n};\nstruct Derived : Base {\n    int* data = new int[100];\n    void speak() override { cout << \"Derived\\n\"; }\n    ~Derived() override { delete[] data; }\n};\n\nBase* p = new Derived();\np->speak(); // Follows p's vptr -> Derived's vtable -> calls Derived::speak()\ndelete p;   // Calls ~Derived(), then ~Base()\n```\n\n**What goes wrong without a virtual destructor:**\nIf `~Base()` is **not** virtual, `delete p;` uses static dispatch based on the pointer type (`Base*`). Formally, deleting a derived object through a base pointer without a virtual destructor is **undefined behavior**—in practice, only `~Base()` runs and `~Derived()` is skipped, leaking `Derived`'s resources (like `data` above).\n\nQuick check: if you remove `virtual` from `speak()` in `Base` above, what will `p->speak()` print?"
+    },
+    {
+      "model": "gemini-4-argon-low",
+      "test": "tool",
+      "seconds": 10.2,
+      "usage": {
+        "input": 7174,
+        "output": 62,
+        "thinking": 0,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "set_reminder"
+        ],
+        "validCall": true
+      },
+      "text": "CALL {\"tool\":\"set_reminder\",\"text\":\"Send the Linear Algebra homework\",\"when\":\"2026-11-16T09:00\"}\nI've set a reminder for tomorrow at 9:00 AM to send your Linear Algebra homework."
+    },
+    {
+      "model": "gemini-4-argon-low",
+      "test": "hebrew",
+      "seconds": 13.5,
+      "usage": {
+        "input": 7194,
+        "output": 449,
+        "thinking": 0,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [],
+        "hebrew": true
+      },
+      "text": "ההבדל המרכזי הוא איך הם יושבים בזיכרון:\n\n* **Array (מערך):** כל האיברים יושבים ברצף אחד בזיכרון.\n  * **יתרון:** גישה ישירה ומהירה לכל איבר לפי אינדקס (`arr[i]`) ב-$O(1)$.\n  * **חיסרון:** הגודל קבוע מראש (או דורש הקצאה מחדש והעתקה כשנגמר המקום), והכנסה/מחיקה באמצע דורשת להזיז את כל האיברים שאחרי ב-$O(n)$.\n\n* **Linked List (רשימה מקושרת):** האיברים (Nodes) מפוזרים בזיכרון, וכל איבר מחזיק מצביע (`next`) לאיבר הבא.\n  * **יתרון:** גדלה וקטנה דינמית בקלות, והכנסה או מחיקה (אם אתה כבר מצביע למקום הנכון) לוקחת $O(1)$ כי רק משנים מצביעים.\n  * **חיסרון:** אין גישה ישירה – כדי להגיע לאיבר ה-$i$ חייבים לטייל מהתחלה ב-$O(n)$, ויש תוספת זיכרון על המצביעים.\n\n**מתי עדיף כל אחד?**\n* עדיף **Array** כשאתה צריך לשלוף איברים לפי מיקום הרבה פעמים, או כשמספר האיברים ידוע יחסית מראש.\n* עדיף **Linked List** כשאתה לא יודע כמה איברים יהיו ורוב הפעולות שלך הן הוספה ומחיקה (במיוחד בהתחלה/סוף, כמו ב-Queue או Stack).\n\nכדי לראות שאנחנו על אותו גל: אם יש לך רשימה מקושרת ואתה רוצה למחוק את האיבר **הראשון** בה, כמה פעולות זה ייקח (במונחי $O$), לעומת מחיקת האיבר הראשון במערך?"
+    },
+    {
+      "model": "gemini-4-argon-low",
+      "test": "photo",
+      "seconds": 17.8,
+      "usage": {
+        "input": 18125,
+        "output": 248,
+        "thinking": 0,
+        "cacheRead": 12801,
+        "turns": 2,
+        "inner": [
+          "read_file"
+        ]
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "add_events"
+        ],
+        "validCall": true,
+        "callText": "{\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"09:00\",\"end\":\"10:00\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}"
+      },
+      "text": "CALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"09:00\",\"end\":\"10:00\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}\nI've prepared a calendar card for the moved Data Structures lecture this Wednesday (Nov 18, 14:00–16:00 in Building 90, hall 123) and Quiz 2 on Dec 3 (set for 09:00–10:00 since the photo didn't list a time)—tap Confirm to add them."
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "test": "chat",
+      "seconds": 18.9,
+      "usage": {
+        "input": 7222,
+        "output": 2001,
+        "thinking": 1941,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "Put **2 hours into the C++ assignment** and **1 hour into Calculus**.\n\nThe assignment is due Tuesday, so making serious progress or finishing it tonight takes off the immediate pressure. Use the remaining hour on Calculus to review key concepts early and spot anything you're shaky on before Thursday."
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "test": "calculus",
+      "seconds": 9.4,
+      "usage": {
+        "input": 7236,
+        "output": 818,
+        "thinking": 428,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "**1. Integral: $\\int_0^{\\pi/2} x \\sin x \\, dx$**\n\nUse integration by parts:\n* Let $u = x \\implies du = dx$\n* Let $dv = \\sin x \\, dx \\implies v = -\\cos x$\n\n$$\\int x \\sin x \\, dx = -x \\cos x - \\int (-\\cos x) \\, dx = -x \\cos x + \\sin x$$\n\nEvaluate from $0$ to $\\pi/2$:\n$$\\left[ -x \\cos x + \\sin x \\right]_0^{\\pi/2} = \\left(-\\frac{\\pi}{2} \\cos\\frac{\\pi}{2} + \\sin\\frac{\\pi}{2}\\right) - (-0 \\cdot \\cos 0 + \\sin 0) = (0 + 1) - 0 = \\mathbf{1}$$\n\n---\n\n**2. Limit: $\\lim_{x \\to 0} \\frac{1 - \\cos x}{x^2}$**\n\nThis is an indeterminate form of type $\\frac{0}{0}$. Applying L'Hôpital's rule:\n\n$$\\lim_{x \\to 0} \\frac{(1 - \\cos x)'}{(x^2)'} = \\lim_{x \\to 0} \\frac{\\sin x}{2x} = \\frac{1}{2} \\lim_{x \\to 0} \\frac{\\sin x}{x} = \\frac{1}{2} \\cdot 1 = \\mathbf{\\frac{1}{2}}$$\n\n*(Alternatively, using the Taylor expansion $\\cos x \\approx 1 - \\frac{x^2}{2}$: $\\frac{1 - (1 - x^2/2)}{x^2} = \\frac{1}{2}$.)*"
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "test": "cpp",
+      "seconds": 11.7,
+      "usage": {
+        "input": 7231,
+        "output": 731,
+        "thinking": 440,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": []
+      },
+      "text": "Here is what happens behind the scenes:\n\n### 1. Virtual function call & the vtable\n- **vtable**: For every class with at least one virtual function, the compiler generates a static table of function pointers pointing to the class's implementations.\n- **vptr**: Each instance of that class contains a hidden pointer (usually at offset 0) pointing to its class's vtable.\n- **Dynamic dispatch**: When you call `basePtr->foo()`:\n  1. It follows `basePtr` to the object.\n  2. It reads the hidden `vptr`.\n  3. It indexes into the vtable at the fixed offset for `foo`.\n  4. It calls whatever function pointer is sitting there (the derived override).\n\n### 2. Non-virtual base destructor\nIf you do:\n```cpp\nBase* ptr = new Derived();\ndelete ptr;\n```\nWhen `~Base()` is **not** virtual, the compiler binds the destructor call statically based on the pointer type (`Base*`). \n\nOnly `~Base()` executes; `~Derived()` is skipped completely. This causes **undefined behavior**—in practice, any resources managed by `Derived` (dynamically allocated memory, open file handles) leak.\n\n---\n\nQuick check: does the size of an object grow every time you add another virtual function to the class?"
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "test": "tool",
+      "seconds": 7.2,
+      "usage": {
+        "input": 7202,
+        "output": 519,
+        "thinking": 462,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "set_reminder"
+        ],
+        "validCall": true
+      },
+      "text": "CALL {\"tool\":\"set_reminder\",\"text\":\"Send Linear Algebra homework\",\"when\":\"2026-11-16T09:00\"}\nI've set a reminder for tomorrow at 09:00 to send your Linear Algebra homework."
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "test": "hebrew",
+      "seconds": 12.5,
+      "usage": {
+        "input": 7218,
+        "output": 1156,
+        "thinking": 740,
+        "cacheRead": 0,
+        "turns": 1,
+        "inner": []
+      },
+      "checks": {
+        "leak": false,
+        "calls": [],
+        "hebrew": true
+      },
+      "text": "ההבדל העיקרי הוא איך הם יושבים בזיכרון:\n\n* **מערך (Array):** יושב ברצף רציף בזיכרון (contiguous). \n  * **יתרון:** גישה ישירה לפי אינדקס ב-$O(1)$ (וגם Cache locality מעולה).\n  * **חיסרון:** הגודל קבוע מראש (או דורש reallocation יקר), והוספה/מחיקה באמצע דורשת הזזת איברים ($O(n)$).\n* **רשימה מקושרת (Linked List):** כל איבר (צומת) יושב במקום נפרד בזיכרון ומחזיק מצביע (pointer) לאיבר הבא.\n  * **יתרון:** גודל דינמי לחלוטין, והוספה/מחיקה לוקחת $O(1)$ ברגע שיש לך מצביע למיקום הרצוי.\n  * **חיסרון:** אין random access – כדי להגיע לאיבר ה-$k$ חייבים לעבור על כולם ($O(n)$), ויש overhead של זיכרון על המצביעים.\n\n**מתי עדיף מה?**\n* **מערך:** כשעיקר השימוש הוא קריאה ושליפה לפי אינדקס, או כשהגודל ידוע מראש.\n* **רשימה מקושרת:** כשיש הרבה הוספות ומחיקות (במיוחד בהתחלה), או כשהגודל משתנה כל הזמן ולא רוצים לשלם על הקצאות מחדש של מערך.\n\nכדי לראות שאנחנו מתואמים – אם צריך לממש מחסנית (Stack) עם פעולות `push` ו-`pop`, איזה מהם היית בוחר ולמה?"
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "test": "photo",
+      "seconds": 66.8,
+      "usage": {
+        "input": 18477,
+        "output": 8975,
+        "thinking": 8728,
+        "cacheRead": 12882,
+        "turns": 2,
+        "inner": [
+          "read_file"
+        ]
+      },
+      "checks": {
+        "leak": false,
+        "calls": [
+          "add_events"
+        ],
+        "validCall": true,
+        "callText": "{\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"\",\"end\":\"\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}"
+      },
+      "text": "CALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"\",\"end\":\"\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}\nI've prepared a calendar card with the Data Structures lecture for this Wednesday (Nov 18, 14:00–16:00, Building 90 hall 123) and Quiz 2 on Dec 3 (no time was specified, so set for the day). It's waiting for your tap to confirm. If the lecture moved permanently for the rest of the semester, let me know the end date and I'll make it recurring."
+    }
+  ]
+}
