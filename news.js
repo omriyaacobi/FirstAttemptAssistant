@@ -43,7 +43,7 @@ const FEEDS = [
 const REGIONS = ["israel", "world", "tech"];
 const LIMITS = { israel: 2, world: 2, tech: 1 }; // Omri: the 2 biggest Israel stories (2026-11-14: always 2), world at most 2, tech only a very big event
 const LABEL = { israel: "Israel", world: "World", tech: "Tech" };
-const CHAIN = [MODELS.flashHigh, MODELS.flashMedium];
+const CHAIN = [MODELS.hydrogenHigh, MODELS.flashHigh]; // Hydrogen high since 2026-11-15 (the same Gemini Models pool as Flash; Omri)
 
 const CHECK_EVERY_MS = 3 * 3600 * 1000;
 const TICK_MS = 60 * 1000;

@@ -62,7 +62,8 @@ test("the block: Flash only, the ledger inside the prompt, and the code ledger w
   const asked = [];
   const ok = await aboutMeBlock({ log: log(YESTERDAY), tracker: tracker(PROGRESS), courseList: COURSES, today: TODAY, askChain: async (chain, prompt) => { asked.push({ chain, prompt }); return { answer: '{"lines":[{"text":"You finished a lesson yesterday","refs":[2]}]}', used: chain[0] }; } });
   assert.strictEqual(ok.text, "You\n  You finished a lesson yesterday");
-  assert.ok(asked[0].chain.every((m) => /flash/.test(m.model)) && CHAIN.length === 2);
+  assert.ok(asked[0].chain.every((m) => m.pool === "Gemini Models") && CHAIN.length === 2); // Hydrogen high, then Flash high: the Gemini Models pool only (2026-11-15)
+  assert.strictEqual(asked[0].chain[0].model, "gemini-4-hydrogen-high");
   assert.match(asked[0].prompt, /\[1\] \(done\) Made-up Calculus: Graded quiz/);
   const failed = await aboutMeBlock({ log: log([]), tracker: tracker(PROGRESS), courseList: COURSES, today: TODAY, askChain: async () => { throw new Error("quota"); } });
   assert.match(failed.text, /^You\n {2}Yesterday: nothing was recorded with Bot\.\n {2}To do: /);

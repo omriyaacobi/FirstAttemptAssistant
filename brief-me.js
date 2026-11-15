@@ -17,7 +17,7 @@ const plan = require("./study-plan");
 const { extractJson } = require("./calendar-add");
 const { MODELS } = require("./router");
 
-const CHAIN = [MODELS.flashHigh, MODELS.flashMedium];
+const CHAIN = [MODELS.hydrogenHigh, MODELS.flashHigh]; // Hydrogen high since 2026-11-15 (the same Gemini Models pool as Flash; Omri)
 const MAX_LINES = 5;
 const MAX_LINE = 180;
 const DUE_DAYS = 7;

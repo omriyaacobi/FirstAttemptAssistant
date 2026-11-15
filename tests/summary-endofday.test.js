@@ -52,7 +52,7 @@ test("end of day: nothing before 23:45; at 23:45 today's review is made once wit
   s.clock.now = T(23, 46);
   const first = await s.summaries.endOfDay();
   assert.strictEqual(first.done.length, 1);
-  assert.deepStrictEqual(s.asked[0].chain, ["gemini-3.8-flash-high", "gemini-3.8-flash-medium"]);
+  assert.deepStrictEqual(s.asked[0].chain, ["gemini-4-hydrogen-high", "gemini-3.8-flash-high"]);
   assert.strictEqual(await s.summaries.endOfDay(), null, "not twice");
   s.summaries.accept(first.facts[0].id); // Omri tapped Save on the fact card
   s.say("user", "one more made-up question before bed", T(23, 50));

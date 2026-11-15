@@ -34,7 +34,7 @@ const { dayOf } = require("./thread-store");
 
 // Flash high first since 2026-11-14 (Omri: the end-of-day review on Flash high). Every fact or task still carries a word-for-word
 // quote and a message id, which code checks (checkSummary), and facts and tasks are only ever cards Omri confirms. Never Claude.
-const SUMMARY_CHAIN = [MODELS.flashHigh, MODELS.flashMedium];
+const SUMMARY_CHAIN = [MODELS.hydrogenHigh, MODELS.flashHigh]; // Hydrogen high since 2026-11-15 (the same Gemini Models pool as Flash; Omri)
 const END_OF_DAY = 23 * 60 + 45; // minutes after midnight, local time
 const TICK_MS = 60 * 1000;
 const MAX_DONE = 6;

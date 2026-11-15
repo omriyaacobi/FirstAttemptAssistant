@@ -48,7 +48,8 @@ test("the feeds are fixed https addresses with a region set by code, and only Fl
   assert.ok(FEEDS.length >= 6);
   for (const f of FEEDS) { assert.match(f.url, /^https:\/\//); assert.ok(["israel", "world", "tech"].includes(f.region)); }
   assert.deepStrictEqual(LIMITS, { israel: 2, world: 2, tech: 1 });
-  assert.ok(CHAIN.every((m) => m.provider === "agy" && /flash/.test(m.model)), "never Argon, never Claude");
+  assert.ok(CHAIN.every((m) => m.provider === "agy" && m.pool === "Gemini Models"), "never Argon, never Claude");
+  assert.deepStrictEqual(CHAIN.map((m) => m.model), ["gemini-4-hydrogen-high", "gemini-3.8-flash-high"]); // 2026-11-15
 });
 
 test("a feed is read by code: CDATA, entities and tags are cleaned, '<' and '>' can never pass, only https links are kept", () => {

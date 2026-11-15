@@ -134,7 +134,7 @@ test("splitText cuts a text file into pages", () => {
 // A fake reader: pretends the PDF has `total` pages and answers the page range asked in the prompt.
 const fakeReader = (total, { failFirstModel = false, calls = [] } = {}) => async (model, prompt) => {
   calls.push(model);
-  if (failFirstModel && model.includes("flash")) throw new Error("flash broke");
+  if (failFirstModel && model.includes("hydrogen")) throw new Error("the first reader broke");
   const [, from, to] = /pages (\d+) to (\d+)/.exec(prompt);
   let out = `TOTAL PAGES: ${total}\n`;
   for (let n = Number(from); n <= Math.min(Number(to), total); n++) out += `=== PAGE ${n} ===\nKEYWORDS: k${n}\ntext of page ${n}\n`;
@@ -159,7 +159,7 @@ test("ingest retries a chunk with the second model, and reports a failure in the
   const calls = [];
   const ok = await readWith(fakeReader(5, { failFirstModel: true, calls }));
   assert.strictEqual(ok.file.status, "ready");
-  assert.deepStrictEqual(calls, ["gemini-3.8-flash-medium", "gemini-4-argon-low"]);
+  assert.deepStrictEqual(calls, ["gemini-4-hydrogen-high", "gemini-3.8-flash-medium"]);
   const bad = await readWith(async () => { throw new Error("no quota"); });
   assert.strictEqual(bad.file.status, "failed");
   assert.match(bad.file.error, /no quota/);
@@ -376,12 +376,12 @@ test("ingest passes the time limit to the reader, and asks the same model again 
   };
   const { file } = await readWith(reader);
   assert.strictEqual(file.status, "ready");
-  assert.deepStrictEqual(seen.map((x) => x[0]), ["gemini-3.8-flash-medium", "gemini-3.8-flash-medium"]); // same model twice, no Argon needed
+  assert.deepStrictEqual(seen.map((x) => x[0]), ["gemini-4-hydrogen-high", "gemini-4-hydrogen-high"]); // same model twice, no other model needed
   assert.ok(seen.every((x) => x[1] >= 6 * 60 * 1000));
   const asked = [];
   const bad = await readWith(async (model) => { asked.push(model); return "I could not read that."; });
   assert.strictEqual(bad.file.status, "failed");
-  assert.deepStrictEqual(asked.slice(0, 2), ["gemini-3.8-flash-medium", "gemini-4-argon-low"]); // a wrong-shaped answer is not asked again with the same model
+  assert.deepStrictEqual(asked.slice(0, 3), ["gemini-4-hydrogen-high", "gemini-3.8-flash-medium", "gemini-4-argon-low"]); // a wrong-shaped answer is not asked again with the same model
 });
 test("a long read that stops half way keeps its pages; Continue reads only the rest, Start over reads everything", async () => {
   const courses = createCourses(tmp());
@@ -657,17 +657,17 @@ test("a PDF that cannot be cut is still read whole, as before", async () => {
 });
 
 test("a cut chunk goes to the most accurate reader first, then along the chain, and Claude is told which file to open", async () => {
-  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-argon-low", "sonnet", "gemini-3.8-flash-medium"]);
+  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-argon-low", "sonnet", "gemini-4-hydrogen-high"]);
   const { courses, course, file } = cutCourse(3);
   const asked = [];
   const reader = async (model, prompt, fp, options) => {
     asked.push([model, options.provider]);
     assert.match(prompt, /"material\.pdf"/);
-    if (model !== "gemini-3.8-flash-medium") throw new Error("out of quota");
+    if (model !== "gemini-4-hydrogen-high") throw new Error("out of quota");
     return "=== PAGE 1 ===\none\n=== PAGE 2 ===\ntwo\n=== PAGE 3 ===\nthree";
   };
   await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: reader });
-  assert.deepStrictEqual(asked, [["gemini-4-argon-low", "agy"], ["sonnet", "claude"], ["gemini-3.8-flash-medium", "agy"]]);
+  assert.deepStrictEqual(asked, [["gemini-4-argon-low", "agy"], ["sonnet", "claude"], ["gemini-4-hydrogen-high", "agy"]]);
   assert.strictEqual(courses.getFile(course.id, file.id).pages, 3);
 });
 

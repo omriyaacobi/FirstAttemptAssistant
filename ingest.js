@@ -26,8 +26,8 @@ const READERS_AT_ONCE = 3;
 const MIN_SPLIT = 5; // a chunk that fails is cut in halves down to this many pages
 const MAX_PAGES = 400; // a bigger PDF is read up to this page
 const TEXT_PAGE_CHARS = 2000; // a text file is cut into pieces about this long
-const READ_CHAIN = [MODELS.flashMedium, MODELS.argonLow]; // a whole file: Flash first; Argon only if Flash fails
-const CUT_CHAIN = [MODELS.argonLow, MODELS.claudeSonnet, MODELS.flashMedium]; // a cut file: the most accurate first
+const READ_CHAIN = [MODELS.hydrogenHigh, MODELS.flashMedium, MODELS.argonLow]; // a whole file: Hydrogen high first (2026-11-15, Flash's pool), Flash, Argon last
+const CUT_CHAIN = [MODELS.argonLow, MODELS.claudeSonnet, MODELS.hydrogenHigh]; // a cut file: the most accurate first
 
 // How long one agy call may take for a chunk: at least 6 minutes, more for many pages and for a big file (measured, see the top).
 function chunkTimeoutMs(pages, bytes) {
