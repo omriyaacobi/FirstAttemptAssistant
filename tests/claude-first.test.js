@@ -1,6 +1,6 @@
-// Claude first, by pace (quota.js claudeFirst, Omri 2026-11-15): Claude Code answers first only when its week is 10+ points ahead
-// of its pace AND 10+ points ahead of the agy pools' pace, with more than half of its 5-hour window left. Anything unknown keeps
-// the normal order. pace = quota left (%) minus week left (%).
+// Claude first, by pace (quota.js claudeFirst, Omri 2026-11-15): Claude Code answers first when its pace is 10+ points better than
+// the agy pools' pace (it may go below its own pace for this), its week has 20%+ left and its 5-hour window more than half.
+// Anything unknown keeps the normal order. pace = quota left (%) minus week left (%).
 const test = require("node:test");
 const assert = require("node:assert");
 const { claudeFirst } = require("../quota");
@@ -29,9 +29,11 @@ test("Claude's week ahead of its pace and of Argon's: Claude Code moves to the f
   assert.match(r.note, /Claude Code's week is \+20 against its pace, Gemini 4 Argon only -20/);
 });
 
-test("Claude only on pace (less than 10 points ahead) keeps the normal order: the week stays for Omri's coding", () => {
-  assert.deepStrictEqual(names(claudeFirst(CHAIN, rows({ week: 59 }), { now: NOW })), NORMAL);
-  assert.notStrictEqual(claudeFirst(CHAIN, rows({ week: 60 }), { now: NOW }).note, "");
+test("Claude may go below its own pace when Argon is further behind (Omri, 2026-11-15), but never under 20% of its week", () => {
+  assert.notStrictEqual(claudeFirst(CHAIN, rows({ week: 40, argon: 25 }), { now: NOW }).note, "", "Claude -10, Argon -25: Claude answers");
+  assert.notStrictEqual(claudeFirst(CHAIN, rows({ week: 20, argon: 5 }), { now: NOW }).note, "", "20% left is still allowed");
+  assert.deepStrictEqual(names(claudeFirst(CHAIN, rows({ week: 19, argon: 2 }), { now: NOW })), NORMAL, "under 20%: kept for improving Bot");
+  assert.strictEqual(claudeFirst(CHAIN, rows({ week: 60, sonnetWeek: 15, argon: 5 }), { now: NOW }).note, "", "the Sonnet week counts for the floor too");
 });
 
 test("Argon doing as well as Claude (less than 10 points behind it) keeps the normal order", () => {
@@ -45,19 +47,20 @@ test("the 5-hour window at half or less keeps the normal order; one whose reset 
   assert.notStrictEqual(claudeFirst(CHAIN, rows({ five: 10, fiveResets: at(-H) }), { now: NOW }).note, "");
 });
 
-test("a Sonnet weekly behind its pace keeps the normal order", () => {
-  assert.strictEqual(claudeFirst(CHAIN, rows({ sonnetWeek: 55 }), { now: NOW }).note, "");
-  assert.notStrictEqual(claudeFirst(CHAIN, rows({ sonnetWeek: 65 }), { now: NOW }).note, "");
+test("a Sonnet weekly counts as Claude's pace: the lower of the two must still be 10 points better than Argon's", () => {
+  assert.strictEqual(claudeFirst(CHAIN, rows({ sonnetWeek: 55, argon: 50 }), { now: NOW }).note, "", "Sonnet +5, Argon 0");
+  assert.notStrictEqual(claudeFirst(CHAIN, rows({ sonnetWeek: 55, argon: 40 }), { now: NOW }).note, "", "Sonnet +5, Argon -10");
 });
 
-test("today's real numbers (2026-11-15 morning): Claude 74% with 5.2 days left is on pace, so Argon keeps answering", () => {
-  const real = [
+test("real numbers of 2026-11-15: at Argon 75% both were on pace (Argon kept answering); at Argon 62% Claude takes over", () => {
+  const real = (argon) => [
     { pool: "Claude plan", window: "Five Hour Limit Remaining", remaining: 89, resets: at(2.4 * H) },
     { pool: "Claude plan", window: "Weekly Limit Remaining", remaining: 74, resets: at(5.2 * D) },
-    { pool: "Gemini 4 Argon", window: "Gemini 4 Argon Weekly Limit", remaining: 75, resets: at(5.6 * D) },
+    { pool: "Gemini 4 Argon", window: "Gemini 4 Argon Weekly Limit", remaining: argon, resets: at(5.6 * D) },
     { pool: "Claude and GPT models", window: "Claude and GPT models Weekly Limit", remaining: 7, resets: at(5 * D) },
   ];
-  assert.deepStrictEqual(names(claudeFirst(CHAIN, real, { now: NOW })), NORMAL);
+  assert.deepStrictEqual(names(claudeFirst(CHAIN, real(75), { now: NOW })), NORMAL);
+  assert.strictEqual(names(claudeFirst(CHAIN, real(62), { now: NOW }))[0], "sonnet");
 });
 
 test("unknown numbers keep the normal order; a chain without Claude Code is left alone", () => {

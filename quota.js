@@ -248,15 +248,17 @@ function paceOrder(chain, rows, { now = Date.now(), margin = PACE_MARGIN, lead =
 // ---- Claude first, by pace (Omri, 2026-11-15; replaces the 2026-11-13 rule "5-hour above 60%, Argon under 50%") ----
 // Claude Code (the Pro plan, which Omri's own Claude Code work shares) is normally the brain's LAST resort. It answers FIRST when
 // ALL of these hold (all read from real rows):
-//   - the Claude plan's WEEK is at least PACE_MARGIN points ahead of its pace (paceOf: quota left minus week left; the Sonnet
-//     weekly too, when Claude reports one), so Bot never pushes the week below its fair line: the rest stays for Omri's coding,
-//   - Claude's pace is at least PACE_MARGIN points better than the best pace of the agy pools in the chain (Argon, agy's Claude
-//     pool): when Argon falls behind its own pace, Claude takes over until Argon catches up,
+//   - Claude's pace (paceOf: quota left minus week left; the Sonnet weekly too, when Claude reports one) is at least PACE_MARGIN
+//     points better than the best pace of the agy pools in the chain (Argon, agy's Claude pool): when Argon falls behind its
+//     pace, Claude takes over until Argon catches up. Claude MAY go below its own pace for this (Omri, the same day: "allow the
+//     claude usage even if we exceed the course"; Argon was at 62% after less than 2 days),
+//   - the Claude week still has at least CLAUDE_FIRST_WEEK_FLOOR % left, so some is always kept for improving Bot,
 //   - the 5-hour window has more than half left (a window whose reset time has passed is full again), so a working session
 //     is never starved for the next hours.
 // Anything unknown means no: the normal order stays. Pure. Returns { chain, note }.
 const CLAUDE_FIRST_FIVE_HOUR = 50;
-function claudeFirst(chain, rows, { now = Date.now(), fiveHourAbove = CLAUDE_FIRST_FIVE_HOUR, margin = PACE_MARGIN } = {}) {
+const CLAUDE_FIRST_WEEK_FLOOR = 20;
+function claudeFirst(chain, rows, { now = Date.now(), fiveHourAbove = CLAUDE_FIRST_FIVE_HOUR, margin = PACE_MARGIN, weekFloor = CLAUDE_FIRST_WEEK_FLOOR } = {}) {
   const same = { chain: chain.slice(), note: "" };
   const at = chain.findIndex((m) => m && m.provider === "claude");
   if (at <= 0) return same; // no Claude Code in this chain, or it is already first
@@ -269,9 +271,11 @@ function claudeFirst(chain, rows, { now = Date.now(), fiveHourAbove = CLAUDE_FIR
   const sonnetPace = hasSonnetWeek ? paceOf(rows, CLAUDE_SONNET_WEEK, now) : weekPace;
   const agyPaces = [...new Set(chain.filter((m) => m && m.provider === "agy").flatMap((m) => poolsOf(m)))].map((p) => ({ pool: p, pace: paceOf(rows, p, now) })).filter((p) => p.pace !== null);
   if (!agyPaces.length || weekPace === null || sonnetPace === null || !(fiveLeft > fiveHourAbove)) return same;
+  const weekLeft = Math.min(...known.filter((r) => (r.pool === CLAUDE_PLAN || r.pool === CLAUDE_SONNET_WEEK) && /week/i.test(String(r.window)) && Date.parse(r.resets) > now).map((r) => r.remaining));
+  if (!(weekLeft >= weekFloor)) return same;
   const claudePace = Math.min(weekPace, sonnetPace);
   const best = agyPaces.reduce((a, b) => (b.pace > a.pace ? b : a));
-  if (claudePace < margin || claudePace - best.pace < margin) return same;
+  if (claudePace - best.pace < margin) return same;
   const out = chain.slice();
   const [claude] = out.splice(at, 1);
   out.unshift(claude);
