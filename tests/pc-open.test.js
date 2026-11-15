@@ -36,6 +36,20 @@ test("documents open in their normal app, code only in VS Code, folders in Explo
   }
 });
 
+test("a web page saved as a file (.html, like lecturenotes.docx.html) opens in Chrome as one argument; with no Chrome, in VS Code", () => {
+  const root = dir();
+  for (const n of ["lecturenotes.docx.html", "old.htm"]) fs.writeFileSync(path.join(root, n), "<p>made-up notes</p>");
+  const { started, opener } = fake();
+  assert.strictEqual(opener.openLocal(path.join(root, "lecturenotes.docx.html")).how, "Chrome");
+  assert.strictEqual(opener.openLocal(path.join(root, "old.htm")).how, "Chrome");
+  assert.deepStrictEqual(started.map((s) => s.exe), [PROGRAMS.chrome, PROGRAMS.chrome]);
+  for (const s of started) { assert.strictEqual(s.opts.shell, false); assert.strictEqual(s.args.length, 1); }
+  const copy = opener.openCopy(path.join(root, "old.htm"), "lecturenotes.docx.html"); // a course file is opened from a copy
+  assert.strictEqual(copy.how, "Chrome");
+  const noChrome = createOpener({ spawn: () => ({ on() {}, unref() {} }), programs: { ...PROGRAMS, chrome: null }, tempRoot: fs.mkdtempSync(path.join(os.tmpdir(), "bot-open-test-")) });
+  assert.strictEqual(noChrome.openLocal(path.join(root, "old.htm")).how, "VS Code");
+});
+
 test("programs, scripts, shortcuts, macro files and unknown types are refused, and nothing starts", () => {
   const root = dir();
   const { started, opener } = fake();

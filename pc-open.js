@@ -5,7 +5,8 @@
 // Opening must NEVER become running a program. The rules, all in code:
 //   - A closed list of types. Documents and pictures open in their normal app (OPEN_DEFAULT). Text and code files open ONLY in VS Code
 //     (or Notepad), never with Windows' default action, because the default action of .py, .js, .vbs, .ps1 ... can RUN them (OPEN_EDITOR).
-//     Everything else is refused: programs, scripts, shortcuts (.lnk, .url), installers, web pages saved on disk, and any type not listed.
+//     Web pages saved on disk (.html, .htm) open in CHROME (OPEN_BROWSER, since 2026-11-15).
+//     Everything else is refused: programs, scripts, shortcuts (.lnk, .url), installers, and any type not listed.
 //   - The type is judged on the file's REAL location (fs.realpathSync): a link or a shortcut-like trick called "notes.pdf" that really
 //     points to cmd.exe is caught. Only plain local paths "C:\..." are accepted: no network paths (\\server\...), no "x.pdf:stream".
 //   - Web pages: https only (linkfetch.checkUrl: no password in the address, no local or private hosts). Always in CHROME, where Omri is
@@ -27,8 +28,12 @@ const linkfetch = require("./linkfetch");
 // Documents and pictures: opened with Windows' normal app for the type (through explorer.exe). Macro files (docm, xlsm, pptm) are NOT here.
 const OPEN_DEFAULT = new Set(["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "ods", "odp", "rtf", "csv", "png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 // Text and code: opened ONLY in an editor (VS Code, else Notepad). Their Windows default could run them.
-const OPEN_EDITOR = new Set(["txt", "md", "log", "json", "yaml", "yml", "toml", "ini", "cfg", "xml", "c", "h", "cpp", "hpp", "cc", "cxx", "hh", "java", "kt", "py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "css", "html", "htm", "go", "rs", "rb", "php", "cs", "sql", "s", "asm", "sh", "makefile", "cmake", "gradle", "tex", "r", "m", "hs", "scala", "swift", "lua", "pl", "vue", "svelte"]);
-const NAMED_TEXT = new Set(["makefile", "dockerfile", "readme", "license", "cmakelists.txt"]);
+const OPEN_EDITOR = new Set(["txt", "md", "log", "json", "yaml", "yml", "toml", "ini", "cfg", "xml", "c", "h", "cpp", "hpp", "cc", "cxx", "hh", "java", "kt", "py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "css", "go", "rs", "rb", "php", "cs", "sql", "s", "asm", "sh", "makefile", "cmake", "gradle", "tex", "r", "m", "hs", "scala", "swift", "lua", "pl", "vue", "svelte"]);
+// Web pages saved as files (a Word document exported as .html, e.g. Meni's lecture notes): opened in CHROME so they read as a page
+// (Omri, 2026-11-15: "open it with docs or something readable not vs code"). Always Chrome by its own path, never Windows' default
+// action; a page in Chrome stays inside the browser and cannot start a program. No Chrome on the PC: VS Code, as before.
+const OPEN_BROWSER = new Set(["html", "htm"]);
+const NAMED_TEXT =new Set(["makefile", "dockerfile", "readme", "license", "cmakelists.txt"]);
 
 const fail = (message, code = "refused") => Object.assign(new Error(message), { code });
 const hasBad = (s) => /["\u0000-\u001f\u007f]/.test(s);
@@ -65,6 +70,7 @@ function checkLocal(target) {
   if (!st.isFile()) throw fail("that is not a normal file");
   const ext = extOf(real);
   if (OPEN_DEFAULT.has(ext)) return { real, kind: "default", name };
+  if (OPEN_BROWSER.has(ext)) return { real, kind: "page", name };
   if (OPEN_EDITOR.has(ext) || NAMED_TEXT.has(name.toLowerCase())) return { real, kind: "editor", name };
   throw fail(`Bot does not open ".${ext || name}" files: it opens documents, pictures, text and code files and folders, never programs, scripts or shortcuts`);
 }
@@ -104,6 +110,7 @@ function createOpener({ spawn = realSpawn, programs = null, tempRoot = path.join
     const p = prog();
     if (c.kind === "folder") { start(p.explorer, c.real); return { how: "Explorer", target: c.real, kind: c.kind }; }
     if (c.kind === "default") { start(p.explorer, c.real); return { how: "its normal app", target: c.real, kind: c.kind }; }
+    if (c.kind === "page" && p.chrome) { start(p.chrome, c.real); return { how: "Chrome", target: c.real, kind: c.kind }; }
     if (p.code) { start(p.code, c.real); return { how: "VS Code", target: c.real, kind: c.kind }; }
     start(p.notepad, c.real);
     return { how: "Notepad", target: c.real, kind: c.kind };
@@ -113,7 +120,7 @@ function createOpener({ spawn = realSpawn, programs = null, tempRoot = path.join
   // Copies older than a day are removed the next time. Nothing of Bot's own files is ever handed to another program.
   function openCopy(original, niceName) {
     const ext = extOf(niceName) || extOf(original);
-    if (!OPEN_DEFAULT.has(ext) && !OPEN_EDITOR.has(ext)) throw fail(`Bot does not open ".${ext}" files`);
+    if (!OPEN_DEFAULT.has(ext) && !OPEN_EDITOR.has(ext) && !OPEN_BROWSER.has(ext)) throw fail(`Bot does not open ".${ext}" files`);
     const base = String(niceName || "file").replace(/[\u0000-\u001f\u007f"<>|?*:\\/,]+/g, "_").replace(/^[-.\s]+/, "").slice(0, 120) || "file";
     const clean = extOf(base) === ext ? base : `${base}.${ext}`;
     try { // old copies go
