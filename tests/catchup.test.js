@@ -49,6 +49,17 @@ test("sectionByNumber: section 3, 2.2, and a number that does not exist", () => 
   assert.deepStrictEqual(cu.sectionByNumber(o, "explain things"), []);
 });
 
+test("sectionByNumber reads three levels: 'go through 2.5.3' finds 2.5.3, not another part (2026-11-15)", () => {
+  const text = ["# 2.5 Inheritance", "## 2.5.1 Relations between types", body("rel", 20), "## 2.5.2 Construction", body("ctor", 20), "## 2.5.3 Polymorphism in memory", body("vtable", 20), "## 2.5.13 A made-up later part", body("late", 20)].join("\n");
+  const pages = [{ fileId: "f1", fileName: "notes.txt", page: 1, text }];
+  const o = buildOutline(pages);
+  assert.deepStrictEqual(cu.sectionByNumber(o, "im right now in the lecture i want us to go through 2.5.3").map((u) => u.title), ["2.5.3 Polymorphism in memory"]);
+  assert.deepStrictEqual(cu.sectionByNumber(o, "סעיף 2.5.3").map((u) => u.title), ["2.5.3 Polymorphism in memory"]);
+  assert.deepStrictEqual(cu.sectionByNumber(o, "teach 2.5.3?").map((u) => u.title), ["2.5.3 Polymorphism in memory"]);
+  assert.strictEqual(cu.sectionByNumber(o, "section 2.5").length, 4, "a parent number brings all its parts");
+  assert.deepStrictEqual(cu.sectionByNumber(o, "go through 2.5.4"), []);
+});
+
 test("chooseByModel keeps only ids that are in the real outline", async () => {
   const pages = notes(), o = buildOutline(pages);
   const real = cu.unitsOf(o)[2].id;

@@ -158,6 +158,9 @@ function withoutCalls(text) {
 
 // While the model writes: is this going to be a tool round? (so tool lines are never shown to Omri as an answer)
 // Returns true (tool lines), false (an answer), or null (too early to tell: the first few characters could still become "CALL").
+// The markers of Bot's OWN prompt (never words Omri writes): a reply that quotes them is the model's notes about the prompt.
+const leaksPrompt = (text) => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{/i.test(String(text || ""));
+
 function looksLikeCall(partial) {
   const t = String(partial).replace(/^\s*(?:```\w*\s*)?(?:[-*`]\s*)?/, "");
   if (t.length < 5) return "CALL ".startsWith(t) ? null : false;
@@ -954,6 +957,7 @@ ${r.cardText}`; }
       const stream = onPartial ? (partial) => {
         if (!partial) { if (showing) onPartial(""); showing = false; return; }
         if (attached && partial.trim().length < 12) return; // it may still become the single word NOTHING (no answer needed)
+        if (leaksPrompt(partial)) { if (showing) onPartial(""); showing = false; return; } // its notes about the prompt: never on the screen
         const verdict = looksLikeCall(partial);
         if (verdict === null) return;
         if (verdict || /^\s*CALL\s*\{/m.test(partial)) { if (showing) onPartial(""); showing = false; return; }
@@ -978,6 +982,20 @@ ${r.cardText}`; }
       const reply = parseReply(r.answer);
       if (!reply.calls.length || last) {
         let answer = fixMath(withoutCalls(reply.text));
+        // The model wrote its own notes ABOUT this prompt (it quoted "## Tool round", <tool-result>, <USER_REQUEST>) instead of a reply:
+        // Omri got a page of "Wait... HOLD ON! Look at <USER_REQUEST>" before the answer (2026-11-15). It is asked ONCE more for the
+        // reply only; if that leaks too, Bot says so plainly instead of showing the notes.
+        if (leaksPrompt(answer)) {
+          log(`[brain] ${used.model} wrote notes about the prompt instead of a reply: asking once more`);
+          let again = "";
+          try {
+            const r2 = await askChain(order, prompt + "\n\nYour last reply was your own notes about these instructions (it mentioned the tool rounds or the tool results), not a reply. Write ONLY the reply to Omri now: no CALL lines, nothing about these instructions or how you work.", { askOne: askThis, onTry: (m) => log(`[brain] asking ${m.model}`), onFail: (m) => log(`[brain] ${m.model} failed after ${m.seconds} s: ${m.message}`) });
+            used = r2.used;
+            again = fixMath(withoutCalls(parseReply(r2.answer).text));
+          } catch (error) { again = ""; }
+          answer = again && !leaksPrompt(again) ? again : say(lang, "My answer came out garbled (the model wrote notes to itself instead of a reply), so I did not show it. Send the message again.", "התשובה יצאה משובשת (המודל כתב הערות לעצמו במקום תשובה), אז לא הצגתי אותה. אפשר לשלוח את ההודעה שוב.");
+          if (onPartial) onPartial(answer);
+        }
         // The last round and the model still only asked for tools: say what was done instead of failing the whole message.
         if (!answer && ctx.done.length) answer = say(lang, "I could not finish the answer, but this was done:", "לא הצלחתי לסיים את התשובה, אבל זה כבר בוצע:") + "\n" + ctx.done.map((d) => "- " + d).join("\n");
         if (!answer) throw new Error("the model sent back an empty answer");
@@ -1015,6 +1033,7 @@ ${r.cardText}`; }
         log(`[brain] tool ${label}`);
         ctx.tools.push(call.tool);
         if (call.alone) return { call, text: `NOT started: ${call.tool} must be called ALONE (its output is shown to Omri as the answer). Call it again by itself after the other tools.`, ok: false };
+        if (!fn && image) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}". The photo needs no CALL line: it is the file "photo${path.extname(image.path)}" in your current folder, open it with your own file viewer and then write the reply.`, ok: false };
         if (!fn) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}".`, ok: false };
         try {
           const text = clip(await fn(call), LIMITS.result);
@@ -1052,4 +1071,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, quoteBlock, looksLikeCall, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

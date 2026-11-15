@@ -123,3 +123,24 @@ test("several files, empty input, junk, and hostile text stay safe and fast", ()
   assert.strictEqual(many.files[0].sections.length, 400); // capped
   assert.strictEqual(sectionByName(buildOutline(pagesOf("c", ["# A\nx\n# B\ny"])), "a\u0000").title, "A");
 });
+
+test("dotted titles (1.1, 2.1.1, 2.5.3) beat a few bold '# ...' lines; numbered steps in an example are not titles (2026-11-15)", () => {
+  const text = [
+    "1.1 Basic ideas", filler(8),
+    "2.1 Memory views", "2.1.1 Hardware", filler(8), "2.1.2 The operating system", filler(8),
+    "2.5 Inheritance", "2.5.1 Relations", filler(8), "2.5.3 Polymorphism in memory", filler(8),
+    "1. read 100,R1 // 0", "2. inc R1 // 1", "1.2 a made-up step", // steps and an older number: not titles
+    "3.1 Motivation", filler(8),
+    "# a bold line near the end", filler(3), "# another bold line", filler(3),
+  ].join("\n");
+  const f = buildOutline(pagesOf("f1", [text], "notes.docx.html")).files[0];
+  const titles = f.sections.map((s) => s.title);
+  assert.deepStrictEqual(titles, ["1.1 Basic ideas", "2.1 Memory views", "2.1.1 Hardware", "2.1.2 The operating system", "2.5 Inheritance", "2.5.1 Relations", "2.5.3 Polymorphism in memory", "3.1 Motivation"]);
+  assert.deepStrictEqual(f.sections.map((s) => s.level), [2, 2, 3, 3, 2, 3, 3, 2]);
+});
+
+test("markdown headings stay when there are few dotted titles", () => {
+  const text = ["# Intro", filler(5), "# Memory", "2.1 one line that looks numbered", filler(5), "# Files", filler(5)].join("\n");
+  const f = buildOutline(pagesOf("f1", [text])).files[0];
+  assert.deepStrictEqual(f.sections.map((s) => s.title), ["Intro", "Memory", "Files"]);
+});

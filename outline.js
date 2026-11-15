@@ -25,6 +25,7 @@ const LECTURE_LINE = /^(?:הרצאה|שיעור|lecture|lesson)\s*(?:מס(?:פר
 const CHAPTER_LINE = /^(?:chapter|section|part|unit|פרק|חלק|יחידה|נושא)\s+(\d{1,2}|[ivx]{1,5})(?![\p{L}\d])(?:\s*[:.\-–—)]\s*\S.{0,100})?\s*$/iu;
 const MD_HEADING = /^(#{1,3})\s+(\S.{0,150})$/;
 const NUMBERED = /^(\d{1,2})(?:\.(\d{1,2}))?[.)]?\s+([\p{L}][^\n]{1,70})$/u;
+const DOTTED = /^(\d{1,2}(?:\.\d{1,2}){0,3})\s+([\p{L}][^\n]{1,90})$/u; // "4 Assignment" .. "2.5.3 Polymorphism in memory": one to four levels
 
 const clean = (s) => String(s == null ? "" : s).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
 const norm = (s) => clean(s).replace(/^#+\s*/, "").toLowerCase();
@@ -85,6 +86,27 @@ function numberedHeadings(text) {
   return rises >= 3 ? out : [];
 }
 
+// Dotted titles ("1.1 Basics", "2.1.1 Hardware", "2.5.3 Polymorphism in memory"), the level is the count of numbers. Meni's notes
+// (a Word file saved as a page) have only these, and 13 bold lines near the end that became "# ..." headings: Bot taught one of
+// those when Omri asked for 2.5.3 (2026-11-15). A title is kept only when its number comes AFTER the last one kept (2.5.3 after
+// 2.5.2, 3.1 after 2.5.4) and the first number does not jump by more than MAX_JUMP, so numbered steps in an example are not titles.
+function dottedHeadings(text) {
+  const out = [];
+  let last = null;
+  const after = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const x = a[i] ?? -1, y = b[i] ?? -1; if (x !== y) return x > y; } return false; };
+  for (const { raw, start } of linesOf(text)) {
+    const line = raw.trim();
+    const m = DOTTED.exec(line);
+    if (!m || /[.,;:]$/.test(line) || /(?:\.\s*){4,}|…/.test(m[2])) continue; // a table-of-contents line ("3.3 The Makefile . . . . 5") is not the title
+    const nums = m[1].split(".").map(Number);
+    if (last && (!after(nums, last) || nums[0] > last[0] + MAX_JUMP)) continue;
+    if (!last && nums[0] > 1 + MAX_JUMP) continue;
+    last = nums;
+    out.push({ start, title: clean(line), kind: "numbered", level: nums.length });
+  }
+  return out.filter((h) => h.level > 1).length >= 5 ? out : []; // trusted only with several real dotted titles
+}
+
 // No headings at all: equal slices by size, cut at a line break.
 function partsOf(text) {
   const k = Math.max(1, Math.min(PART_TARGET, Math.floor(text.length / PART_MIN_CHARS)));
@@ -119,6 +141,8 @@ function buildOutline(pages) {
     if (!text.trim()) continue;
     let heads = explicitHeadings(text);
     let kind = "headings";
+    const dotted = dottedHeadings(text); // more dotted titles than other headings: the dotted ones are the real table of contents
+    if (dotted.length > heads.length) heads = dotted;
     if (heads.length < 2) heads = numberedHeadings(text);
     if (heads.length < 2) { heads = partsOf(text); kind = "parts"; }
     files.push({ fileId, fileName: clean(list[0].fileName || ""), pageCount, realPages: pageCount > 1, chars: text.length, kind, sections: finish(heads, text, pageStarts) });

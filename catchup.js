@@ -92,10 +92,11 @@ function matchSections(outline, text, fileId, pages) {
   return scored.filter((s) => s.score === best).map((s) => s.unit);
 }
 function sectionByNumber(outline, text, fileId) {
-  const m = /(?:\bsection|\bchapter|\bpart|סעיף|פרק|חלק)\s*#?\s*(\d{1,2}(?:\.\d{1,2})?)\b|(?:^|\s)(\d{1,2}\.\d{1,2})(?=\s|$)/iu.exec(String(text));
+  // Up to 4 levels ("2.5.3"): with 2 only, "go through 2.5.3" matched nothing and another part was taught (2026-11-15).
+  const m = /(?:\bsection|\bchapter|\bpart|סעיף|פרק|חלק)\s*#?\s*(\d{1,2}(?:\.\d{1,2}){0,3})\b|(?:^|\s)(\d{1,2}(?:\.\d{1,2}){1,3})(?=[\s?!,.]*$|[\s?!,]|\.\s)/iu.exec(String(text));
   const num = m && (m[1] || m[2]);
   if (!num) return [];
-  const esc = num.replace(".", "\\.");
+  const esc = num.replace(/\./g, "\\.");
   const re = new RegExp(`^(?:[^\\d]{0,12}\\s)?${esc}(?![\\d])`, "u");
   const hits = unitsOf(outline, fileId).filter((u) => re.test(u.title));
   if (hits.length) return hits;
