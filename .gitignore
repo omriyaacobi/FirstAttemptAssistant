@@ -15,6 +15,7 @@ Thumbs.db
 # Experiment output
 experiments/compare-results.json
 experiments/empty/
+experiments/hydrogen-notes.pdf
 
 # Saved conversations (private, never commit)
 data/
