@@ -27,6 +27,7 @@ const MODELS = {
   // /usage: Argon's week did not move). In NO chain yet: Omri decides (experiments/2026-11-15-hydrogen.md).
   hydrogenLow: { provider: "agy", model: "gemini-4-hydrogen-low", pool: GEMINI },
   hydrogenMedium: { provider: "agy", model: "gemini-4-hydrogen-medium", pool: GEMINI },
+  hydrogenHigh: { provider: "agy", model: "gemini-4-hydrogen-high", pool: GEMINI },
   claudeSonnet: { provider: "claude", model: "sonnet", pool: CLAUDE_PLAN },
   claudeOpus: { provider: "claude", model: "opus", pool: [CLAUDE_PLAN, CLAUDE_OPUS_WEEK] },
   claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the tiny quota probe (quota.js)
