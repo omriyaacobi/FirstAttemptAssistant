@@ -25,8 +25,14 @@ function rows({ five = 80, fiveResets = at(2 * H), week = 70, argon = 30, agyCla
 
 test("Claude's week ahead of its pace and of Argon's: Claude Code moves to the front and the note says why", () => {
   const r = claudeFirst(CHAIN, rows(), { now: NOW }); // Claude +20, Argon -20
-  assert.deepStrictEqual(names(r), ["sonnet", "gemini-4-argon-low", "claude-sonnet-5-5-low"]);
+  assert.deepStrictEqual(names(r), ["sonnet", "gemini-4-hydrogen-medium", "gemini-4-argon-low", "claude-sonnet-5-5-low"]);
   assert.match(r.note, /Claude Code's week is \+20 against its pace, Gemini 4 Argon only -20/);
+});
+
+test("with Hydrogen first (2026-11-15) its Gemini Models pool counts too: while it has room, Claude Code does not jump ahead", () => {
+  const withGemini = (g) => [...rows(), { pool: "Gemini Models", window: "Gemini Models Weekly Limit", remaining: g, resets: at(3.5 * D) }];
+  assert.deepStrictEqual(names(claudeFirst(CHAIN, withGemini(96), { now: NOW })), NORMAL); // Gemini +46 beats Claude +20
+  assert.strictEqual(names(claudeFirst(CHAIN, withGemini(30), { now: NOW }))[0], "sonnet"); // Gemini -20: Claude helps
 });
 
 test("Claude may go below its own pace when Argon is further behind (Omri, 2026-11-15), but never under 20% of its week", () => {

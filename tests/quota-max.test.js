@@ -163,16 +163,16 @@ test("the brain prints what an answer cost next to the model that answered, and 
   const r = await handle("what reminders do I have?");
   assert.strictEqual(r.answer, "Nothing is waiting.");
   assert.strictEqual(r.tokens, 2020);
-  assert.ok(logs.some((l) => /^\[brain\] answered by gemini-4-argon-low in [\d.]+ s, tools: reminders_list, 2 model calls, 2,020 tokens$/.test(l)), logs.join("\n"));
+  assert.ok(logs.some((l) => /^\[brain\] answered by gemini-4-hydrogen-medium in [\d.]+ s, tools: reminders_list, 2 model calls, 2,020 tokens$/.test(l)), logs.join("\n"));
   assert.strictEqual(added.length, 1);
-  assert.deepStrictEqual(added[0], [{ model: "gemini-4-argon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }, { model: "gemini-4-argon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }]);
+  assert.deepStrictEqual(added[0], [{ model: "gemini-4-hydrogen-medium", input: 1000, output: 10, thinking: 0, cacheRead: 0 }, { model: "gemini-4-hydrogen-medium", input: 1000, output: 10, thinking: 0, cacheRead: 0 }]);
 });
 
 test("a failed model call is counted too (it was paid for), and a broken token log never breaks an answer", async () => {
   const added = [];
   const a = brainWith({ replies: [new Error("boom"), "Fine."], tokenLog: { add: (calls) => added.push(calls) } });
   assert.strictEqual((await a.handle("hello")).answer, "Fine.");
-  assert.deepStrictEqual(added[0].map((c) => c.model), ["gemini-4-argon-low", "claude-sonnet-5-5-low"]);
+  assert.deepStrictEqual(added[0].map((c) => c.model), ["gemini-4-hydrogen-medium", "gemini-4-argon-low"]);
   const b = brainWith({ replies: ["Fine."], tokenLog: { add: () => { throw new Error("disk full"); } } });
   assert.strictEqual((await b.handle("hello")).answer, "Fine.");
 });
@@ -180,7 +180,10 @@ test("a failed model call is counted too (it was paid for), and a broken token l
 // ---- pacing the week (quota.js paceOf, paceOrder) ----
 const { paceOf, paceOrder, PACE_MARGIN, createQuota } = require("../quota");
 const { MODELS } = require("../router");
-const { CHAIN, chainFor } = require("../brain");
+const { CHAIN: BRAIN_CHAIN, chainFor } = require("../brain");
+// The pacing MECHANISM between two agy pools, on the chain it was built for (Argon, agy Sonnet, Claude Code). The real brain chain
+// starts with Hydrogen since 2026-11-15: its own test is at the end of this file.
+const CHAIN = [MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
 const NOW = Date.parse("2026-11-12T00:00:00Z");
 const inDays = (d) => new Date(NOW + d * 24 * 3600 * 1000).toISOString();
 const week = (pool, remaining, daysLeft) => ({ pool, window: "Weekly Limit Remaining", remaining, resets: inDays(daysLeft) });
@@ -230,7 +233,7 @@ test("paceOrder: the model in the lead keeps it until the other is the margin ah
 test("paceOrder: nothing known, or one pool unknown, leaves the chain alone; BOT_BRAIN_FIRST=claude keeps Claude Code first", () => {
   assert.deepStrictEqual(firstOf(paceOrder(CHAIN, [], { now: NOW })), firstOf({ chain: CHAIN }));
   assert.deepStrictEqual(firstOf(paceOrder(CHAIN, [week(SONNET_POOL, 100, 7)], { now: NOW })), firstOf({ chain: CHAIN }));
-  const claudeFirst = chainFor("claude");
+  const claudeFirst = [MODELS.claudeSonnet, MODELS.argonLow, MODELS.sonnetInAgy];
   const r = paceOrder(claudeFirst, [week(ARGON_POOL, 30, 5.6), week(SONNET_POOL, 100, 7)], { now: NOW });
   assert.deepStrictEqual(firstOf(r), ["sonnet", "claude-sonnet-5-5-low", "gemini-4-argon-low"]); // only the two agy models change places
   assert.deepStrictEqual(firstOf(paceOrder([MODELS.argonLow, MODELS.claudeSonnet], [week(ARGON_POOL, 1, 7)], { now: NOW })), ["gemini-4-argon-low", "sonnet"]);
@@ -244,13 +247,13 @@ test("createQuota.rows hands out the raw rows the pacing needs", async () => {
 });
 
 // The brain with fake pools: which model is asked first, and what the log says about it.
-function pacedBrain() {
+function pacedBrain(chain = CHAIN) {
   const state = { rows: [], levels: [], asked: [], logs: [] };
   const brain = createBrain({
     courses: { allPages: () => [] }, courseRoutes: { list: () => [], courseFiles: () => ({ files: [] }), linkFiles: () => [] }, coach: null,
     reminders: { list: () => [] }, memory: { list: () => [] }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
     poolRows: async () => state.rows, poolLevels: async () => state.levels, refreshPools: () => {}, notePoolFailure: () => {},
-    askOne: async (provider, model) => { state.asked.push(model); return "Fine."; }, now: () => NOW,
+    askOne: async (provider, model) => { state.asked.push(model); return "Fine."; }, now: () => NOW, chain,
   });
   const send = async () => { state.asked.length = 0; state.logs.length = 0; await brain.handle("hello", { history: [], courses: [], log: (l) => state.logs.push(l) }); return state.asked[0]; };
   return { state, send };
@@ -277,5 +280,16 @@ test("pacing never beats the safety rules: Argon in its reserve steps back even 
   assert.ok(state.logs.some((l) => /Gemini 4 Argon 20% left: asking claude-sonnet-5-5-low first/.test(l)), state.logs.join("\n"));
   state.levels = [{ pool: ARGON_POOL, remaining: 60 }, { pool: SONNET_POOL, remaining: 10 }]; // agy's Claude pool under 15%
   state.rows = [week(ARGON_POOL, 60, 6.5), week(SONNET_POOL, 10, 0.2)]; // ...although its week is nearly over (pace +7 against -33)
+  assert.strictEqual(await send(), "gemini-4-argon-low");
+});
+
+test("the real brain chain (2026-11-15): Hydrogen medium first; when the Gemini Models pool falls behind its week, Argon answers first", async () => {
+  assert.strictEqual(BRAIN_CHAIN[0].model, "gemini-4-hydrogen-medium");
+  assert.deepStrictEqual(chainFor("claude").map((m) => m.model).slice(0, 2), ["sonnet", "gemini-4-hydrogen-medium"]);
+  const { state, send } = pacedBrain(BRAIN_CHAIN);
+  assert.strictEqual(await send(), "gemini-4-hydrogen-medium");
+  state.rows = [week("Gemini Models", 96, 6.5), week(ARGON_POOL, 54, 5.5)]; // the real start: Hydrogen's pool far ahead
+  assert.strictEqual(await send(), "gemini-4-hydrogen-medium");
+  state.rows = [week("Gemini Models", 40, 5.6), week(ARGON_POOL, 90, 5.6)]; // Gemini 40 behind its week, Argon +10
   assert.strictEqual(await send(), "gemini-4-argon-low");
 });

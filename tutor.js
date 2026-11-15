@@ -18,7 +18,9 @@ const plan = require("./study-plan");
 const { clean } = require("./study-tracker");
 const { langOf, mostlyHebrew, say } = require("./lang");
 
-const TUTOR_CHAIN = [MODELS.argonMedium, MODELS.argonLow];
+// Hydrogen medium first since 2026-11-15 (Omri): in round 3 it graded 9 of 9 answers right and none of its 9 hints gave the answer
+// away, like Argon medium (experiments/2026-11-15-hydrogen-round3.md). Argon medium, then low, behind it. Never Flash, never Claude.
+const TUTOR_CHAIN = [MODELS.hydrogenMedium, MODELS.argonMedium, MODELS.argonLow];
 const MAX_MATERIAL_CHARS = 60000;
 const MAX_REPLY = 2500;
 const MAX_SCREEN = 1500; // one phone screen of teaching

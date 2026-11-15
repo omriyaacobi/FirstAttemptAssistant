@@ -3,6 +3,18 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
+## HYDROGEN TRIAL RUNNING (2026-11-15): main is AHEAD of GitHub on purpose
+
+- Omri is trying Gemini 4 Hydrogen medium as Bot's main model for a day or two:
+  - the brain: Hydrogen medium, then Argon low, then agy Sonnet, then Claude Code;
+  - the tutor: Hydrogen medium, then Argon medium, then Argon low;
+  - photos: Argon low, then Hydrogen medium;
+  - a brief line: unclear repeats become one-time, and Bot asks.
+- The evidence is in `experiments/2026-11-15-hydrogen*.md` (3 rounds).
+- **Not pushed to GitHub** (Omri: "in case I want the old version back"). Do not push main until Omri says so.
+- **Keep it:** `git push origin main`.
+- **Go back:** `git reset --hard before-hydrogen-2026-11-15`, then restart Bot. The tag is the last pushed version, so that reset also drops any later local commits: check `git log before-hydrogen-2026-11-15..main` first.
+
 ## Where things stand (2026-11-12)
 
 - **Bot is one conversation answered by the brain.** One model (Argon low, then Claude Sonnet low inside agy, then Claude Code Sonnet) reads

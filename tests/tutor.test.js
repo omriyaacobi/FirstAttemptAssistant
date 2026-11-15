@@ -40,12 +40,12 @@ function fake({ fail = false } = {}) {
 
 const run = (s, f, message, intent) => tutor.turn({ tracker: s.t, ref: SP, intent, message, pages: PAGES, courseName: SP.name, askChain: f.askChain, now: NOW });
 
-test("only Argon is ever used: never Flash, never Claude", async () => {
+test("the tutor uses Hydrogen medium, then Argon medium and low: never Flash, never Claude (Omri, 2026-11-15)", async () => {
   const s = setup(), f = fake();
   await run(s, f, "quiz me on lecture 1", "quiz");
   await run(s, f, "RIGHT it is a pointer", "answer");
-  for (const c of f.calls) assert.deepStrictEqual(c.chain, ["gemini-4-argon-medium", "gemini-4-argon-low"]);
-  assert.ok(tutor.TUTOR_CHAIN.every((m) => /argon/.test(m.model)));
+  for (const c of f.calls) assert.deepStrictEqual(c.chain, ["gemini-4-hydrogen-medium", "gemini-4-argon-medium", "gemini-4-argon-low"]);
+  assert.ok(tutor.TUTOR_CHAIN.every((m) => /argon|hydrogen/.test(m.model) && m.provider === "agy"));
 });
 
 test("quiz: one question at a time, and a right answer moves to the next", async () => {

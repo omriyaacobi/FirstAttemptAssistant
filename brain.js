@@ -44,15 +44,21 @@ const BRIEF_FILE = path.join(__dirname, "brain-brief.md");
 // Sonnet (the Pro plan) last. Flash is NOT here: it made real math errors, so it never writes the brain's answers.
 // Measured on the real brain (experiments/2026-11-11-quota-stretch.md): agy Sonnet low was as correct as Argon and 2-3x faster;
 // GPT-OSS was rejected (wrong weekdays, gave a solution away).
-const CHAIN = [MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
+// HYDROGEN FIRST (Omri, 2026-11-15, after three trials: experiments/2026-11-15-hydrogen-round3.md): Gemini 4 Hydrogen medium was as
+// correct as Argon on every test (hard math, C++, tools, Hebrew), about 30% faster and about 10x cheaper per call, from the "Gemini
+// Models" pool that was almost unused. It is not Flash (13 of 13 and then 24 of 24 math answers right). Argon low is second.
+// Going back: the git tag before-hydrogen-2026-11-15.
+const CHAIN = [MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
 // BOT_BRAIN_FIRST=claude in .env (a restart reads it): Claude Code Sonnet (the Pro plan) is asked FIRST, for a few hours when the
 // agy pools are low (Omri, 2026-11-12). The normal 15% rule still moves it to the end when the plan's 5-hour window is nearly used.
 // Any other value, or none, = the normal order above.
 function chainFor(first) {
-  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.argonLow, MODELS.sonnetInAgy] : CHAIN;
+  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy] : CHAIN;
 }
-// A message with a photo: only agy can look at a picture here. Argon low first; Flash medium only if Argon fails (Omri, 2026-11-12).
-const PHOTO_CHAIN = [MODELS.argonLow, MODELS.flashMedium];
+// A message with a photo: only agy can look at a picture here. Argon low first: on an unclear photo ("lecture moved", no end date)
+// it made a careful one-time card 5 of 5 times, Hydrogen guessed "weekly" 4 of 6 times (round 3). Hydrogen medium if Argon fails
+// (it replaced Flash medium, 2026-11-15).
+const PHOTO_CHAIN = [MODELS.argonLow, MODELS.hydrogenMedium];
 // A pool listed here counts as low for the brain EARLIER than the normal 15%. Under 25% Argon steps aside for everyday chat, so
 // its last quarter stays for tutoring and reading big PDFs (they keep using it until 15%). The switch goes by the pool's level, not
 // by the message, so the same model answers for a stretch.
@@ -82,11 +88,12 @@ const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, note
 // environment turns it off (only for comparing in a test run).
 const SLIM_AGENT = process.env.BOT_BRAIN_AGENT !== "off";
 const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
-const warmUp = () => { try { pool.warmUp(MODELS.argonLow.model, null); } catch (error) { /* only makes the first message slower */ } };
+const warmUp = () => { try { pool.warmUp(CHAIN[0].model, null); } catch (error) { /* only makes the first message slower */ } }; // the brain's first model (Hydrogen medium since 2026-11-15)
+const WARM_MODELS = new Set([MODELS.hydrogenMedium.model, MODELS.argonLow.model]); // the warm pool keeps one spare per model
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
 function askWarm(provider, model, question, onText, extra = {}) {
   const onUsage = extra.onUsage || null;
-  if (provider === "agy" && model === MODELS.argonLow.model) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model), onUsage });
+  if (provider === "agy" && WARM_MODELS.has(model)) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model), onUsage });
   // agy always gets the prompt through stdin (the streaming call). Without onText, ask() would put it on the command line, and the
   // brain's prompt is far longer than Windows allows ("spawn ENAMETOOLONG"), so every agy model but the warm Argon failed at once.
   if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage });
