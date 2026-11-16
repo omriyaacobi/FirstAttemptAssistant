@@ -33,6 +33,13 @@ const LEAK = "Wait. HOLD ON! Look at <USER_REQUEST>:\n## Tool round 1\nYou calle
 test("the markers of Bot's own prompt are caught; a normal reply is not", () => {
   assert.ok(leaksPrompt(LEAK));
   assert.ok(leaksPrompt("see <tool-result id=\"ab\"> above"));
+  // 2026-11-16: thinking that leaked after an early closing thought tag
+  assert.ok(leaksPrompt("Wait—I must reply with ONLY tool lines and nothing else!"));
+  assert.ok(leaksPrompt("No, I accidentally closed the thought tag! Wait"));
+  assert.ok(leaksPrompt("I closed it before `CALL {\"tool\":\"course_search\"...`! Let me check"));
+  assert.ok(leaksPrompt("ok</thought>\nThe answer"));
+  assert.ok(!leaksPrompt("I thought about it: the integral is x ln x - x + C."));
+  assert.ok(!leaksPrompt("Use the tool on line 5 of main.c"));
   assert.ok(!leaksPrompt("Yep, I'm here! Static binding happens at compile time; CALL me later."));
   assert.ok(!leaksPrompt("A tool round in the lab is at 10:00"));
 });

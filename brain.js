@@ -166,7 +166,10 @@ function withoutCalls(text) {
 // While the model writes: is this going to be a tool round? (so tool lines are never shown to Omri as an answer)
 // Returns true (tool lines), false (an answer), or null (too early to tell: the first few characters could still become "CALL").
 // The markers of Bot's OWN prompt (never words Omri writes): a reply that quotes them is the model's notes about the prompt.
-const leaksPrompt = (text) => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{/i.test(String(text || ""));
+// 2026-11-16: Argon on a photo closed its thinking too early and wrote "Wait—I must reply with ONLY tool lines ... I accidentally closed
+// the thought tag ... `CALL {"tool":...`" before the real answer. Bot's own protocol words never belong in a reply to Omri: a thought tag,
+// "tool lines", or a CALL line quoted inside the text (a real CALL line starts its own line and is handled as a call).
+const leaksPrompt = (text) => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{|<\/?thought>|\bthought tag\b|\btool lines\b|`CALL\s*\{/i.test(String(text || ""));
 
 function looksLikeCall(partial) {
   const t = String(partial).replace(/^\s*(?:```\w*\s*)?(?:[-*`]\s*)?/, "");
