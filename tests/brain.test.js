@@ -252,6 +252,15 @@ test("a photo with no words (Omri, 2026-11-16): no made-up English line; the mod
   assert.strictEqual(lastWords([]), "");
 });
 
+test("a photo WITH words (2026-11-16): the photo is named again right next to the words, so it is not skipped", async () => {
+  const { brain, calls } = photoSetup(["תשובה."]);
+  await run(brain, "לאיזה גבולות עוברים 1 ו t", { image: { path: "x.jpg" } });
+  const p = calls[0].prompt;
+  const words = p.indexOf("לאיזה גבולות");
+  const again = p.indexOf('The photo is part of THIS message: open "photo.jpg"');
+  assert.ok(words > 0 && again > words, "the photo line comes right after the words");
+});
+
 test("a photo message is in the token log too: the photo model's onUsage is passed on (review 1.3)", async () => {
   const added = [];
   const askImage = async (model, prompt, imagePath, onText, extra = {}) => { if (extra.onUsage) extra.onUsage({ input: 900, output: 20 }); return "A cat."; };

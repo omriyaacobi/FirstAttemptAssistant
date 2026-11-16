@@ -956,8 +956,12 @@ ${r.cardText}`; }
     ].filter(Boolean).join("\n\n");
     // From the phone (server.js knows, never a model): a long answer is a lot of scrolling on a small screen (2026-11-13).
     const phoneLine = fromPhone === true ? "\n(Omri is writing from the phone: keep the reply to about one phone screen, a few short paragraphs, unless Omri asks for more.)" : "";
+    // A photo WITH words (2026-11-16): the words were answered and the photo was never opened ("I have not read the photo you
+    // attached yet"), because the photo was named only far above, before the course pages and the talk. The photo and the words
+    // are ONE message, so it is said again right here, next to the words.
+    const withPhoto = image ? `\nThe photo is part of THIS message: open "photo${path.extname(image.path)}" and look at it BEFORE you reply. The words and the photo go together (for example the photo is Omri's own work or answer, and the words ask about it or about what Bot asked last). Answer both in one reply, and never say you have not seen the photo.` : "";
     const words = String(task).trim()
-      ? `## Omri's new message\n<message>\n${noCtl(task)}\n</message>`
+      ? `## Omri's new message\n<message>\n${noCtl(task)}\n</message>${withPhoto}`
       : "## Omri's new message\nOmri sent only the photo, with no words. It is usually an answer to what Bot asked last, or it continues the current talk: read the conversation so far to know what Omri means, and do that. Reply in the language of that talk.";
     const tail = quoteBlock(quote, zone) + words + languageLine(said) + phoneLine;
 
