@@ -182,3 +182,86 @@ test("brief and nudge: a course Omri studies alone gets no 'lectures not checked
   assert.ok(nudges.candidates().some((c) => c.kind === "lecture"));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---- the Moodle watch: new files of one course can be turned off ----
+test("moodle watch: with a course's files turned off, its new files are not posted; messages and other items still are", async () => {
+  const os = require("node:os");
+  const { createMoodleWatch } = require("../moodle-watch");
+  const { createMoodleTools } = require("../moodle-tools");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-audit-watch-"));
+  const BOTS = [{ id: "c1", name: "Linear Algebra" }, { id: "c2", name: "Operating Systems" }];
+  const tools = createMoodleTools({ bridge: { connected: () => true }, courseRoutes: { list: () => BOTS }, dataDir: dir });
+  const world = {
+    courses: [{ id: 5, name: "Linear Algebra" }, { id: 6, name: "Operating Systems" }],
+    items: { 5: [{ id: 100, name: "Announcements", module: "forum" }, { id: 101, name: "Lecture 1", module: "resource", files: 1 }, { id: 102, name: "Sheets", module: "folder", files: 2 }], 6: [{ id: 200, name: "Syllabus", module: "resource", files: 1 }] },
+    talks: { 100: [{ d: 1, title: "Welcome", time: 1700000000 }] },
+  };
+  const source = { connected: () => true, ask: async (kind, args = {}) => {
+    if (kind === "courses") return { data: world.courses };
+    if (kind === "course") return { data: { sections: [], items: world.items[args.courseid] || [] } };
+    if (kind === "forum") return { data: world.talks[args.cmid] || [] };
+    if (kind === "posts") return { data: [{ subject: "Room change", author: "Dr. B", message: "We meet in room 7 from now on." }] };
+    if (kind === "events") return { data: [] };
+    throw new Error("not asked in this test: " + kind);
+  } };
+  const posted = [], logs = [];
+  const watch = createMoodleWatch({ source, tools: { autoMap: () => ({ 5: "c1", 6: "c2" }), quietFiles: tools.quietFiles }, courseRoutes: { list: () => BOTS }, file: path.join(dir, "watch.json"), thread: { append: (m) => { posted.push(m); return { id: "x" }; } }, now: () => Date.parse("2026-11-16T10:00:00Z"), log: (l) => logs.push(l) });
+  await watch.check(); // the first look is silent
+  assert.match(tools.watchFiles("c1", false), /no longer post new files of "Linear Algebra"/);
+  assert.throws(() => tools.watchFiles("zz", false), /not one of Bot's courses/);
+  world.items[5].push({ id: 103, name: "Lecture 2", module: "resource", files: 1 }, { id: 104, name: "Homework 3", module: "assign" });
+  world.items[5][2].files = 5;
+  world.items[6].push({ id: 201, name: "Slides week 2", module: "resource", files: 1 });
+  world.talks[100].unshift({ d: 2, title: "Room change", time: 1700000900 });
+  const r = await watch.check();
+  assert.deepStrictEqual(r.counts, { files: 1, items: 1, talks: 1, deadlines: 0 }); // only the other course's file is counted
+  const text = posted[0].text;
+  assert.doesNotMatch(text, /Lecture 2|Sheets/);
+  assert.match(text, /new assignment \[104\] Homework 3/);
+  assert.match(text, /Room change/);
+  assert.match(text, /new file \[201\] Slides week 2/);
+  assert.ok(logs.some((l) => /4 new files not posted/.test(l)));
+  // the quiet course's files are known now: turning the switch back on does not flood Omri with the old ones
+  assert.match(tools.watchFiles("c1", true), /again/);
+  world.items[5].push({ id: 105, name: "Lecture 3", module: "resource", files: 1 });
+  await watch.check();
+  assert.match(posted[1].text, /Lecture 3/);
+  assert.doesNotMatch(posted[1].text, /Lecture 2/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("moodle watch: the brain's tool takes a real course and on/off only, and is refused in a message with a photo", async () => {
+  const calls = [];
+  const mk = (replies) => {
+    const b = fakeBrain(replies, { courses: TWO });
+    return b;
+  };
+  // the fake brain above has no Moodle tools: the call fails honestly and the reply written under it is not shown
+  const none = mk(['CALL {"tool":"moodle_watch","course":"Linear Algebra","files":"off"}\nDone, no more files from that course.', "I could not change that: the Moodle watch is not set up."]);
+  const r0 = await none.brain.handle("stop telling me about new files in linear algebra", { history: [], courses: TWO });
+  assert.strictEqual(r0.answer, "I could not change that: the Moodle watch is not set up.");
+  assert.match(none.prompts[1], /FAILED, nothing was done/);
+  // with Moodle tools: checked values
+  const { createBrain } = require("../brain");
+  const make = (replies) => { let i = 0; const prompts = []; return { prompts, brain: createBrain({
+    courses: { allPages: () => [] }, courseRoutes: { list: () => TWO, courseFiles: () => ({ files: [] }), linkFiles: () => [] },
+    moodle: { watchFiles: (id, on) => { calls.push([id, on]); return on ? "on again" : "The Moodle watch will no longer post new files."; }, explain: () => "" },
+    coach: { tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, courseId: c.id, name: c.name })), course: (r) => ({ key: r.key, assignments: [], position: {} }), save: () => {}, getSession: () => null, timetable: () => ({ courses: [] }) }, pendingProposal: () => null, answerStudy: async () => ({ answer: "x" }) },
+    reminders: { list: () => [], create: () => ({}) }, memory: { list: () => [], add: () => ({}) }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
+    askOne: async (p, m, prompt) => { prompts.push(prompt); return replies[i++]; }, askImage: async (m, prompt) => { prompts.push(prompt); return replies[i++]; },
+    chain: [{ provider: "agy", model: "fake-model" }], photoChain: [{ provider: "agy", model: "fake-model" }], poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {}, folderRules: { system: [] },
+  }) }; };
+  const ok = make(['CALL {"tool":"moodle_watch","course":"Operating Systems","files":"off"}\nOK, no more new files from Operating Systems.']);
+  const r1 = await ok.brain.handle("no need to offer me new files in operating systems", { history: [], courses: TWO });
+  assert.strictEqual(r1.answer, "OK, no more new files from Operating Systems.");
+  assert.deepStrictEqual(calls, [["c2", false]]);
+  const bad = make(['CALL {"tool":"moodle_watch","course":"Operating Systems","files":"sometimes"}\nDone.', "Do you want them off?"]);
+  await bad.brain.handle("hmm", { history: [], courses: TWO });
+  assert.strictEqual(calls.length, 1, "a value that is not on or off changes nothing");
+  const photo = make(['CALL {"tool":"moodle_watch","course":"Operating Systems","files":"off"}\nDone.', "I cannot change that from a photo; tell me in words."]);
+  const r3 = await photo.brain.handle("(photo only)", { history: [], courses: TWO, image: { path: path.join(os_tmp(), "photo.jpg") } });
+  assert.strictEqual(calls.length, 1, "nothing changes in a message with a photo");
+  assert.match(photo.prompts[1], /does not change the Moodle watch in a message with a photo/);
+  assert.match(r3.answer, /cannot change that/);
+});
+function os_tmp() { return require("node:os").tmpdir(); }

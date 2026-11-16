@@ -48,7 +48,7 @@ function explain(error, lang = "en") {
 
 function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, now = () => Date.now() }) {
   const mapFile = path.join(dataDir, "moodle-map.json");
-  const readMap = () => { try { const m = JSON.parse(fs.readFileSync(mapFile, "utf8")); return { links: m.links || {}, fetched: m.fetched || {} }; } catch (error) { return { links: {}, fetched: {} }; } };
+  const readMap = () => { try { const m = JSON.parse(fs.readFileSync(mapFile, "utf8")); return { links: m.links || {}, fetched: m.fetched || {}, quietFiles: m.quietFiles && typeof m.quietFiles === "object" ? m.quietFiles : {} }; } catch (error) { return { links: {}, fetched: {}, quietFiles: {} }; } };
   // Written to a temporary file first, then renamed into place (like profile.js), so a crash halfway never leaves a broken map
   // (a broken map reads as empty: the course links and the "already downloaded" list would be lost).
   const writeMap = (m) => { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(mapFile + ".tmp", JSON.stringify(m, null, 2)); fs.renameSync(mapFile + ".tmp", mapFile); };
@@ -196,6 +196,22 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     return { url: moodleUrl({ cmid: hits[0].id, module: hits[0].module }), label: `"${oneLine(hits[0].name, 120)}" in ${m.name}` };
   }
 
+  // THE WATCH'S FILE SWITCH (Omri, 2026-11-16: "no need to offer me lectures in this one", for a course whose notes already cover
+  // the semester). Per BOT course: when off, the Moodle watch (moodle-watch.js) does not post that course's new files and folders.
+  // Lecturers' messages, deadlines, assignments and quizzes are still posted, and nothing else changes (moodle_fetch still works).
+  // Kept in the map file; the course id is checked against the real course list.
+  function watchFiles(botCourseId, on) {
+    const b = courseRoutes.list().find((x) => x.id === botCourseId);
+    if (!b) throw fail("that is not one of Bot's courses");
+    const map = readMap();
+    if (on) delete map.quietFiles[b.id]; else map.quietFiles[b.id] = now();
+    writeMap(map);
+    return on
+      ? `The Moodle watch will tell Omri about new files of "${b.name}" again.`
+      : `The Moodle watch will no longer post new files of "${b.name}" (lecturers' messages, deadlines and new assignments are still posted). Omri can turn it back on by saying so.`;
+  }
+  const quietFiles = () => { try { return readMap().quietFiles; } catch (error) { return {}; } };
+
   // Remember which Bot course a Moodle course is (Omri's answer). botId null = "no Bot course for it".
   async function link(moodleName, botCourse, patternFor) {
     const { m, bots } = await resolve(moodleName, patternFor);
@@ -308,7 +324,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     };
   }
 
-  return { listText, courseText, newsText, fetchFiles, link, openTarget, autoMap, resolve, explain, connected: () => bridge.connected() };
+  return { listText, courseText, newsText, fetchFiles, link, openTarget, autoMap, resolve, explain, watchFiles, quietFiles, connected: () => bridge.connected() };
 }
 
 module.exports = { createMoodleTools, explain, norm, plain, MAX_DIRECT, MAX_TOTAL_BYTES };

@@ -70,7 +70,7 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch"]);
 const UNSAID = new Set(["talk_course"]); // doing-tools that are only a label: never listed as "this was done" for Omri
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
@@ -833,6 +833,17 @@ ${text}`; } catch (error) {
       moodle_courses: async () => moodleRead(() => moodle.listText(patternFor)),
       moodle_course: async ({ course }) => { aboutCourse(course); return moodleRead(() => moodle.courseText(course, patternFor)); },
       moodle_news: async ({ course, count }) => { aboutCourse(course); return moodleRead(() => moodle.newsText(course, patternFor, count)); },
+      // What the Moodle watch posts about ONE course (2026-11-16): new files on or off. Omri's own wish only: refused after a web
+      // page, a photo or Moodle text in the same message. The course is a real Bot course (checked); the value is on or off.
+      moodle_watch: async ({ course, files }) => {
+        afterWeb("change the Moodle watch");
+        if (!moodle || !moodle.watchFiles) throw new Error("the Moodle watch is not set up in this Bot.");
+        const c = need(course);
+        const v = String(files == null ? "" : files).trim().toLowerCase();
+        if (v !== "on" && v !== "off") throw new Error('say "files":"off" (do not post new files of this course) or "files":"on"');
+        ctx.course = c;
+        return moodle.watchFiles(c.id, v === "on");
+      },
       // Which Bot course a Moodle course is: only decides where Moodle files go, both sides checked against the real lists.
       moodle_link: async ({ moodle: which, course }) => {
         afterWeb("link courses", { moodleOk: true });
