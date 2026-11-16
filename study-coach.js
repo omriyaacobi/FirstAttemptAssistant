@@ -539,7 +539,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // always the fixed text "where am I"), quiz, answer (quiz_answer), confirm / cancel (card_reply). Until 2026-11-13 this function also
   // held the old front desk's intents (update, plan, teach, start, ...) and word lists that moved Omri's words between them; the brain
   // reaches those abilities through checked tools instead (brainTools below), so they were removed.
-  async function answerStudy({ studyIntent, text = "", courseId = null, courseName = null, onText = null }) {
+  async function answerStudy({ studyIntent, text = "", courseId = null, courseName = null, onText = null, ask = null }) {
     const t0 = Date.now();
     curLang = langOf(text); // this reply reads in the language the student wrote in
     const done = (r) => ({ mode: "study", answer: "", sources: [], outside: false, model: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r });
@@ -578,7 +578,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const align = maybeAlign(ref);
     const noSolution = SOLUTION_ASK.test(text) ? T("I will not write the full solution of an assignment: that is the part that teaches the most. I can guide step by step, so here is how.\n\n", "פתרון מלא של מטלה אני לא כותב: זה החלק שהכי מלמד. אפשר ללוות צעד אחר צעד, אז הנה איך.\n\n") : "";
     const savedNow = await autoSavePageAssignments(ref).catch(() => []);
-    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes: null });
+    const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes: null, ask: intent === "answer" ? ask : null });
     if (savedNow.length) r.answer = T(`I saved "${savedNow.join('", "')}" from the file you uploaded to ${ref.name}.\n\n`, `שמרתי את "${savedNow.join('", "')}" מהקובץ שהעלית ${bet(ref.name)}.\n\n`) + r.answer;
     return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }

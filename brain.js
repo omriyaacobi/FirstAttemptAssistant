@@ -930,7 +930,9 @@ ${r.cardText}`; }
   // The coach's own flows (a graded quiz, a waiting study card): their output is shown as it is, because code keeps their state.
   const TERMINAL = {
     quiz: (c, task, a) => ({ studyIntent: "quiz", text: a.about ? `${task}\n(${String(a.about).slice(0, 200)})` : task }),
-    quiz_answer: (c, task) => ({ studyIntent: "answer", text: task }),
+    // "ask": what the model understood the reply to be (a try, a hint request, "show me the answer", "skip"); a closed list, so the
+    // tutor no longer looks for those words inside Omri's answer (tutor.js turn). Anything else = not said: the tutor's old way.
+    quiz_answer: (c, task, a) => ({ studyIntent: "answer", text: task, ask: ["answer", "hint", "show", "skip"].includes(a.ask) ? a.ask : null }),
     card_reply: (c, task, a) => ({ studyIntent: a.yes === false ? "cancel" : "confirm", text: task }),
   };
   // Code-run study answers that are also shown as they are: the plan across all courses, and teaching the next part from the notes.
