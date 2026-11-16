@@ -14,7 +14,7 @@
 
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, usageWithSteps, watchSteps } = require("./providers");
+const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, usageWithSteps, watchSteps, loopWatch, LOOP_ERROR } = require("./providers");
 
 const MAX_SPARE_AGE_MS = 8 * 60 * 1000; // a spare older than this is thrown away (idle 5 min was tested fine)
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
@@ -75,6 +75,7 @@ function startProcess({ command, prefixArgs, model, schema, clock, agent = false
         if (waiter.step !== null && u.step_index !== waiter.step) waiter.text += "\n\n"; // a second reply step starts a new paragraph
         waiter.step = u.step_index;
         waiter.text += u.text_delta;
+        if (waiter.looping && waiter.looping(waiter.text)) { die(LOOP_ERROR, true); killTree(child); return; } // stuck in a loop: stop it, the chain asks the next model
         if (waiter.onText) { try { waiter.onText(waiter.text); } catch (error) { /* showing the text must never break the answer */ } }
       }
       if (event.event === "result" && waiter) {
@@ -104,7 +105,7 @@ function startProcess({ command, prefixArgs, model, schema, clock, agent = false
       used = true;
       return new Promise((resolve, reject) => {
         if (isDead) return reject(died(deathReason));
-        waiter = text ? { resolve, reject, text: "", step: null, onText, onUsage } : { resolve, reject, onUsage };
+        waiter = text ? { resolve, reject, text: "", step: null, onText, onUsage, looping: loopWatch() } : { resolve, reject, onUsage };
         ready.then(() => {
           if (isDead) return;
           // The message format agy expects on stdin in stream-json mode: one JSON line per user turn.

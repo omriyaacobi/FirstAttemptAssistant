@@ -8,7 +8,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { askAgyStream, askChain } = require("../providers");
+const { askAgyStream, askChain, stuckInLoop } = require("../providers");
 const { createJobs } = require("../jobs");
 const { createStore } = require("../store");
 
@@ -33,6 +33,7 @@ process.stdin.once("data", () => {
       piece(3, "The answer.");
       return out({ event: "result", result: { status: "SUCCESS", response: "Hello \\n\\nThe answer." } });
     }
+    if (mode === "loop") { for (let i = 0; i < 400; i++) piece(1, "Let's call read_file.!)]}* "); return; } // stuck: never sends a result
     if (mode === "twosteps") { piece(3, "second"); return out({ event: "result", result: { status: "SUCCESS", response: "first\\n\\nsecond" } }); }
     piece(1, "world");
     out({ event: "result", result: { status: "SUCCESS", response: "Hello world" } });
@@ -92,3 +93,23 @@ test("askChain: without onText the models are asked as before (no extra argument
   assert.strictEqual(args[3], undefined);
 });
 
+
+test("a model stuck repeating itself is stopped at once and the chain asks the next model (2026-11-16)", async () => {
+  const shown = [];
+  const t0 = Date.now();
+  await withMode("loop", () => assert.rejects(askAgyStream("q", "gemini-4-argon-low", (t) => shown.push(t), opts), /stuck repeating/));
+  assert.ok(Date.now() - t0 < 10000, "stopped long before any time limit");
+  assert.ok(shown.length && shown.at(-1).length < 2000, "the loop was not streamed on and on");
+  const r = await askChain([{ provider: "agy", model: "a" }, { provider: "agy", model: "b" }], "q", { askOne: async (p, m) => { if (m === "a") throw new Error("the model got stuck repeating the same words, so it was stopped"); return "fine"; } });
+  assert.strictEqual(r.used.model, "b");
+});
+
+test("stuckInLoop: only an exact short piece repeated many times; real answers, tables and long lines are not", () => {
+  assert.ok(stuckInLoop("Answer: ".repeat(3) + "Let's call read_file.점검!)]}* আহ্বান: ".repeat(60)));
+  assert.ok(!stuckInLoop("short " .repeat(10)), "too short to judge");
+  assert.ok(!stuckInLoop("-".repeat(3000)), "a line of dashes");
+  assert.ok(!stuckInLoop("|---|---|---|\n".repeat(200)), "a table rule has no letters");
+  const prose = Array.from({ length: 80 }, (_, i) => `Step ${i + 1}: integrate by parts and move the integral to the left side.`).join("\n");
+  assert.ok(!stuckInLoop(prose), "numbered steps are not an exact repeat");
+  assert.ok(!stuckInLoop("x".repeat(500) + "ab".repeat(400)), "fewer than 3 letters");
+});

@@ -223,6 +223,28 @@ function askAgy(question, model) {
 // Measured in experiments/2026-11-05-answer-low-vs-medium.md: the first words arrive before the whole answer.
 // cwd / timeoutMs: only for a photo (askAgyStreamWithImage), which runs in its own private folder with the photo time limit.
 // agent: true runs the call under the slim agent (see ensureAgent). onUsage gets the tokens the call cost (readUsage).
+// A model stuck in a loop (2026-11-16: Argon low on a photo wrote "Let's call read_file.점검!)]}*" hundreds of times and would have
+// gone on until the time limit): the last LOOP_TAIL characters are one short piece (8-300 characters, at least 3 different letters)
+// repeated exactly. Real answers never are; a line of dashes is not (too few letters). Code only, no word list.
+const LOOP_TAIL = 1200;
+function stuckInLoop(text) {
+  const t = String(text || "").slice(-LOOP_TAIL);
+  if (t.length < LOOP_TAIL) return false;
+  for (let L = 8; L <= 300; L++) {
+    let i = L;
+    while (i < t.length && t[i] === t[i - L]) i++;
+    if (i === t.length && new Set(t.slice(-L).toLowerCase().match(/\p{L}/gu) || []).size >= 3) return true;
+  }
+  return false;
+}
+// Checks a growing text now and then (every LOOP_STEP new characters), so a long answer costs almost nothing.
+const LOOP_STEP = 200;
+function loopWatch() {
+  let checkedAt = 0;
+  return (text) => { if (text.length - checkedAt < LOOP_STEP) return false; checkedAt = text.length; return stuckInLoop(text); };
+}
+const LOOP_ERROR = "the model got stuck repeating the same words, so it was stopped";
+
 function askAgyStream(question, model, onText, { signal, command = AGY_CMD, prefixArgs = [], cwd = null, timeoutMs = null, agent = false, onUsage = null } = {}) { // command/prefixArgs: so tests can use a fake agy
   checkModelName(model);
   const args = [...prefixArgs, "-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
@@ -231,6 +253,7 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
     const child = spawn(command, args, { cwd: cwd || (agent ? BRAIN_DIR : sandbox()), windowsHide: true });
     let buffer = "", text = "", step = null, settled = false, lastTool = null;
     const steps = watchSteps();
+    const looping = loopWatch();
     const finish = (fn, value) => { if (!settled) { settled = true; fn(value); } };
     for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", () => {}); // a broken pipe is handled by "close"
     child.stderr.on("data", () => {});
@@ -252,6 +275,7 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
           if (step !== null && u.step_index !== step) text += "\n\n"; // a second reply step (after a tool) starts a new paragraph
           step = u.step_index;
           text += u.text_delta;
+          if (looping(text)) { killTree(child); finish(reject, new Error(LOOP_ERROR)); return; } // the chain clears the screen and asks the next model
           try { onText(text); } catch (error) { /* showing the text must never break the answer */ }
         } else if (event.event === "step_update" && u && u.step_type === "tool" && u.step_index !== lastTool) {
           // What the model wrote BEFORE one of agy's own tools (opening the photo, a web search) is it thinking out loud, not the
@@ -487,5 +511,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { watchSteps, usageWithSteps, ensureAgent, readUsage, BRAIN_AGENT, BRAIN_DIR, imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { stuckInLoop, loopWatch, LOOP_ERROR, watchSteps, usageWithSteps, ensureAgent, readUsage, BRAIN_AGENT, BRAIN_DIR, imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
