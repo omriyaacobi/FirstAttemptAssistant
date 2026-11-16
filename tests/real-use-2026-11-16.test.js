@@ -137,3 +137,48 @@ test("course: the quote check hands over the quoted answer's course, and the mem
   assert.strictEqual(history[0].courseId, "c2");
   assert.strictEqual(history[1].noCourse, true);
 });
+
+// ---- the "You" part of the morning brief ----
+test("brief: a long line is never cut in the middle of a word or sentence part", () => {
+  const { fitLine, checkLines, MAX_LINE, prompt } = require("../brief-me");
+  const ledger = [{ n: 1, part: "done", text: "In the talk: worked on the matrix exercise", understood: false }];
+  const medium = "Yesterday you finished the row reduction exercise, fixed the sign mistake in the third pivot and wrote the first half of the proof about the rank of a product, and then you started the next sheet.";
+  assert.ok(medium.length > 180 && medium.length < MAX_LINE);
+  assert.deepStrictEqual(checkLines({ lines: [{ text: medium, refs: [1] }] }, ledger), [medium]); // 180 used to cut this one at "...and"
+  const long = "You worked through the first exercise sheet. " + "Then you repeated the long computation with the bigger matrix and checked every step against the notes ".repeat(4);
+  const cut = fitLine(long);
+  assert.ok(cut.length <= MAX_LINE);
+  assert.ok(cut.endsWith("...") || cut.endsWith("."));
+  assert.ok(long.startsWith(cut.replace(/\.\.\.$/, "")));
+  assert.match(long.slice(cut.replace(/\.\.\.$/, "").length), /^(\s|$|\.)/, "the cut is at a word end");
+  assert.strictEqual(fitLine("short line"), "short line");
+  assert.match(prompt(ledger), /each under \d+ characters/);
+});
+
+test("brief and nudge: a course Omri studies alone gets no 'lectures not checked' count and no lecture nudge", () => {
+  const os = require("node:os");
+  const { buildLedger } = require("../brief-me");
+  const { createTracker } = require("../study-tracker");
+  const { createNudges } = require("../study-nudges");
+  // the brief's ledger
+  const course = (mode) => ({ name: "Made-up Calculus", tracked: true, behind: [{ date: "2026-11-04" }, { date: "2026-11-06" }], assignments: [], topicsDue: 0, position: mode ? { mode, said: "I study it alone from the notes" } : {} });
+  const ledger = (mode) => buildLedger({ log: { day: () => [] }, tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, name: c.name })), progress: () => course(mode) }, courseList: [{ id: "c1", name: "Made-up Calculus" }], today: "2026-11-13" });
+  assert.ok(ledger(null).some((l) => l.part === "behind"), "nothing said about the course: the count stays");
+  assert.ok(ledger("attending").some((l) => l.part === "behind"));
+  for (const mode of ["selfStudy", "notStarted", "revising", "paused"]) assert.ok(!ledger(mode).some((l) => l.part === "behind"), mode);
+  assert.ok(ledger("selfStudy").some((l) => l.part === "said"), "Omri's own words stay in the ledger");
+  // the morning nudge
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-audit-"));
+  const now = new Date("2026-11-08T08:30:00+02:00").getTime();
+  const COURSES = [{ id: "a".repeat(16), name: "Systems Programming" }];
+  const tracker = createTracker({ dir, now: () => now });
+  const nudges = createNudges({ tracker, courseList: () => COURSES, now: () => now });
+  const sp = tracker.refsFor(COURSES)[0];
+  tracker.attachMaterial(sp, "2026-10-25", [{ fileId: "f", from: 1, to: 2 }]);
+  assert.ok(nudges.candidates().some((c) => c.kind === "lecture"));
+  tracker.setStanding(sp, { mode: "selfStudy", said: "I study this one alone from the notes" });
+  assert.ok(!nudges.candidates().some((c) => c.kind === "lecture"));
+  tracker.setStanding(sp, { mode: "attending", said: "I go to the lectures again" });
+  assert.ok(nudges.candidates().some((c) => c.kind === "lecture"));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
