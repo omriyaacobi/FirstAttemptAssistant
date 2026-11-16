@@ -48,7 +48,7 @@ const TOOL_WORDS = {
   moodle_news: "Reading the Moodle announcements", moodle_fetch: "Downloading from Moodle", moodle_link: "Matching the Moodle course",
   study_pause: "Pausing study reminders", study_resume: "Turning study reminders on", exam_date: "Preparing the exam date card",
   study_position: "Noting where you stand", study_undo: "Putting the earlier record back", class_cancelled: "Noting the cancelled class", study_plan: "Building your study plan",
-  teach_next: "Preparing the lesson",
+  teach_next: "Preparing the lesson", talk_course: "Noting which course this is about", moodle_watch: "Changing what the Moodle watch tells you",
 };
 function describeProgress(lines) {
   let text = "Starting...";

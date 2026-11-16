@@ -80,7 +80,10 @@ function createNudges({ tracker, courseList, now = () => Date.now(), timezone = 
         const d = plan.daysBetween(t, p.position.examDate);
         out.push({ kind: "exam", rank: 1, ref: ref.key, date: p.position.examDate, text: `${ref.name}: the exam is ${d === 0 ? "today" : d === 1 ? "tomorrow" : `${plan.niceDate(p.position.examDate)}, in ${d} days`}. Say "quiz me on ${ref.name}" for a short round on what you covered.` });
       }
-      const stale = mode === "revising" || mode === "paused" ? null : p.behind.find((b) => (b.hasMaterial || b.topic) && plan.daysBetween(b.date, t) >= BEHIND_AFTER_DAYS);
+      // A lecture nudge only for a course Omri attends (or said nothing about): for self-study, revising, not started or paused the
+      // timetable's lectures are not how Omri studies (2026-11-16: the same "lecture of 19 Oct is not checked" line came on six
+      // mornings for a course Omri studies alone from the notes).
+      const stale = mode && mode !== "attending" ? null : p.behind.find((b) => (b.hasMaterial || b.topic) && plan.daysBetween(b.date, t) >= BEHIND_AFTER_DAYS);
       if (stale) out.push({ kind: "lecture", rank: 2, ref: ref.key, date: stale.date, text: `${ref.name}: the lecture of ${plan.niceDate(stale.date)} is not checked yet. Say "quiz me on ${ref.name}" for 3 questions, or "teach me" and I explain it first.` });
       if (p.topicsDue) out.push({ kind: "review", rank: 3, ref: ref.key, date: t, text: `${ref.name}: ${p.topicsDue} topic${p.topicsDue === 1 ? " is" : "s are"} due for review today. Say "quiz me" for a short round.` });
       if (tracker.goodTimeToAsk()) {

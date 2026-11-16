@@ -70,7 +70,8 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch"]);
+const UNSAID = new Set(["talk_course"]); // doing-tools that are only a label: never listed as "this was done" for Omri
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -91,12 +92,17 @@ const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
 const warmUp = () => { try { pool.warmUp(CHAIN[0].model, null); } catch (error) { /* only makes the first message slower */ } }; // the brain's first model (Hydrogen medium since 2026-11-15)
 const WARM_MODELS = new Set([MODELS.hydrogenMedium.model, MODELS.argonLow.model]); // the warm pool keeps one spare per model
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
+// THE BRAIN'S TIME LIMIT (2026-11-16). The models' general limits (providers.js: Argon 240 s) are sized for reading big files. In
+// Omri's real use the brain's 293 successful calls took 9 s in the middle and 50 s at most, and the one call that hung made Omri wait
+// 240 s before the next model was asked. A brain call through agy now gets 120 s; after that the next model in the chain answers.
+const BRAIN_TIMEOUT_MS = 120 * 1000;
+const brainTimeout = (model) => Math.min(timeoutFor(model), BRAIN_TIMEOUT_MS);
 function askWarm(provider, model, question, onText, extra = {}) {
   const onUsage = extra.onUsage || null;
-  if (provider === "agy" && WARM_MODELS.has(model)) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model), onUsage });
+  if (provider === "agy" && WARM_MODELS.has(model)) return pool.askText(question, model, onText || (() => {}), { timeoutMs: brainTimeout(model), onUsage });
   // agy always gets the prompt through stdin (the streaming call). Without onText, ask() would put it on the command line, and the
   // brain's prompt is far longer than Windows allows ("spawn ENAMETOOLONG"), so every agy model but the warm Argon failed at once.
-  if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage });
+  if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage, timeoutMs: brainTimeout(model) });
   return ask(provider, model, question, onText, { onUsage });
 }
 // "2 model calls, 31,204 tokens" from the calls one message made (each: { model, input, output, thinking, cacheRead }).
@@ -166,10 +172,34 @@ function withoutCalls(text) {
 // While the model writes: is this going to be a tool round? (so tool lines are never shown to Omri as an answer)
 // Returns true (tool lines), false (an answer), or null (too early to tell: the first few characters could still become "CALL").
 // The markers of Bot's OWN prompt (never words Omri writes): a reply that quotes them is the model's notes about the prompt.
+// Since 2026-11-16 also a reply that QUOTES Bot's own briefing word for word (any run of 45 characters of one of its
+// lines, or of the photo paragraph code writes): on 2026-11-14 a photo answer opened with "Wait no! Read the prompt carefully:"
+// and three quoted sentences of the briefing, which none of the markers caught. An answer for Omri never needs a briefing sentence.
+const QUOTE_RUN = 45;
+const PHOTO_RULE = "open and look at that one file (the only file you may read)";
+const flat = (text) => String(text || "").replace(/\s+/g, " ");
+// Every run of QUOTE_RUN characters of the briefing (each line by itself, spaces flattened), kept in a Set and built once per text.
+let briefRuns = { of: null, runs: new Set() };
+function runsOf(brief) {
+  if (briefRuns.of === brief) return briefRuns.runs;
+  const runs = new Set();
+  for (const line of [PHOTO_RULE, ...String(brief || "").split(/\n/)]) {
+    const t = flat(line);
+    for (let i = 0; i + QUOTE_RUN <= t.length; i++) runs.add(t.slice(i, i + QUOTE_RUN));
+  }
+  briefRuns = { of: brief, runs };
+  return runs;
+}
+function quotesBrief(text, brief) {
+  const t = flat(text);
+  const runs = runsOf(brief);
+  for (let i = 0; i + QUOTE_RUN <= t.length; i++) if (runs.has(t.slice(i, i + QUOTE_RUN))) return true;
+  return false;
+}
 // 2026-11-16: Argon on a photo closed its thinking too early and wrote "Wait—I must reply with ONLY tool lines ... I accidentally closed
 // the thought tag ... `CALL {"tool":...`" before the real answer. Bot's own protocol words never belong in a reply to Omri: a thought tag,
 // "tool lines", or a CALL line quoted inside the text (a real CALL line starts its own line and is handled as a call).
-const leaksPrompt = (text) => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{|<\/?thought>|\bthought tag\b|\btool lines\b|`CALL\s*\{/i.test(String(text || ""));
+const leaksPrompt = (text, brief = "") => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{|<\/?thought>|\bthought tag\b|\btool lines\b|`CALL\s*\{/i.test(String(text || "")) || (!!brief && quotesBrief(text, brief));
 
 function looksLikeCall(partial) {
   const t = String(partial).replace(/^\s*(?:```\w*\s*)?(?:[-*`]\s*)?/, "");
@@ -188,11 +218,20 @@ function lastWords(history) {
   return "";
 }
 
-function languageLine(task) {
+// A SHORT Latin-letter message is not proof of a switch to English (2026-11-16): "u=x v'=e^x", "PDF", a file name or the page's own
+// words for a photo sent without text got the English line and an English reply in the middle of a Hebrew lesson. So the English
+// line now needs a real sentence (4+ Latin words), or a talk that was not in Hebrew anyway; a short Latin message right after
+// Omri's Hebrew message gets a line that keeps the talk's language. Counting letters and words only: never a list of words.
+function languageLine(task, history = []) {
   const prose = String(task).replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
-  const he = (prose.match(/[֐-׿]/g) || []).length;
-  const en = (prose.match(/[a-z]/gi) || []).length;
+  const count = (text) => ({ he: (String(text).match(/[֐-׿]/g) || []).length, en: (String(text).match(/[a-z]/gi) || []).length });
+  const { he, en } = count(prose);
   if (he >= 3 && he >= 2 * en) return "\n(This message is in Hebrew: write the reply in Hebrew; code and the technical terms people say in English stay in English.)";
+  const before = [...(Array.isArray(history) ? history : [])].reverse().find((h) => h && h.role === "user" && typeof h.text === "string");
+  const was = before ? count(before.text) : { he: 0, en: 0 };
+  const hebrewTalk = was.he >= 3 && was.he >= was.en;
+  const words = (prose.match(/[a-z]{2,}/gi) || []).length;
+  if (hebrewTalk && he === 0 && words < 4) return "\n(This message is only a few Latin letters, symbols or numbers, and Omri's message before it was in Hebrew: keep replying in Hebrew, unless Omri clearly asks for English.)";
   if (en >= 3 && en >= 4 * he) return "\n(This message is in English: write the reply in English, even if the notes or the earlier talk are in Hebrew.)";
   return "";
 }
@@ -324,7 +363,7 @@ function createBrain({
   }
 
   // Which course is the talk in? The newest answer about a course in the last 6 hours, or a course whose name is in the message.
-  function focusCourse(task, history, list) {
+  function focusCourse(task, history, list, quote = null) {
     const low = String(task).toLowerCase();
     // A course is "named" when its name is in the message, or the timetable's own pattern for it matches (that is where the Hebrew names
     // live: "חדו", "תכנות מערכות"). Two courses matching ("תכנות מערכות עתירות ביצועים" fits two) is not a clear name: nothing is guessed.
@@ -339,8 +378,12 @@ function createBrain({
     const named = hits.filter((a) => !hits.some((b) => inner(a, b)));
     if (named.length === 1) return named[0];
     if (named.length > 1) return null;
+    // The part Omri marked and replies to (quote.js) belongs to an answer about a course: the talk is in THAT course, whatever came
+    // after it (2026-11-16: a reply to a marked Systems Programming answer waited 100 s for a file of another course to be read).
+    if (quote && typeof quote.courseId === "string") { const c = list.find((x) => x.id === quote.courseId); if (c) return c; }
     for (let i = history.length - 1; i >= 0; i--) {
       const h = history[i];
+      if (h && h.noCourse) return null; // the brain said the talk left the courses (talk_course "none"): older answers do not pull it back
       if (h && h.courseId && (!h.at || now() - h.at < FOCUS_MS)) return list.find((c) => c.id === h.courseId) || null;
     }
     return null;
@@ -448,6 +491,18 @@ ${text}`; } catch (error) {
     };
 
     return {
+      // WHICH COURSE THE TALK IS IN, said by the brain when code's guess is wrong (2026-11-16). Code guesses from the last answers
+      // (focusCourse), so a talk that moved to another course, or to no course at all, kept the old course's label, its material in
+      // every prompt and its place in the queue. The model only names a course; code checks it is a real one ("none" = no course).
+      // It changes a label and what the NEXT message is given, nothing else.
+      talk_course: async ({ course }) => {
+        const name = String(course == null ? "" : course).trim();
+        if (!name || /^(none|no course|general)$/i.test(name)) { ctx.course = null; ctx.noCourse = true; return "Noted: this talk is not about a course."; }
+        const c = need(name);
+        ctx.course = c;
+        ctx.noCourse = false;
+        return `Noted: this talk is about ${c.name}.`;
+      },
       course_search: async ({ course, query }) => {
         const c = need(course);
         const pages = courses.allPages(c.id);
@@ -789,6 +844,17 @@ ${text}`; } catch (error) {
       moodle_courses: async () => moodleRead(() => moodle.listText(patternFor)),
       moodle_course: async ({ course }) => { aboutCourse(course); return moodleRead(() => moodle.courseText(course, patternFor)); },
       moodle_news: async ({ course, count }) => { aboutCourse(course); return moodleRead(() => moodle.newsText(course, patternFor, count)); },
+      // What the Moodle watch posts about ONE course (2026-11-16): new files on or off. Omri's own wish only: refused after a web
+      // page, a photo or Moodle text in the same message. The course is a real Bot course (checked); the value is on or off.
+      moodle_watch: async ({ course, files }) => {
+        afterWeb("change the Moodle watch");
+        if (!moodle || !moodle.watchFiles) throw new Error("the Moodle watch is not set up in this Bot.");
+        const c = need(course);
+        const v = String(files == null ? "" : files).trim().toLowerCase();
+        if (v !== "on" && v !== "off") throw new Error('say "files":"off" (do not post new files of this course) or "files":"on"');
+        ctx.course = c;
+        return moodle.watchFiles(c.id, v === "on");
+      },
       // Which Bot course a Moodle course is: only decides where Moodle files go, both sides checked against the real lists.
       moodle_link: async ({ moodle: which, course }) => {
         afterWeb("link courses", { moodleOk: true });
@@ -923,9 +989,11 @@ ${r.cardText}`; }
     const list = Array.isArray(options.courses) ? options.courses : courseList();
     const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, sawPhoto: !!image, fromPhone: fromPhone === true, tools: [], done: [] };
     const tools = makeTools(ctx);
+    // The course this answer is filed under; noCourse (talk_course "none") tells the next message that the talk left the courses.
+    const courseOf = () => (ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : ctx.noCourse ? { noCourse: true } : {});
     // attached: these words came WITH a file that code already filed (thread-files.js); the talk is in that file's course.
     const filedIn = attached && attached.courseId ? list.find((c) => c.id === attached.courseId) || null : null;
-    const focus = route === "general" ? null : filedIn || focusCourse(task, history, list);
+    const focus = route === "general" ? null : filedIn || focusCourse(task, history, list, quote);
     if (focus) ctx.course = focus;
     // A file of this course still being read: wait first (no slot held).
     const fileNote = focus ? await waitForFiles(focus, lang, notify, log) : null;
@@ -941,8 +1009,9 @@ ${r.cardText}`; }
     try { const facts = memory.list(); about = aboutBlock({ picked: pickFacts(facts, task) }) || ""; } catch (error) { about = ""; }
     const zone = localZone();
     const day = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long" }).format(new Date(now()));
+    const brief = readBrief();
     const head = [
-      readBrief(),
+      brief,
       `## Right now\nIt is ${localIso(now(), zone)} (${day}), time zone ${zone}.`,
       about,
       route === "general" ? "" : `## Calendar and reminders\n${await weekAhead(lang)}`,
@@ -963,7 +1032,7 @@ ${r.cardText}`; }
     const words = String(task).trim()
       ? `## Omri's new message\n<message>\n${noCtl(task)}\n</message>${withPhoto}`
       : "## Omri's new message\nOmri sent only the photo, with no words. It is usually an answer to what Bot asked last, or it continues the current talk: read the conversation so far to know what Omri means, and do that. Reply in the language of that talk.";
-    const tail = quoteBlock(quote, zone) + words + languageLine(said) + phoneLine;
+    const tail = quoteBlock(quote, zone) + words + languageLine(said, history) + phoneLine;
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
@@ -998,7 +1067,7 @@ ${r.cardText}`; }
       const stream = onPartial ? (partial) => {
         if (!partial) { if (showing) onPartial(""); showing = false; return; }
         if (attached && partial.trim().length < 12) return; // it may still become the single word NOTHING (no answer needed)
-        if (leaksPrompt(partial)) { if (showing) onPartial(""); showing = false; return; } // its notes about the prompt: never on the screen
+        if (leaksPrompt(partial, brief)) { if (showing) onPartial(""); showing = false; return; } // its notes about the prompt: never on the screen
         const verdict = looksLikeCall(partial);
         if (verdict === null) return;
         if (verdict || /^\s*CALL\s*\{/m.test(partial)) { if (showing) onPartial(""); showing = false; return; }
@@ -1016,7 +1085,7 @@ ${r.cardText}`; }
         const text = say(lang, `Every model failed on this message, so I could not answer:\n${why}\nSend it again in a minute.`, `כל המודלים נכשלו בהודעה הזאת, אז לא הצלחתי לענות:\n${why}\nאפשר לשלוח שוב בעוד דקה.`);
         if (!ctx.done.length && !Object.keys(ctx.extras).length) throw new Error(text);
         const answer = text + "\n\n" + say(lang, "Before that, this was done:", "לפני כן זה כבר בוצע:") + "\n" + ctx.done.map((d) => "- " + d).join("\n");
-        return { mode: "single", brain: true, rule: "Bot", reason: "every model failed after some tools ran", chain: order, used: used || order[0], answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: "every model failed after some tools ran", chain: order, used: used || order[0], answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...courseOf(), ...ctx.extras };
       }
       attempts.push(...(r.attempts || []));
       used = r.used;
@@ -1026,7 +1095,7 @@ ${r.cardText}`; }
         // The model wrote its own notes ABOUT this prompt (it quoted "## Tool round", <tool-result>, <USER_REQUEST>) instead of a reply:
         // Omri got a page of "Wait... HOLD ON! Look at <USER_REQUEST>" before the answer (2026-11-15). It is asked ONCE more for the
         // reply only; if that leaks too, Bot says so plainly instead of showing the notes.
-        if (leaksPrompt(answer)) {
+        if (leaksPrompt(answer, brief)) {
           log(`[brain] ${used.model} wrote notes about the prompt instead of a reply: asking once more`);
           let again = "";
           try {
@@ -1034,7 +1103,7 @@ ${r.cardText}`; }
             used = r2.used;
             again = fixMath(withoutCalls(parseReply(r2.answer).text));
           } catch (error) { again = ""; }
-          answer = again && !leaksPrompt(again) ? again : say(lang, "My answer came out garbled (the model wrote notes to itself instead of a reply), so I did not show it. Send the message again.", "התשובה יצאה משובשת (המודל כתב הערות לעצמו במקום תשובה), אז לא הצגתי אותה. אפשר לשלוח את ההודעה שוב.");
+          answer = again && !leaksPrompt(again, brief) ? again : say(lang, "My answer came out garbled (the model wrote notes to itself instead of a reply), so I did not show it. Send the message again.", "התשובה יצאה משובשת (המודל כתב הערות לעצמו במקום תשובה), אז לא הצגתי אותה. אפשר לשלוח את ההודעה שוב.");
           if (onPartial) onPartial(answer);
         }
         // The last round and the model still only asked for tools: say what was done instead of failing the whole message.
@@ -1044,7 +1113,7 @@ ${r.cardText}`; }
         if (attached && /^\W*nothing\W*$/i.test(answer)) { if (onPartial) onPartial(""); log("[brain] the words sent with the file needed no answer"); return { mode: "single", brain: true, silent: true, answer: "", seconds: seconds() }; }
         if (fileNote) answer = fileNote + "\n\n" + answer;
         log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}${cost()}`);
-        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...courseOf(), ...ctx.extras };
       }
       if (showing && onPartial) onPartial("");
 
@@ -1078,7 +1147,7 @@ ${r.cardText}`; }
         if (!fn) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}".`, ok: false };
         try {
           const text = clip(await fn(call), LIMITS.result);
-          if (DOING.has(call.tool)) ctx.done.push(text.split("\n")[0].slice(0, 200)); // what really happened, for an honest reply if the model fails later
+          if (DOING.has(call.tool) && !UNSAID.has(call.tool)) ctx.done.push(text.split("\n")[0].slice(0, 200)); // what really happened, for an honest reply if the model fails later
           return { call, text, ok: true };
         } catch (error) { return { call, text: `FAILED, nothing was done: ${String(error.message).slice(0, 400)}`, ok: false }; }
       }));
@@ -1088,7 +1157,7 @@ ${r.cardText}`; }
         if (fileNote) said = fileNote + "\n\n" + said;
         log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
         if (onPartial) onPartial(said);
-        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...courseOf(), ...ctx.extras };
       }
       await slowSlot(); // the quick finish did not happen (a call failed, or the model wrote no reply): another round follows
       transcript.push(`## Tool round ${round + 1}\n` + results.map(({ call, text }) => {
@@ -1112,4 +1181,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, brainTimeout, BRAIN_TIMEOUT_MS, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

@@ -21,6 +21,10 @@ const BINARY_EXT = /\.(o|a|so|dll|exe|class|pyc|jar|zip|gz|tar|7z|png|jpe?g|gif|
 const fail = (message) => new Error(message);
 const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 const inside = (child, parent) => { const rel = path.relative(parent, child); return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel)); };
+// Where a path REALLY is, with its full real name. Windows keeps a second, short name for many files ("CREDEN~1.JSO" for
+// "credentials.json"); the plain realpathSync leaves such a name as it is, so the "never a secret by name" rule could be walked around
+// with it (code review, 2026-11-16). realpathSync.native asks Windows for the true name. If it cannot answer, the plain one is used.
+const realOf = (p) => { try { return fs.realpathSync.native(p); } catch (error) { return fs.realpathSync(p); } };
 
 // Is this a folder Bot may link? Returns its real absolute path, or throws a plain reason. forbidden: folders Bot must never link (its own project).
 // system: folders of the operating system (a parameter so a test can link a temporary folder, which lives under AppData on Windows).
@@ -73,8 +77,8 @@ function locate(root, rel) {
     full = path.resolve(root, hits[0].rel);
   }
   let real;
-  try { real = fs.realpathSync(full); } catch (error) { throw fail(`there is no file "${want.slice(0, 120)}" in the linked folder`); }
-  if (!inside(real, fs.realpathSync(root))) throw fail("that file is outside the linked folder, so Bot will not open it");
+  try { real = realOf(full); } catch (error) { throw fail(`there is no file "${want.slice(0, 120)}" in the linked folder`); }
+  if (!inside(real, realOf(root))) throw fail("that file is outside the linked folder, so Bot will not open it");
   if (SECRET_NAME.test(path.basename(real))) throw fail("Bot never opens files that look like secrets (.env, keys, credentials)");
   return real;
 }
@@ -92,8 +96,8 @@ function readFile(root, rel) {
     full = path.resolve(root, want);
   }
   let real;
-  try { real = fs.realpathSync(full); } catch (error) { throw fail(`there is no file "${want.slice(0, 120)}" in the linked folder`); }
-  if (!inside(real, fs.realpathSync(root))) throw fail("that file is outside the linked folder, so Bot will not read it");
+  try { real = realOf(full); } catch (error) { throw fail(`there is no file "${want.slice(0, 120)}" in the linked folder`); }
+  if (!inside(real, realOf(root))) throw fail("that file is outside the linked folder, so Bot will not read it");
   const st = fs.statSync(real);
   if (!st.isFile()) throw fail("that is a folder, not a file");
   if (SECRET_NAME.test(path.basename(real))) throw fail("Bot never reads files that look like secrets (.env, keys, credentials)");

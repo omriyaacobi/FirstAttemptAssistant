@@ -46,7 +46,7 @@ function isPartOf(quoteText, message) {
   return false;
 }
 
-// Returns { id, text, role, at } for a good quote, or throws an Error with .status 400 and a plain reason.
+// Returns { id, text, role, at, courseId? } for a good quote, or throws an Error with .status 400 and a plain reason.
 function checkQuote(thread, input) {
   const fail = (reason) => { throw Object.assign(new Error(reason), { status: 400 }); };
   if (!input || typeof input !== "object") fail("the quote must be { messageId, text }");
@@ -59,7 +59,9 @@ function checkQuote(thread, input) {
   if (!message) fail("the quoted message is not in the conversation (was it deleted?)");
   if (message.role !== "user" && message.role !== "assistant") fail("that message cannot be quoted");
   if (!isPartOf(text, message)) fail("the marked text was not found in that message. Mark text inside one message only.");
-  return { id: message.id, text, role: message.role, at: message.at };
+  // The course the quoted ANSWER was about (written by code on the answer): the reply to it belongs to that course (brain.js focusCourse).
+  const courseId = message.role === "assistant" && message.result && typeof message.result.courseId === "string" ? message.result.courseId : null;
+  return { id: message.id, text, role: message.role, at: message.at, ...(courseId ? { courseId } : {}) };
 }
 
 module.exports = { checkQuote, isPartOf, words, MAX_QUOTE_CHARS };

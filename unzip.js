@@ -38,7 +38,7 @@ const DOC_EXT = /\.(pdf|pptx|docx|txt|md|jpe?g|png|webp)$/i;
 // instructions. Each one must really BE text (checkCodeBytes), whatever its name says.
 const CODE_EXT = /\.(c|h|cc|cpp|cxx|hpp|hh|py|js|mjs|ts|java|cs|go|rs|sh|asm|s|sql|json|csv|yaml|yml|toml|css|tex|mk|cmake|ini|cfg)$/i;
 // A web page is a DOCUMENT, not code: its text is taken out (html-text.js) and filed like a text file. It is never rendered or run.
-const HTML_EXT = /.html?$/i;
+const HTML_EXT = /\.html?$/i;
 const CODE_NAMES = new Set(["makefile", "readme", "license", "dockerfile"]); // extensionless names, any case
 // Compiled / binary leftovers and tool folders: never read, and only COUNTED in the summary (not listed one by one).
 const JUNK_EXT = /\.(o|a|so|dll|exe|obj|class|pyc|pyo|lib|dylib|elf|out|bin|dSYM|jar)$/i;
@@ -131,9 +131,9 @@ function looksLikeText(data) {
 function kindOf(name, group) {
   if (group === "code") return "code";
   if (group === "html") return "text";
-  if (/.pdf$/i.test(name)) return "pdf";
-  if (/.(pptx|docx)$/i.test(name)) return "office";
-  if (/.(jpe?g|png|webp)$/i.test(name)) return "image";
+  if (/\.pdf$/i.test(name)) return "pdf";
+  if (/\.(pptx|docx)$/i.test(name)) return "office";
+  if (/\.(jpe?g|png|webp)$/i.test(name)) return "image";
   return "text";
 }
 

@@ -83,7 +83,7 @@ test("SECURITY: the quote reaches the brain beside the message, never inside it,
   // (also 2026-11-16: a photo with words gets a code-written line after the block, ${withPhoto}; it holds no quote text)
   assert.match(brainCode, /`## Omri's new message\\n<message>\\n\$\{noCtl\(task\)\}\\n<\/message>\$\{withPhoto\}`/);
   assert.match(brainCode, /const withPhoto = image \? `\\nThe photo is part of THIS message/);
-  assert.match(brainCode, /const tail = quoteBlock\(quote, zone\) \+ words \+ languageLine\(said\)/);
+  assert.match(brainCode, /const tail = quoteBlock\(quote, zone\) \+ words \+ languageLine\(said, history\)/);
   assert.match(brainCode, /const mine = new Set\(\[\.\.\.urlsIn\(task\), \.\.\.history\.filter\(\(h\) => h\.role === "user"\)\.flatMap\(\(h\) => urlsIn\(h\.text\)\)\]\);/);
   assert.doesNotMatch(brainCode, /urlsIn\([^)]*quote/);
 });

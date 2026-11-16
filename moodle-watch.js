@@ -20,6 +20,9 @@
 //     The model only hands back a label per number; code decides. A routine one is not posted and not counted (it is still known,
 //     and Omri can read it by asking Bot about the course's Moodle news). Any doubt shows the message: no sorter, a failed or slow
 //     call, an answer that is not a clear label, a number missing from it. So a model can hide only what it called routine.
+//   - NEW FILES CAN BE TURNED OFF PER COURSE (Omri, 2026-11-16; moodle-tools.js watchFiles, set only by the brain's checked tool
+//     moodle_watch from Omri's own message): for such a course new files and folders are not posted and not counted. Everything
+//     else of that course (lecturers' messages, deadlines, assignments, quizzes) is still posted; the snapshot is kept as usual.
 //   - no keep-alive: one look every EVERY_MS at most; after a failed look the next try is RETRY_MS later. When Moodle cannot be
 //     reached because the token stopped working, Omri is told ONCE (not at every look).
 
@@ -143,6 +146,9 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
       let postsRead = 0;
       const pending = []; // per course: { c, lines, talks: [{ t, first }] }; the messages are sorted once for the whole look
       let routine = 0;
+      let quietFiles = 0; // new files of courses whose files Omri turned off: not posted, only counted for the log
+      let quiet = {};
+      try { quiet = (tools.quietFiles && tools.quietFiles()) || {}; } catch (error) { quiet = {}; }
       // Deadlines (Moodle's own "coming up" list, one read): a deadline that is new, or whose time or name changed, is told once.
       // The first time the list is read it is only saved.
       const dueNews = new Map(); // Moodle course id -> lines
@@ -180,13 +186,15 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
         state.courses[c.id] = d.next;
         if (d.first) continue;
         const lines = [];
+        const filesOff = !!(map[c.id] && quiet[map[c.id]]);
         for (const i of d.news.items) {
           const can = DOWNLOADABLE.has(i.module);
+          if (can && filesOff) { quietFiles++; continue; }
           if (can) counts.files++; else counts.items++;
           const sec = got.sectionOf.get(i.id);
           lines.push(`- new ${KIND[i.module] || safe(i.module, 20) || "item"} [${i.id}] ${safe(i.name)}${sec ? ` (${sec})` : ""}`);
         }
-        for (const i of d.news.grown) { counts.files += i.more; lines.push(`- ${plural(i.more, "more file")} in the folder [${i.id}] ${safe(i.name)}`); }
+        for (const i of d.news.grown) { if (filesOff) { quietFiles += i.more; continue; } counts.files += i.more; lines.push(`- ${plural(i.more, "more file")} in the folder [${i.id}] ${safe(i.name)}`); }
         const talks = [];
         for (const t of d.news.talks.sort((a, b) => (a.time || 0) - (b.time || 0))) {
           let first = null;
@@ -225,6 +233,7 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
       const wasBroken = state.broken;
       write({ ...state, lastCheck: now(), lastTry: now(), broken: "" });
       if (wasBroken) log("[moodle watch] Moodle is reachable again");
+      if (quietFiles) log(`[moodle watch] ${plural(quietFiles, "new file")} not posted (Omri turned the files of that course off)`);
       if (routine) log(`[moodle watch] ${plural(routine, "routine lecturer message")} not posted (sorted by the model)`);
       if (!total) { log("[moodle watch] nothing new"); return { ok: true, posted: false, counts, routine }; }
       const parts = [counts.files ? plural(counts.files, "new file") : "", counts.talks ? plural(counts.talks, "new message") + " from lecturers" : "", counts.deadlines ? plural(counts.deadlines, "new or changed deadline") : "", counts.items ? plural(counts.items, "other new item") : ""].filter(Boolean);

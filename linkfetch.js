@@ -58,10 +58,10 @@ function isPublicIp(ip) {
     if (/^::ffff:[0-9a-f]{1,4}:[0-9a-f]{1,4}$/.test(s)) return false; // the hex form of the same: refuse rather than decode
     if (s === "::" || s === "::1") return false;
     const first = parseInt(s.split(":")[0] || "0", 16);
-    if ((first & 0xfe00) === 0xfc00) return false; // fc00::/7 unique local
-    if ((first & 0xffc0) === 0xfe80) return false; // fe80::/10 link-local
-    if ((first & 0xff00) === 0xff00) return false; // multicast
-    if (s.startsWith("64:ff9b:") || s.startsWith("2001:db8") || s.startsWith("2002:")) return false; // NAT64, documentation, 6to4
+    // Only 2000::/3 is the public internet in IPv6. Everything else is refused: fc00::/7 (private), fe80::/10 (link-local), ff00::/8
+    // (multicast), 64:ff9b:: (an IPv4 address wrapped by NAT64), and the old "::a.b.c.d" form that could spell 127.0.0.1 (2026-11-16).
+    if ((first & 0xe000) !== 0x2000) return false;
+    if (/^2001:0?db8(:|$)/.test(s) || /^2002:/.test(s) || /^2001:0{0,4}:/.test(s)) return false; // documentation, 6to4 and Teredo (both wrap an IPv4 address)
     return true;
   }
   return false;

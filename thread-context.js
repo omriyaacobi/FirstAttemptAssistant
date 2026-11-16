@@ -99,6 +99,7 @@ function buildHistory(store, { entryOf, courseName = null, busy = [], pending = 
     const label = labelOf(m, courseName);
     if (label) entry.label = label;
     if (m.result && typeof m.result.courseId === "string") entry.courseId = m.result.courseId; // which course this turn was about
+    if (m.result && m.result.noCourse === true) entry.noCourse = true; // the brain said this turn was about no course (talk_course)
     entry.at = m.at;
     return entry;
   });

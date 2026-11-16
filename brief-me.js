@@ -19,12 +19,23 @@ const { MODELS } = require("./router");
 
 const CHAIN = [MODELS.hydrogenHigh, MODELS.flashHigh]; // Hydrogen high since 2026-11-15 (the same Gemini Models pool as Flash; Omri)
 const MAX_LINES = 5;
-const MAX_LINE = 180;
+const MAX_LINE = 300; // 180 until 2026-11-16: the model's lines were 200-250 long, so every morning some ended in the middle of a sentence
+const ASK_LINE = 220; // what the model is asked to stay under
 const DUE_DAYS = 7;
 const EXAM_DAYS = 14;
 const UNDERSTOOD_WORDS = /understood|understand|mastered|nailed|knows? it|passed (?:the |a |your )?(?:graded )?(?:quiz|check)/i; // "passed the Stage B tests" (code) is fine
 
 const clean = (s, n) => String(s == null ? "" : s).replace(/[<>\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+// A line that is still too long ends at a sentence end when one is near, otherwise at a word, with "..." (never inside a word).
+function fitLine(text, max = MAX_LINE) {
+  const t = String(text);
+  if (t.length <= max) return t;
+  const head = t.slice(0, max - 3);
+  const stop = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "));
+  if (stop >= max * 0.6) return head.slice(0, stop) + ".";
+  const space = /\s/.test(t[head.length]) ? head.length : head.lastIndexOf(" ");
+  return (space > 0 ? head.slice(0, space) : head).replace(/[\s,;:(-]+$/, "") + "...";
+}
 
 // The ledger: [{ n, part: "done"|"todo"|"behind"|"said", text, understood }]. All of it from code.
 // dayNotes: yesterday's "done" notes from the end-of-day review ([{ text }]), written by a model from the talk: notes, never "understood".
@@ -48,7 +59,10 @@ function buildLedger({ log, tracker, courseList, today, paused = false, dayNotes
     if (p.topicsDue) push("todo", `${name}: ${p.topicsDue} review topic${p.topicsDue === 1 ? "" : "s"} due today`);
     const pos = p.position || {};
     if (pos.examDate && pos.confirmed && pos.examDate >= today && plan.daysBetween(today, pos.examDate) <= EXAM_DAYS) push("todo", `${name}: exam on ${plan.niceDate(pos.examDate)}, in ${plan.daysBetween(today, pos.examDate)} days`);
-    const quietMode = pos.mode === "revising" || pos.mode === "paused";
+    // No "lectures not checked" count for a course Omri does not attend (studies alone from the notes, has not started): the count is
+    // made from the timetable's lectures, which is not how Omri studies there. The study report and the plan already left it out
+    // (study-coach.js); since 2026-11-16 the brief and the nudge do too. Omri's own words about the course are still in the ledger.
+    const quietMode = !!pos.mode && pos.mode !== "attending";
     if (p.tracked && !quietMode && p.behind.length) push("behind", `${name}: ${p.behind.length} lecture${p.behind.length === 1 ? "" : "s"} not checked by a quiz yet`);
     if (pos.said) push("said", `${name}, in Omri's own words: "${clean(pos.said, 200)}"`);
   }
@@ -58,7 +72,7 @@ function buildLedger({ log, tracker, courseList, today, paused = false, dayNotes
 function prompt(ledger) {
   return [
     "You write the short \"You\" part of Omri's morning brief. Omri is a university student. Below is a numbered LEDGER written by code from real records. It is the ONLY truth: use nothing else.",
-    "Write at most 5 short lines in English, talking to Omri as \"you\": first what was done yesterday (the most important things, merged where they belong together), then what is still to do, then, in ONE short line, what is behind. Friendly and plain, no advice lists, no emoji.",
+    `Write at most 5 short lines (each under ${ASK_LINE} characters, one or two plain sentences) in English,` + " talking to Omri as \"you\": first what was done yesterday (the most important things, merged where they belong together), then what is still to do, then, in ONE short line, what is behind. Friendly and plain, no advice lists, no emoji.",
     "Rules: every line cites the ledger numbers it is based on in \"refs\". Never invent progress, scores or dates. Never say something was understood, learned or passed unless a cited item says \"now Understood\". If no item is marked (done), skip that part (code adds its own line about it). Items marked (said) are Omri's own words: use them only to word the other lines kindly.",
     'Reply with ONLY one JSON object: {"lines": [{"text": "...", "refs": [numbers]}]}',
     "LEDGER:",
@@ -75,7 +89,7 @@ function checkLines(raw, ledger, why = []) {
     if (out.length >= MAX_LINES) break;
     const rawText = clean(line && line.text, MAX_LINE * 2);
     const tail = /\s*\[([\d,\s]+)\]\s*$/.exec(rawText);
-    const text = clean(rawText.replace(/\s*\[[\d,\s]*\]\s*$/, ""), MAX_LINE);
+    const text = fitLine(clean(rawText.replace(/\s*\[[\d,\s]*\]\s*$/, ""), MAX_LINE * 2));
     const given = [...(Array.isArray(line && line.refs) ? line.refs : []), ...(tail ? tail[1].split(",") : [])].map(Number);
     const refs = [...new Set(given)].filter((n) => Number.isInteger(n) && n >= 1 && n <= ledger.length);
     if (text.length < 4) { why.push("empty"); continue; }
@@ -112,4 +126,4 @@ async function aboutMeBlock({ log, tracker, courseList, today, paused = false, d
   return { text: `You\n${lines.map((l) => `  ${l}`).join("\n")}` };
 }
 
-module.exports = { aboutMeBlock, buildLedger, checkLines, plainLines, prompt, CHAIN, MAX_LINES };
+module.exports = { fitLine, MAX_LINE, aboutMeBlock, buildLedger, checkLines, plainLines, prompt, CHAIN, MAX_LINES };
