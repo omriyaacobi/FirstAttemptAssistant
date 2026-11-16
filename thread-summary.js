@@ -66,7 +66,9 @@ function transcriptOf(messages) {
   const byNumber = new Map();
   const lines = usable.map((m, i) => {
     byNumber.set(i + 1, m);
-    return `[${i + 1}] ${m.role === "user" ? "USER" : "BOT"}: ${cut(norm(m.text), each)}`;
+    // The marker words are taken out of what the model reads (a message, or web text inside one of Bot's answers, could hold
+    // "</transcript>" and then look like text outside the data block). The quote checks still use the message as it was written.
+    return `[${i + 1}] ${m.role === "user" ? "USER" : "BOT"}: ${cut(norm(stripMarkers(m.text)), each)}`;
   });
   return { text: lines.join("\n"), byNumber, usable };
 }

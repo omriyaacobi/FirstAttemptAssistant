@@ -71,7 +71,18 @@ async function page(path, id) {
 
 const decode = (s) => String(s).replace(/&amp;/g, "&").replace(/&quot;/g, "\"").replace(/&#0?39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 const plain = (s) => decode(String(s).replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
-const isFileUrl = (u) => typeof u === "string" && u.startsWith(`${MOODLE}/pluginfile.php/`) && !/[?&]sesskey=/.test(u);
+// A Moodle FILE address, judged on the address the browser will really request: the URL is parsed first, so "..", "%2e%2e" or a
+// backslash are already resolved. Before, a link that only STARTED like a file address ("...pluginfile.php/1/../../mod/...") passed
+// and would have been fetched as another Moodle page, outside the list of pages Bot may open (code review, 2026-11-17).
+const FILE_ORIGIN = new URL(MOODLE).origin, FILE_PATH = `${new URL(MOODLE).pathname}/pluginfile.php/`;
+function isFileUrl(u) {
+  if (typeof u !== "string" || /[\u0000-\u001f\\]/.test(u)) return false;
+  let url;
+  try { url = new URL(u); } catch (error) { return false; }
+  let query = url.search;
+  try { query = decodeURIComponent(query); } catch (error) { /* judged as written */ }
+  return url.origin === FILE_ORIGIN && !url.username && !url.password && url.pathname.startsWith(FILE_PATH) && !/sesskey\s*=/i.test(query);
+}
 const fileName = (u) => { const last = new URL(u).pathname.split("/").pop() || "file"; try { return decodeURIComponent(last); } catch (error) { return last; } };
 
 // Bytes of a pluginfile.php address, as base64. Over 50 MB is refused before reading when the size is known, and while reading anyway.

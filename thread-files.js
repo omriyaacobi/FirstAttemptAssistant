@@ -19,6 +19,10 @@ const { zipSummary, fileMany: fileManyWith, zipItems, showName } = require("./zi
 const { dueFromWords } = require("./due-date");
 
 const PENDING_MS = 30 * 60 * 1000;
+// Why a course was chosen, in Hebrew (the English reason is the `how` text itself). Before, the Hebrew reply always said "by the
+// file name or the message", also when the course came from the class on right now or from Omri's own tap.
+const HOW_CLASS = "a lecture of this course is on right now or just ended", HOW_CHOICE = "your choice";
+const HOW_HE = { name: "לפי שם הקובץ או ההודעה", [HOW_CLASS]: "כי הרצאה של הקורס הזה מתקיימת עכשיו או הסתיימה לא מזמן", [HOW_CHOICE]: "לפי הבחירה שלך" };
 const MAX_PENDING = 5;
 const MAX_PENDING_BYTES = 400 * 1024 * 1024; // all waiting files together (a waiting zip is held unpacked, in memory)
 const AFTER_CLASS_MS = 3 * 3600 * 1000;
@@ -62,7 +66,7 @@ function pickCourse({ fileName = "", text = "", coach, courseList, now = Date.no
   const p = plan.parts(now, tracker.timezone || plan.TIMEZONE);
   const recent = refs.filter((r) => tracker.slots(r.key).some((s) => s.date === p.date && s.attends !== false
     && p.minutes >= Number(s.start.slice(0, 2)) * 60 + Number(s.start.slice(3)) && p.minutes <= Number(s.end.slice(0, 2)) * 60 + Number(s.end.slice(3)) + AFTER_CLASS_MS / 60000));
-  if (recent.length === 1) return { ref: recent[0], how: "a lecture of this course is on right now or just ended" };
+  if (recent.length === 1) return { ref: recent[0], how: HOW_CLASS };
   return null;
 }
 
@@ -84,7 +88,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   function file(courseId, ref, how, { bytes, name, text, questionId }) {
     const saved = courseRoutes.addUpload(courseId, bytes, name); // may throw 400/409/413/415: the caller shows the reason
     context.set(`${courseId}/${saved.id}`, { text, questionId });
-    const reply = say(words(langOf(text), `Filed "${saved.name}" under ${ref.name} (I chose it from ${how}). Bot is reading it now and will tell you when it is ready.`, `תייקתי את "${saved.name}" ${bet(ref.name)} (לפי שם הקובץ או ההודעה). Bot קורא אותו עכשיו ויעדכן כשזה מוכן.`), questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, fileId: saved.id } });
+    const reply = say(words(langOf(text), `Filed "${saved.name}" under ${ref.name} (I chose it from ${how}). Bot is reading it now and will tell you when it is ready.`, `תייקתי את "${saved.name}" ${bet(ref.name)} (${HOW_HE[how] || HOW_HE.name}). Bot קורא אותו עכשיו ויעדכן כשזה מוכן.`), questionId, { topic: `course:${courseId}`, result: { courseId, courseName: ref.name, fileId: saved.id } });
     sendWords({ text, questionId, courseId, courseName: ref.name, fileName: saved.name });
     return { status: "filed", courseId, fileId: saved.id, messageId: reply.id };
   }
@@ -189,7 +193,7 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     if (p.files) return assignMany(pendingId, p, courseId, { name: ref.name });
     pending.delete(pendingId);
     try {
-      return file(courseId, { name: ref.name }, "your choice", p);
+      return file(courseId, { name: ref.name }, HOW_CHOICE, p);
     } catch (error) {
       pending.set(pendingId, p); // a refused file (duplicate, too big) can be sent to another course
       throw error;
