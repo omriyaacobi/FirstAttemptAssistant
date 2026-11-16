@@ -939,6 +939,7 @@
     if (!m) return null;
     const box = el(display ? "div" : "span", display ? "math-block" : "math");
     box.dir = "ltr"; // formulas read left to right even inside Hebrew text
+    try { box.setAttribute("data-tex", tex); } catch (error) { /* only a test's fake page has no attributes */ } // a marked part with a formula is quoted as its TeX, the way the answer was saved (selectedQuote)
     box.appendChild(m);
     return box;
   }
@@ -3094,7 +3095,20 @@
     function selectedQuote() {
       const sel = window.getSelection ? window.getSelection() : null;
       if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
-      const text = sel.toString().replace(/\r\n/g, "\n").trim();
+      // A formula is drawn as MathML, and the browser copies it letter by letter on separate lines ("d", "x" for dx), which is not in
+      // the saved answer, so the server refused the quote (2026-11-16). Each formula in the marked part is put back as its TeX.
+      let text = sel.toString();
+      try {
+        const part = sel.getRangeAt(0).cloneContents();
+        const boxes = part.querySelectorAll("[data-tex]");
+        if (boxes.length) {
+          // textContent has no line breaks between paragraphs ("integral!).Ready"): give each block its own line first.
+          part.querySelectorAll("p, li, div, pre, h1, h2, h3, h4, h5, h6, tr, br").forEach((b) => { if (!b.matches("[data-tex]")) b.append(document.createTextNode("\n")); });
+          boxes.forEach((b) => b.replaceWith(document.createTextNode(b.classList.contains("math-block") ? "\n$$" + b.dataset.tex + "$$\n" : "$" + b.dataset.tex + "$")));
+          text = part.textContent;
+        }
+      } catch (error) { /* the plain selection text is used */ }
+      text = text.replace(/\r\n/g, "\n").trim();
       if (!text) return null;
       const msgOf = (node) => { const e = node && (node.nodeType === 1 ? node : node.parentElement); return e ? e.closest(".tmsg") : null; };
       const a = msgOf(sel.anchorNode), b = msgOf(sel.focusNode);

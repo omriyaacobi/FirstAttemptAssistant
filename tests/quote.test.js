@@ -40,6 +40,14 @@ test("the marked part is found through Markdown, math and Hebrew; words in anoth
   assert.ok(!isPartOf("!!! ...", answer)); // no words at all
 });
 
+test("a formula copied letter by letter still matches the saved TeX (2026-11-16: 'd', 'x' for dx was refused)", () => {
+  const saved = { role: "assistant", text: "Ready for the next step up—what would you choose for $u$ and $v'$ in $\\int \\ln(x) \\, dx$? (Hint: think of the integrand as $1 \\cdot \\ln(x)$.)" };
+  assert.ok(isPartOf("Ready for the next step up—what would you choose for\nu\n and \nv\n′\n in \n∫\nln\n(\nx\n)\nd\nx\n? (Hint: think", saved));
+  assert.ok(isPartOf("what would you choose for $u$ and $v'$ in $\\int \\ln(x) \\, dx$?", saved), "the page now sends the TeX itself");
+  assert.ok(!isPartOf("choose for d x y", saved), "letters that do not join into a saved word exactly are refused");
+  assert.ok(!isPartOf("choose for u and dxx", saved));
+});
+
 function fakeThread(messages) {
   const byId = new Map(messages.map((m) => [m.id, m]));
   return { find: (id) => byId.get(id) || null };

@@ -33,7 +33,16 @@ function isPartOf(quoteText, message) {
   if (!q.length) return false;
   const m = words(shownText(message));
   let i = 0;
-  for (const w of m) { if (w === q[i]) i++; if (i === q.length) return true; }
+  for (const w of m) {
+    if (w === q[i]) i++;
+    else if (w.startsWith(q[i])) {
+      // A formula copied letter by letter ("d", "x") matches one saved word ("dx", 2026-11-16): the quote words must join into it exactly.
+      let joined = "", j = i;
+      while (j < q.length && joined.length < w.length && w.startsWith(joined + q[j])) joined += q[j++];
+      if (joined === w) i = j;
+    }
+    if (i === q.length) return true;
+  }
   return false;
 }
 
