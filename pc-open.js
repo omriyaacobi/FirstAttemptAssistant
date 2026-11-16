@@ -61,8 +61,11 @@ function checkLocal(target) {
   if (hasBad(raw)) throw fail("that path holds a character Bot does not open (a quote or a control character)");
   if (!/^[A-Za-z]:[\\/]/.test(raw)) throw fail("only a full local path like C:\\... can be opened (no network paths)");
   if (raw.indexOf(":", 2) !== -1) throw fail("that path has a hidden part after a ':', so Bot will not open it");
+  // realpathSync.native asks Windows itself for the real name. The plain realpathSync only follows links, so a SHORT name
+  // ("REPORT~1.DOC", the old 8.3 form Windows keeps for "report.docm") kept its harmless-looking ending and a macro file passed as a
+  // document (found in the code review of 2026-11-16). The type below is always judged on the full real name.
   let real;
-  try { real = fs.realpathSync(raw); } catch (error) { throw fail("that file or folder does not exist on this computer", "missing"); }
+  try { real = fs.realpathSync.native(raw); } catch (error) { throw fail("that file or folder does not exist on this computer", "missing"); }
   if (!/^[A-Za-z]:\\/.test(real) || real.indexOf(":", 2) !== -1 || hasBad(real)) throw fail("that path really points somewhere Bot does not open");
   const st = fs.statSync(real);
   const name = path.basename(real);

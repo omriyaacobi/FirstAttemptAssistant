@@ -335,19 +335,32 @@ function buildFeedback(problems, tests) {
 
 // The rules enforced by code. Returns the list of problems (empty means it passes).
 // publicOnly is set for the Argon editor: it may only change files under public/ (new, deleted and renamed files included).
-function checkProposal({ files, diff, tests, baseline, publicOnly = false }) {
+// A file name that "node --test" would RUN as a test wherever it lies (also under public/): x.test.js, x-test.js, x_test.js, test-x.js,
+// test.js, anything in a folder called test, with .js / .cjs / .mjs / .ts endings.
+const TEST_FILE = /(^|\/)test\/|(^|\/)(test|test-[^/]*|[^/]*[._-]test)\.[cm]?[jt]s$/i;
+
+// What an Argon change may not contain, checked BEFORE the tests run (2026-11-16). Running the tests runs code; Argon is the page-only
+// editor, so a file of its own must never be run on this PC. Without this, a file public/x.test.js passed "only under public/" and
+// was then executed by the test run, before Omri had seen anything.
+function publicOnlyProblems(files) {
   const problems = [];
-  if (publicOnly) {
-    const outside = files.filter((f) => !f.path.startsWith("public/")).map((f) => f.path);
-    if (outside.length) problems.push(`Argon may only change files under public/, but these were changed: ${outside.join(", ")}`);
-    const odd = files.filter((f) => /^(120000|160000)$/.test(f.mode || "")).map((f) => f.path);
-    if (odd.length) problems.push(`Links and submodules are not allowed: ${odd.join(", ")}`);
-  }
+  const outside = files.filter((f) => !f.path.startsWith("public/")).map((f) => f.path);
+  if (outside.length) problems.push(`Argon may only change files under public/, but these were changed: ${outside.join(", ")}`);
+  const odd = files.filter((f) => /^(120000|160000)$/.test(f.mode || "")).map((f) => f.path);
+  if (odd.length) problems.push(`Links and submodules are not allowed: ${odd.join(", ")}`);
+  const runnable = files.filter((f) => f.path.startsWith("public/") && TEST_FILE.test(f.path)).map((f) => f.path);
+  if (runnable.length) problems.push(`Argon may not add or change a file the test run would execute: ${runnable.join(", ")}`);
+  return problems;
+}
+
+function checkProposal({ files, diff, tests, baseline, publicOnly = false }) {
+  const problems = publicOnly ? publicOnlyProblems(files) : [];
   const touched = files.filter((f) => isProtected(f.path)).map((f) => f.path);
   if (touched.length) problems.push(`Protected files were changed: ${touched.join(", ")}`);
   if (files.length > MAX_FILES) problems.push(`Too many files changed (${files.length}, the limit is ${MAX_FILES})`);
   if (diff.length > MAX_DIFF_CHARS) problems.push("The change is too large to review in the page");
-  if (!tests.ok) problems.push("The tests do not pass");
+  if (tests.notRun) problems.push("The tests were not run on this change, because it holds files Argon may not change");
+  else if (!tests.ok) problems.push("The tests do not pass");
   else if (tests.total < baseline.total) problems.push(`The number of tests dropped from ${baseline.total} to ${tests.total}`);
   return problems;
 }
@@ -510,8 +523,12 @@ function createSelfEdit({
       }
       diff = await git(wt, ["diff", "--cached", "--no-renames", "HEAD"]);
       treeHash = (await git(wt, ["write-tree"])).trim();
-      say(record, `Running the tests on the change (${files.length} file${files.length === 1 ? "" : "s"} changed)... this takes a minute or two.`);
-      tests = await runTests(wt);
+      if (isArgon && publicOnlyProblems(files).length) {
+        tests = { ok: false, notRun: true, total: null, failed: null, tail: "" }; // nothing of such a change is ever run (see publicOnlyProblems)
+      } else {
+        say(record, `Running the tests on the change (${files.length} file${files.length === 1 ? "" : "s"} changed)... this takes a minute or two.`);
+        tests = await runTests(wt);
+      }
       tests.baselineTotal = baseline.total;
 
       // Rules enforced by code. Any of these makes the proposal impossible to approve.
@@ -732,4 +749,4 @@ function createSelfEdit({
   return { start, followUp, previewDir, get, list, approve, reject, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
