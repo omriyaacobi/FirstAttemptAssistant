@@ -7,18 +7,57 @@
 // unchanged, and write a new small page list and table of contents around them. Nothing is decompressed, drawn or interpreted.
 //
 // The PDF is an upload, so it is untrusted: no recursion, loops are stopped by "seen" sets, sizes are capped, and anything unexpected
-// (encrypted, object streams, a page list we cannot follow) gives null. The caller then uses the whole file, as before.
+// (encrypted, a page list we cannot follow) gives null. The caller then uses the whole file, as before.
+//
+// OBJECT STREAMS (2026-11-16). Newer PDFs (Word, LaTeX, most lecture slides) pack many small objects into one compressed object
+// ("/Type /ObjStm"). 11 of Omri's 29 course PDFs were like that, could not be cut and were read whole (one took 8 minutes). Now such a
+// stream is unpacked (zlib, with size limits) and each object inside is treated like a normal one; the cut file writes them out plainly.
+// Only the usual packing is handled (/FlateDecode with no extra parameters, or none); anything else still gives null.
+
+const zlib = require("node:zlib");
 
 const MAX_OBJECTS = 200000;
+const MAX_OBJSTM_BYTES = 20 * 1024 * 1024; // one unpacked object stream
+const MAX_UNPACKED_BYTES = 100 * 1024 * 1024; // all of them together
 const INHERITED = ["Resources", "MediaBox", "CropBox", "Rotate"]; // a page may take these from its parent in the page list
 
 const PARENT_G = /\/Parent[ \t\r\n]+\d+[ \t\r\n]+\d+[ \t\r\n]+R\b/g;
 const isSpace = (c) => c === 32 || c === 10 || c === 13 || c === 9 || c === 12 || c === 0;
 
+const isType = (dict, type) => new RegExp(`/Type[ \\t\\r\\n]*/${type}(?![A-Za-z])`).test(dict);
+
+// The objects packed inside one object stream: [{ id, body }], or null when it is packed in a way this file does not handle.
+// The stream starts with N pairs "object-number offset"; the objects follow from /First. Objects in a stream never hold a stream.
+function unpackObjects(dict, data, budget) {
+  const filter = /\/Filter(?![A-Za-z])/.test(dict);
+  if (filter && !/\/Filter[ \t\r\n]*(?:\/FlateDecode|\[[ \t\r\n]*\/FlateDecode[ \t\r\n]*\])(?![A-Za-z])/.test(dict)) return null;
+  if (/\/DecodeParms(?![A-Za-z])/.test(dict)) return null;
+  const count = /\/N[ \t\r\n]+(\d{1,7})(?![ \t\r\n]+\d+[ \t\r\n]+R)/.exec(dict);
+  const first = /\/First[ \t\r\n]+(\d{1,9})(?![ \t\r\n]+\d+[ \t\r\n]+R)/.exec(dict);
+  if (!count || !first) return null;
+  let out;
+  try { out = filter ? zlib.inflateSync(data, { maxOutputLength: Math.max(1, Math.min(MAX_OBJSTM_BYTES, budget.left)) }) : data; } catch (error) { return null; }
+  if (out.length > budget.left) return null;
+  budget.left -= out.length;
+  const from = Number(first[1]);
+  const n = Number(count[1]);
+  const nums = (out.toString("latin1", 0, Math.min(from, out.length)).match(/\d+/g) || []).map(Number);
+  if (nums.length < n * 2) return null;
+  const list = [];
+  for (let i = 0; i < n; i++) {
+    const start = from + nums[i * 2 + 1];
+    const end = i + 1 < n ? from + nums[i * 2 + 3] : out.length;
+    if (start > end || end > out.length) return null;
+    list.push({ id: nums[i * 2], body: out.toString("latin1", start, end).trim() });
+  }
+  return list;
+}
+
 // Walks the file once and notes where each object is. A later object with the same number replaces an earlier one (that is how a PDF
 // is edited), and stream contents are jumped over, so bytes inside a stream can never look like an object.
 function scanObjects(pdf, text) {
   const objects = new Map();
+  const budget = { left: MAX_UNPACKED_BYTES };
   const head = /(\d{1,9})[ \t\r\n]+(\d{1,5})[ \t\r\n]+obj\b/g;
   let match;
   while ((match = head.exec(text))) {
@@ -40,6 +79,18 @@ function scanObjects(pdf, text) {
       const close = stop < 0 ? -1 : text.indexOf("endobj", stop);
       if (close < 0) return null;
       end = close + 6;
+      const dict = text.slice(bodyStart, dictEnd);
+      if (isType(dict, "ObjStm")) { // its objects become normal ones (a later copy of a number still replaces an earlier one)
+        const dataEnd = length && dataStart + Number(length[1]) <= stop ? dataStart + Number(length[1]) : stop;
+        const inside = unpackObjects(dict, pdf.subarray(dataStart, dataEnd), budget);
+        if (!inside) return null;
+        for (const o of inside) {
+          if (objects.size >= MAX_OBJECTS) return null;
+          objects.set(o.id, { gen: 0, body: o.body, dict: o.body });
+        }
+        head.lastIndex = end;
+        continue; // the packed stream itself is not needed any more
+      }
     }
     objects.set(Number(match[1]), { gen: Number(match[2]), start, end, dict: text.slice(bodyStart, dictEnd) });
     head.lastIndex = end;
@@ -48,7 +99,6 @@ function scanObjects(pdf, text) {
 }
 
 const refs = (text) => [...text.matchAll(/(\d{1,9})[ \t\r\n]+\d{1,5}[ \t\r\n]+R\b/g)].map((m) => Number(m[1]));
-const isType = (dict, type) => new RegExp(`/Type[ \\t\\r\\n]*/${type}(?![A-Za-z])`).test(dict);
 
 // The value of /Key in a dictionary's text: "12 0 R", "[...]", "<<...>>" or a plain token. Only as exact as this file needs.
 function dictValue(dict, key) {
@@ -72,7 +122,7 @@ function dictValue(dict, key) {
 function openPdf(pdf) {
   if (!Buffer.isBuffer(pdf) || pdf.subarray(0, 5).toString("latin1") !== "%PDF-") return null;
   const text = pdf.toString("latin1"); // one character per byte, so positions in text are positions in the file
-  if (/\/Encrypt\b/.test(text) || /\/ObjStm\b/.test(text)) return null; // object streams hide objects inside compressed data
+  if (/\/Encrypt\b/.test(text)) return null;
   const objects = scanObjects(pdf, text);
   if (!objects || objects.size === 0) return null;
   const rootRefs = [...text.matchAll(/\/Root[ \t\r\n]+(\d{1,9})[ \t\r\n]+\d{1,5}[ \t\r\n]+R\b/g)];
@@ -133,10 +183,12 @@ function openPdf(pdf) {
     const pageById = new Map(wanted.map((p) => [p.id, p]));
     for (const id of [...keep].sort((a, b) => a - b)) {
       const object = objects.get(id);
-      let bytes = pdf.subarray(object.start, object.end);
+      // an object that came out of an object stream is written out plainly, as "id 0 obj ... endobj"
+      const unpacked = object.body !== undefined ? `${id} 0 obj\n${object.body}\nendobj` : null;
+      let bytes = unpacked !== null ? Buffer.from(unpacked, "latin1") : pdf.subarray(object.start, object.end);
       const page = pageById.get(id);
       if (page) { // the only objects that change: they point at the new page list, and carry what they used to inherit
-        const body = text.slice(object.start, object.end);
+        const body = unpacked !== null ? unpacked : text.slice(object.start, object.end);
         const missing = INHERITED.filter((k) => page.inherited[k] && dictValue(object.dict, k) === null).map((k) => `/${k} ${page.inherited[k]}`).join(" ");
         const parent = new RegExp(PARENT_G.source);
         const replaced = parent.test(body) ? body.replace(parent, `/Parent ${treeId} 0 R ${missing}`) : body.replace("<<", `<< /Parent ${treeId} 0 R ${missing}`);
