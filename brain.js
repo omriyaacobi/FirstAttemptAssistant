@@ -70,7 +70,8 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course"]);
+const UNSAID = new Set(["talk_course"]); // doing-tools that are only a label: never listed as "this was done" for Omri
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
 const CALENDAR_WAIT_MS = 2500;
@@ -351,7 +352,7 @@ function createBrain({
   }
 
   // Which course is the talk in? The newest answer about a course in the last 6 hours, or a course whose name is in the message.
-  function focusCourse(task, history, list) {
+  function focusCourse(task, history, list, quote = null) {
     const low = String(task).toLowerCase();
     // A course is "named" when its name is in the message, or the timetable's own pattern for it matches (that is where the Hebrew names
     // live: "חדו", "תכנות מערכות"). Two courses matching ("תכנות מערכות עתירות ביצועים" fits two) is not a clear name: nothing is guessed.
@@ -366,8 +367,12 @@ function createBrain({
     const named = hits.filter((a) => !hits.some((b) => inner(a, b)));
     if (named.length === 1) return named[0];
     if (named.length > 1) return null;
+    // The part Omri marked and replies to (quote.js) belongs to an answer about a course: the talk is in THAT course, whatever came
+    // after it (2026-11-16: a reply to a marked Systems Programming answer waited 100 s for a file of another course to be read).
+    if (quote && typeof quote.courseId === "string") { const c = list.find((x) => x.id === quote.courseId); if (c) return c; }
     for (let i = history.length - 1; i >= 0; i--) {
       const h = history[i];
+      if (h && h.noCourse) return null; // the brain said the talk left the courses (talk_course "none"): older answers do not pull it back
       if (h && h.courseId && (!h.at || now() - h.at < FOCUS_MS)) return list.find((c) => c.id === h.courseId) || null;
     }
     return null;
@@ -475,6 +480,18 @@ ${text}`; } catch (error) {
     };
 
     return {
+      // WHICH COURSE THE TALK IS IN, said by the brain when code's guess is wrong (2026-11-16). Code guesses from the last answers
+      // (focusCourse), so a talk that moved to another course, or to no course at all, kept the old course's label, its material in
+      // every prompt and its place in the queue. The model only names a course; code checks it is a real one ("none" = no course).
+      // It changes a label and what the NEXT message is given, nothing else.
+      talk_course: async ({ course }) => {
+        const name = String(course == null ? "" : course).trim();
+        if (!name || /^(none|no course|general)$/i.test(name)) { ctx.course = null; ctx.noCourse = true; return "Noted: this talk is not about a course."; }
+        const c = need(name);
+        ctx.course = c;
+        ctx.noCourse = false;
+        return `Noted: this talk is about ${c.name}.`;
+      },
       course_search: async ({ course, query }) => {
         const c = need(course);
         const pages = courses.allPages(c.id);
@@ -948,9 +965,11 @@ ${r.cardText}`; }
     const list = Array.isArray(options.courses) ? options.courses : courseList();
     const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, sawPhoto: !!image, fromPhone: fromPhone === true, tools: [], done: [] };
     const tools = makeTools(ctx);
+    // The course this answer is filed under; noCourse (talk_course "none") tells the next message that the talk left the courses.
+    const courseOf = () => (ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : ctx.noCourse ? { noCourse: true } : {});
     // attached: these words came WITH a file that code already filed (thread-files.js); the talk is in that file's course.
     const filedIn = attached && attached.courseId ? list.find((c) => c.id === attached.courseId) || null : null;
-    const focus = route === "general" ? null : filedIn || focusCourse(task, history, list);
+    const focus = route === "general" ? null : filedIn || focusCourse(task, history, list, quote);
     if (focus) ctx.course = focus;
     // A file of this course still being read: wait first (no slot held).
     const fileNote = focus ? await waitForFiles(focus, lang, notify, log) : null;
@@ -1035,7 +1054,7 @@ ${r.cardText}`; }
         const text = say(lang, `Every model failed on this message, so I could not answer:\n${why}\nSend it again in a minute.`, `כל המודלים נכשלו בהודעה הזאת, אז לא הצלחתי לענות:\n${why}\nאפשר לשלוח שוב בעוד דקה.`);
         if (!ctx.done.length && !Object.keys(ctx.extras).length) throw new Error(text);
         const answer = text + "\n\n" + say(lang, "Before that, this was done:", "לפני כן זה כבר בוצע:") + "\n" + ctx.done.map((d) => "- " + d).join("\n");
-        return { mode: "single", brain: true, rule: "Bot", reason: "every model failed after some tools ran", chain: order, used: used || order[0], answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: "every model failed after some tools ran", chain: order, used: used || order[0], answer, seconds: seconds(), timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...courseOf(), ...ctx.extras };
       }
       attempts.push(...(r.attempts || []));
       used = r.used;
@@ -1063,7 +1082,7 @@ ${r.cardText}`; }
         if (attached && /^\W*nothing\W*$/i.test(answer)) { if (onPartial) onPartial(""); log("[brain] the words sent with the file needed no answer"); return { mode: "single", brain: true, silent: true, answer: "", seconds: seconds() }; }
         if (fileNote) answer = fileNote + "\n\n" + answer;
         log(`[brain] answered by ${used.model} in ${seconds()} s${ctx.tools.length ? `, tools: ${ctx.tools.join(", ")}` : ", no tools"}${cost()}`);
-        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: ctx.tools.length ? `used ${ctx.tools.join(", ")}` : "answered directly", chain: order, used, answer, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...courseOf(), ...ctx.extras };
       }
       if (showing && onPartial) onPartial("");
 
@@ -1097,7 +1116,7 @@ ${r.cardText}`; }
         if (!fn) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}".`, ok: false };
         try {
           const text = clip(await fn(call), LIMITS.result);
-          if (DOING.has(call.tool)) ctx.done.push(text.split("\n")[0].slice(0, 200)); // what really happened, for an honest reply if the model fails later
+          if (DOING.has(call.tool) && !UNSAID.has(call.tool)) ctx.done.push(text.split("\n")[0].slice(0, 200)); // what really happened, for an honest reply if the model fails later
           return { call, text, ok: true };
         } catch (error) { return { call, text: `FAILED, nothing was done: ${String(error.message).slice(0, 400)}`, ok: false }; }
       }));
@@ -1107,7 +1126,7 @@ ${r.cardText}`; }
         if (fileNote) said = fileNote + "\n\n" + said;
         log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
         if (onPartial) onPartial(said);
-        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...(ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : {}), ...ctx.extras };
+        return { mode: "single", brain: true, rule: "Bot", reason: `used ${ctx.tools.join(", ")}`, chain: order, used, answer: said, seconds: seconds(), tokens: costOf(spent).tokens, timing: { frontDeskSeconds: null, plannerSeconds: null, attempts }, tools: ctx.tools, ...courseOf(), ...ctx.extras };
       }
       await slowSlot(); // the quick finish did not happen (a call failed, or the model wrote no reply): another round follows
       transcript.push(`## Tool round ${round + 1}\n` + results.map(({ call, text }) => {

@@ -81,3 +81,59 @@ test("time limit: a brain call through agy gets at most two minutes, whatever th
   assert.strictEqual(brainTimeout("gemini-4-hydrogen-medium"), 120000);
   assert.strictEqual(brainTimeout("gemini-3.8-flash-medium"), 90000); // a shorter general limit is kept
 });
+
+// ---- which course the talk is in ----
+const TWO = [{ id: "c1", name: "Linear Algebra" }, { id: "c2", name: "Operating Systems" }];
+const aboutC1 = () => ({ role: "assistant", text: "A basis is a set of independent vectors that spans the space.", courseId: "c1", at: Date.now() - 60000 });
+
+test("course: the brain can say the talk left the courses; the answer is then filed under no course", async () => {
+  const { brain, prompts } = fakeBrain(['CALL {"tool":"talk_course","course":"none"}\nSocks go in the normal way round.'], { courses: TWO });
+  const r = await brain.handle("should socks go in the wash inside out?", { history: [aboutC1()], courses: TWO });
+  assert.match(prompts[0], /The course this talk is in: Linear Algebra/); // code's guess from the last answer
+  assert.strictEqual(r.answer, "Socks go in the normal way round.");
+  assert.strictEqual(r.courseId, undefined);
+  assert.strictEqual(r.noCourse, true);
+  assert.strictEqual(prompts.length, 1, "no extra model round: the reply came under the CALL line");
+});
+
+test("course: after a no-course answer, older course answers do not pull the next message back into the course", async () => {
+  const { brain, prompts } = fakeBrain(["And sweaters go inside out."], { courses: TWO });
+  const history = [aboutC1(), { role: "user", text: "should socks go in the wash inside out?" }, { role: "assistant", text: "Socks go in the normal way round.", noCourse: true, at: Date.now() - 1000 }];
+  const r = await brain.handle("and sweaters?", { history, courses: TWO });
+  assert.doesNotMatch(prompts[0], /## The course this talk is in/);
+  assert.strictEqual(r.courseId, undefined);
+});
+
+test("course: the brain can move the talk to another real course; a made-up course is refused", async () => {
+  const a = fakeBrain(['CALL {"tool":"talk_course","course":"Operating Systems"}\nA thread shares its process\'s memory.'], { courses: TWO });
+  const r = await a.brain.handle("so back to what we did yesterday, what does a thread share?", { history: [aboutC1()], courses: TWO });
+  assert.strictEqual(r.courseId, "c2");
+  assert.strictEqual(r.courseName, "Operating Systems");
+  const b = fakeBrain(['CALL {"tool":"talk_course","course":"Basket Weaving"}\nDone.', "Which course do you mean?"], { courses: TWO });
+  const r2 = await b.brain.handle("continue", { history: [aboutC1()], courses: TWO });
+  assert.strictEqual(r2.answer, "Which course do you mean?"); // the reply written under a failed call is never shown
+  assert.match(b.prompts[1], /FAILED, nothing was done: there is no course called "Basket Weaving"/);
+  assert.strictEqual(r2.courseId, "c1");
+});
+
+test("course: a reply to a marked part of an answer is in that answer's course, not in the newest one", async () => {
+  const { brain, prompts } = fakeBrain(["It shares the heap."], { courses: TWO });
+  const r = await brain.handle("what does this part mean?", { history: [aboutC1()], courses: TWO, quote: { id: "m_aaaaaaaaaaaa", text: "shares its memory", role: "assistant", at: Date.now() - 9e6, courseId: "c2" } });
+  assert.match(prompts[0], /The course this talk is in: Operating Systems/);
+  assert.strictEqual(r.courseId, "c2");
+});
+
+test("course: the quote check hands over the quoted answer's course, and the memory keeps the no-course mark", () => {
+  const { checkQuote } = require("../quote");
+  const { buildHistory } = require("../thread-context");
+  const messages = [
+    { id: "m_aaaaaaaaaaaa", role: "assistant", text: "a thread shares its memory", at: 5, result: { brain: true, courseId: "c2", courseName: "Operating Systems" } },
+    { id: "m_bbbbbbbbbbbb", role: "assistant", text: "socks go in normally", at: 6, result: { brain: true, noCourse: true } },
+  ];
+  const thread = { find: (id) => messages.find((m) => m.id === id) || null, page: () => ({ messages }) };
+  assert.strictEqual(checkQuote(thread, { messageId: "m_aaaaaaaaaaaa", text: "shares its memory" }).courseId, "c2");
+  assert.strictEqual(checkQuote(thread, { messageId: "m_bbbbbbbbbbbb", text: "socks" }).courseId, undefined);
+  const history = buildHistory(thread, { entryOf: (m) => ({ role: m.role, text: m.text }) });
+  assert.strictEqual(history[0].courseId, "c2");
+  assert.strictEqual(history[1].noCourse, true);
+});
