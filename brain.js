@@ -835,9 +835,21 @@ ${text}`; } catch (error) {
       moodle_news: async ({ course, count }) => { aboutCourse(course); return moodleRead(() => moodle.newsText(course, patternFor, count)); },
       // What the Moodle watch posts about ONE course (2026-11-16): new files on or off. Omri's own wish only: refused after a web
       // page, a photo or Moodle text in the same message. The course is a real Bot course (checked); the value is on or off.
-      moodle_watch: async ({ course, files }) => {
+      moodle_watch: async ({ course, files, all }) => {
         afterWeb("change the Moodle watch");
         if (!moodle || !moodle.watchFiles) throw new Error("the Moodle watch is not set up in this Bot.");
+        // "all": the WHOLE Moodle course on or off (also one with no Bot course). Code finds the real Moodle course; the value is on or off.
+        if (all !== undefined && all !== null && all !== "") {
+          if (files !== undefined && files !== null && files !== "") throw new Error('give "files" or "all", not both');
+          const a = String(all).trim().toLowerCase();
+          if (a !== "on" && a !== "off") throw new Error('say "all":"off" (post nothing about this Moodle course) or "all":"on"');
+          if (!moodle.watchCourse) throw new Error("the Moodle watch is not set up in this Bot.");
+          aboutCourse(course);
+          try { return await moodle.watchCourse(course, a === "on", patternFor); } catch (error) {
+            if (error.code && error.code !== "tool") throw new Error("NOT changed. " + moodle.explain(error, "en"));
+            throw error;
+          }
+        }
         const c = need(course);
         const v = String(files == null ? "" : files).trim().toLowerCase();
         if (v !== "on" && v !== "off") throw new Error('say "files":"off" (do not post new files of this course) or "files":"on"');
