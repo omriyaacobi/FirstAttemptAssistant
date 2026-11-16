@@ -32,3 +32,52 @@ test("language: a real English sentence still gets the English line, also after 
   assert.match(languageLine("למה זה לא עובד?", [ENGLISH_TURN]), /write the reply in Hebrew/);
   assert.doesNotMatch(languageLine("ok", [HEBREW_TURN]), /write the reply in English/);
 });
+
+// ---- the brain's notes about its own instructions, and its time limit ----
+const { createBrain, leaksPrompt, brainTimeout, BRAIN_TIMEOUT_MS } = require("../brain");
+const BRIEF = fs.readFileSync(path.join(__dirname, "..", "brain-brief.md"), "utf8").replace(/\r\n/g, "\n");
+const ONE_COURSE = [{ id: "c1", name: "Linear Algebra" }];
+function fakeBrain(replies, extra = {}) {
+  const prompts = [];
+  let i = 0;
+  const brain = createBrain({
+    courses: { allPages: () => [] },
+    courseRoutes: { list: () => extra.courses || ONE_COURSE, courseFiles: () => ({ files: extra.files || [] }), linkFiles: () => [] },
+    coach: { tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, courseId: c.id, name: c.name })), course: (r) => ({ key: r.key, assignments: [], position: {} }), save: () => {}, getSession: () => null, timetable: () => ({ courses: [] }) }, pendingProposal: () => null, answerStudy: async () => ({ answer: "x" }) },
+    reminders: { list: () => [], create: () => ({}) },
+    memory: { list: () => [], add: () => ({}) },
+    cards: { add: () => ({}) },
+    readCalendar: async () => ({ text: "" }),
+    askOne: async (provider, model, prompt) => { prompts.push(prompt); const r = replies[i++]; if (r === undefined) throw new Error("no more scripted replies"); return r; },
+    chain: [{ provider: "agy", model: "fake-model" }],
+    poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {},
+    now: () => Date.now(),
+    folderRules: { system: [] },
+    waitPollMs: 5, waitLimitMs: 60,
+  });
+  return { brain, prompts };
+}
+
+test("leak: a reply that quotes a sentence of Bot's own briefing is caught; ordinary text is not", () => {
+  const quoted = "Wait no! Read the prompt carefully: \"To use tools, reply with ONLY tool lines and nothing else, one per line, exactly like this:\" So I answer now. Yes, that works.";
+  assert.ok(leaksPrompt(quoted, BRIEF));
+  assert.ok(leaksPrompt("Hmm. It says: open and look at that one file (the only file you may read). Fine.", BRIEF));
+  assert.ok(!leaksPrompt(quoted), "without the briefing only the old markers are checked");
+  assert.ok(!leaksPrompt("To use a pointer, write * before its name. A reminder is set for 17:30, and the card waits for your tap.", BRIEF));
+  assert.ok(!leaksPrompt("כן, זה פתרון מצוין. השדה דועך מהר מאוד עם המרחק, אז מספיק להרחיק את המטען מהראש.", BRIEF));
+});
+
+test("leak: the brain asks once more instead of showing a reply that quotes the briefing", async () => {
+  const leak = "Let me think. The rule: \"Be honest about actions. Things only happen through the tools below.\" OK.\nYes, both are fine.";
+  const { brain, prompts } = fakeBrain([leak, "Yes, both are fine."]);
+  const r = await brain.handle("is a short cable fine?", { history: [], courses: ONE_COURSE });
+  assert.strictEqual(r.answer, "Yes, both are fine.");
+  assert.strictEqual(prompts.length, 2);
+});
+
+test("time limit: a brain call through agy gets at most two minutes, whatever the model's general limit", () => {
+  assert.strictEqual(BRAIN_TIMEOUT_MS, 120000);
+  assert.strictEqual(brainTimeout("gemini-4-argon-low"), 120000); // 240 s for reading files, 120 s here
+  assert.strictEqual(brainTimeout("gemini-4-hydrogen-medium"), 120000);
+  assert.strictEqual(brainTimeout("gemini-3.8-flash-medium"), 90000); // a shorter general limit is kept
+});

@@ -91,12 +91,17 @@ const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
 const warmUp = () => { try { pool.warmUp(CHAIN[0].model, null); } catch (error) { /* only makes the first message slower */ } }; // the brain's first model (Hydrogen medium since 2026-11-15)
 const WARM_MODELS = new Set([MODELS.hydrogenMedium.model, MODELS.argonLow.model]); // the warm pool keeps one spare per model
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
+// THE BRAIN'S TIME LIMIT (2026-11-16). The models' general limits (providers.js: Argon 240 s) are sized for reading big files. In
+// Omri's real use the brain's 293 successful calls took 9 s in the middle and 50 s at most, and the one call that hung made Omri wait
+// 240 s before the next model was asked. A brain call through agy now gets 120 s; after that the next model in the chain answers.
+const BRAIN_TIMEOUT_MS = 120 * 1000;
+const brainTimeout = (model) => Math.min(timeoutFor(model), BRAIN_TIMEOUT_MS);
 function askWarm(provider, model, question, onText, extra = {}) {
   const onUsage = extra.onUsage || null;
-  if (provider === "agy" && WARM_MODELS.has(model)) return pool.askText(question, model, onText || (() => {}), { timeoutMs: timeoutFor(model), onUsage });
+  if (provider === "agy" && WARM_MODELS.has(model)) return pool.askText(question, model, onText || (() => {}), { timeoutMs: brainTimeout(model), onUsage });
   // agy always gets the prompt through stdin (the streaming call). Without onText, ask() would put it on the command line, and the
   // brain's prompt is far longer than Windows allows ("spawn ENAMETOOLONG"), so every agy model but the warm Argon failed at once.
-  if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage });
+  if (provider === "agy") return ask(provider, model, question, onText || (() => {}), { agent: SLIM_AGENT, onUsage, timeoutMs: brainTimeout(model) });
   return ask(provider, model, question, onText, { onUsage });
 }
 // "2 model calls, 31,204 tokens" from the calls one message made (each: { model, input, output, thinking, cacheRead }).
@@ -166,7 +171,31 @@ function withoutCalls(text) {
 // While the model writes: is this going to be a tool round? (so tool lines are never shown to Omri as an answer)
 // Returns true (tool lines), false (an answer), or null (too early to tell: the first few characters could still become "CALL").
 // The markers of Bot's OWN prompt (never words Omri writes): a reply that quotes them is the model's notes about the prompt.
-const leaksPrompt = (text) => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{/i.test(String(text || ""));
+// Since 2026-11-16 also a reply that QUOTES Bot's own briefing word for word (any run of 45 characters of one of its
+// lines, or of the photo paragraph code writes): on 2026-11-14 a photo answer opened with "Wait no! Read the prompt carefully:"
+// and three quoted sentences of the briefing, which none of the markers caught. An answer for Omri never needs a briefing sentence.
+const QUOTE_RUN = 45;
+const PHOTO_RULE = "open and look at that one file (the only file you may read)";
+const flat = (text) => String(text || "").replace(/\s+/g, " ");
+// Every run of QUOTE_RUN characters of the briefing (each line by itself, spaces flattened), kept in a Set and built once per text.
+let briefRuns = { of: null, runs: new Set() };
+function runsOf(brief) {
+  if (briefRuns.of === brief) return briefRuns.runs;
+  const runs = new Set();
+  for (const line of [PHOTO_RULE, ...String(brief || "").split(/\n/)]) {
+    const t = flat(line);
+    for (let i = 0; i + QUOTE_RUN <= t.length; i++) runs.add(t.slice(i, i + QUOTE_RUN));
+  }
+  briefRuns = { of: brief, runs };
+  return runs;
+}
+function quotesBrief(text, brief) {
+  const t = flat(text);
+  const runs = runsOf(brief);
+  for (let i = 0; i + QUOTE_RUN <= t.length; i++) if (runs.has(t.slice(i, i + QUOTE_RUN))) return true;
+  return false;
+}
+const leaksPrompt = (text, brief = "") => /<\/?USER_REQUEST>|##\s*Tool round\s*\d|<\/?tool-result\b|\bYou called:\s*\{/i.test(String(text || "")) || (!!brief && quotesBrief(text, brief));
 
 function looksLikeCall(partial) {
   const t = String(partial).replace(/^\s*(?:```\w*\s*)?(?:[-*`]\s*)?/, "");
@@ -937,8 +966,9 @@ ${r.cardText}`; }
     try { const facts = memory.list(); about = aboutBlock({ picked: pickFacts(facts, task) }) || ""; } catch (error) { about = ""; }
     const zone = localZone();
     const day = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long" }).format(new Date(now()));
+    const brief = readBrief();
     const head = [
-      readBrief(),
+      brief,
       `## Right now\nIt is ${localIso(now(), zone)} (${day}), time zone ${zone}.`,
       about,
       route === "general" ? "" : `## Calendar and reminders\n${await weekAhead(lang)}`,
@@ -987,7 +1017,7 @@ ${r.cardText}`; }
       const stream = onPartial ? (partial) => {
         if (!partial) { if (showing) onPartial(""); showing = false; return; }
         if (attached && partial.trim().length < 12) return; // it may still become the single word NOTHING (no answer needed)
-        if (leaksPrompt(partial)) { if (showing) onPartial(""); showing = false; return; } // its notes about the prompt: never on the screen
+        if (leaksPrompt(partial, brief)) { if (showing) onPartial(""); showing = false; return; } // its notes about the prompt: never on the screen
         const verdict = looksLikeCall(partial);
         if (verdict === null) return;
         if (verdict || /^\s*CALL\s*\{/m.test(partial)) { if (showing) onPartial(""); showing = false; return; }
@@ -1015,7 +1045,7 @@ ${r.cardText}`; }
         // The model wrote its own notes ABOUT this prompt (it quoted "## Tool round", <tool-result>, <USER_REQUEST>) instead of a reply:
         // Omri got a page of "Wait... HOLD ON! Look at <USER_REQUEST>" before the answer (2026-11-15). It is asked ONCE more for the
         // reply only; if that leaks too, Bot says so plainly instead of showing the notes.
-        if (leaksPrompt(answer)) {
+        if (leaksPrompt(answer, brief)) {
           log(`[brain] ${used.model} wrote notes about the prompt instead of a reply: asking once more`);
           let again = "";
           try {
@@ -1023,7 +1053,7 @@ ${r.cardText}`; }
             used = r2.used;
             again = fixMath(withoutCalls(parseReply(r2.answer).text));
           } catch (error) { again = ""; }
-          answer = again && !leaksPrompt(again) ? again : say(lang, "My answer came out garbled (the model wrote notes to itself instead of a reply), so I did not show it. Send the message again.", "התשובה יצאה משובשת (המודל כתב הערות לעצמו במקום תשובה), אז לא הצגתי אותה. אפשר לשלוח את ההודעה שוב.");
+          answer = again && !leaksPrompt(again, brief) ? again : say(lang, "My answer came out garbled (the model wrote notes to itself instead of a reply), so I did not show it. Send the message again.", "התשובה יצאה משובשת (המודל כתב הערות לעצמו במקום תשובה), אז לא הצגתי אותה. אפשר לשלוח את ההודעה שוב.");
           if (onPartial) onPartial(answer);
         }
         // The last round and the model still only asked for tools: say what was done instead of failing the whole message.
@@ -1101,4 +1131,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, brainTimeout, BRAIN_TIMEOUT_MS, parseReply, withoutCalls, languageLine, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
