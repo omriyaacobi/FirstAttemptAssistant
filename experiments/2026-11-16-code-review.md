@@ -3,14 +3,20 @@
 Branch `claude/fable-code-review-0be442`, built on the real-use audit branch. Nothing pushed, Bot not restarted, the main folder and
 `data/` only read. No real chat text or course text is in this note or in the commits.
 
-**Not finished.** The 5-hour quota window (shared with the audit session) was 65% used after the first part, so I stopped at a clean
+**Not finished.** The 5-hour quota window (shared with the audit session) was about 70% used after this part, so I stopped at a clean
 point. What was read and what was not is listed in section 1 and section 5.
 
 ## 1. What I read
 
 In full: `pc-open.js`, `pc-find.js`, `linkfetch.js`, `link-batch.js`, `unzip.js`, `upload.js`, `zip-filing.js`, `selfedit.js`,
 `project-folder.js`, `auth.js`, `store.js`, `gitops.js`, `preview.js`, `server.js`, `providers.js`, `pdfcut.js`, `photo.js`,
-`html-text.js`, `office.js`, `ingest.js`, `courses.js`, and the PC tools part of `brain.js` (pc_find, pc_roots, open_on_pc).
+`html-text.js`, `office.js`, `ingest.js`, `courses.js`, `moodle-ws.js`, `moodle-bridge.js`, `profile.js`, `calendar-add.js`, and two
+parts of `brain.js` (the PC tools; how the prompt and the tool rounds are built).
+
+Read and found sound (nothing to fix): the server's request checks (`server.js`), the phone login (`auth.js`), pushing to GitHub
+(`gitops.js`), the Improve Bot preview (`preview.js`), the upload and zip limits, the link fetcher's redirect and address checks,
+the Moodle token road (the token stays in the request body, only Moodle's own file addresses, read functions only), the extension
+bridge, the memory's secret check and the calendar card checks.
 
 ## 2. What I fixed (2 commits, tests green: 1,127 tests, 1,126 pass, 1 skipped as before)
 
@@ -55,7 +61,11 @@ Tests: `tests/code-review-2026-11-16.test.js` (7 tests; the short-name ones crea
    them. So code a model wrote runs on the PC before Omri approves. This is how "the tests must pass" works; it is only worth knowing.
    Question 2.
 3. **Tokens per tool round, and the wasted round on photos** (from the audit). Not touched: both are in `brain.js` (protected), and a
-   safe fix needs live model calls to measure that answers stay right. No quota for that today.
+   safe fix needs live model calls to measure that answers stay right. No quota for that today. One number that helps whoever does
+   it: in `data/token-log.json` only 2 to 5% of the input tokens are "cache read" (16 Nov, Hydrogen: 22,000 of 785,000). So the
+   prompt that is sent again in every tool round is paid in full each time; nothing is saved by the model's own cache. Leaving the
+   course material (assignment text, best pages, the code files) out of round 2 and 3 would save roughly a third to a half of those
+   rounds, but only a trial can show that the answers stay as good.
 4. **A long prompt on the command line.** `askAgy`, `askAgyWithFile`, `askWeb` and `askAgyStructured` in `providers.js` pass the whole
    prompt as a command-line argument. Windows allows about 32,000 characters there; a longer prompt would fail to start. The brain
    uses the stdin road, so it is not affected. I did not check which callers can reach the limit.
@@ -77,13 +87,13 @@ Tests: `tests/code-review-2026-11-16.test.js` (7 tests; the short-name ones crea
 ## 5. Not reviewed yet
 
 `brain.js` beyond the PC tools (the audit read it), `jobs.js` and the thread files (audit), and never read by either session:
-`calendar.js`, `calendar-add.js`, `calendar-chat.js`, `reminders.js`, `profile.js`, `backup.js`, `webpush.js`, `news.js`,
-`morning.js`, `catchup.js`, `tutor.js`, `outline.js`, `quota.js`, `router.js`, `moodle-ws.js`, `moodle-bridge.js`, `moodle-tools.js`,
+`calendar.js`, `calendar-chat.js`, `reminders.js`, `backup.js`, `webpush.js`, `news.js`,
+`morning.js`, `catchup.js`, `tutor.js`, `outline.js`, `quota.js`, `router.js`, `moodle-tools.js`,
 `moodle.js`, `moodle-token.js`, the Moodle extension, `course-routes.js`, `thread-files.js`, `thread-store.js`, `thread-summary.js`,
 `study.js`, `study-coach.js`, `study-tracker.js`, `study-plan.js`, `recall.js`, `search.js`, `course-material.js`, `warmagy.js`,
 `crosslang.js`, `improve-watch.js`, the small helpers, and all of `public/` (`index.html`, `study.js`, `sw.js`).
-Order I would take: `moodle-ws.js` and `moodle-bridge.js` (the token and the extension), `calendar-add.js`, `profile.js`,
-`backup.js`, `webpush.js`, then `public/index.html` (how text from models and Moodle is drawn).
+Order I would take: the Moodle extension (`moodle-extension/`, its allowlist), `backup.js`, `webpush.js`, `calendar.js`,
+`course-routes.js`, then `public/index.html` (how text from models and Moodle is drawn).
 
 ## 6. How to check after the merge (needs a restart of Bot)
 
