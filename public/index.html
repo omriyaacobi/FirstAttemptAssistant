@@ -2851,8 +2851,8 @@
       if (attachedFile) { if (!T.busy) await sendFile(); return; }
       const attached = photo;
       const sentRaw = $("task").value;
-      const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
-      if (!task || T.busy) return;
+      const task = $("task").value.trim(); // a photo may go with no words (Omri, 2026-11-16): Bot reads it from the talk, never a made-up English line
+      if ((!task && !attached) || T.busy) return;
       T.busy = true;
       $("send").disabled = true;
       try {

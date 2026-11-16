@@ -177,6 +177,14 @@ function looksLikeCall(partial) {
 // The language of Omri's message, said plainly next to it (2026-11-13). The briefing says "reply in the language of the message", but
 // with Hebrew course notes and Hebrew talk around it the model answered an English question in Hebrew twice on 2026-11-12. Code counts
 // the letters of the message (code in backticks left out); only a clear majority gives a line, a real mix gives none.
+// Omri's last own words in the talk: a photo sent with no words takes their language. "(photo attached)" is not words.
+function lastWords(history) {
+  for (const h of [...(history || [])].reverse()) {
+    if (h && h.role === "user") { const t = String(h.text || "").replace(/\(photo attached\)/g, " ").trim(); if (/[a-z֐-׿]/i.test(t)) return t; }
+  }
+  return "";
+}
+
 function languageLine(task) {
   const prose = String(task).replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
   const he = (prose.match(/[֐-׿]/g) || []).length;
@@ -906,7 +914,9 @@ ${r.cardText}`; }
     const cost = () => { const c = costOf(spent); return c.text ? ", " + c.text : ""; };
     const t0 = now();
     const seconds = () => Number(((now() - t0) / 1000).toFixed(1));
-    const lang = /[֐-׿]/.test(task) && (task.match(/[֐-׿]/g) || []).length >= (task.match(/[a-z]/gi) || []).length ? "he" : "en";
+    // A photo with no words (2026-11-16): its language is the language of Omri's last words in the talk (code), so the reply stays in it.
+    const said = String(task).trim() ? task : lastWords(history);
+    const lang = /[֐-׿]/.test(said) && (said.match(/[֐-׿]/g) || []).length >= (said.match(/[a-z]/gi) || []).length ? "he" : "en";
     const list = Array.isArray(options.courses) ? options.courses : courseList();
     const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, sawPhoto: !!image, fromPhone: fromPhone === true, tools: [], done: [] };
     const tools = makeTools(ctx);
@@ -943,7 +953,10 @@ ${r.cardText}`; }
     ].filter(Boolean).join("\n\n");
     // From the phone (server.js knows, never a model): a long answer is a lot of scrolling on a small screen (2026-11-13).
     const phoneLine = fromPhone === true ? "\n(Omri is writing from the phone: keep the reply to about one phone screen, a few short paragraphs, unless Omri asks for more.)" : "";
-    const tail = quoteBlock(quote, zone) + `## Omri's new message\n<message>\n${noCtl(task)}\n</message>` + languageLine(task) + phoneLine;
+    const words = String(task).trim()
+      ? `## Omri's new message\n<message>\n${noCtl(task)}\n</message>`
+      : "## Omri's new message\nOmri sent only the photo, with no words. It is usually an answer to what Bot asked last, or it continues the current talk: read the conversation so far to know what Omri means, and do that. Reply in the language of that talk.";
+    const tail = quoteBlock(quote, zone) + words + languageLine(said) + phoneLine;
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
@@ -1092,4 +1105,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { createBrain, costOf, askWarm, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

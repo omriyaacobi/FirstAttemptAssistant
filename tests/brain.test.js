@@ -240,6 +240,18 @@ test("a photo is a normal brain message: the photo model sees the full context a
   assert.match(calls[0].prompt, /The course this talk is in: Systems Programming/);
 });
 
+test("a photo with no words (Omri, 2026-11-16): no made-up English line; the model reads the talk, and the reply keeps the talk's language", async () => {
+  const { brain, calls } = photoSetup(["תשובה."]);
+  const history = [{ role: "user", text: "בוא נדבר על אינטגרלים בעברית" }, { role: "assistant", text: "תשלח צילום של התרגיל" }];
+  await run(brain, "", { image: { path: "x.png" }, history });
+  assert.match(calls[0].prompt, /Omri sent only the photo, with no words\. It is usually an answer to what Bot asked last/);
+  assert.match(calls[0].prompt, /This message is in Hebrew: write the reply in Hebrew/);
+  assert.ok(!/Tell me what is in it/.test(calls[0].prompt));
+  const { lastWords } = require("../brain");
+  assert.strictEqual(lastWords([{ role: "user", text: "hello there" }, { role: "user", text: "(photo attached)" }]), "hello there", "a photo-only message is not words");
+  assert.strictEqual(lastWords([]), "");
+});
+
 test("a photo message is in the token log too: the photo model's onUsage is passed on (review 1.3)", async () => {
   const added = [];
   const askImage = async (model, prompt, imagePath, onText, extra = {}) => { if (extra.onUsage) extra.onUsage({ input: 900, output: 20 }); return "A cat."; };

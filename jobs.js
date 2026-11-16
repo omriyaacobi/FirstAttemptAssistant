@@ -207,7 +207,7 @@ function createJobs({ handle, cardNote = null, thread = null, summaries = null, 
       notes: summaries ? (() => { try { return summaries.notesBlock(); } catch (error) { return ""; } })() : "",
     });
     const startedAt = now();
-    const question = questionId ? { id: questionId } : thread.append({ role: "user", text: image ? "(photo attached) " + task : task, at: startedAt, topic: "general", ...(quote ? { quote } : {}) });
+    const question = questionId ? { id: questionId } : thread.append({ role: "user", text: image ? (task ? "(photo attached) " + task : "(photo attached)") : task, at: startedAt, topic: "general", ...(quote ? { quote } : {}) });
 
     const job = {
       id: crypto.randomBytes(16).toString("hex"),

@@ -664,7 +664,8 @@ function createServer({
 
       // Never trust what arrives: check the type and the size.
       const task = typeof input.task === "string" ? input.task.trim() : "";
-      if (!task) return sendJson(res, 400, { error: "task is empty" });
+      // A photo may come with no words (Omri, 2026-11-16: it is usually an answer to what Bot asked); text alone must not be empty.
+      if (!task && input.image === undefined) return sendJson(res, 400, { error: "task is empty" });
       if (task.length > MAX_TASK_CHARS) return sendJson(res, 413, { error: `task is longer than ${MAX_TASK_CHARS} characters` });
 
       // An optional quote: the part of an earlier message Omri marked and replies to. Code checks it is really in that message (quote.js).
