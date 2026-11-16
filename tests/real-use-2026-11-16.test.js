@@ -162,7 +162,7 @@ test("brief and nudge: a course Omri studies alone gets no 'lectures not checked
   const { createTracker } = require("../study-tracker");
   const { createNudges } = require("../study-nudges");
   // the brief's ledger
-  const course = (mode) => ({ name: "Made-up Calculus", tracked: true, behind: [{ date: "2026-11-04" }, { date: "2026-11-06" }], assignments: [], topicsDue: 0, position: mode ? { mode, said: "I study it alone from the notes" } : {} });
+  const course = (mode) => ({ name: "Made-up Calculus", tracked: true, quizzed: true, behind: [{ date: "2026-11-04" }, { date: "2026-11-06" }], assignments: [], topicsDue: 0, position: mode ? { mode, said: "I study it alone from the notes" } : {} });
   const ledger = (mode) => buildLedger({ log: { day: () => [] }, tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, name: c.name })), progress: () => course(mode) }, courseList: [{ id: "c1", name: "Made-up Calculus" }], today: "2026-11-13" });
   assert.ok(ledger(null).some((l) => l.part === "behind"), "nothing said about the course: the count stays");
   assert.ok(ledger("attending").some((l) => l.part === "behind"));
@@ -266,3 +266,115 @@ test("moodle watch: the brain's tool takes a real course and on/off only, and is
   assert.match(r3.answer, /cannot change that/);
 });
 function os_tmp() { return require("node:os").tmpdir(); }
+
+// ---- follow-up, 2026-11-16 (Omri approved): the quiz line only after a graded quiz; a whole Moodle course can be turned off ----
+test("brief: 'not checked by a quiz' is shown only for a course where a graded quiz was taken", () => {
+  const os = require("node:os");
+  const { buildLedger } = require("../brief-me");
+  const { createTracker } = require("../study-tracker");
+  const ledger = (quizzed) => buildLedger({ log: { day: () => [] }, tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, name: c.name })), progress: () => ({ name: "Made-up Physics", tracked: true, quizzed, behind: [{ date: "2026-11-04" }], assignments: [{ title: "Sheet 2", due: "2026-11-15", status: "todo" }], topicsDue: 0, position: {} }) }, courseList: [{ id: "c1", name: "Made-up Physics" }], today: "2026-11-13" });
+  assert.ok(!ledger(false).some((l) => l.part === "behind"), "no quiz ever taken: no line");
+  assert.ok(!ledger(undefined).some((l) => l.part === "behind"));
+  assert.ok(ledger(false).some((l) => l.part === "todo"), "the assignment is still listed");
+  assert.ok(ledger(true).some((l) => l.part === "behind"));
+  // the real tracker: the flag turns on with the first graded quiz, never before
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-audit-quiz-"));
+  const now = new Date("2026-11-08T08:30:00+02:00").getTime();
+  const COURSES = [{ id: "b".repeat(16), name: "Systems Programming" }];
+  const tracker = createTracker({ dir, now: () => now });
+  const ref = tracker.refsFor(COURSES)[0];
+  tracker.attachMaterial(ref, "2026-10-25", [{ fileId: "f", from: 1, to: 2 }]);
+  tracker.markTaught(ref, "2026-10-25");
+  assert.strictEqual(tracker.progress(ref).quizzed, false, "material and a lesson are not a quiz");
+  tracker.recordCheck(ref, { type: "lecture", date: "2026-10-25" }, [{ topic: "pointers", verdict: "wrong" }, { topic: "arrays", verdict: "right" }, { topic: "structs", verdict: "partly" }]);
+  assert.strictEqual(tracker.progress(ref).quizzed, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("moodle watch: a whole Moodle course can be turned off, also one with no Bot course, and back on without a flood", async () => {
+  const os = require("node:os");
+  const { createMoodleWatch } = require("../moodle-watch");
+  const { createMoodleTools } = require("../moodle-tools");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-audit-off-"));
+  const BOTS = [{ id: "c1", name: "Linear Algebra" }];
+  const world = {
+    courses: [{ id: 5, name: "Linear Algebra" }, { id: 9, name: "Student Union Notices" }],
+    items: { 5: [{ id: 101, name: "Lecture 1", module: "resource", files: 1 }], 9: [{ id: 300, name: "Announcements", module: "forum" }, { id: 301, name: "Rules", module: "resource", files: 1 }] },
+    talks: { 300: [{ d: 1, title: "Welcome", time: 1700000000 }] },
+    events: [],
+  };
+  let postReads = 0;
+  const source = { connected: () => true, ask: async (kind, args = {}) => {
+    if (kind === "courses") return { data: world.courses };
+    if (kind === "course") return { data: { sections: [], items: world.items[args.courseid] || [] } };
+    if (kind === "forum") return { data: world.talks[args.cmid] || [] };
+    if (kind === "posts") { postReads++; return { data: [{ subject: "Party on Thursday", author: "The union", message: "Everyone is invited." }] }; }
+    if (kind === "events") return { data: world.events };
+    throw new Error("not asked in this test: " + kind);
+  } };
+  const tools = createMoodleTools({ bridge: source, courseRoutes: { list: () => BOTS }, dataDir: dir });
+  const posted = [], logs = [];
+  const nowMs = Date.parse("2026-11-16T10:00:00Z");
+  const watch = createMoodleWatch({ source, tools, courseRoutes: { list: () => BOTS }, file: path.join(dir, "watch.json"), thread: { append: (m) => { posted.push(m); return { id: "x" }; } }, now: () => nowMs, log: (l) => logs.push(l) });
+  await watch.check(); // the first look is silent
+  // checked: only a real Moodle course of the list
+  await assert.rejects(() => tools.watchCourse("Basket Weaving", false), /no Moodle course like/);
+  assert.deepStrictEqual(tools.quietCourses(), {});
+  const said = await tools.watchCourse("Student Union Notices", false);
+  assert.match(said, /no longer post ANYTHING about the Moodle course "Student Union Notices"/);
+  assert.match(said, /deadlines/);
+  assert.deepStrictEqual(Object.keys(tools.quietCourses()), ["9"]);
+  world.items[9].push({ id: 302, name: "Party poster", module: "resource", files: 1 }, { id: 303, name: "Survey", module: "assign" });
+  world.talks[300].unshift({ d: 2, title: "Party on Thursday", time: 1700000900 });
+  world.events.push({ courseId: 9, due: Math.floor(nowMs / 1000) + 86400, name: "Survey closes" });
+  world.items[5].push({ id: 102, name: "Lecture 2", module: "resource", files: 1 });
+  const r = await watch.check();
+  assert.deepStrictEqual(r.counts, { files: 1, items: 0, talks: 0, deadlines: 0 });
+  assert.match(posted[0].text, /Lecture 2/);
+  assert.doesNotMatch(posted[0].text, /Party|Survey|Student Union/);
+  assert.strictEqual(postReads, 0, "the messages of a course that is off are not even read");
+  assert.ok(logs.some((l) => /4 new things not posted/.test(l)));
+  // only that course is new: no message at all
+  world.items[9].push({ id: 304, name: "More rules", module: "resource", files: 1 });
+  assert.strictEqual((await watch.check()).posted, false);
+  assert.strictEqual(posted.length, 1);
+  // back on (by the Bot-less course's Moodle id): only what comes after is posted
+  assert.match(await tools.watchCourse("9", true), /again/);
+  world.items[9].push({ id: 305, name: "Election dates", module: "resource", files: 1 });
+  await watch.check();
+  assert.match(posted[1].text, /Election dates/);
+  assert.doesNotMatch(posted[1].text, /Party poster|More rules|Survey/);
+  // a linked course can be named by its Bot name
+  assert.match(await tools.watchCourse("Linear Algebra", false), /Bot's course "Linear Algebra"/);
+  assert.deepStrictEqual(Object.keys(tools.quietCourses()), ["5"]);
+  assert.deepStrictEqual(tools.quietFiles(), {}, "the files switch is a different switch");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("moodle watch: the brain's tool turns a whole course off only with on/off, never with both switches, never with a photo", async () => {
+  const { createBrain } = require("../brain");
+  const calls = [];
+  const make = (replies) => { let i = 0; const prompts = []; return { prompts, brain: createBrain({
+    courses: { allPages: () => [] }, courseRoutes: { list: () => TWO, courseFiles: () => ({ files: [] }), linkFiles: () => [] },
+    moodle: { watchFiles: () => { calls.push("files"); return "files changed"; }, watchCourse: async (name, on) => { if (/basket/i.test(name)) throw Object.assign(new Error('no Moodle course like "Basket Weaving". Moodle courses: Student Union Notices (id 9)'), { code: "tool" }); calls.push([name, on]); return "The Moodle watch will no longer post ANYTHING about that course."; }, explain: () => "" },
+    coach: { tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, courseId: c.id, name: c.name })), course: (r) => ({ key: r.key, assignments: [], position: {} }), save: () => {}, getSession: () => null, timetable: () => ({ courses: [] }) }, pendingProposal: () => null, answerStudy: async () => ({ answer: "x" }) },
+    reminders: { list: () => [], create: () => ({}) }, memory: { list: () => [], add: () => ({}) }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
+    askOne: async (p, m, prompt) => { prompts.push(prompt); return replies[i++]; }, askImage: async (m, prompt) => { prompts.push(prompt); return replies[i++]; },
+    chain: [{ provider: "agy", model: "fake-model" }], photoChain: [{ provider: "agy", model: "fake-model" }], poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {}, folderRules: { system: [] },
+  }) }; };
+  const ok = make(['CALL {"tool":"moodle_watch","course":"Student Union Notices","all":"off"}\nDone: nothing from the student union any more, deadlines included.']);
+  const r1 = await ok.brain.handle("I do not want to hear anything from the student union course", { history: [], courses: TWO });
+  assert.strictEqual(r1.answer, "Done: nothing from the student union any more, deadlines included.");
+  assert.deepStrictEqual(calls, [["Student Union Notices", false]]);
+  const wrong = make(['CALL {"tool":"moodle_watch","course":"Basket Weaving","all":"off"}\nDone.', "Which course do you mean?"]);
+  const r2 = await wrong.brain.handle("mute that course", { history: [], courses: TWO });
+  assert.strictEqual(r2.answer, "Which course do you mean?", "a course that is not real: the reply under the call is not shown");
+  const both = make(['CALL {"tool":"moodle_watch","course":"Operating Systems","all":"off","files":"off"}\nDone.', "Files only, or everything?"]);
+  await both.brain.handle("hmm", { history: [], courses: TWO });
+  const odd = make(['CALL {"tool":"moodle_watch","course":"Operating Systems","all":"mostly"}\nDone.', "On or off?"]);
+  await odd.brain.handle("hmm", { history: [], courses: TWO });
+  const photo = make(['CALL {"tool":"moodle_watch","course":"Student Union Notices","all":"off"}\nDone.', "I cannot change that from a photo; tell me in words."]);
+  await photo.brain.handle("(photo only)", { history: [], courses: TWO, image: { path: path.join(os_tmp(), "photo.jpg") } });
+  assert.strictEqual(calls.length, 1, "none of the bad calls changed anything");
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "brain-brief.md"), "utf8").includes('"all":"off"'), "the briefing explains the switch");
+});

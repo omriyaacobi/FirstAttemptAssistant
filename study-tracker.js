@@ -328,6 +328,8 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE, 
       held: held.length, upcomingTotal: all.length, withMaterial: withMaterial.length, understood: understood.length,
       behind: behind.map((s) => ({ date: s.date, n: s.n, hasMaterial: !!(lecture(s) && lecture(s).material.length), topic: lecture(s) ? lecture(s).topic : "" })),
       position: c.position, positionKnown: c.position.known, topicsDue: due.length, assignments,
+      // has Omri ever taken a graded quiz in this course? (a lecture check, or a topic a graded question touched)
+      quizzed: Object.values(c.lectures).some((l) => l && Array.isArray(l.checks) && l.checks.length > 0) || Object.values(c.topics).some((t) => t && t.seen > 0),
     };
   }
 

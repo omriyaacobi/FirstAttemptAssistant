@@ -18,14 +18,15 @@ still not reviewed: `experiments/2026-11-16-code-review.md`. Tests: `tests/code-
 ## Real-use audit (2026-11-16, branch claude/fable-real-use-audit-78c38e, NOT merged yet)
 
 Fable read my real conversations of 12-16 Nov (about 170 messages) and the log, and fixed what hurt most. Full note, with what
-was NOT fixed and 5 questions for me: `experiments/2026-11-16-real-use-audit.md`. Tests: `tests/real-use-2026-11-16.test.js` (1,117 in all).
+was NOT fixed and 5 questions for me: `experiments/2026-11-16-real-use-audit.md`. Tests: `tests/real-use-2026-11-16.test.js` (1,120 in all).
 
 - **Language:** a formula-only or photo-only message no longer flips a Hebrew talk to English.
 - **Wrong course:** the brain can correct which course a talk is in (tool `talk_course`); a reply to a marked answer goes to that answer's course.
 - **Leaks and hangs:** a reply that quotes Bot's own briefing is never shown; a hung model is dropped after 2 minutes (was 4).
 - **Morning brief:** lines are not cut mid-sentence; no "lectures not checked" for a course I study alone.
 - **Moodle watch:** I can turn off a course's new files by telling Bot (tool `moodle_watch`). After the merge I must say it once for the course I meant.
-- **Still open:** the full code review was not finished (the note lists the files), and CLAUDE.md needs four short lines (question 4 in the note).
+- **Follow-up (my answers, same day):** the brief's "not checked by a quiz" line shows only for a course where I took a graded quiz; `moodle_watch` can also turn a WHOLE Moodle course off ("all": nothing posted, deadlines too), also one with no Bot course.
+- **Still open:** the full code review was not finished (the note lists the files). CLAUDE.md is NOT edited yet: the four lines are ready to paste in section 4b of the note.
 
 ## HYDROGEN TRIAL RUNNING (2026-11-15): main is AHEAD of GitHub on purpose
 

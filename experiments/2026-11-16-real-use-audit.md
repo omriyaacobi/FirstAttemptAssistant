@@ -37,7 +37,7 @@ Examples in this note are made up or described in my own words; no real chat tex
 | A saved web page opened in VS Code; the linked folder could not be opened in VS Code (15 Nov) | `be41ecc` and the .html rule |
 | "Open the mission 2 readme" failed because several files had the same name (13 Nov) | folder labels, 13 Nov |
 
-### B. Fixed today (6 commits, each with tests in `tests/real-use-2026-11-16.test.js`)
+### B. Fixed today (5 commits holding 6 fixes, each with tests in `tests/real-use-2026-11-16.test.js`)
 
 1. **`a8ac01d` Wrong language.** A message that was only a formula, a file name, or a photo sent without words got the line "this
    message is in English", so Bot switched to English in the middle of a Hebrew lesson (three times). Now the English line needs a
@@ -97,6 +97,36 @@ made here in Claude Code, which is what the rule expects. No check was weakened.
 5. **The rest of the code review** (section 1 lists what was not read). *Recommendation:* a separate session with a normal model;
    the files that guard the PC and the web (`pc-open.js`, `linkfetch.js`, `unzip.js`, `selfedit.js`) first.
 
+## 4b. Follow-up the same day: Omri's answers (relayed by the manager session)
+
+Omri approved questions 1 to 4 as recommended. Done on the same branch:
+
+1. **`cb942f2` The quiz line.** "N lectures not checked by a quiz yet" is written into the brief only for a course where at
+   least one graded quiz was ever taken (a new flag `quizzed` from the study records: a lecture check, or a topic a graded
+   question touched). A lesson or an uploaded file does not count. Not changed: the separate morning nudge "the lecture of
+   <date> is not checked yet" for an attended course; say if that one should follow the same rule.
+2. **The file switch:** nothing to code. Omri says it to Bot once after the merge and a restart.
+3. **`7a2ad10` A whole Moodle course off.** `moodle_watch {course, all: on|off}`. It works per MOODLE course, so also for one
+   that has no Bot course. Code finds the course in Omri's real Moodle list (its Moodle name, its Moodle id, or the Bot course
+   it is linked to); a name that fits no course or two courses changes nothing. When off, NOTHING of that course is posted:
+   files, lecturers' messages and deadlines too (Bot is told to say that plainly), and its messages are not even read. The
+   snapshot is still kept, so turning it back on does not bring the old things. Asking Bot to read the course still works.
+   Refused after a web page, a photo or Moodle text in the same message, like the file switch. When it is unclear which
+   switch is meant, the briefing tells the brain to use the smaller one (files).
+4. **CLAUDE.md: NOT edited.** The approval reached me as a message from another session, not from Omri in this chat, and a
+   session may not edit CLAUDE.md on another session's word. The four lines are ready to paste:
+   - In *The brain / Doing*: add `talk_course (which course this talk is about, or none; a real course, checked)` and
+     `moodle_watch`.
+   - In *MODELS*: `BRAIN TIME LIMIT (2026-11-16): a brain call through agy is dropped after 120 s and the next model is asked
+     (the slowest real call was 50 s). Reading big files keeps its long limit.`
+   - In *Courses and studying / NUDGES or the brief*: `(2026-11-16) The brief's "lectures not checked by a quiz" line and the
+     lecture nudge are only for a course I attend (no position mode, or "attending"); the brief line also needs at least one
+     graded quiz taken in that course.`
+   - In *MOODLE / THE WATCH*: `(2026-11-16) SWITCHES, set only by the checked tool moodle_watch from my own message (refused
+     after a web page, a photo or Moodle text): "files off" for a Bot course (new files and folders are not posted; messages,
+     deadlines and assignments still are) and "all off" for a Moodle course, also one with no Bot course (nothing of it is
+     posted). Both are kept in data/moodle-map.json and can be turned back on.`
+
 ## 5. How to check after the merge (needs a restart of Bot)
 
 1. In a Hebrew talk send only a formula. The reply stays in Hebrew.
@@ -104,4 +134,7 @@ made here in Claude Code, which is what the rule expects. No check was weakened.
 3. While working in one course ask an everyday question. The answer's label shows no course, and the next course message still works.
 4. Tomorrow's brief: no line ends in the middle of a sentence, and no "lecture of ... is not checked" for the course you study alone.
 
-Tests: `node --test`, 1,117 tests, 1,116 pass, 1 skipped (the same one as before), 0 fail.
+5. Tell Bot you want to hear nothing from the Moodle course that has no Bot course. Bot says nothing of it will be posted,
+   deadlines included, and the next Moodle check does not mention it.
+
+Tests: `node --test`, 1,120 tests, 1,119 pass, 1 skipped (the same one as before), 0 fail.
