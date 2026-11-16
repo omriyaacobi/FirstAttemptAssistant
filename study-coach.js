@@ -220,7 +220,6 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   }
 
   const SOLUTION_ASK = /\b(?:full|whole|complete|entire)\s+(?:solution|code|answer)\b|\bsolution\s+(?:code|for)\b|\bsolve\s+(?:it|the\s+(?:assignment|exercise|homework))\s+for\s+me\b|פתרון\s+מלא|תפתור\s+(?:לי|את)/i;
-  const WEEK_WORDS = /\bweek\b|שבוע/i, TODAY_WORDS = /\btoday\b|היום/i;
   const dayLabel = (iso) => plan.niceDate(iso, curLang);
   function planItems(ref) {
     const p = tracker.progress(ref), pos = p.position || {};
@@ -250,8 +249,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (exam && plan.daysBetween(today(), exam) <= 14) out.push({ ...base, kind: "review", label: `${ref.name}: ${T("review before the exam", "חזרה לפני המבחן")}`, minutes: catchup.MINUTES.review, say: T(`quiz me on ${ref.name}`, `תבחן אותי ${bet(ref.name)}`) });
     return out;
   }
-  function catchupPlan(text, list = refs(), given = {}) {
-    const budget = given.minutes || catchup.parseBudget(text) || catchup.DEFAULT_BUDGET;
+  // given: { minutes, todayOnly } as the brain's study_plan tool handed them in (checked there). No words of Omri's are read here:
+  // the old "2 hours a day" / "today" / "week" word lists went on 2026-11-17 (nothing had reached them since the brain).
+  function catchupPlan(list = refs(), given = {}) {
+    const budget = given.minutes || catchup.DEFAULT_BUDGET;
     for (const r of list) maybeAlign(r); // notes of "Lecture N" headings are matched to the timetable lectures first
     const active = list.filter((r) => (tracker.progress(r).position || {}).mode !== "paused");
     const items = active.flatMap(planItems);
@@ -266,7 +267,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     lines.push(T(`A realistic plan, about ${budget} minutes a day (today is ${dayLabel(today())}). It changes when you tell me more.`, `תוכנית ריאלית, בערך ${budget} דקות ביום (היום ${dayLabel(today())}). היא משתנה כשמספרים לי עוד.`));
     lines.push(T(`Start with: ${first.label} (${first.minutes} min). Say: "${first.say}".`, `מתחילים מ: ${first.label} (${first.minutes} דקות). לכתוב: "${first.say}".`));
     if (active.some((r) => (tracker.progress(r).position || {}).goal === "concepts")) lines.push(T("Concepts first, as you said: the exercises come after.", "קודם מושגים, כמו שנכתב: התרגילים אחר כך."));
-    const onlyToday = typeof given.todayOnly === "boolean" ? given.todayOnly : TODAY_WORDS.test(text) && !WEEK_WORDS.test(text);
+    const onlyToday = given.todayOnly === true;
     const rows = (onlyToday ? s.grid.slice(0, 1) : s.grid).map((g) => `${g.date === today() ? T("Today", "היום") : dayLabel(g.date)} (${g.minutes} ${T("min", "דק'")}): ${g.items.map((i) => i.label).join(" + ")}`);
     lines.push(...rows);
     if (onlyToday && s.grid.length > 1) lines.push(T('For the whole week say "plan for the week".', 'לתוכנית של כל השבוע: "תוכנית לשבוע".'));
@@ -406,15 +407,12 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   }
 
   // Checks the proposed fields (standing.checkStanding: closed lists, the timetable, the outline) and stores what fits, keeping the old
-  // record for undo. byBrain: the fields came from the brain's study_position tool, so no words are scanned here.
-  function storeReading(target, text, raw, ctx, lost, { byBrain = false } = {}) {
+  // record for undo. The fields come from the brain's study_position tool or from the end-of-day review; no words are scanned here
+  // (the branches of the old front desk, which read an exam date and a follow-up question out of Omri's words, went on 2026-11-17:
+  // nothing had reached them since the brain). `text` is only kept as Omri's own words (said).
+  function storeReading(target, text, raw, ctx) {
     const res = standing.checkStanding(raw, ctx);
-    // A written exam date ("the exam is on 22 December"): the reader only knows "in N days", so code reads the date itself (a real date, in the future, within a year).
-    if (!byBrain && !res.exam && /\bexam\b|\btest\b|מבחן/i.test(text) && /\d/.test(text)) {
-      const d = (parseDay(text, "week") || {}).date;
-      if (d && d > today() && plan.daysBetween(today(), d) <= standing.EXAM_MAX_DAYS) res.exam = { date: d };
-    }
-    if (!res.any && !res.dropped.length && !res.exam && !lost) return null;
+    if (!res.any && !res.dropped.length && !res.exam) return null;
     const words = wordsFor(target, text);
     const before = { ref: target, position: tracker.course(target).position, pending: tracker.pendingQuestion(target) };
     const old = before.position;
@@ -437,14 +435,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       out.proposalId = p.id;
       out.proposal = card(p);
     }
-    if (lost && !res.any) {
-      tracker.markAsked(target, { where: true }); tracker.save({ ...tracker.course(target), pendingQuestion: null }); // counts as asked for 7 days, and nothing stays open
-      out.answer = T(`${target.name}: I kept your words. Not knowing where you are is fine. If you like, say "quiz me on ${target.name}" for a short quiz and we will see what you already know; I will not ask where you are again for a week. This only tells me where to start: it does not count as understood.`, `${target.name}: שמרתי את מה שכתבת. זה בסדר לא לדעת איפה עומדים. אם בא לך, אפשר לכתוב "תבחן אותי ${bet(target.name)}" ונראה מה כבר ידוע; לא אשאל שוב איפה עומדים במשך שבוע. זה רק אומר לי מאיפה להתחיל, ולא נחשב להבנה.`);
-      return out;
-    }
     out.answer = standing.readback({ courseName: target.name, fields: res.fields, notes: res.notes, dropped: res.dropped, exam: res.exam, lang: curLang });
-    const askedAt = tracker.course(target).askedStanding || 0;
-    if (!byBrain && (!askedAt || now() - askedAt >= NO_REPEAT_MS || WHERE_Q.test(text))) out.question = standing.adaptiveQuestion({ fields: merged, notes: res.notes, dropped: res.dropped, ctx, lang: curLang });
     return out;
   }
 
@@ -601,7 +592,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     plan({ minutes = null, todayOnly = false, lang = "en" } = {}) {
       curLang = lang;
       const m = Number(minutes);
-      return { mode: "study", answer: catchupPlan("", refs(), { minutes: Number.isInteger(m) && m >= 15 && m <= 600 ? m : null, todayOnly: todayOnly === true }) };
+      return { mode: "study", answer: catchupPlan(refs(), { minutes: Number.isInteger(m) && m >= 15 && m <= 600 ? m : null, todayOnly: todayOnly === true }) };
     },
     // Teaches the next part of a course (or the part named), one chunk, from the real notes; the part is matched by code against the outline.
     async teach({ courseId, part = "", lang = "en", onText = null } = {}) {
@@ -628,7 +619,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       curLang = lang;
       const ref = refOfCourse(courseId);
       if (!ref) throw new Error("that course is not in the study tracker");
-      const out = storeReading(ref, String(said), fields && typeof fields === "object" ? fields : {}, standingContext(ref), false, { byBrain: true });
+      const out = storeReading(ref, String(said), fields && typeof fields === "object" ? fields : {}, standingContext(ref));
       if (!out) throw new Error("none of the fields could be used (they must be values from the closed lists, and a place must exist in the timetable or the notes)");
       lastUndo = { items: [out.undo], proposalIds: [out.proposalId].filter(Boolean), at: now() };
       keepUndo({ kind: "position", key: ref.key, position: out.undo.position, pending: out.undo.pending, proposalIds: lastUndo.proposalIds, by: "brain" });
@@ -692,7 +683,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       if (!res.any) continue;
       if (Object.keys(res.fields).every((k) => JSON.stringify(res.fields[k]) === JSON.stringify(old[k]))) continue; // already known
       const before = { position: old, pending: tracker.pendingQuestion(ref) };
-      const out = storeReading(ref, String(it.quote || ""), raw, ctx, false, { byBrain: true });
+      const out = storeReading(ref, String(it.quote || ""), raw, ctx);
       if (!out) continue;
       if (out.proposalId) proposals.delete(out.proposalId);
       if (!firstBefore.has(ref.key)) firstBefore.set(ref.key, before);
