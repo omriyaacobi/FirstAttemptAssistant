@@ -147,7 +147,7 @@ test("the first-open notice is short, in both languages, and invites you to say 
     const n = P.TS[lang].notice;
     assert.ok(n.length <= 4);
     assert.ok(n.join(" ").length < 520, `${lang} notice is short`);
-    assert.match(n[n.length - 1], lang === "he" ? /איפה אתה/ : /where you are/);
+    assert.match(n[n.length - 1], lang === "he" ? /איפה עומדים/ : /where you are/);
   }
   assert.match(P.TS.en.tellText("Calculus 2"), /^My last Calculus 2 lecture was $/);
   assert.match(P.TS.he.tellText("חדוא 2"), /חדוא 2/);

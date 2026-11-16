@@ -224,8 +224,15 @@ async function runBackup({ dataDir, destDir, passphrase, keep = 5, repoDir, now 
     await fsp.writeFile(tmpPath, encrypted);
     await fsp.rename(tmpPath, finalPath);
     // PROVE it: read the file back from disk, decrypt, unzip, check every fingerprint.
-    const back = parseArchive(await gunzip(await decrypt(await fsp.readFile(finalPath), passphrase)));
-    if (back.files.length !== fileCount) throw new Error("check-back found a different number of files");
+    // A copy that fails this check is REMOVED: left in the folder it would count as one of the newest copies, and the next good
+    // backup would delete a good old copy to keep a broken one (code review, 2026-11-17).
+    try {
+      const back = parseArchive(await gunzip(await decrypt(await fsp.readFile(finalPath), passphrase)));
+      if (back.files.length !== fileCount) throw new Error("check-back found a different number of files");
+    } catch (error) {
+      await fsp.rm(finalPath, { force: true }).catch(() => {});
+      throw new Error(`the new backup did not pass its check and was removed: ${String(error.message || error)}`);
+    }
     const removed = await pruneBackups(destDir, keep);
     const status = writeStatus(dataDir, { lastAttempt: attempt, lastSuccess: attempt, ok: true, error: null, file: name, bytes: encrypted.length, fileCount, dataBytes: totalBytes, pruned: removed.length });
     const line = `backup ok: ${name}, ${fileCount} files, ${encrypted.length} bytes, ${removed.length} old copies removed`;

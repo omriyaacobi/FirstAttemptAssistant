@@ -3,6 +3,20 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
+## Code review, part 2: the rest of the files (2026-11-17, branch claude/fable-code-review-0be442, NOT merged yet)
+
+Fable read almost every file part 1 had left (the list of the few still unread, 2 more questions for me and 2 lines suggested
+for CLAUDE.md are in section 7 of `experiments/2026-11-16-code-review.md`). Tests: `tests/code-review-2026-11-17.test.js` (1,146 in all).
+
+- **Quiz:** an answer that held the word "reveal", "stuck" or "hint" was not graded (with "reveal" it was shown the answer and
+  marked wrong). The brain now says what a quiz reply is (`quiz_answer` "ask"), and the tutor follows that. `brain.js`: one line.
+- **Hebrew:** the Study page, the link cards and the first-open notice no longer use the masculine "you".
+- **Small:** the Moodle extension judges a file address after parsing it; the daily summary's transcript cannot be closed by a
+  message; a filed file's Hebrew reply gives the real reason for the course; a backup that fails its check is removed.
+- **Dead code:** word lists of the old front desk in the study coach are gone.
+- **After the merge I must:** restart Bot, reload "Bot Moodle reader" in chrome://extensions, and try one quiz (answer with a
+  sentence that holds "stuck", then ask for a hint).
+
 ## Code review of the guard files (2026-11-16, branch claude/fable-code-review-0be442, NOT merged yet)
 
 Fable read the files that guard my PC, the web, uploads and Improve Bot. Full note, with 3 questions for me and the list of files

@@ -196,6 +196,7 @@ const CLAIM_WORDS = new Set("i do know understand understood got it yes yeah yep
 const isClaim = (text) => { const t = String(text).trim(); const words = t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []; return t.length < 2 || (words.length <= 6 && words.every((w) => CLAIM_WORDS.has(w))); };
 const SHOW = /\b(?:show\s+(?:me\s+)?the\s+answer|give\s+(?:me\s+)?the\s+answer|reveal|i\s+give\s+up|just\s+tell\s+me)\b|תראה\s+(?:לי\s+)?(?:את\s+)?(?:ה)?תשובה|תן\s+(?:לי\s+)?(?:את\s+)?(?:ה)?תשובה|אני\s+מוותר/i;
 const HINT = /\b(?:hint|stuck|clue|help\s+me\s+start)\b|רמז|תקוע|לא\s+מצליח/i;
+const ASK_KINDS = ["answer", "hint", "show", "skip"]; // what a reply to an open question can be (the brain says which; see turn)
 const SKIP = /^\s*(?:skip(?:\s+it|\s+this(?:\s+one)?)?|pass|דלג|לדלג|נדלג)[.!\s]*$/i; // leave a single check question after a lesson (it counts for nothing, so nothing is lost)
 
 async function gradeAnswer({ askChain, q, answer, before = [], material, lang = "en", log }) {
@@ -307,7 +308,12 @@ function summary(session, rec) {
 // notes (optional, teach): { chunk: { title, part, parts, text, fromPage, realPages, fileId, fileName, key }, onTaught } = ONE piece of a big notes file chosen by code (catchup.js).
 // lang (optional): the language of the reply when the caller knows it (the brain hands it in: its teach_next tool gets only a part name,
 // which says nothing about the language Omri wrote in). Without it the language is read from the message, as before.
-async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, lang: forcedLang = null }) {
+// ask (optional, a reply to an open question): what the brain understood the message to be, handed in by its quiz_answer tool:
+// "answer" (a try, graded), "hint", "show" (show the answer / gave up) or "skip". With it, no words of the message are scanned: before,
+// an honest answer that held the word "reveal" was shown the answer and marked wrong, and one with "stuck" or "hint" got a hint
+// instead of a grade (code review, 2026-11-17). Without it (an older caller) the words decide as before.
+async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, lang: forcedLang = null, ask: askKind = null }) {
+  const wants = ASK_KINDS.includes(askKind) ? askKind : null;
   const langNow = forcedLang === "he" || forcedLang === "en" ? forcedLang : langOf(message);
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
@@ -326,14 +332,14 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
     const material = materialFor(pages, refs);
     let reply, model = null;
     try {
-      if (session.fromTeach && SKIP.test(message)) {
+      if (session.fromTeach && (wants ? wants === "skip" : SKIP.test(message))) {
         q.state = "done"; q.verdict = null; // closed without a verdict: nothing is recorded
         tracker.setSession(ref, session.target.type === "assignment" ? { ...newSession("work", session.target), lang: session.lang, questions: [] } : null);
         return finish({ answer: say(session.lang, "Skipped. Nothing was recorded. Say what you want next: the next part, a quiz, or a hint on the assignment.", "דילגנו. שום דבר לא נרשם. אפשר לבקש את החלק הבא, בוחן, או רמז במטלה."), mode: session.mode });
-      } else if (SHOW.test(message)) {
+      } else if (wants ? wants === "show" : SHOW.test(message)) {
         q.revealed = true; q.verdict = "wrong"; q.state = "done";
         reply = `${tx(session).answerIs}${q.key}`;
-      } else if (HINT.test(message)) {
+      } else if (wants ? wants === "hint" : HINT.test(message)) {
         q.hints = Math.min(3, q.hints + 1);
         const h = await makeHint({ askChain, q, level: q.hints, answer: "", material, lang: session.lang, log });
         model = h.model; reply = `${tx(session).hint(q.hints)}${h.hint}`;
@@ -431,4 +437,4 @@ async function teachTopic({ askChain, courseName, message, pages, log, onText = 
   return { answer: t.text, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: !mat.picked.length || /\[OUT\]/.test(t.text) };
 }
 
-module.exports = { teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS, openQuestion, CHECK_TTL_MS };
+module.exports = { ASK_KINDS, teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS, openQuestion, CHECK_TTL_MS };
