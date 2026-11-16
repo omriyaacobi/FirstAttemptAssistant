@@ -63,3 +63,13 @@ test("a long quote is cut to 3 lines in the chip (the full text is still kept fo
   // setQuote keeps the whole marked text in T.quote; only the chip's view is cut
   assert.match(html, /T\.quote = \{ messageId: q\.id, text: q\.text \};/);
 });
+
+// 2026-11-16: on the laptop, marking text with the mouse made the page shake: the button appeared under the still-dragging mouse,
+// which changed the selection and scrolled the page, which moved the button... The button now waits until the mouse is let go,
+// and a finger on any screen (phone or touch laptop) gets the fixed spot above the box.
+test("the Reply button waits for the mouse to be let go, and a touch gets the fixed spot", () => {
+  assert.match(html, /if \(quoteDrag\) \{ btn\.hidden = true; return; \}/);
+  assert.match(html, /e\.pointerType === "mouse" && e\.button === 0 && e\.target !== btn\) \{ quoteDrag = true;/);
+  assert.match(html, /document\.addEventListener\("pointerup", endDrag, true\);/);
+  assert.match(html, /const coarse = lastPointer === "touch" \|\|/);
+});

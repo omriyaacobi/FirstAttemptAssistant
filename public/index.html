@@ -3092,6 +3092,8 @@
     // the part in a chip above the box; Send carries it as { messageId, text }. The SERVER checks it is really in that message (quote.js)
     // and the brain gets it as a marked data block. The page never sends anything by itself.
     const MAX_QUOTE = 1500;
+    let quoteDrag = false; // a mouse button is held down (text is being marked)
+    let lastPointer = ""; // "mouse", "touch" or "pen": what was used last
     function selectedQuote() {
       const sel = window.getSelection ? window.getSelection() : null;
       if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -3117,9 +3119,14 @@
     }
     function placeQuoteButton() {
       const btn = $("quoteBtn");
+      // While a MOUSE button is still held the text is still being marked: no button yet. A button that appeared under a mouse
+      // that was still dragging changed the selection and scrolled the page, which moved the button, which changed the selection...
+      // and the page shook up and down on the laptop (2026-11-16). It appears when the button is let go.
+      if (quoteDrag) { btn.hidden = true; return; }
       const q = composerShown() ? selectedQuote() : null;
       if (!q) { btn.hidden = true; return; }
-      const coarse = matchMedia("(pointer: coarse)").matches;
+      // A finger anywhere (a phone, or a touch screen on the laptop) gets the fixed spot; a mouse gets the spot by the selection.
+      const coarse = lastPointer === "touch" || (lastPointer === "" && matchMedia("(pointer: coarse)").matches);
       const h = 36, w = btn.offsetWidth || 120;
       if (coarse) {
         // Phone: a FIXED spot just above the message box, never next to the selection. A button that followed the selection sat
@@ -3167,6 +3174,16 @@
       });
       let timer = null;
       document.addEventListener("selectionchange", () => { clearTimeout(timer); timer = setTimeout(placeQuoteButton, 150); });
+      // capture: true sees the press before any part of the page can stop it. Only a mouse press on the page itself (not on the
+      // Reply button) counts as marking.
+      document.addEventListener("pointerdown", (e) => {
+        lastPointer = e.pointerType || "";
+        if (e.pointerType === "mouse" && e.button === 0 && e.target !== btn) { quoteDrag = true; btn.hidden = true; }
+      }, true);
+      const endDrag = () => { if (!quoteDrag) return; quoteDrag = false; clearTimeout(timer); placeQuoteButton(); };
+      document.addEventListener("pointerup", endDrag, true);
+      document.addEventListener("pointercancel", endDrag, true);
+      window.addEventListener("blur", endDrag); // let go outside the window
       scroller().addEventListener("scroll", () => { if (!btn.hidden) placeQuoteButton(); }, { passive: true });
       $("quoteRemove").addEventListener("click", clearQuote);
     }
