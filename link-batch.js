@@ -60,7 +60,7 @@ ${shown}${why}
     }
     if (mode === "moodle") {
       const more15 = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
-      const text = words(lang, `${urls.length} files${source ? ` from ${source}` : ""}:\n${shown}${more15}\nShall I download them into ${courseName}? Nothing is downloaded until you tap Confirm.`, `${urls.length} קבצים${source ? ` מתוך ${source}` : ""}:\n${shown}${more15}\nלהוריד אותם ${bet(courseName)}? שום דבר לא יורד לפני שתלחץ על אישור.`);
+      const text = words(lang, `${urls.length} files${source ? ` from ${source}` : ""}:\n${shown}${more15}\nShall I download them into ${courseName}? Nothing is downloaded until you tap Confirm.`, `${urls.length} קבצים${source ? ` מתוך ${source}` : ""}:\n${shown}${more15}\nלהוריד אותם ${bet(courseName)}? שום דבר לא יורד לפני לחיצה על אישור.`);
       return { text, card: { id, mode, count: urls.length, courseName, expiresAt: now() + PENDING_MS } };
     }
     const rest = urls.length > 15 ? words(lang, `\n...and ${urls.length - 15} more`, `\n...ועוד ${urls.length - 15}`) : "";
@@ -68,7 +68,7 @@ ${shown}${why}
     const extra = [];
     if (notHttps) extra.push(words(lang, `${notHttps} link${notHttps === 1 ? "" : "s"} without https ${notHttps === 1 ? "is" : "are"} left out.`, `${notHttps} קישורים בלי https הושמטו.`));
     if (more) extra.push(words(lang, `Only the first ${urls.length} are taken; ${more} more were left out.`, `נלקחים רק ${urls.length} הראשונים; ${more} נוספים הושמטו.`));
-    const text = words(lang, `I found ${urls.length} link${urls.length === 1 ? "" : "s"}${source ? ` in "${source}"` : ""}:\n${shown}${rest}\n${extra.join(" ")}\nShall I ${verb}? Nothing is fetched until you tap Confirm.`, `מצאתי ${urls.length} קישורים${source ? ` ב-"${source}"` : ""}:\n${shown}${rest}\n${extra.join(" ")}\nלבצע: ${verb}? שום דבר לא יורד לפני שתלחץ על אישור.`).replace(/\n\n/g, "\n");
+    const text = words(lang, `I found ${urls.length} link${urls.length === 1 ? "" : "s"}${source ? ` in "${source}"` : ""}:\n${shown}${rest}\n${extra.join(" ")}\nShall I ${verb}? Nothing is fetched until you tap Confirm.`, `מצאתי ${urls.length} קישורים${source ? ` ב-"${source}"` : ""}:\n${shown}${rest}\n${extra.join(" ")}\nלבצע: ${verb}? שום דבר לא יורד לפני לחיצה על אישור.`).replace(/\n\n/g, "\n");
     return { text, card: { id, mode, count: urls.length, courseName, expiresAt: now() + PENDING_MS } };
   }
 

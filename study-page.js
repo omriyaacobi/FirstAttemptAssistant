@@ -62,8 +62,8 @@ function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
     const open = p.assignments.map((a) => ({ title: a.title, due: a.due || null, status: a.status }));
     const due = p.assignments.filter((a) => a.due).map((a) => ({ title: a.title, due: a.due, status: a.status, daysLeft: plan.daysBetween(today, a.due) }));
     const questions = [];
-    if (!p.positionKnown) questions.push(he ? `איפה אתה בקורס ${ref.name}? ספר לי מה ההרצאה האחרונה שעברת (תאריך, מספר או נושא). אני לא מנחש.` : `Where are you in ${ref.name}? Tell me the last lecture you went through (a date, a number or a topic). I will not guess.`);
-    for (const s of tracker.slotsToAskAbout(ref).slice(0, 2)) questions.push(he ? `להרצאה ${s.n} של ${ref.name} (${nice(s.date)}) אין חומר ב-Bot. שלח את השקפים, או ספר לי מה הנושא, או ספר לי אם ההרצאה בוטלה.` : `${ref.name} lecture ${s.n} (${nice(s.date)}) has no material in Bot. Send the slides, or tell me its topic, or tell me if the class was cancelled.`);
+    if (!p.positionKnown) questions.push(he ? `איפה עומדים בקורס ${ref.name}? אפשר לכתוב לי מה ההרצאה האחרונה שעברת עליה (תאריך, מספר או נושא). בלי ניחושים מהצד שלי.` : `Where are you in ${ref.name}? Tell me the last lecture you went through (a date, a number or a topic). I will not guess.`);
+    for (const s of tracker.slotsToAskAbout(ref).slice(0, 2)) questions.push(he ? `להרצאה ${s.n} של ${ref.name} (${nice(s.date)}) אין חומר ב-Bot. אפשר לשלוח את השקפים, לכתוב לי מה הנושא, או לכתוב לי אם ההרצאה בוטלה.` : `${ref.name} lecture ${s.n} (${nice(s.date)}) has no material in Bot. Send the slides, or tell me its topic, or tell me if the class was cancelled.`);
     out.push({
       id: ref.courseId, name: ref.name, tracked: true,
       shouldBe: { held: p.held, lastLecture: last ? { n: last.n, date: last.date } : null, nextLecture: next ? { n: next.n, date: next.date } : null },
