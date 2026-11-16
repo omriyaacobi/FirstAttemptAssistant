@@ -3,6 +3,18 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
+## Code review of the guard files (2026-11-16, branch claude/fable-code-review-0be442, NOT merged yet)
+
+Fable read the files that guard my PC, the web, uploads and Improve Bot. Full note, with 3 questions for me and the list of files
+still not reviewed: `experiments/2026-11-16-code-review.md`. Tests: `tests/code-review-2026-11-16.test.js`, `tests/pdfcut.test.js` (1,127 in all).
+
+- **PDFs read faster:** 11 of my 29 course PDFs "could not be cut" and were read whole (one took 8 minutes). `pdfcut.js` now unpacks
+  their object streams, so they are read in small pieces, three at a time.
+- **Short Windows names:** a macro file or a secret file could slip past Bot's rules through its short name (`REPORT~1.DOC`). Closed.
+- **Improve Bot with Argon:** a file Argon writes can no longer be run by the test run (a check added in `selfedit.js`).
+- **Smaller:** stricter IPv6 check for links; zip file types need their dot.
+- **Still open:** opening a linked folder that is in WSL is refused (question 1 in the note); the review is not finished (the note lists the files).
+
 ## Real-use audit (2026-11-16, branch claude/fable-real-use-audit-78c38e, NOT merged yet)
 
 Fable read my real conversations of 12-16 Nov (about 170 messages) and the log, and fixed what hurt most. Full note, with what
