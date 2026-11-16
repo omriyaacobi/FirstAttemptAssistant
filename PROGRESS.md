@@ -3,6 +3,18 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
+## Real-use audit (2026-11-16, branch claude/fable-real-use-audit-78c38e, NOT merged yet)
+
+Fable read my real conversations of 12-16 Nov (about 170 messages) and the log, and fixed what hurt most. Full note, with what
+was NOT fixed and 5 questions for me: `experiments/2026-11-16-real-use-audit.md`. Tests: `tests/real-use-2026-11-16.test.js` (1,117 in all).
+
+- **Language:** a formula-only or photo-only message no longer flips a Hebrew talk to English.
+- **Wrong course:** the brain can correct which course a talk is in (tool `talk_course`); a reply to a marked answer goes to that answer's course.
+- **Leaks and hangs:** a reply that quotes Bot's own briefing is never shown; a hung model is dropped after 2 minutes (was 4).
+- **Morning brief:** lines are not cut mid-sentence; no "lectures not checked" for a course I study alone.
+- **Moodle watch:** I can turn off a course's new files by telling Bot (tool `moodle_watch`). After the merge I must say it once for the course I meant.
+- **Still open:** the full code review was not finished (the note lists the files), and CLAUDE.md needs four short lines (question 4 in the note).
+
 ## HYDROGEN TRIAL RUNNING (2026-11-15): main is AHEAD of GitHub on purpose
 
 - Omri is trying Gemini 4 Hydrogen medium as Bot's main model for a day or two:

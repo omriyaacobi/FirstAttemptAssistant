@@ -196,7 +196,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     return { url: moodleUrl({ cmid: hits[0].id, module: hits[0].module }), label: `"${oneLine(hits[0].name, 120)}" in ${m.name}` };
   }
 
-  // THE WATCH'S FILE SWITCH (Omri, 2026-11-16: "no need to offer me lectures in this one", for a course whose notes already cover
+  // THE WATCH'S FILE SWITCH (Omri's wish, 2026-11-16: no offers of new files for a course whose notes already cover
   // the semester). Per BOT course: when off, the Moodle watch (moodle-watch.js) does not post that course's new files and folders.
   // Lecturers' messages, deadlines, assignments and quizzes are still posted, and nothing else changes (moodle_fetch still works).
   // Kept in the map file; the course id is checked against the real course list.
