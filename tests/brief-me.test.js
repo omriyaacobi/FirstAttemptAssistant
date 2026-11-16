@@ -7,7 +7,7 @@ const { aboutMeBlock, buildLedger, checkLines, plainLines, CHAIN } = require("..
 
 const TODAY = "2026-11-13";
 const log = (lines) => ({ day: (d) => (d === "2026-11-12" ? lines : []) });
-const course = (over = {}) => ({ name: "Made-up Calculus", tracked: true, behind: [], assignments: [], topicsDue: 0, position: {}, ...over });
+const course = (over = {}) => ({ name: "Made-up Calculus", tracked: true, quizzed: true, behind: [], assignments: [], topicsDue: 0, position: {}, ...over });
 const tracker = (progressByKey) => ({ refsFor: (list) => list.map((c) => ({ key: c.id, name: c.name })), progress: (ref) => progressByKey[ref.key] });
 const COURSES = [{ id: "c1", name: "Made-up Calculus" }];
 

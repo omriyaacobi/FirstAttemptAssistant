@@ -3,7 +3,7 @@
 //
 //   1. CODE builds a numbered LEDGER from real records only: yesterday's progress log (progress-log.js: graded quizzes, lessons,
 //      Omri's own notes, positions, assignments), assignments due soon, review topics due, a confirmed exam soon, and lectures
-//      that were held and not checked yet (study-tracker.js progress().behind; nothing for a course in "revising" or "paused" mode,
+//      that were held and not checked yet (study-tracker.js progress().behind; only for a course Omri attends and took at least one graded quiz in,
 //      nothing at all while the study reminders are paused for reserve duty).
 //   2. Flash high (then Flash medium; never Argon, never Claude) writes at most MAX_LINES short lines from the ledger. Every line
 //      must cite ledger numbers.
@@ -63,7 +63,9 @@ function buildLedger({ log, tracker, courseList, today, paused = false, dayNotes
     // made from the timetable's lectures, which is not how Omri studies there. The study report and the plan already left it out
     // (study-coach.js); since 2026-11-16 the brief and the nudge do too. Omri's own words about the course are still in the ledger.
     const quietMode = !!pos.mode && pos.mode !== "attending";
-    if (p.tracked && !quietMode && p.behind.length) push("behind", `${name}: ${p.behind.length} lecture${p.behind.length === 1 ? "" : "s"} not checked by a quiz yet`);
+    // And only for a course where Omri took at least one graded quiz (Omri, 2026-11-16): without one, "not checked by a quiz" is
+    // true of every lecture and says nothing, and Omri does not use quizzes in most courses.
+    if (p.tracked && !quietMode && p.quizzed && p.behind.length) push("behind", `${name}: ${p.behind.length} lecture${p.behind.length === 1 ? "" : "s"} not checked by a quiz yet`);
     if (pos.said) push("said", `${name}, in Omri's own words: "${clean(pos.said, 200)}"`);
   }
   return out;
