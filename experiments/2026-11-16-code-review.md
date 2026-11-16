@@ -3,8 +3,9 @@
 Branch `claude/fable-code-review-0be442`, built on the real-use audit branch. Nothing pushed, Bot not restarted, the main folder and
 `data/` only read. No real chat text or course text is in this note or in the commits.
 
-**Not finished.** The 5-hour quota window (shared with the audit session) was about 70% used after this part, so I stopped at a clean
-point. What was read and what was not is listed in section 1 and section 5.
+**Two parts.** Part 1 (16 Nov, sections 1 to 6) stopped at about 70% of the quota window. Part 2 (17 Nov, section 7) read almost
+all the rest and fixed what it found. Section 5 now lists the few files still unread. Part 2 started by taking in `main` (the
+audit's work and the manager's fixes), with all tests green.
 
 ## 1. What I read
 
@@ -84,19 +85,116 @@ Tests: `tests/code-review-2026-11-16.test.js` (7 tests; the short-name ones crea
    means nothing), and keep Argon strict as it now is. A stronger wall (running the tests inside a sandbox) is a big job.
 3. **Finish the review?** *Recommendation:* yes, in a fresh session with a normal model. Section 5 is its list.
 
-## 5. Not reviewed yet
+## 5. Still not reviewed (after part 2)
 
-`brain.js` beyond the PC tools (the audit read it), `jobs.js` and the thread files (audit), and never read by either session:
-`calendar.js`, `calendar-chat.js`, `reminders.js`, `backup.js`, `webpush.js`, `news.js`,
-`morning.js`, `catchup.js`, `tutor.js`, `outline.js`, `quota.js`, `router.js`, `moodle-tools.js`,
-`moodle.js`, `moodle-token.js`, the Moodle extension, `course-routes.js`, `thread-files.js`, `thread-store.js`, `thread-summary.js`,
-`study.js`, `study-coach.js`, `study-tracker.js`, `study-plan.js`, `recall.js`, `search.js`, `course-material.js`, `warmagy.js`,
-`crosslang.js`, `improve-watch.js`, the small helpers, and all of `public/` (`index.html`, `study.js`, `sw.js`).
-Order I would take: the Moodle extension (`moodle-extension/`, its allowlist), `backup.js`, `webpush.js`, `calendar.js`,
-`course-routes.js`, then `public/index.html` (how text from models and Moodle is drawn).
+- `public/index.html` (3,543 lines) and `public/study.js`: NOT read line by line. I searched both for every way a page can turn
+  text into code or a link (`innerHTML`, `insertAdjacentHTML`, `document.write`, `eval`, links built from text): none is used. The
+  page draws everything with `textContent`, so text from a model or from Moodle stays text. The Hebrew words of the Study tab
+  were read and fixed.
+- `study.js` in the root and the bottom two thirds of `moodle.js`: code that no page reaches any more (CLAUDE.md says both are
+  kept on purpose and wait for Omri's decision), so I spent no quota on them.
+- `standing.js`, `position-record.js`, `history.js`: small helpers, not read.
+- `brain.js` beyond the PC tools and the study tools, `jobs.js`, `thread-context.js`, `brief-me.js`, `moodle-watch.js`: the audit
+  session's files (it read them; `brief-me.js` and `moodle-watch.js` I was asked to keep away from).
 
 ## 6. How to check after the merge (needs a restart of Bot)
 
 1. Upload a lecture PDF made by Word or LaTeX (or press Retry on one). The log (`data/bot.log`) should no longer say "cannot be cut",
    and the page count should climb in steps of 10 with three pieces at once.
 2. Nothing else changes in daily use: the other fixes only close doors.
+
+## 7. Part 2 (2026-11-17): the rest of the files
+
+Read in full: the Moodle extension (`moodle-extension/`), `backup.js`, `webpush.js`, `calendar.js`, `calendar-chat.js`,
+`reminders.js`, `router.js`, `quota.js`, `morning.js`, `news.js`, `moodle-tools.js`, `moodle-token.js`, `course-routes.js`,
+`thread-store.js`, `thread-files.js`, `thread-summary.js`, `study-coach.js`, `study-tracker.js`, `study-plan.js`,
+`study-nudges.js`, `study-page.js`, `tutor.js`, `catchup.js`, `outline.js`, `recall.js`, `search.js`, `course-material.js`,
+`crosslang.js`, `warmagy.js`, `improve-watch.js`, `public/sw.js`, and the small helpers `botlog.js`, `due-date.js`, `lang.js`,
+`progress-log.js`, `suggestion-filter.js`, `tokenlog.js`, `quote.js`.
+
+Found sound, nothing to fix: the calendar (no delete or change function exists; only the two calls it needs), the Google login,
+phone push (only real push services are ever contacted), reminders, the backup's encryption and restore checks, the news reader
+(headlines can never fake a marker), the Moodle token script (the password is never stored or printed), the course routes, the
+thread store (nothing is ever dropped; the trash is not reachable by a model), the quota and pacing rules, the page's service
+worker, and the Improve Bot watcher.
+
+### What I fixed (4 code commits; tests: 1,146, of them 1,145 pass and 1 is skipped as before)
+
+**`8380336` Hebrew written by code used the masculine "you".** CLAUDE.md says code-written Hebrew uses no gendered "you". Three
+places still did: the questions on the Study page ("איפה אתה", "ספר לי", "שלח"), the Confirm cards for links and Moodle files
+("שתלחץ"), and the page's own Hebrew words (the Study tab and the first-open notice). All are now neutral ("אפשר לכתוב לי...",
+"לפני לחיצה על אישור"). One old test expected the masculine words; it now expects the neutral ones.
+
+**`70d1252` Quiz: a real answer could be taken for a request.** The tutor looked for words inside Omri's answer. An honest
+answer that held the word "reveal" was SHOWN THE ANSWER AND MARKED WRONG; one that held "stuck" or "hint" got a hint that counts
+against the grade. This is exactly the kind of word list the core wish forbids. Now the brain's `quiz_answer` tool says what the
+reply is: `"ask": "answer" | "hint" | "show" | "skip"` (a closed list; code drops anything else), and the tutor follows that
+without looking at the words. If the model leaves "ask" out, the old way still runs, so nothing can get worse.
+`brain.js` (a protected file) changed by one line: the tool hands the checked value on. `brain-brief.md` got the new field.
+NOT tried with a live model (no quota for trials): see "How to check" below.
+
+**`f7aadc7` Four small ones.**
+1. *Moodle extension:* a file address was accepted when it only STARTED like one. An address with `..` in it would have been
+   fetched as another Moodle page, outside the list of pages Bot may open. Low risk (only a GET, and Moodle needs a session key
+   for actions), but the rule is "only these pages". Now the address is parsed first and judged on what the browser would really
+   request. **The extension must be reloaded once in Chrome** (chrome://extensions, the round arrow on "Bot Moodle reader").
+2. *Daily summary:* a message (or web text inside one of Bot's answers) could hold the word `</transcript>` and so look like
+   text outside the data block the summary model reads. The marker words are now taken out. Facts were already safe (each needs
+   a word-for-word quote from Omri's own message); this closes the door fully.
+3. *A file sent in the chat:* the Hebrew reply always said the course was picked "by the file name or the message", also when it
+   was picked because a class was on right now, or by Omri's own tap. It now says the real reason.
+4. *Backup:* a new copy that fails its read-back check stayed in the folder, counted as one of the newest five, and the next
+   good backup would have deleted a good old copy to keep it. A failed copy is now removed.
+
+**`60acf18` Dead code.** The study coach still held word lists of the old front desk ("today", "week", "2 hours a day", an exam
+date reader, a follow-up question). Nothing had reached them since the brain. Removed; behaviour is unchanged.
+
+Tests for all of it: `tests/code-review-2026-11-17.test.js` (10 tests, made-up data).
+
+### Found, NOT fixed (and why)
+
+1. **"no" still undoes a stored course position through a word list** (`study-coach.js`, `NO_ONLY` / `UNDO_ONLY`). When Bot
+   stored where Omri stands and Omri then answers a study card with exactly "no", code undoes the position instead of only
+   cancelling the card. Bot's own readback tells Omri 'Say "no" to undo', and tests pin it, so it is an agreed feature, not a
+   bug. But it is a word list on Omri's words. Question 4.
+2. **"I will not write the full solution" is added by a word list** (`SOLUTION_ASK` in `study-coach.js`), in a quiz turn when
+   Omri's message holds words like "full solution". Harmless text, but the same kind of list. Part of question 4.
+3. **The tutor's old word lists stay as the fallback** (`SHOW`, `HINT`, `SKIP` in `tutor.js`) for when the model sends no "ask".
+   They can be deleted once a live check shows the brain always sends it.
+4. **Assignment or lecture?** After a chat upload, `study-coach.js` decides by words in the FILE text ("assignment", "due",
+   "תרגיל"...) whether to propose an assignment card or a lecture card. It reads the file, not Omri, and ends in a Confirm
+   card, so I left it.
+5. **Moodle "already downloaded"** (`moodle-tools.js`): an item is marked as downloaded also when Bot refused the file (too big,
+   an unsupported type). So the list can say "[already downloaded]" for a file that is not in the course. Probably on purpose
+   (so "download the new ones" does not retry it for ever), but the label is not exact.
+6. **Small ones:** phone push follows a redirect of the push service (they never send one); a failed backup write can leave a
+   `.tmp` file in the synced folder; `calendar.js` alone accepts "30 February" (the card check in `calendar-add.js` refuses it
+   first, so nothing reaches Google); `catchup.parseBudget` is now unused; the header comment of `news.js` still says "model text
+   never reaches the brief" although the short summaries do (checked by code against the headline's own words).
+
+### Questions for Omri (part 2)
+
+4. **Move the last word lists of the study coach to the brain?** ("no" = undo, "full solution"). *Recommendation:* yes, as one
+   small job with a live check: the brain already has `study_undo`; the readback line would say "say undo" and the brief would
+   tell the model that "no, that's wrong" right after a stored position means `study_undo`. Not done now because it changes what
+   Bot tells Omri and needs a trial with the real model.
+5. **Delete the unreachable course-chat code** (`study.js` in the root, `crosslang.js`, `courseRoutes.answer`)? CLAUDE.md says it
+   waits for your decision. *Recommendation:* delete it in a quiet week; about 500 lines nobody can reach, and each review has
+   to step around it. `tutor.js` still uses a few small helpers from `study.js`, so they would move, not vanish.
+
+### Lines suggested for CLAUDE.md (I did not edit it)
+
+- In STUDY COACH, after "Never give an assignment's solution...": *"A reply to an open quiz question: the brain's quiz_answer
+  says what it is ("ask": answer, hint, show, skip; a closed list checked by code). The tutor never looks for those words inside
+  Omri's answer (2026-11-17); its old word lists only run when "ask" is missing."*
+- In MOODLE, at the extension's allowlist: *"A pluginfile.php address is judged after it is parsed (no `..`, Moodle's own host,
+  no session key)."*
+
+### How to check after the merge (part 2)
+
+1. Reload the extension in Chrome (see above). Then any Moodle read or download that goes through Chrome should work as before.
+2. Quiz: ask for a quiz, then answer one question with a real sentence that holds the word "stuck" or "hint". It must be GRADED.
+   Then write "give me a hint": a hint must come. In `data/bot.log` the line `[brain] tool quiz_answer` shows the call; if hints
+   stop working, the model is not sending "ask" and the brief line needs clearer words (the old way is still there, so this
+   cannot be worse than before).
+3. Open the Study page with Hebrew on: the questions should read "איפה עומדים בקורס...".
