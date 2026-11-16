@@ -2851,7 +2851,7 @@
       if (attachedFile) { if (!T.busy) await sendFile(); return; }
       const attached = photo;
       const sentRaw = $("task").value;
-      const task = $("task").value.trim() || (attached ? "Here is a photo. Tell me what is in it." : "");
+      const task = $("task").value.trim() || (attached ? "(photo only)" : ""); // the page's own words, not Omri's: the briefing tells the brain what they mean
       if (!task || T.busy) return;
       T.busy = true;
       $("send").disabled = true;

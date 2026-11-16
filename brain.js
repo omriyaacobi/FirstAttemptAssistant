@@ -177,11 +177,20 @@ function looksLikeCall(partial) {
 // The language of Omri's message, said plainly next to it (2026-11-13). The briefing says "reply in the language of the message", but
 // with Hebrew course notes and Hebrew talk around it the model answered an English question in Hebrew twice on 2026-11-12. Code counts
 // the letters of the message (code in backticks left out); only a clear majority gives a line, a real mix gives none.
-function languageLine(task) {
+// A SHORT Latin-letter message is not proof of a switch to English (2026-11-16): "u=x v'=e^x", "PDF", a file name or the page's own
+// words for a photo sent without text got the English line and an English reply in the middle of a Hebrew lesson. So the English
+// line now needs a real sentence (4+ Latin words), or a talk that was not in Hebrew anyway; a short Latin message right after
+// Omri's Hebrew message gets a line that keeps the talk's language. Counting letters and words only: never a list of words.
+function languageLine(task, history = []) {
   const prose = String(task).replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
-  const he = (prose.match(/[֐-׿]/g) || []).length;
-  const en = (prose.match(/[a-z]/gi) || []).length;
+  const count = (text) => ({ he: (String(text).match(/[֐-׿]/g) || []).length, en: (String(text).match(/[a-z]/gi) || []).length });
+  const { he, en } = count(prose);
   if (he >= 3 && he >= 2 * en) return "\n(This message is in Hebrew: write the reply in Hebrew; code and the technical terms people say in English stay in English.)";
+  const before = [...(Array.isArray(history) ? history : [])].reverse().find((h) => h && h.role === "user" && typeof h.text === "string");
+  const was = before ? count(before.text) : { he: 0, en: 0 };
+  const hebrewTalk = was.he >= 3 && was.he >= was.en;
+  const words = (prose.match(/[a-z]{2,}/gi) || []).length;
+  if (hebrewTalk && he === 0 && words < 4) return "\n(This message is only a few Latin letters, symbols or numbers, and Omri's message before it was in Hebrew: keep replying in Hebrew, unless Omri clearly asks for English.)";
   if (en >= 3 && en >= 4 * he) return "\n(This message is in English: write the reply in English, even if the notes or the earlier talk are in Hebrew.)";
   return "";
 }
@@ -943,7 +952,7 @@ ${r.cardText}`; }
     ].filter(Boolean).join("\n\n");
     // From the phone (server.js knows, never a model): a long answer is a lot of scrolling on a small screen (2026-11-13).
     const phoneLine = fromPhone === true ? "\n(Omri is writing from the phone: keep the reply to about one phone screen, a few short paragraphs, unless Omri asks for more.)" : "";
-    const tail = quoteBlock(quote, zone) + `## Omri's new message\n<message>\n${noCtl(task)}\n</message>` + languageLine(task) + phoneLine;
+    const tail = quoteBlock(quote, zone) + `## Omri's new message\n<message>\n${noCtl(task)}\n</message>` + languageLine(task, history) + phoneLine;
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
