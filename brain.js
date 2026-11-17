@@ -70,7 +70,7 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 const FOCUS_MS = 6 * 3600 * 1000; // a course talked about in the last 6 hours is still "the course we are in"
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch", "parts_done"]);
 const UNSAID = new Set(["talk_course"]); // doing-tools that are only a label: never listed as "this was done" for Omri
 const CALENDAR_DAYS = 7; // the calendar of the coming week rides along with every message (read-only), so "what do I have on Thursday" needs no tool round
 const CALENDAR_CACHE_MS = 60 * 1000;
@@ -557,6 +557,22 @@ ${text}`; } catch (error) {
         const r = await coach.answerStudy({ studyIntent: "progress", text: "where am I", courseId: c ? c.id : null, courseName: c ? c.name : null });
         return r.answer || "The tracker has nothing yet.";
       },
+      // The parts of one lecture (made by code from the notes) and which of them were worked on. A lookup: changes nothing.
+      lecture_parts: async ({ course, lecture }) => {
+        const c = need(course);
+        if (!study) return "The study tracker is off.";
+        ctx.course = c;
+        return block("lecture-parts", study.parts({ courseId: c.id, lecture }));
+      },
+      // Marks parts of a lecture as worked on (ids from the code-made list; code checks each). Never "understood". Like the other
+      // tools that act at once, it is refused after a web page, with a photo or after Moodle text.
+      parts_done: async ({ course, lecture, parts, undo }) => {
+        afterWeb("mark what was worked on");
+        const c = need(course);
+        if (!study) return "The study tracker is off.";
+        ctx.course = c;
+        return study.partsDone({ courseId: c.id, lecture, ids: Array.isArray(parts) ? parts : [parts], undo: undo === true });
+      },
       search_memory: async ({ query }) => {
         const found = searchChats(String(query || "").slice(0, 200));
         return found && found.length ? listFound(found) : "Nothing like that was found in the earlier conversations.";
@@ -1038,6 +1054,9 @@ ${r.cardText}`; }
       focus ? `## The course this talk is in: ${focus.name}\n${prefetch(focus, task)}` : "",
       // 2026-11-16: in a long evening Bot offered exercises done hours before as "next"; the recent talk did not reach that far.
       focus ? (() => { let done = ""; try { done = courseWork(focus.id) || ""; } catch (error) { done = ""; } return done ? `## Already worked on in ${focus.name} (last 2 days)\nCode copied these formulas from Bot's own answers in this course, with the time. They were already shown and worked on: do not offer one of them again as new, and do not call its topic "the next part". To find what is really left, compare the lecture's material with this list. When Omri says something was already done, believe it.\n${done}` : ""; })() : "",
+      // 2026-11-17: what was worked on INSIDE the lecture Omri is on (lecture-parts.js). The list is code-made from the notes; the
+      // marks are set only by parts_done. With it "what is left of lecture 4" has a real answer.
+      focus && coach && coach.brainTools && coach.brainTools.partsContext ? (() => { let t = ""; try { t = coach.brainTools.partsContext({ courseId: focus.id }) || ""; } catch (error) { t = ""; } return t ? `## The parts of the lectures Omri is on in ${focus.name}\nCode made this list from the notes (the topics of each lecture's pages) and from the parts marked with parts_done. "Worked on" is not "understood". What is left of a lecture = its parts marked NOT YET: answer "what is left" from here, and offer as "the next part" only a part marked NOT YET.\n${block("lecture-parts", t)}` : ""; })() : "",
       historyBlock(history) ? "## " + historyBlock(history) : "## Conversation so far\n(none)",
     ].filter(Boolean).join("\n\n");
     // From the phone (server.js knows, never a model): a long answer is a lot of scrolling on a small screen (2026-11-13).

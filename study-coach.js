@@ -30,6 +30,8 @@ const { createProgressLog } = require("./progress-log");
 const { createNudges } = require("./study-nudges");
 const tutor = require("./tutor");
 const { lectureIndex, askedLectures } = require("./study");
+const lectureParts = require("./lecture-parts");
+const PARTS_PER_LESSON = 3; // parts of a lecture taught in one teach_next lesson (one phone screen)
 const standing = require("./standing");
 const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
@@ -603,7 +605,29 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const align = maybeAlign(ref);
       const pick = await notesPick(ref, text);
       if (pick && pick.say) return { mode: "study", answer: pick.say };
-      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, lang }); // the brain knows the language; the part name alone does not say it
+      // A lecture of a lecture notebook is taught part by part (lecture-parts.js): only parts that were NOT worked on yet, at most
+      // PARTS_PER_LESSON at a time, and those are then marked as worked on (taught, never "understood"). When every part of the
+      // lecture was worked on, or the notes have no parts for it, the lecture is taught as before.
+      const lectureNote = (slotN) => {
+        const all = ref.courseId ? courses.allPages(ref.courseId) : [], outline = buildOutline(all);
+        // slotN counts the timetable's lectures; the parts are kept by the notebook's own lecture number. They are matched by the
+        // pages the tracker holds for that timetable lecture (a cancelled class shifts one count and not the other).
+        const slot = tracker.slots(ref.key).find((s) => s.n === slotN);
+        const mat = slot && tracker.course(ref).lectures[slot.date] ? tracker.course(ref).lectures[slot.date].material[0] : null;
+        const lec = mat ? lectureParts.lecturesOf(outline).find((l) => l.fileId === mat.fileId && l.fromPage === mat.from) : null;
+        if (!lec) return null;
+        const n = lec.n;
+        const v = lectureParts.view(all, outline, tracker.course(ref), n);
+        if (!v || v.parts.length < 2) return null;
+        if (!v.left.length) return { note: "The student already worked on every part of this lecture: give a short review of the whole lecture (the ideas and how they connect), not a first-time lesson.", onTaught: null };
+        const now3 = v.left.slice(0, PARTS_PER_LESSON);
+        const names = (l) => l.map((p) => p.topic).join("; ");
+        return {
+          note: `Teach ONLY these parts of the lecture now: ${names(now3)}.${v.done.length ? ` The student already worked on these, do not teach them again: ${names(v.done)}.` : ""}${v.left.length > now3.length ? ` These wait for the next lesson, do not teach them yet: ${names(v.left.slice(PARTS_PER_LESSON))}.` : ""}`,
+          onTaught: () => { const rec = tracker.course(ref); tracker.save({ ...rec, worked: lectureParts.mark(rec, n, now3, now()) }); },
+        };
+      };
+      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, lang, lectureNote }); // the brain knows the language; the part name alone does not say it
       return { ...r, mode: "study", answer: r.answer + align, study: { course: ref.name, mode: r.mode, done: r.done } };
     },
     // An exam date becomes a Confirm card; it is stored only when Omri confirms.
@@ -643,6 +667,46 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       lastUndo = { skip: { ref, date }, at: now() };
       keepUndo({ kind: "skip", key: ref.key, date });
       return T(`Noted: no ${ref.name} lecture on ${niceDate(date)}. It is out of the count, so the lecture numbers after it move up by one.`, `נרשם: אין הרצאה של ${ref.name} ב-${niceDate(date)}. היא ירדה מהספירה, ולכן מספרי ההרצאות שאחריה זזים באחד.`);
+    },
+    // WHAT WAS WORKED ON INSIDE A LECTURE (lecture-parts.js, 2026-11-17). The parts of a lecture are made by code from the notes;
+    // the model only hands back ids of that list, and every id is checked here. "Worked on" is never "understood".
+    // parts(): the list for one lecture, as text. partsDone(): marks (or with undo: unmarks) the parts with those ids.
+    parts({ courseId, lecture } = {}) {
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      const pages = courses.allPages(ref.courseId), outline = buildOutline(pages);
+      const v = lectureParts.view(pages, outline, tracker.course(ref), Number(lecture));
+      if (!v) { const all = lectureParts.lecturesOf(outline).map((l) => l.n); throw new Error(all.length ? `the notes of ${ref.name} have no lecture ${lecture}; their lectures: ${all[0]} to ${all[all.length - 1]}` : `the notes of ${ref.name} are not split into lectures, so there are no lecture parts (teach_next keeps what was taught from such notes)`); }
+      return lectureParts.lines(v, { timeZone: timezone, now: now() });
+    },
+    partsDone({ courseId, lecture, ids = [], undo = false } = {}) {
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      const pages = courses.allPages(ref.courseId), outline = buildOutline(pages);
+      const n = Number(lecture);
+      const list = lectureParts.partsOf(pages, outline, n);
+      if (!list.length) throw new Error(`the notes of ${ref.name} have no lecture ${lecture} with parts; call lecture_parts to see what exists`);
+      const want = [...new Set((Array.isArray(ids) ? ids : []).map((x) => String(x).trim()))].slice(0, lectureParts.MAX_PARTS);
+      const bad = want.filter((id) => !list.some((p) => p.id === id));
+      if (!want.length || bad.length) throw new Error(`${bad.length ? `no such part of lecture ${n}: ${bad.join(", ")}. ` : ""}Give ids from this list: ${list.map((p) => `${p.id} ${p.topic}`).join("; ")}`);
+      const picked = list.filter((p) => want.includes(p.id));
+      const rec = tracker.course(ref);
+      tracker.save({ ...rec, worked: undo ? lectureParts.unmark(rec, n, picked) : lectureParts.mark(rec, n, picked, now()) });
+      return `${undo ? "UNMARKED" : "MARKED as worked on (not as understood)"}: ${picked.map((p) => `${p.id} ${p.topic}`).join("; ")}.\n` + lectureParts.lines(lectureParts.view(pages, outline, tracker.course(ref), n), { timeZone: timezone, now: now() });
+    },
+    // For the brain's context: the lecture Omri is on (the one after the last covered, and that one too when it has open parts)
+    // and any lecture with a part worked on in the last 2 days. "" when the notes have no lectures. At most 3 lectures.
+    partsContext({ courseId } = {}) {
+      const ref = refOfCourse(courseId);
+      if (!ref) return "";
+      const pages = courses.allPages(ref.courseId), outline = buildOutline(pages);
+      const all = lectureParts.lecturesOf(outline).map((l) => l.n);
+      if (!all.length) return "";
+      const rec = tracker.course(ref);
+      const w = rec.position && rec.position.where && rec.position.where.type === "lecture" ? Number(rec.position.where.n) : null;
+      const recent = Object.entries(lectureParts.worked(rec)).filter(([, marks]) => marks.some((m) => now() - m.at < 48 * 3600 * 1000)).map(([k]) => Number(k));
+      const pick = [...new Set([...recent, ...(w ? [w, w + 1] : [])])].filter((n) => all.includes(n)).sort((a, b) => a - b).slice(-3);
+      return pick.map((n) => lectureParts.lines(lectureParts.view(pages, outline, rec, n), { timeZone: timezone, now: now() })).join("\n");
     },
     // Takes back the last position() or classCancelled(): the old record returns. With a course: the last change of THAT course
     // (also one the end-of-day review made), kept for 48 hours. Without one: the change just made, else the newest kept one.
