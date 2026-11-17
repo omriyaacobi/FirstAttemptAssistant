@@ -589,7 +589,9 @@ ${text}`; } catch (error) {
         } catch (error) { return "Could not read the link: " + linkfetch.explain("en", error.code ? error : Object.assign(error, { code: "network" })); }
       },
       set_reminder: async ({ text, when }) => {
-        afterWeb("set reminders");
+        // Allowed after a Moodle read (Omri, 2026-11-17: "look at Moodle and remind me before the deadline"); a reminder only
+        // pings Omri and its time is checked by code. Still refused after a web page or with a photo.
+        afterWeb("set reminders", { moodleOk: true });
         const timezone = localZone();
         const at = parseWhen(String(when || ""), timezone, now()); // throws when the time is not real or not in the future
         const saved = reminders.create({ text: cleanText(text), at: new Date(at).toISOString(), timezone });
@@ -823,7 +825,7 @@ ${text}`; } catch (error) {
         // The course's LINKED folder (Bot's own record, set only by Omri; 2026-11-15: "open the folder on VS code" failed because the
         // folder is outside the search roots). The folder is checked again as when it was linked; a file must really be inside it.
         if (given(linked)) {
-          afterWeb("open files");
+          afterWeb("open files", { moodleOk: true }); // Omri, 2026-11-17: "open it for me from the moodle" must work in one message
           const c = need(linked);
           const rec = record(c);
           if (!rec || !rec.projectDir) throw new Error(`${c.name} has no linked folder yet; Omri can write its full path, or pc_find it and link_folder`);
@@ -847,7 +849,9 @@ ${text}`; } catch (error) {
           return `OPENED ${t.label} in ${r.how}${where}.`;
         }
         if (given(course)) {
-          afterWeb("open files");
+          // Allowed after a Moodle read (Omri, 2026-11-17): the file is picked from Bot's own list and opens in its normal app;
+          // programs and scripts are refused by pc-open. Still refused after a web page or with a photo.
+          afterWeb("open files", { moodleOk: true });
           const c = need(course);
           const files = filesOf(c);
           const hits = pickFiles(files, file);

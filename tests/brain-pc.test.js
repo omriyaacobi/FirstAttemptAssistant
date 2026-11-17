@@ -145,6 +145,30 @@ test("a Moodle item opens by code-built address, also after reading Moodle; not 
   assert.strictEqual(b.seen.started.length, 0);
 });
 
+test("'open it for me from the moodle': after a Moodle read, a course file and the linked folder open in the same message (Omri, 2026-11-17)", async () => {
+  const moodle = { courseText: async () => "items: [77] Mission 3 README", explain: (e) => e.message };
+  const a = setup(['CALL {"tool":"moodle_course","course":"Calculus 2"}', 'CALL {"tool":"open_on_pc","course":"Calculus 2","file":"Lecture 7.pdf"}\nOpened.'], { moodle });
+  const r = await run(a.brain, "open it for me from the moodle");
+  assert.strictEqual(r.answer, "Opened.");
+  assert.deepStrictEqual(a.seen.started.map((s) => path.basename(s.args[0])), ["Lecture 7.pdf"]);
+  const b = setup(['CALL {"tool":"moodle_course","course":"Systems Programming"}', 'CALL {"tool":"open_on_pc","linked":"Systems Programming","file":"spec.pdf"}\nOpened.'], { moodle });
+  b.seen.saved.push({ key: "c1", assignments: [], position: {}, projectDir: path.join(b.d.root, "SP", "Assignment3") });
+  await run(b.brain, "open the spec from moodle");
+  assert.deepStrictEqual(b.seen.started.map((s) => path.basename(s.args[0])), ["spec.pdf"]);
+});
+
+test("after a Moodle read a found number still does not open, and after a web page a course file still does not open", async () => {
+  const moodle = { courseText: async () => "items", explain: (e) => e.message };
+  const a = setup(['CALL {"tool":"pc_find","name":"spec"}', 'CALL {"tool":"moodle_course","course":"Systems Programming"}', 'CALL {"tool":"open_on_pc","found":1}\nOpened.', "Not opened."], { moodle });
+  await run(a.brain, "find spec and look at moodle");
+  assert.strictEqual(a.seen.started.length, 0);
+  assert.match(lastPrompt(a.seen), /after reading Moodle/);
+  const b = setup(['CALL {"tool":"read_link","url":"https://example.com/a"}', 'CALL {"tool":"open_on_pc","course":"Calculus 2","file":"Lecture 7.pdf"}\nOpened.', "Not opened."]);
+  await run(b.brain, "read https://example.com/a and open lecture 7");
+  assert.strictEqual(b.seen.started.length, 0);
+  assert.match(lastPrompt(b.seen), /after reading a web page/);
+});
+
 test("a Moodle lookup sets the answer's course from the name the tool was given, even when Moodle is logged out (review 5.1)", async () => {
   const loggedOut = Object.assign(new Error("logged out"), { code: "login" });
   const moodle = { courseText: async () => { throw loggedOut; }, explain: () => "Moodle logged you out" };
