@@ -77,9 +77,8 @@ test("a whole catch-up evening on one lecture: every step gets the right facts f
     /* 8 */ 'CALL {"tool":"teach_next","course":"Calculus 2","part":""}',
     /* 9 */ 'CALL {"tool":"teach_next","course":"Calculus 2","part":""}',
   ], [
-    /* 4: the photo model tries to mark a part; code refuses it with a photo, and the model then answers */
-    'CALL {"tool":"parts_done","course":"Calculus 2","lecture":4,"parts":["4.4"]}\nRight: $x e^x - e^x + C$.',
-    "Right: $x e^x - e^x + C$. Now try this one:\n$$\\int \\sin^2(x)\\,dx$$",
+    /* 4: the photo model marks a part (allowed with a photo since 2026-11-17) and answers in the same message */
+    'CALL {"tool":"parts_done","course":"Calculus 2","lecture":4,"parts":["4.4"]}\nRight: $x e^x - e^x + C$. Now try this one:\n$$\\int \\sin^2(x)\\,dx$$',
   ]);
   // Omri told Bot earlier: lectures 1-3 are done (the brain's study_position; here the checked tool is called directly)
   w.coach.brainTools.position({ courseId: CALC.id, fields: { mode: "selfStudy", where: { type: "lecture", n: 3 } }, said: "finished lectures 1-3, moving to lecture 4" });
@@ -110,14 +109,14 @@ test("a whole catch-up evening on one lecture: every step gets the right facts f
   assert.strictEqual(w.coach.tracker.progress(w.ref()).understood, 0);
 
   // 4. the answer comes as a PHOTO WITH WORDS: the photo is named next to the words, the lecture parts are in the context, and a
-  //    mark is refused in a message with a photo (a picture can never cause an action); the reply is still given.
+  //    mark is allowed with a photo (Omri, 2026-11-17: it only says "practised", checked ids, undo), in the same model call.
   const r4 = await w.say("is this right? I got confused in the second line", { image: { path: "C:/tmp/work.jpg" } });
   const photo = w.photoPrompts[0];
   assert.ok(photo.indexOf('The photo is part of THIS message: open "photo.jpg"') > photo.indexOf("is this right?"), "the photo line is right after the words");
   assert.match(photo, /Lecture 4 \(pages 7-8 of the notes\): 3 of 5 parts worked on/);
-  assert.match(w.photoPrompts[1], /FAILED, nothing was done: Bot does not mark what was worked on in a message with a photo/);
+  assert.strictEqual(w.photoPrompts.length, 1, "the mark and the reply came in one model call");
   assert.match(r4.answer, /Now try this one/);
-  assert.strictEqual(w.marks().length, 3, "nothing was marked from the photo message");
+  assert.strictEqual(w.marks().length, 4, "the photo message marked its part");
 
   // 5. "in Hebrew please": the language line asks for Hebrew
   const r5 = await w.say("עברית בבקשה");

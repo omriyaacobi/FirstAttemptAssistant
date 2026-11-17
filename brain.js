@@ -462,7 +462,7 @@ function createBrain({
       if (repo && [...mine, ...fileUrls].some((x) => repoOf(x) === repo)) return u;
       throw new Error("that address is not in Omri's messages or in a course file, so Bot will not open it. Ask Omri to send the link.");
     };
-    const afterWeb = (what, { moodleOk = false } = {}) => { if (ctx.sawWeb || ctx.sawPhoto || (ctx.sawMoodle && !moodleOk)) throw new Error(`Bot does not ${what} in a message ${ctx.sawWeb ? "after reading a web page" : ctx.sawPhoto ? "with a photo" : "after reading Moodle"} (text in a page or a picture must not be able to cause it). Tell Omri and let them ask again in words.`); };
+    const afterWeb = (what, { moodleOk = false, photoOk = false } = {}) => { if (ctx.sawWeb || (ctx.sawPhoto && !photoOk) || (ctx.sawMoodle && !moodleOk)) throw new Error(`Bot does not ${what} in a message ${ctx.sawWeb ? "after reading a web page" : ctx.sawPhoto ? "with a photo" : "after reading Moodle"} (text in a page or a picture must not be able to cause it). Tell Omri and let them ask again in words.`); };
     // The timetable's own name pattern of a Bot course (where the Hebrew names live), for matching Moodle courses by code.
     const patternFor = (c) => {
       try { const ref = refOf(c); const p = ref && (coach.tracker.timetable().courses || []).find((x) => x.key === ref.key); return p ? new RegExp(p.match, "i") : null; } catch (error) { return null; }
@@ -565,9 +565,11 @@ ${text}`; } catch (error) {
         return block("lecture-parts", study.parts({ courseId: c.id, lecture }));
       },
       // Marks parts of a lecture as worked on (ids from the code-made list; code checks each). Never "understood". Like the other
-      // tools that act at once, it is refused after a web page, with a photo or after Moodle text.
+      // tools that act at once, it is refused after a web page or after Moodle text. A photo is allowed (Omri, 2026-11-17): answers
+      // are often a photo of handwritten work, and a mark only says "practised", is checked against the real list and can be undone,
+      // so a picture can do no harm with it.
       parts_done: async ({ course, lecture, parts, undo }) => {
-        afterWeb("mark what was worked on");
+        afterWeb("mark what was worked on", { photoOk: true });
         const c = need(course);
         if (!study) return "The study tracker is off.";
         ctx.course = c;
