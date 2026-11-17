@@ -221,7 +221,6 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { extra: chunks.map(piece), label: titles.length === 1 ? titles[0] : T(`what we covered so far in ${ref.name}`, `מה שלמדנו עד עכשיו ${bet(ref.name)}`) };
   }
 
-  const SOLUTION_ASK = /\b(?:full|whole|complete|entire)\s+(?:solution|code|answer)\b|\bsolution\s+(?:code|for)\b|\bsolve\s+(?:it|the\s+(?:assignment|exercise|homework))\s+for\s+me\b|פתרון\s+מלא|תפתור\s+(?:לי|את)/i;
   const dayLabel = (iso) => plan.niceDate(iso, curLang);
   function planItems(ref) {
     const p = tracker.progress(ref), pos = p.position || {};
@@ -354,8 +353,6 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // ---- the student's free description of their state (standing.js) ----
   // A model PROPOSES a reading, code checks it against the timetable and the notes, Bot reads back what it stored, and "no" / "undo" puts the old record back.
   // At most ONE adaptive question follows, never twice within 7 days (unless asked "where am I"). An exam date is never stored without a Confirm card.
-  const UNDO_ONLY = /^\s*(?:undo(?:\s+that)?|בטל|ביטול|תבטל)[.!\s]*$/i;
-  const NO_ONLY = /^\s*(?:no|nope|no\s+thanks|wrong|that['’]?s\s+(?:not\s+right|wrong)|לא|לא\s+נכון|זה\s+לא\s+נכון)[.!\s]*$/i;
   const UNDO_MS = 2 * 3600 * 1000;
   const V2_KEYS = ["mode", "where", "pace", "behindBy", "gaps", "depth", "goal", "focus"];
   let lastUndo = null; // { items: [{ ref, position, pending }], proposalIds: [], at } or { skip: { ref, date }, at } (memory only: it lives for 2 hours)
@@ -538,12 +535,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     const done = (r) => ({ mode: "study", answer: "", sources: [], outside: false, model: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r });
     const intent = INTENTS.includes(studyIntent) ? studyIntent : "progress"; // an unknown intent is the safest one: only shows numbers
 
-    // "no" / "undo" right after Bot read back a description: the old record comes back (a plain "no" also drops that reading's own exam card).
-    if (lastUndo && now() - lastUndo.at < UNDO_MS && intent !== "answer") {
-      const w = latestProposal();
-      const free = !w || lastUndo.proposalIds.includes(w.id);
-      if (UNDO_ONLY.test(text) || (NO_ONLY.test(text) && free && !refs().some((r) => tracker.getSession(r)))) return done({ answer: undoReading() });
-    }
+    // A "no" / "undo" right after Bot read back a stored position is understood by the brain, which calls study_undo (brainTools.undo
+    // below; 2026-11-17: the word lists that did this here were removed, Omri's core wish).
     if (intent === "confirm" || intent === "cancel") {
       const p = latestProposal();
       if (!p) return done({ answer: T("There is nothing waiting for confirmation.", "אין כרגע שום דבר שמחכה לאישור.") });
@@ -569,11 +562,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     // quiz / answer: the tutor
     if (!ref) return done({ answer: whichCourse() });
     const align = maybeAlign(ref);
-    const noSolution = SOLUTION_ASK.test(text) ? T("I will not write the full solution of an assignment: that is the part that teaches the most. I can guide step by step, so here is how.\n\n", "פתרון מלא של מטלה אני לא כותב: זה החלק שהכי מלמד. אפשר ללוות צעד אחר צעד, אז הנה איך.\n\n") : "";
     const savedNow = await autoSavePageAssignments(ref).catch(() => []);
     const r = await tutor.turn({ tracker, ref, intent, message: text, pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: intent === "quiz" ? rangeFor(ref, text) : null, notes: null, ask: intent === "answer" ? ask : null });
     if (savedNow.length) r.answer = T(`I saved "${savedNow.join('", "')}" from the file you uploaded to ${ref.name}.\n\n`, `שמרתי את "${savedNow.join('", "')}" מהקובץ שהעלית ${bet(ref.name)}.\n\n`) + r.answer;
-    return done({ ...r, mode: "study", answer: noSolution + r.answer + (intent !== "answer" ? align : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
+    return done({ ...r, mode: "study", answer: r.answer + (intent !== "answer" ? align : ""), study: { course: ref.name, mode: r.mode, done: r.done } });
   }
 
   // ---- THE BRAIN'S STUDY TOOLS (brain.js) ----

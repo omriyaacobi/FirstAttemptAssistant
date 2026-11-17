@@ -62,7 +62,7 @@ test("a description in free words is read, stored and read back; the words stay;
   assert.strictEqual(p.understood, 0);
 });
 
-test("'no' undoes the last reading and restores the old record exactly; a second 'no' does nothing", async () => {
+test("study_undo (the brain's answer to 'no') undoes the last reading and restores the old record exactly; a second 'no' does nothing", async () => {
   const { coach, pos } = make({ replies: { "first half": { mode: "selfStudy", where: { type: "fraction", value: 0.2 } }, "lecture mix-up": { mode: "attending" } } });
   await say(coach, "Databases Demo: I read the first half of the notes");
   const before = JSON.stringify(pos(DB).position);
@@ -70,18 +70,17 @@ test("'no' undoes the last reading and restores the old record exactly; a second
   const r2 = await say(coach, "Databases Demo: I think I will go to class, lecture mix-up", "update");
   assert.match(r2.answer, /Understood/);
   assert.notStrictEqual(JSON.stringify(pos(DB).position), before);
-  const u = await say(coach, "no", "cancel");
+  const u = { answer: coach.brainTools.undo({}) }; // the brain calls study_undo for a "no" (2026-11-17: no word list in code)
   assert.match(u.answer, /^Undone\. Databases Demo is back to how it was/);
   const p = pos(DB).position;
   assert.strictEqual(p.mode, "selfStudy");
   assert.strictEqual(p.where.type, "section");
-  const again = await say(coach, "no", "cancel");
-  assert.doesNotMatch(again.answer, /Undone/); // nothing left to undo
+  assert.throws(() => coach.brainTools.undo({}), /nothing to undo/); // nothing left to undo
   // undo of the very first reading puts back "not known"
   const { coach: c2, pos: pos2 } = make({ replies: { "first half": { mode: "selfStudy" } } });
   await say(c2, "Databases Demo: I read the first half of the notes");
   assert.strictEqual(pos2(DB).positionKnown, true);
-  await say(c2, "undo", "update");
+  c2.brainTools.undo({});
   assert.strictEqual(pos2(DB).positionKnown, false);
   assert.strictEqual(pos2(DB).position.said, undefined);
 });
@@ -116,7 +115,7 @@ test("a hostile message cannot set anything understood, and its fake 'understood
   assert.strictEqual(pos(SP).position.depth, undefined);
 });
 
-test("an exam in N days makes a Confirm card (the date is computed by code); nothing is saved until confirmed; 'no' drops the card AND the reading", async () => {
+test("an exam in N days makes a Confirm card (the date is computed by code); nothing is saved until confirmed; study_undo drops the card AND the reading", async () => {
   const { coach, pos, ref } = make({ replies: { "exam in two weeks": { mode: "revising", goal: "exam", focus: "old exercises", examInDays: 14 } } });
   const r = await say(coach, "Systems Programming: I have the exam in two weeks and I'm only doing old exercises");
   assert.strictEqual(r.proposal.kind, "exam");
@@ -131,7 +130,7 @@ test("an exam in N days makes a Confirm card (the date is computed by code); not
   const { coach: c2, pos: pos2 } = make({ replies: { "exam in two weeks": { mode: "revising", examInDays: 14 } } });
   const r2 = await say(c2, "Systems Programming: I have the exam in two weeks");
   assert.ok(c2.pendingProposal());
-  await say(c2, "no", "cancel");
+  c2.brainTools.undo({}); // the brain's study_undo, its answer to a "no"
   assert.strictEqual(c2.pendingProposal(), null);
   assert.strictEqual(pos2(SP).positionKnown, false);
   void r2; void ref;
@@ -162,7 +161,7 @@ test("Hebrew: the readback, the undo and the question are written in Hebrew (no 
   const b = await say(coach, "Databases Demo: אני קורא את הסיכומים, בערך בשליש");
   assert.match(b.answer, /לימוד עצמי מהסיכומים/);
   assert.doesNotMatch(b.answer.replace(/Databases Demo|"[^"]*"/g, ""), /[A-Za-z]{4,}/); // only the course name and quoted headings are Latin
-  const u = await say(coach, "לא", "cancel");
+  const u = { answer: coach.brainTools.undo({ lang: "he" }) };
   assert.match(u.answer, /^בוטל\./);
   // gendered verbs in code-written Hebrew: none of the present-tense masculine/feminine forms used elsewhere
   for (const t of [a.answer, b.answer, u.answer]) assert.doesNotMatch(t, /\b(?:הולך|הולכת|קורא|קוראת|יודע|יודעת|לומד|לומדת)\b/);
