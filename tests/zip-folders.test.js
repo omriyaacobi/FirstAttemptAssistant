@@ -14,7 +14,7 @@ const { createCourses } = require("../courses");
 const { createStore } = require("../store");
 const { createCourseRoutes } = require("../course-routes");
 const { ingestFile } = require("../ingest");
-const { askCourse } = require("../study");
+
 const { createBrain } = require("../brain");
 const { makeZip } = require("./testzip");
 
@@ -65,7 +65,7 @@ function setup() {
   const dir = tmp();
   const courses = createCourses(path.join(dir, "courses"));
   const store = createStore(path.join(dir, "conv"));
-  const routes = createCourseRoutes({ courses, store, ingestFile, askCourse, askFile: fakeReader, askChain: async () => ({ answer: "x", used: { model: "fake" } }) });
+  const routes = createCourseRoutes({ courses, store, ingestFile, askFile: fakeReader });
   return { courses, routes, course: courses.create("Systems Demo") };
 }
 const waitIdle = async (routes) => { for (let i = 0; i < 100 && !routes.idle(); i++) await new Promise((r) => setTimeout(r, 20)); };

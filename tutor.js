@@ -13,7 +13,7 @@
 
 const crypto = require("node:crypto");
 const { MODELS } = require("./router");
-const { defang, sourcesFor, labelOutside, askedLectures, pickPages, lectureIndex } = require("./study");
+const { defang, sourcesFor, labelOutside, askedLectures, pickPages, lectureIndex } = require("./course-pages");
 const plan = require("./study-plan");
 const { clean } = require("./study-tracker");
 const { langOf, mostlyHebrew, say } = require("./lang");

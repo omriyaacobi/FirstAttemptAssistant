@@ -78,10 +78,9 @@ const { readRawBody } = require("./upload");
 const { checkQuote } = require("./quote");
 const { MAX_ZIP_BYTES } = require("./unzip");
 const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
-const { createMemory, loadProfile, PROFILE_FILE, aboutBlock } = require("./profile");
+const { createMemory, loadProfile, PROFILE_FILE } = require("./profile");
 const { createCourses, validId: validCourseId } = require("./courses");
 const { createCourseRoutes } = require("./course-routes");
-const { askCourse } = require("./study");
 const { ingestFile } = require("./ingest");
 const { askChain, askAgyWithFile } = require("./providers");
 const { createMorning } = require("./morning");
@@ -735,16 +734,11 @@ if (require.main === module) {
   const store = createStore(path.join(__dirname, "data", "conversations")); // the course chats live here too
   const coursesStore = createCourses(path.join(__dirname, "data", "courses"));
   let threadFiles = null; // set below; the course reader calls it after a file is read
-  const { MODELS } = require("./router");
-  const crossWarm = require("./warmagy").createWarmAgy({ keepReady: false }); // no background process while idle
   const courseRoutes = createCourseRoutes({
     store,
     courses: coursesStore,
     onFileReady: (args) => (threadFiles ? threadFiles.onFileReady(args) : undefined),
-    askCourse, ingestFile, askChain, askFile: askAgyWithFile,
-    // Other-language search words for course questions (crosslang.js): one short Flash low call through its own pre-warmed agy.
-    expand: (text) => require("./crosslang").expandQuery({ text, askStructured: crossWarm.askStructured, model: MODELS.flashLow.model }),
-    about: () => aboutBlock(), // the profile ("learns from exercises") reaches the study model; never a web model
+    ingestFile, askFile: askAgyWithFile,
     log: console.log,
   });
   // The ONE conversation (thread-store.js). It is always on: the old list of chats and its switch (BOT_THREAD) were removed on 2026-11-12.

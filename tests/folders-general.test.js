@@ -12,7 +12,7 @@ const { createCourses } = require("../courses");
 const { createStore } = require("../store");
 const { createCourseRoutes } = require("../course-routes");
 const { ingestFile } = require("../ingest");
-const { askCourse } = require("../study");
+
 const { createBrain } = require("../brain");
 const { createMoodleTools } = require("../moodle-tools");
 const { makeZip } = require("./testzip");
@@ -23,7 +23,7 @@ const fakeReader = async (model, prompt) => { const [, from, to] = /pages (\d+) 
 function setup(dir = tmp()) {
   const courses = createCourses(path.join(dir, "courses"));
   const store = createStore(path.join(dir, "conv"));
-  const routes = createCourseRoutes({ courses, store, ingestFile, askCourse, askFile: fakeReader, askChain: async () => ({ answer: "x", used: { model: "fake" } }) });
+  const routes = createCourseRoutes({ courses, store, ingestFile, askFile: fakeReader });
   return { dir, courses, routes };
 }
 const waitIdle = async (routes) => { for (let i = 0; i < 300 && !routes.idle(); i++) await new Promise((r) => setTimeout(r, 20)); };

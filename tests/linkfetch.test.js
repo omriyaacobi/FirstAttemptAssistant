@@ -14,7 +14,7 @@ const { createStore } = require("../store");
 const { createServer } = require("../server");
 const { createCourseRoutes } = require("../course-routes");
 const { ingestFile } = require("../ingest");
-const { askCourse } = require("../study");
+
 const { makeZip } = require("./testzip");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-link-"));
@@ -159,7 +159,7 @@ function setup(fetchLinkFake) {
   const dir = tmp();
   const courses = createCourses(path.join(dir, "courses"));
   const store = createStore(path.join(dir, "conv"));
-  const routes = createCourseRoutes({ courses, store, ingestFile, askCourse, askFile: fakeReader, askChain: async () => ({ answer: "x", used: { model: "fake" } }), fetchLink: fetchLinkFake });
+  const routes = createCourseRoutes({ courses, store, ingestFile, askFile: fakeReader, fetchLink: fetchLinkFake });
   return { courses, routes, course: courses.create("Systems Programming") };
 }
 const waitIdle = async (routes) => { for (let i = 0; i < 100 && !routes.idle(); i++) await new Promise((r) => setTimeout(r, 20)); };

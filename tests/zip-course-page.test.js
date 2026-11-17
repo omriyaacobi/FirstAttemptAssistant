@@ -14,7 +14,7 @@ const { createStore } = require("../store");
 const { createServer } = require("../server");
 const { createCourseRoutes } = require("../course-routes");
 const { ingestFile } = require("../ingest");
-const { askCourse } = require("../study");
+
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "bot-zipcourse-"));
 
@@ -62,7 +62,7 @@ async function start() {
   const dir = tmp();
   const courses = createCourses(path.join(dir, "courses"));
   const store = createStore(path.join(dir, "conv"));
-  const courseRoutes = createCourseRoutes({ courses, store, ingestFile, askCourse, askFile: fakeReader, askChain: async () => ({ answer: "x", used: { model: "fake" } }) });
+  const courseRoutes = createCourseRoutes({ courses, store, ingestFile, askFile: fakeReader });
   const server = createServer({ store, courseRoutes });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;

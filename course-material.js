@@ -6,7 +6,7 @@
 // Everything here is DATA for a prompt: text is scrubbed so it cannot close its block, and nothing is an instruction.
 // (These lived in study-chat.js, the old "study chat" mode, which was removed when the brain became the only way Bot works.)
 
-const { defang, pickPages } = require("./study");
+const { defang, pickPages } = require("./course-pages");
 const outlineLib = require("./outline");
 const catchup = require("./catchup");
 
