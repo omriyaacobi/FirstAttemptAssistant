@@ -64,3 +64,14 @@ test("without a photo in the message, a 'photo' field is ignored (a model cannot
   assert.ok(w.graderPrompts.length >= 1);
   assert.doesNotMatch(w.graderPrompts[0], /came as a photo|\\frac12\\sin t/);
 });
+
+test("a photo with NO words, and the model forgets 'photo': it is sent back once, then the photo's work is graded (not 'saying you know is not enough')", async () => {
+  const dir = tmp("bot-quiz-photo-img-");
+  const image = { path: path.join(dir, "work.jpg") };
+  fs.writeFileSync(image.path, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]));
+  const w = world(['CALL {"tool":"quiz_answer","course":"Databases Demo","ask":"answer"}', CALL]);
+  const r = await w.brain.handle("", { history: [], courses: [DB], image });
+  assert.ok(w.graderPrompts.length >= 1, "the photo's work was graded");
+  assert.match(w.graderPrompts[0], /\\frac12\\sin t/);
+  assert.doesNotMatch(r.answer, /does not count|צריך להראות/);
+});

@@ -1161,8 +1161,11 @@ ${r.cardText}`; }
 
       // A coach flow: its output is the answer, so it must come ALONE (other calls next to it would be lost without a word).
       const term = reply.calls.find((c) => isTerminal(c.tool));
-      if (term && coach && reply.calls.length > 1) {
-        reply.calls = reply.calls.map((c) => (isTerminal(c.tool) ? { ...c, alone: true } : c));
+      // A quiz answer sent as a photo without "photo" (what the photo shows) would be graded as an empty answer: the tutor cannot see
+      // the picture. It goes back to the model with the reason instead (2026-11-17: photo-only answers got "saying you know is not enough").
+      const photoMissing = term && term.tool === "quiz_answer" && image && !(typeof term.photo === "string" && term.photo.trim());
+      if (term && coach && (reply.calls.length > 1 || photoMissing)) {
+        reply.calls = reply.calls.map((c) => (c === term && photoMissing ? { ...c, noPhoto: true } : isTerminal(c.tool) ? { ...c, alone: true } : c));
       } else if (term && coach) {
         const c = term.course ? matchCourse(term.course, list) : ctx.course;
         await slowSlot(); // a quiz or a lesson is long model work
@@ -1184,6 +1187,7 @@ ${r.cardText}`; }
         const label = `${call.tool}${call.course ? ` (${String(call.course).slice(0, 40)})` : ""}`;
         log(`[brain] tool ${label}`);
         ctx.tools.push(call.tool);
+        if (call.noPhoto) return { call, text: `NOT started: Omri's answer is in the photo, and the tutor who grades it cannot see the photo. Look at "photo${path.extname(image.path)}" and call quiz_answer again, by itself, with "photo": everything Omri's work in it shows, written out line by line (math in LaTeX, exactly as written, mistakes included).`, ok: false };
         if (call.alone) return { call, text: `NOT started: ${call.tool} must be called ALONE (its output is shown to Omri as the answer). Call it again by itself after the other tools.`, ok: false };
         if (!fn && image) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}". The photo needs no CALL line: it is the file "photo${path.extname(image.path)}" in your current folder, open it with your own file viewer and then write the reply.`, ok: false };
         if (!fn) return { call, text: `There is no tool called "${String(call.tool).slice(0, 40)}".`, ok: false };
