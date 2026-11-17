@@ -31,6 +31,7 @@ const { createNudges } = require("./study-nudges");
 const tutor = require("./tutor");
 const { lectureIndex, askedLectures } = require("./study");
 const lectureParts = require("./lecture-parts");
+const PARTS_PER_LESSON = 3; // parts of a lecture taught in one teach_next lesson (one phone screen)
 const standing = require("./standing");
 const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
@@ -604,7 +605,29 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const align = maybeAlign(ref);
       const pick = await notesPick(ref, text);
       if (pick && pick.say) return { mode: "study", answer: pick.say };
-      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, lang }); // the brain knows the language; the part name alone does not say it
+      // A lecture of a lecture notebook is taught part by part (lecture-parts.js): only parts that were NOT worked on yet, at most
+      // PARTS_PER_LESSON at a time, and those are then marked as worked on (taught, never "understood"). When every part of the
+      // lecture was worked on, or the notes have no parts for it, the lecture is taught as before.
+      const lectureNote = (slotN) => {
+        const all = ref.courseId ? courses.allPages(ref.courseId) : [], outline = buildOutline(all);
+        // slotN counts the timetable's lectures; the parts are kept by the notebook's own lecture number. They are matched by the
+        // pages the tracker holds for that timetable lecture (a cancelled class shifts one count and not the other).
+        const slot = tracker.slots(ref.key).find((s) => s.n === slotN);
+        const mat = slot && tracker.course(ref).lectures[slot.date] ? tracker.course(ref).lectures[slot.date].material[0] : null;
+        const lec = mat ? lectureParts.lecturesOf(outline).find((l) => l.fileId === mat.fileId && l.fromPage === mat.from) : null;
+        if (!lec) return null;
+        const n = lec.n;
+        const v = lectureParts.view(all, outline, tracker.course(ref), n);
+        if (!v || v.parts.length < 2) return null;
+        if (!v.left.length) return { note: "The student already worked on every part of this lecture: give a short review of the whole lecture (the ideas and how they connect), not a first-time lesson.", onTaught: null };
+        const now3 = v.left.slice(0, PARTS_PER_LESSON);
+        const names = (l) => l.map((p) => p.topic).join("; ");
+        return {
+          note: `Teach ONLY these parts of the lecture now: ${names(now3)}.${v.done.length ? ` The student already worked on these, do not teach them again: ${names(v.done)}.` : ""}${v.left.length > now3.length ? ` These wait for the next lesson, do not teach them yet: ${names(v.left.slice(PARTS_PER_LESSON))}.` : ""}`,
+          onTaught: () => { const rec = tracker.course(ref); tracker.save({ ...rec, worked: lectureParts.mark(rec, n, now3, now()) }); },
+        };
+      };
+      const r = await tutor.turn({ tracker, ref, intent: "teach", message: text || "the next part", pages: ref.courseId ? courses.allPages(ref.courseId) : [], courseName: ref.name, askChain, now: now(), log, onText, range: null, notes: pick, lang, lectureNote }); // the brain knows the language; the part name alone does not say it
       return { ...r, mode: "study", answer: r.answer + align, study: { course: ref.name, mode: r.mode, done: r.done } };
     },
     // An exam date becomes a Confirm card; it is stored only when Omri confirms.

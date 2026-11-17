@@ -142,7 +142,10 @@ function nextChunk(chunks, state, from = null) {
     const inside = chunks.filter((c) => titles.has(c.title));
     return inside.find((c) => !state.taught.includes(c.key)) || inside[0] || null;
   }
-  const at = state.cursor ? chunks.findIndex((c) => c.key === state.cursor) : -1;
+  let at = state.cursor ? chunks.findIndex((c) => c.key === state.cursor) : -1;
+  // A cursor that is no longer in the notes (the outline was rebuilt, a file was replaced): go on after the LAST part that was
+  // taught and still exists, instead of starting the whole course again from its first part (2026-11-17, the real SP record).
+  if (at < 0 && state.cursor) for (let i = chunks.length - 1; i >= 0; i--) if (state.taught.includes(chunks[i].key)) { at = i; break; }
   return chunks[at + 1] || (at >= 0 ? null : chunks[0]);
 }
 const taughtChunks = (chunks, state) => chunks.filter((c) => state.taught.includes(c.key));

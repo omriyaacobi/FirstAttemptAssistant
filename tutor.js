@@ -243,12 +243,12 @@ const STYLES = {
   screen: "Teach in 3 short steps, about 130 words in total, as if to a student who sat in the lecture but did not follow: start from the core idea, assume nothing, and use one tiny example (code in a code block when the notes have code). Use short bold step titles, never the words 'Part 1 of 3'.",
   concept: "Teach this ONE idea in 3 short steps, about 130 words in total, with one tiny example of your own that has nothing to do with any assignment. Never write code or a result that solves a task; teach the idea only.",
 };
-async function teachText({ askChain, courseName, topic, material, message, lang = "en", log, onText = null, style = null }) {
+async function teachText({ askChain, courseName, topic, material, message, lang = "en", log, onText = null, style = null, note = "" }) {
   const sizing = STYLES[style] || "Teach only the 3 or 4 most important ideas, one short step each, about 250 words in total, with one small worked example. Do not copy the whole lecture.";
   const prompt = `${TUTOR_RULES}
 
 Teach the topic "${defang(topic)}" of the course "${defang(courseName)}" to the student, who asked: <<<${defang(message).slice(0, 500)}>>>
-Use the material as the main source and cite pages as [S1]. ${sizing} ${material.picked.length ? "Where you go beyond the material, start that part with the tag [OUT]." : "There is no course material, so put the tag [OUT] ONCE, at the very start of your answer, and nowhere else."} Do not end with any other question or offer than the QUESTION line. ${langLine(lang)} Formulas: inline $x^2$ or on their own line $$...$$, never anything else.
+Use the material as the main source and cite pages as [S1]. ${sizing} ${note ? defang(note) + " " : ""}${material.picked.length ? "Where you go beyond the material, start that part with the tag [OUT]." : "There is no course material, so put the tag [OUT] ONCE, at the very start of your answer, and nowhere else."} Do not end with any other question or offer than the QUESTION line. ${langLine(lang)} Formulas: inline $x^2$ or on their own line $$...$$, never anything else.
 Then, on the very last line, write exactly: QUESTION: <one short question that checks the main idea, answerable in 1 to 3 sentences> || KEY: <its correct answer in one or two sentences>
 
 ${material.block}`;
@@ -312,7 +312,9 @@ function summary(session, rec) {
 // "answer" (a try, graded), "hint", "show" (show the answer / gave up) or "skip". With it, no words of the message are scanned: before,
 // an honest answer that held the word "reveal" was shown the answer and marked wrong, and one with "stuck" or "hint" got a hint
 // instead of a grade (code review, 2026-11-17). Without it (an older caller) the words decide as before.
-async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, lang: forcedLang = null, ask: askKind = null }) {
+// lectureNote (optional, teach a lecture): (n) => null | { note, onTaught }: which parts of lecture n to teach now (code-made, from
+// what was already worked on; lecture-parts.js), as one line for the teaching prompt, and what to do once it was taught.
+async function turn({ tracker, ref, intent, message, pages = [], courseName, askChain, now = Date.now(), log = () => {}, onText = null, range = null, notes = null, lang: forcedLang = null, ask: askKind = null, lectureNote = null }) {
   const wants = ASK_KINDS.includes(askKind) ? askKind : null;
   const langNow = forcedLang === "he" || forcedLang === "en" ? forcedLang : langOf(message);
   const t0 = Date.now();
@@ -412,8 +414,11 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   const lang = langNow;
   try {
     if (intent === "teach") {
-      const t = await teachText({ askChain, courseName, topic: label, material: mat, message, lang, log, onText });
+      let part = null;
+      try { part = lectureNote && pick.slot.n ? lectureNote(pick.slot.n) : null; } catch (error) { part = null; }
+      const t = await teachText({ askChain, courseName, topic: label, material: mat, message, lang, log, onText, note: part ? part.note : "" });
       if (pick.slot.date) tracker.markTaught(ref, pick.slot.date); // taught is NOT understood: only a graded check does that
+      if (part && part.onTaught) part.onTaught();
       let tail = "\n\n" + tx({ lang }).offer;
       if (t.question) {
         const s1 = newSession("quiz", { type: "lecture", date: pick.slot.date, n: pick.slot.n }, { lang, questions: [{ id: "q1", q: t.question.q, key: t.question.key, topic: label, attempts: 0, hints: 0, state: "open", verdict: null, revealed: false }], fromTeach: true });
