@@ -288,10 +288,11 @@ const showQuestion = (s) => { const q = currentQuestion(s); const i = s.question
 function summary(session, rec) {
   if (session.fromTeach) return [tx(session).checked, session.fromNotes ? tx(session).nextPart : "", session.target.type === "assignment" ? tx(session).workNext : ""].filter(Boolean).join("\n");
   const L = session.lang === "he" ? "he" : "en";
-  const right = session.questions.filter((q) => q.verdict === "right").length;
-  const weak = [...new Set(session.questions.filter((q) => q.verdict !== "right").map((q) => q.topic))];
-  const solid = [...new Set(session.questions.filter((q) => q.verdict === "right").map((q) => q.topic))];
-  const lines = [say(L, `That was the last question: ${right} of ${session.questions.length} fully right.`, `זו הייתה השאלה האחרונה: ${right} מתוך ${session.questions.length} נכונות לגמרי.`)];
+  const asked = session.questions.filter((q) => q.verdict !== "skipped"); // a skipped question counts for nothing
+  const right = asked.filter((q) => q.verdict === "right").length;
+  const weak = [...new Set(asked.filter((q) => q.verdict !== "right").map((q) => q.topic))];
+  const solid = [...new Set(asked.filter((q) => q.verdict === "right").map((q) => q.topic))];
+  const lines = [say(L, `That was the last question: ${right} of ${asked.length} fully right.`, `זו הייתה השאלה האחרונה: ${right} מתוך ${asked.length} נכונות לגמרי.`)];
   if (solid.length) lines.push(say(L, `Solid: ${solid.join(", ")}.`, `יושב טוב: ${solid.join(", ")}.`));
   if (weak.length) lines.push(say(L, `Needs work: ${weak.join(", ")}.`, `צריך עוד עבודה: ${weak.join(", ")}.`));
   if (session.target.type === "lecture" && !session.target.date) lines.push(say(L, "This lecture is not on a timetable, so this was practice: it is not counted as understood.", "זה לא על המערכת, אז זה היה תרגול: זה לא נספר כמובן."));
@@ -338,6 +339,12 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
         q.state = "done"; q.verdict = null; // closed without a verdict: nothing is recorded
         tracker.setSession(ref, session.target.type === "assignment" ? { ...newSession("work", session.target), lang: session.lang, questions: [] } : null);
         return finish({ answer: say(session.lang, "Skipped. Nothing was recorded. Say what you want next: the next part, a quiz, or a hint on the assignment.", "דילגנו. שום דבר לא נרשם. אפשר לבקש את החלק הבא, בוחן, או רמז במטלה."), mode: session.mode });
+      } else if (wants === "skip") {
+        // A graded quiz: until 2026-11-17 "skip" existed only after a lesson, so here it went to the grader as an "answer" and the
+        // same question came back (Omri: "skip it, we will get to it in lecture 5"). Now the question is closed with no verdict and
+        // counts for nothing: not right, not wrong, not in the score.
+        q.state = "done"; q.verdict = "skipped";
+        reply = say(session.lang, "Skipped. This question counts for nothing.", "דילגנו. השאלה הזאת לא נספרת.");
       } else if (wants ? wants === "show" : SHOW.test(message)) {
         q.revealed = true; q.verdict = "wrong"; q.state = "done";
         reply = `${tx(session).answerIs}${q.key}`;

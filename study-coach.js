@@ -104,14 +104,27 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const whichCourse = () => T(`Which course do you mean? ${refs().map((r) => r.name).join(", ")}.`, `לאיזה קורס הכוונה? ${refs().map((r) => r.name).join(", ")}.`);
 
   // Course with all its lectures already uploaded (Calculus 2): notebook lecture k is ASSUMED to be the k-th class. Once, and it says so.
+  // The pages of each lecture come from the outline (outline.js, exact: a lecture ends where the next one starts on the page). The
+  // old lectureIndex kept the next lecture's first page in the lecture before it, so on 2026-11-17 a quiz on lecture 4 asked about
+  // lecture 5. A course aligned that old way (aligned: true) gets the outline's pages once, silently (aligned: 2).
+  function lecturePages(courseId) {
+    const pages = courses.allPages(courseId);
+    const fromOutline = lectureParts.lecturesOf(buildOutline(pages)).map((l) => ({ lecture: l.n, fileId: l.fileId, from: l.fromPage, to: l.toPage }));
+    return fromOutline.length ? fromOutline : lectureIndex(pages);
+  }
   function maybeAlign(ref) {
     const c = tracker.course(ref);
-    if (c.aligned || !ref.courseId) return "";
-    const index = lectureIndex(courses.allPages(ref.courseId));
+    if (c.aligned === 2 || !ref.courseId) return "";
+    if (c.aligned) {
+      tracker.alignNotebook(ref, lecturePages(ref.courseId), { replaceAssumed: true });
+      tracker.save({ ...tracker.course(ref), aligned: 2 });
+      return "";
+    }
+    const index = lecturePages(ref.courseId);
     const held = tracker.progress(ref).held;
     if (!index.length || index.length <= held) return ""; // fewer notebook lectures than classes held: material arrives week by week
     const placed = tracker.alignNotebook(ref, index);
-    tracker.save({ ...tracker.course(ref), aligned: true });
+    tracker.save({ ...tracker.course(ref), aligned: 2 });
     return placed ? T(`\n\n(Note: all ${ref.name} lectures are uploaded, so I assumed notebook lecture k is the k-th class by the timetable. If a class was cancelled or the numbers do not match, tell me.)`, `\n\n(הערה: כל ההרצאות של ${ref.name} כבר הועלו, אז הנחתי שהרצאה k במחברת היא השיעור ה-k לפי המערכת. אם שיעור בוטל או שהמספרים לא מתאימים, כדאי לכתוב לי.)`) : "";
   }
 

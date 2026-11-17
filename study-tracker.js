@@ -192,7 +192,8 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE, 
   }
   // Notebook lecture k -> the k-th slot of the course. Only for a course that already has all its lectures (Calculus 2). ASSUMED: it says so.
   // index: study.lectureIndex(pages) -> [{ lecture, fileId, from, to }]. Never overwrites a lecture that already has material.
-  function alignNotebook(ref, index) {
+  // replaceAssumed: also replace pages an EARLIER alignment assumed (never pages set another way), for a better index of the notes.
+  function alignNotebook(ref, index, { replaceAssumed = false } = {}) {
     const all = slots(ref.key);
     const c = course(ref);
     let placed = 0;
@@ -200,7 +201,7 @@ function createTracker({ dir, now = () => Date.now(), timezone = plan.TIMEZONE, 
       const slot = all.find((s) => s.n === entry.lecture);
       if (!slot) continue;
       const l = c.lectures[slot.date] || { date: slot.date, material: [], topic: "", assumed: false, checks: [], understood: false, taught: 0 };
-      if (l.material.length) continue;
+      if (l.material.length && !(replaceAssumed && l.assumed)) continue;
       l.material = [{ fileId: entry.fileId, from: entry.from, to: entry.to, fileName: "" }];
       l.assumed = true;
       c.lectures[slot.date] = l;
