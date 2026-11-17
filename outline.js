@@ -62,7 +62,7 @@ function explicitHeadings(text) {
   for (const { raw, start: lineStart } of linesOf(text)) {
     const line = raw.trim();
     const start = dateLine === null ? lineStart : dateLine;
-    dateLine = /^d{1,2}[/.]d{1,2}[/.]d{2,4}$/.test(line) ? lineStart : null;
+    dateLine = /^\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}$/.test(line) ? lineStart : null;
     if (!line || line.length > 160) continue;
     const md = MD_HEADING.exec(line);
     const body = md ? clean(md[2]) : line;
