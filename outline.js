@@ -22,6 +22,10 @@ const PART_TARGET = 10, PART_MIN_CHARS = 1500; // no headings: up to 10 slices, 
 const MAX_JUMP = 3; // "lecture 9" right after "lecture 2" is a mention, not the next heading (same rule as study.js lectureIndex)
 
 const LECTURE_LINE = /^(?:הרצאה|שיעור|lecture|lesson)\s*(?:מס(?:פר|')?\.?\s*|number\s*|#\s*)?(\d{1,2})(?![\d])(?:\s*[:.\-–—)]\s*\S.{0,100})?\s*$/i;
+// A lecture notebook often puts the date and the course in front: "05/11/25 חדו״א 2 הרצאה 4" (Omri's Calculus 2 notebook: until
+// 2026-11-17 none of its 26 lecture lines was seen, and the file was cut into 10 blind slices). The number must end the line and
+// the words in front must be short and hold no sentence punctuation; the numbers must still go up, as for every lecture line.
+const LECTURE_TAIL = /^(?:(\S[^.,;:?!]{0,38})\s)?(?:הרצאה|שיעור|lecture|lesson)\s*(?:מס(?:פר|')?\.?\s*|number\s*|#\s*)?(\d{1,2})\s*$/i;
 const CHAPTER_LINE = /^(?:chapter|section|part|unit|פרק|חלק|יחידה|נושא)\s+(\d{1,2}|[ivx]{1,5})(?![\p{L}\d])(?:\s*[:.\-–—)]\s*\S.{0,100})?\s*$/iu;
 const MD_HEADING = /^(#{1,3})\s+(\S.{0,150})$/;
 const NUMBERED = /^(\d{1,2})(?:\.(\d{1,2}))?[.)]?\s+([\p{L}][^\n]{1,70})$/u;
@@ -54,19 +58,23 @@ const pageAt = (pageStarts, offset) => { let page = pageStarts.length ? pageStar
 function explicitHeadings(text) {
   const out = [];
   let lastLecture = 0;
-  for (const { raw, start } of linesOf(text)) {
+  let dateLine = null; // a line that is only a date ("29/12/25"), right above a lecture line: the lecture starts there
+  for (const { raw, start: lineStart } of linesOf(text)) {
     const line = raw.trim();
+    const start = dateLine === null ? lineStart : dateLine;
+    dateLine = /^d{1,2}[/.]d{1,2}[/.]d{2,4}$/.test(line) ? lineStart : null;
     if (!line || line.length > 160) continue;
     const md = MD_HEADING.exec(line);
     const body = md ? clean(md[2]) : line;
-    const lec = LECTURE_LINE.exec(body);
+    const tail = LECTURE_LINE.exec(body) ? null : LECTURE_TAIL.exec(body);
+    const lec = LECTURE_LINE.exec(body) || (tail ? [tail[0], tail[2]] : null);
     if (lec) {
       const n = Number(lec[1]);
       if (n > lastLecture && n <= lastLecture + MAX_JUMP) { lastLecture = n; out.push({ start, title: clean(body), kind: "lecture", level: 1, lecture: n }); }
       continue;
     }
-    if (md) { out.push({ start, title: clean(md[2]), kind: "heading", level: md[1].length }); continue; }
-    if (CHAPTER_LINE.test(line)) out.push({ start, title: clean(line), kind: "heading", level: 1 });
+    if (md) { out.push({ start: lineStart, title: clean(md[2]), kind: "heading", level: md[1].length }); continue; }
+    if (CHAPTER_LINE.test(line)) out.push({ start: lineStart, title: clean(line), kind: "heading", level: 1 });
   }
   return out;
 }
@@ -94,7 +102,9 @@ function dottedHeadings(text) {
   const out = [];
   let last = null;
   const after = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const x = a[i] ?? -1, y = b[i] ?? -1; if (x !== y) return x > y; } return false; };
-  for (const { raw, start } of linesOf(text)) {
+  const all = [...linesOf(text)];
+  for (let i = 0; i < all.length; i++) {
+    const { raw, start } = all[i];
     const line = raw.trim();
     const m = DOTTED.exec(line);
     if (!m || /[.,;:]$/.test(line) || /(?:\.\s*){4,}|…/.test(m[2])) continue; // a table-of-contents line ("3.3 The Makefile . . . . 5") is not the title
@@ -102,9 +112,47 @@ function dottedHeadings(text) {
     if (last && (!after(nums, last) || nums[0] > last[0] + MAX_JUMP)) continue;
     if (!last && nums[0] > 1 + MAX_JUMP) continue;
     last = nums;
-    out.push({ start, title: clean(line), kind: "numbered", level: nums.length });
+    out.push({ start, title: clean(line), kind: "numbered", level: nums.length, nums, line: i });
   }
-  return out.filter((h) => h.level > 1).length >= 5 ? out : []; // trusted only with several real dotted titles
+  if (out.filter((h) => h.level > 1).length < 5) return []; // trusted only with several real dotted titles
+  return [...out, ...lostHeadings(all, out)].sort((a, b) => a.start - b.start).map(({ nums, line, ...h }) => h);
+}
+
+// HEADINGS THAT LOST THEIR NUMBER. In a Word file saved as a page, a heading that Word numbered by itself comes out as a list line
+// ("- מקביליות (Concurrency)") while the ones typed by hand keep theirs ("3.1 מוטיבציה"). In Meni's notes (Systems Programming) that
+// hid every chapter title, and the whole of chapter 4, whose headings were all numbered by Word: "3.3.3" ran on for 53 pages to
+// "5.1" and "chapter 4" was not found (2026-11-16). Code gives the number back only where the numbering itself proves it:
+//   1. a line "- Title" standing alone (blank line before and after) right above a kept title whose number ends in .1 is that
+//      title's parent: above "3.1" it is chapter "3", above "3.3.1" it is "3.3" (only when no title has that number already);
+//   2. when exactly ONE chapter number is missing between two chapters found that way (3 and 5), the missing chapter starts at the
+//      first place after the last numbered title of the earlier chapter where three such lone "- Title" lines follow each other
+//      (chapter, section, sub-section: how a chapter opens when all its headings lost their numbers).
+// The title's words are always a real line of the file; only the number in front is worked out. Nothing found = nothing added.
+const LONE_DASH = /^-\s+(\S.{1,88})$/;
+function lostHeadings(all, kept) {
+  const text = (i) => (all[i] ? all[i].raw.trim() : "");
+  const lone = (i) => { const l = text(i); return i >= 0 && LONE_DASH.test(l) && !/[.,;:]$/.test(l) && !text(i - 1) && !text(i + 1); };
+  const has = new Set(kept.map((h) => h.nums.join(".")));
+  const added = [];
+  for (const h of kept) {
+    if (h.nums.length < 2 || h.nums[h.nums.length - 1] !== 1) continue;
+    const parent = h.nums.slice(0, -1), key = parent.join(".");
+    if (has.has(key) || !lone(h.line - 2)) continue;
+    has.add(key);
+    added.push({ start: all[h.line - 2].start, title: `${key} ${clean(LONE_DASH.exec(text(h.line - 2))[1])}`, kind: "numbered", level: parent.length, nums: parent, line: h.line - 2 });
+  }
+  const chapters = added.filter((h) => h.level === 1).sort((a, b) => a.nums[0] - b.nums[0]);
+  for (let c = 0; c + 1 < chapters.length; c++) {
+    const a = chapters[c].nums[0], b = chapters[c + 1].nums[0];
+    if (b !== a + 2 || kept.some((h) => h.nums[0] === a + 1)) continue;
+    const from = Math.max(chapters[c].line, ...kept.filter((h) => h.nums[0] === a).map((h) => h.line));
+    for (let i = from + 1; i < chapters[c + 1].line - 4; i++) {
+      if (!(lone(i) && lone(i + 2) && lone(i + 4))) continue;
+      added.push({ start: all[i].start, title: `${a + 1} ${clean(LONE_DASH.exec(text(i))[1])}`, kind: "numbered", level: 1, nums: [a + 1], line: i });
+      break;
+    }
+  }
+  return added;
 }
 
 // No headings at all: equal slices by size, cut at a line break.
