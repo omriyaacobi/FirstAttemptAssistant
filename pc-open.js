@@ -8,7 +8,7 @@
 //     Web pages saved on disk (.html, .htm) open in CHROME (OPEN_BROWSER, since 2026-11-15).
 //     Everything else is refused: programs, scripts, shortcuts (.lnk, .url), installers, and any type not listed.
 //   - The type is judged on the file's REAL location (fs.realpathSync): a link or a shortcut-like trick called "notes.pdf" that really
-//     points to cmd.exe is caught. Only plain local paths "C:\..." are accepted: no network paths (\\server\...), no "x.pdf:stream".
+//     points to cmd.exe is caught. Only plain local paths "C:\..." and WSL paths of this PC are accepted: no network paths (\\server\...), no "x.pdf:stream".
 //   - Web pages: https only (linkfetch.checkUrl: no password in the address, no local or private hosts). Always in CHROME, where Omri is
 //     logged in to Moodle (the PC's default browser may be another one).
 //   - No shell. The program is started directly (child_process.spawn with shell:false and the target as ONE separate argument), so
@@ -36,6 +36,12 @@ const OPEN_BROWSER = new Set(["html", "htm"]);
 const NAMED_TEXT =new Set(["makefile", "dockerfile", "readme", "license", "cmakelists.txt"]);
 
 const fail = (message, code = "refused") => Object.assign(new Error(message), { code });
+// A local path: a drive ("C:\...") or, since 2026-11-17, a file in Omri's WSL Linux on this same PC ("\\wsl.localhost\Ubuntu-22.04\...",
+// or the older "\\wsl$\..."): the folder of his course assignments lives there, and Bot already reads it as the linked folder. Any
+// other "\\host\..." is a real network path and stays refused. A WSL path may hold no ':' at all (no hidden part).
+const DRIVE_PATH = /^[A-Za-z]:\\/;
+const WSL_PATH = /^\\\\(?:wsl\.localhost|wsl\$)\\[A-Za-z0-9._-]+\\/i;
+const plainLocal = (p) => (DRIVE_PATH.test(p) && p.indexOf(":", 2) === -1) || (WSL_PATH.test(p) && p.indexOf(":") === -1);
 const hasBad = (s) => /["\u0000-\u001f\u007f]/.test(s);
 const extOf = (p) => path.extname(p).slice(1).toLowerCase();
 
@@ -59,14 +65,14 @@ function checkLocal(target) {
   const raw = String(target || "").trim();
   if (!raw) throw fail("which file or folder?");
   if (hasBad(raw)) throw fail("that path holds a character Bot does not open (a quote or a control character)");
-  if (!/^[A-Za-z]:[\\/]/.test(raw)) throw fail("only a full local path like C:\\... can be opened (no network paths)");
-  if (raw.indexOf(":", 2) !== -1) throw fail("that path has a hidden part after a ':', so Bot will not open it");
+  if (!/^[A-Za-z]:[\\/]/.test(raw) && !WSL_PATH.test(raw)) throw fail("only a full local path like C:\\... (or a WSL path \\\\wsl.localhost\\...) can be opened (no network paths)");
+  if (/^[A-Za-z]:/.test(raw) ? raw.indexOf(":", 2) !== -1 : raw.indexOf(":") !== -1) throw fail("that path has a hidden part after a ':', so Bot will not open it");
   // realpathSync.native asks Windows itself for the real name. The plain realpathSync only follows links, so a SHORT name
   // ("REPORT~1.DOC", the old 8.3 form Windows keeps for "report.docm") kept its harmless-looking ending and a macro file passed as a
   // document (found in the code review of 2026-11-16). The type below is always judged on the full real name.
   let real;
   try { real = fs.realpathSync.native(raw); } catch (error) { throw fail("that file or folder does not exist on this computer", "missing"); }
-  if (!/^[A-Za-z]:\\/.test(real) || real.indexOf(":", 2) !== -1 || hasBad(real)) throw fail("that path really points somewhere Bot does not open");
+  if (!plainLocal(real) || hasBad(real)) throw fail("that path really points somewhere Bot does not open");
   const st = fs.statSync(real);
   const name = path.basename(real);
   if (st.isDirectory()) return { real, kind: "folder", name };

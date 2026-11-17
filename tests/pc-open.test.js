@@ -68,6 +68,15 @@ test("path tricks are refused: relative, network, a hidden stream, quotes, missi
   assert.throws(() => checkLocal(path.join(root, "nothere.pdf")), /does not exist/);
 });
 
+test("a WSL path of this PC passes the path check (2026-11-17: mission3/README.md in the linked WSL folder could not be opened); other hosts do not", () => {
+  // the shape is checked before the disk: a WSL path that does not exist gets "does not exist", not "network path"
+  assert.throws(() => checkLocal("\\\\wsl.localhost\\Ubuntu-22.04\\home\\nobody-here\\x.md"), /does not exist/);
+  assert.throws(() => checkLocal("\\\\wsl$\\Ubuntu-22.04\\home\\nobody-here\\x.md"), /does not exist/);
+  assert.throws(() => checkLocal("\\\\wsl.localhost.evil.com\\share\\x.md"), /full local path/);
+  assert.throws(() => checkLocal("\\\\wsl.localhost\\\\x.md"), /full local path/);
+  assert.throws(() => checkLocal("\\\\wsl.localhost\\Ubuntu-22.04\\x.md:evil.exe"), /hidden part/);
+});
+
 test("a link called .pdf that really points to a program is judged by where it really points", (t) => {
   const root = dir();
   const fake1 = path.join(root, "trick.pdf");
