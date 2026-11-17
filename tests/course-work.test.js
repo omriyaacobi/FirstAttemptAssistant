@@ -34,6 +34,14 @@ test("nothing for an unknown course, and the list never grows past its cap", () 
   assert.match(list, /x\^\{59\}/, "the newest is kept");
 });
 
+test("an exercise given inside a sentence (an inline integral) is listed too; ordinary inline symbols are not", () => {
+  const list = workDone([ans(NOW - H, "Right, $u = x$ and $v' = e^x$. What would you choose in $\\int \\ln(x) \\, dx$? And then:\n$$\\int x e^x\\,dx$$")], "calc", { now: NOW, timeZone: "Asia/Jerusalem" });
+  assert.match(list, /\\int \\ln\(x\)/);
+  assert.match(list, /\\int x e\^x/);
+  assert.ok(!/u = x/.test(list) && !/v' = e\^x/.test(list));
+  assert.strictEqual(list.split("\n").length, 2);
+});
+
 test("the brain shows the list for the course the talk is in", async () => {
   const prompts = [];
   const COURSES = [{ id: "calc", name: "Calculus 2" }];

@@ -25,8 +25,11 @@ function workDone(messages, courseId, { now = Date.now(), timeZone } = {}) {
   for (const m of messages) {
     if (!m || m.role !== "assistant" || m.error || typeof m.text !== "string") continue;
     if (!m.result || m.result.courseId !== courseId || !Number.isFinite(m.at) || now - m.at > WINDOW_MS || m.at > now) continue;
-    for (const match of m.text.matchAll(/\$\$([\s\S]*?)\$\$/g)) {
-      const tex = match[1].replace(/\s+/g, " ").trim();
+    // display formulas ($$...$$), and an exercise given inside a sentence: an inline formula that holds an integral, a sum or a
+    // limit ("what would you choose in $\int \ln(x)\,dx$?" on 2026-11-16 was an exercise and was not in the list)
+    for (const match of m.text.matchAll(/\$\$([\s\S]*?)\$\$|(?<![\\$])\$([^$\n]{3,200}?)\$(?!\$)/g)) {
+      if (match[1] === undefined && !/\\(?:int|sum|lim)(?![a-z])/.test(match[2])) continue;
+      const tex = (match[1] !== undefined ? match[1] : match[2]).replace(/\s+/g, " ").trim();
       if (!tex || seen.has(norm(tex))) continue;
       seen.add(norm(tex));
       const day = dayOf(m.at);
