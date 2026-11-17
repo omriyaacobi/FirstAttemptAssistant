@@ -3,7 +3,19 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
-## Code review, part 2: the rest of the files (2026-11-17, branch claude/fable-code-review-0be442, NOT merged yet)
+## Night of 2026-11-17: study improver and my decisions (merged and pushed)
+
+- **Study improver (Fable):** lecture outlines found again (Calculus 2's 26 lectures, chapter 4 of Meni's notes), the parts of
+  each lecture tracked (`lecture-parts.js`, tools `lecture_parts` / `parts_done`), a full fake tutoring evening test, inline
+  formulas in "Already worked on". Report: `experiments/2026-11-17-study-improver.md`.
+- **My decisions (code review questions):** `parts_done` works in a message with a photo; the study coach's "no" / "full
+  solution" word lists are gone (the brain calls `study_undo`; real check 2 of 2 in `experiments/2026-11-17-undo-real.js`);
+  the old course-chat answering code is deleted (`study.js`, `crosslang.js`; helpers moved to `course-pages.js`). 1131 tests.
+- **Next:** one real lesson ("what is left of lecture 4?"), one quiz with "stuck" in the answer. Still not read by a review:
+  `public/index.html` and `public/study.js` line by line, `standing.js`, `position-record.js`, `history.js`. Meni's notes have no
+  parts list yet, and "where am I" does not show parts.
+
+## Code review, part 2: the rest of the files (2026-11-17, merged and pushed)
 
 Fable read almost every file part 1 had left (the list of the few still unread, 2 more questions for me and 2 lines suggested
 for CLAUDE.md are in section 7 of `experiments/2026-11-16-code-review.md`). Tests: `tests/code-review-2026-11-17.test.js` (1,146 in all).
