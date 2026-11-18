@@ -38,12 +38,23 @@ test("streaming: half-finished text already looks right, with no raw markers", (
   assert.strictEqual(box.textContent, "ab done");
 });
 
-test("Hebrew right-to-left: every text block is direction auto, code stays left to right", () => {
+test("Hebrew right-to-left: every text block takes the direction of most of its letters, code stays left to right", () => {
   const box = sandbox.renderText("## כותרת\nשלום **עולם**\n- פריט");
-  assert.strictEqual(box.children[0].dir, "auto");
-  assert.strictEqual(box.children[1].dir, "auto");
-  assert.strictEqual(box.children[2].dir, "auto");
-  assert.strictEqual(box.children[2].children[0].dir, "auto");
+  assert.strictEqual(box.children[0].dir, "rtl");
+  assert.strictEqual(box.children[1].dir, "rtl");
+  assert.strictEqual(box.children[2].dir, "rtl");
+  assert.strictEqual(box.children[2].children[0].dir, "rtl");
+  const en = sandbox.renderText("Hello **world**\n\n12 + 3");
+  assert.strictEqual(en.children[0].dir, "ltr");
+  assert.strictEqual(en.children[1].dir, "auto", "no letters: the browser decides");
+});
+
+test("2026-11-18: a Hebrew line that STARTS with an English word is still right to left (dir=auto made it left to right)", () => {
+  const box = sandbox.renderText("- **Process (תהליך):** תוכנית שרצה במערכת ההפעלה עם מרחב זיכרון מבודד משלה (Heap משלה, קוד משלה).\n- **Thread:** יחידת ריצה בתוך Process.\n\nעכשיו: מה ההבדל בין `t.start()` לבין `t.run()`?");
+  assert.strictEqual(box.children[0].dir, "rtl");
+  assert.strictEqual(box.children[0].children[0].dir, "rtl");
+  assert.strictEqual(box.children[1].dir, "rtl", "code spans are not counted as English");
+  assert.match(html, /\.answer :not\(pre\) > code \{[^}]*direction: ltr; unicode-bidi: isolate/, "inline code keeps its own order inside Hebrew");
 });
 
 test("HTML or script inside an answer stays inert text", () => {

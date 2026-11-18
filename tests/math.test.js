@@ -130,7 +130,7 @@ test("Hebrew: formulas are left to right, Hebrew inside \\text{} works, and the 
   assert.ok(!/\$|\\text|\\frac/.test(box.textContent), box.textContent);
   for (const n of allNodes(box).filter((x) => x.className === "math" || x.className === "math-block")) assert.strictEqual(n.dir, "ltr");
   assert.ok(find(box, "mtext").some((n) => n.textContent === "אנרגיה כוללת"));
-  assert.strictEqual(box.children[2].dir, "auto"); // the Hebrew paragraph still lines up right to left
+  assert.strictEqual(box.children[2].dir, "rtl"); // the Hebrew paragraph still lines up right to left
 });
 
 test("the page styles math: formulas scroll inside their own box", () => {
