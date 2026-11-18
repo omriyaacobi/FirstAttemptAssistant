@@ -10,6 +10,9 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   with the message to `/api/ask`, put first in the chain with the normal order behind it; the answer's line says "your choice";
   never read from my words. A ready brief waits as a session card in the manager chat (expires 2026-11-25).
 - **Moodle watch for new lectures and assignments** (a session card in the manager chat).
+- **Improve Bot's reminders** (asked 2026-11-18). Today `reminders.js` only sets a one-time reminder at a checked future time
+  (set_reminder). Before building, ask me what bothers me / what I want (e.g. repeating reminders, snooze, changing or cancelling one,
+  reminders tied to a deadline).
 
 ## Night of 2026-11-17: study improver and my decisions (merged and pushed)
 
