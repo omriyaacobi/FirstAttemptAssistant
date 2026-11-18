@@ -3,6 +3,14 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
+## To do (waiting for quota)
+
+- **Choose the model for one message** (asked 2026-11-18): writing "use Argon" to Bot does nothing, because code picks the model
+  before any model reads the message. Plan: a picker next to Send (Auto / Hydrogen / Argon / Sonnet in agy / Claude Code), sent
+  with the message to `/api/ask`, put first in the chain with the normal order behind it; the answer's line says "your choice";
+  never read from my words. A ready brief waits as a session card in the manager chat (expires 2026-11-25).
+- **Moodle watch for new lectures and assignments** (a session card in the manager chat).
+
 ## Night of 2026-11-17: study improver and my decisions (merged and pushed)
 
 - **Study improver (Fable):** lecture outlines found again (Calculus 2's 26 lectures, chapter 4 of Meni's notes), the parts of
