@@ -34,7 +34,10 @@ Waiting for quota:
   decide which options to build. Its session: "Moodle: let Bot read the text of items".
 - **Hydrogen fails often with "agy status ERROR"** (2026-11-19: 4 of about 30 answers, after 9-17 s each, then Argon). The
   model switching back and forth inside one message is fixed (the model that answered keeps the next rounds); the errors
-  themselves are not looked into yet: is it agy, the Gemini pool, or load? Check `data/bot.log` and agy's own output.
+  themselves: (2026-11-20) 50 of 357 Hydrogen first tries failed on 15-19 Nov, fast (8-19 s), mostly on the first round with
+  the long context; Bot threw agy's reason away. Since 2026-11-20 the error says it (`agyFailure` in `providers.js`), so read
+  the next `[brain] ... agy status ERROR: <reason>` lines in `data/thread/*.jsonl`, then decide (Google's side: leave it;
+  something in the content: fix). Notes: `experiments/2026-11-20-hydrogen-errors.md`.
 
 Smaller, any time:
 - Try live: a quiz answer sent as a PHOTO (handwriting read with context, `[unclear: ...]` marks), and "open the Mission 3
