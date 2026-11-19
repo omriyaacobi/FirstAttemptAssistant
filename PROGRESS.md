@@ -3,7 +3,13 @@
 Short on purpose. The full history up to 2026-11-12 (every step, branch and measurement since day one) is in
 `experiments/progress-history-until-2026-11-12.md`. The agreed rules are in `CLAUDE.md`. The file map is in `README.md`.
 
-## To do (waiting for quota)
+## To do
+
+**FIRST PRIORITY (2026-11-19):** Gemini released a new model that replaces Argon. A side session does a BASIC look only: what
+the model is called, whether `agy` offers it on Google AI Pro, which pool it uses, and what in Bot names Argon (`router.js`
+MODELS, `quota.js` RESERVES, the photo, reading and tutor chains, CLAUDE.md MODELS). Report and a small proposal; no big trials.
+
+Waiting for quota:
 
 - **Choose the model for one message** (asked 2026-11-18): writing "use Argon" to Bot does nothing, because code picks the model
   before any model reads the message. Plan: a picker next to Send (Auto / Hydrogen / Argon / Sonnet in agy / Claude Code), sent
@@ -18,6 +24,20 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 - **Hydrogen fails often with "agy status ERROR"** (2026-11-19: 4 of about 30 answers, after 9-17 s each, then Argon). The
   model switching back and forth inside one message is fixed (the model that answered keeps the next rounds); the errors
   themselves are not looked into yet: is it agy, the Gemini pool, or load? Check `data/bot.log` and agy's own output.
+
+Smaller, any time:
+- Try live: a quiz answer sent as a PHOTO (handwriting read with context, `[unclear: ...]` marks), and "open the Mission 3
+  README from the moodle" (one message).
+- The end-of-day review could propose lecture-part marks ("worked on"), with the same quote rule as positions.
+- `tutor.js` old word lists (SHOW, HINT, SKIP) are only a fallback when the brain sends no "ask": delete them once a live check
+  shows the brain always sends it.
+- BACKUP IS OFF: `BOT_BACKUP_DIR` is not set in `.env`, so no encrypted copy of `data/` is made. I set it up myself (a OneDrive
+  or Google Drive folder + `BOT_BACKUP_PASSPHRASE`).
+- From the log of 2026-11-19: one message got two identical answers (11:30), and a question over several Moodle courses looked
+  them up one by one (75 s).
+- Clean up old finished worktrees and branches (each only with my OK).
+- A test fails now and then (twice, about 1 run in 5); 6 runs in a row on 2026-11-19 were all green. Let go for now: if it
+  shows again, `node --test --test-reporter=tap` and look for "not ok" to get its name.
 - **Improve Bot's reminders** (asked 2026-11-18). Today `reminders.js` only sets a one-time reminder at a checked future time
   (set_reminder). Before building, ask me what bothers me / what I want (e.g. repeating reminders, snooze, changing or cancelling one,
   reminders tied to a deadline).
