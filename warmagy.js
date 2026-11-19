@@ -14,7 +14,7 @@
 
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, usageWithSteps, watchSteps, loopWatch, LOOP_ERROR } = require("./providers");
+const { SANDBOX_DIR, BRAIN_DIR, killTree, checkModelName, AGY_CMD, ensureAgent, agyFailure, usageWithSteps, watchSteps, loopWatch, LOOP_ERROR } = require("./providers");
 
 const MAX_SPARE_AGE_MS = 8 * 60 * 1000; // a spare older than this is thrown away (idle 5 min was tested fine)
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
@@ -53,7 +53,8 @@ function startProcess({ command, prefixArgs, model, schema, clock, agent = false
   // (it would take the whole Bot down). Every stream gets a handler, and a broken pipe just means "this process is gone".
   for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", (error) => die("agy pipe error: " + error.code));
   child.on("close", () => die());
-  child.stderr.on("data", () => {}); // agy's noise on stderr is not needed
+  let errTail = ""; // the last bit of stderr: only used as the reason when a call fails without an "error" field (providers.agyFailure)
+  child.stderr.on("data", (chunk) => { errTail = (errTail + chunk).slice(-400); });
   // A waiting spare must never keep a program alive: without this a script (or `node bot.js "task"`) would hang after it is
   // finished until the spare expires. While a call is running its own timer keeps Bot alive.
   child.unref();
@@ -83,7 +84,7 @@ function startProcess({ command, prefixArgs, model, schema, clock, agent = false
         waiter = null;
         const result = event.result || {};
         if (w.onUsage) { try { const u = usageWithSteps(result.usage, steps); if (u) w.onUsage(u); } catch (error) { /* counting tokens must never break an answer */ } }
-        if (result.status && result.status !== "SUCCESS") return w.reject(new Error("agy status " + result.status));
+        if (result.status && result.status !== "SUCCESS") return w.reject(agyFailure(result, errTail));
         if (w.text !== undefined) return w.resolve(String(result.response ?? w.text).trim()); // a text answer: the result is the authority
         try {
           w.resolve(result.structured_output ?? JSON.parse(String(result.response).match(/\{[\s\S]*\}/)[0]));

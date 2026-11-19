@@ -245,6 +245,16 @@ function loopWatch() {
 }
 const LOOP_ERROR = "the model got stuck repeating the same words, so it was stopped";
 
+// What a failed agy call says (2026-11-20): Bot kept only "agy status ERROR" and threw agy's own reason away, so 50 Hydrogen failures in
+// 5 days could not be explained. The reason is agy's "error" field (text, or an object with a message) or, if there is none, the tail
+// of agy's stderr. Squeezed to one line, last 200 characters. It is agy's report about itself, never the prompt or an answer.
+function agyFailure(result, stderrTail = "") {
+  const e = result && result.error;
+  const fromResult = typeof e === "string" ? e : e && typeof e === "object" ? (e.message || e.reason || JSON.stringify(e)) : "";
+  const reason = String(fromResult || stderrTail || "").replace(/\s+/g, " ").trim().slice(-200);
+  return new Error("agy status " + (result && result.status) + (reason ? ": " + reason : ""));
+}
+
 function askAgyStream(question, model, onText, { signal, command = AGY_CMD, prefixArgs = [], cwd = null, timeoutMs = null, agent = false, onUsage = null } = {}) { // command/prefixArgs: so tests can use a fake agy
   checkModelName(model);
   const args = [...prefixArgs, "-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--model", model];
@@ -256,7 +266,8 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
     const looping = loopWatch();
     const finish = (fn, value) => { if (!settled) { settled = true; fn(value); } };
     for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", () => {}); // a broken pipe is handled by "close"
-    child.stderr.on("data", () => {});
+    let errTail = ""; // the last bit of stderr: the reason of a failed call when agy's result has no "error" field (agyFailure)
+    child.stderr.on("data", (chunk) => { errTail = (errTail + chunk).slice(-400); });
     child.on("error", (error) => finish(reject, new Error("could not start agy: " + error.message)));
     child.on("close", () => finish(reject, new Error("agy closed before it finished the answer")));
     child.stdout.on("data", (chunk) => {
@@ -287,7 +298,7 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
           const result = event.result || {};
           killTree(child);
           tell(onUsage, usageWithSteps(result.usage, steps)); // a failed call was paid for too
-          if (result.status && result.status !== "SUCCESS") finish(reject, new Error("agy status " + result.status));
+          if (result.status && result.status !== "SUCCESS") finish(reject, agyFailure(result, errTail));
           // after a tool, agy's own "response" glues every step together (the thinking too), so the text after the tool wins
           else finish(resolve, String(lastTool !== null && text.trim() ? text : (result.response ?? text)).trim());
         }
@@ -511,5 +522,5 @@ async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFai
   throw new Error("Every model in the chain failed:\n" + errors.join("\n"));
 }
 
-module.exports = { stuckInLoop, loopWatch, LOOP_ERROR, watchSteps, usageWithSteps, ensureAgent, readUsage, BRAIN_AGENT, BRAIN_DIR, imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
+module.exports = { agyFailure, stuckInLoop, loopWatch, LOOP_ERROR, watchSteps, usageWithSteps, ensureAgent, readUsage, BRAIN_AGENT, BRAIN_DIR, imageTimeoutFor, onClaudeRateLimit, readClaudeStream, cleanWorkDir, removeStaleWorkDirs, ask, askChain, askAgyStream, askAgyStreamWithImage,askAgyStructured, killTree, checkModelName, AGY_CMD, killOnAbort, askAgyWithFile, askClaudeWithFile, claudeFileCommand, webPrompt, PROVIDERS, CLAUDE_CMD, claudeEnv, SANDBOX_DIR, timeoutFor, withTimeout, claudeCommand,
   FLASH_TIMEOUT_MS, SONNET_TIMEOUT_MS, ARGON_TIMEOUT_MS, OPUS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS };
