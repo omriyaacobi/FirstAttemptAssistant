@@ -10,6 +10,14 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
   with the message to `/api/ask`, put first in the chain with the normal order behind it; the answer's line says "your choice";
   never read from my words. A ready brief waits as a session card in the manager chat (expires 2026-11-25).
 - **Moodle watch for new lectures and assignments** (a session card in the manager chat).
+- **After the weekly reset: the Moodle read branch** `claude/moodle-read-items-a2f753` (left as it is on 2026-11-19). It has
+  `moodle_read` (Bot reads the text of pages, assignments with due dates, labels, links and books; checked live, all tests green,
+  NOT merged) and `experiments/2026-11-19-moodle-options.md` (what else the token can read; top 5: my submission status, grades
+  and feedback, notifications and messages, `core_course_get_updates_since` for the watch, the Moodle calendar). Merge it, then
+  decide which options to build. Its session: "Moodle: let Bot read the text of items".
+- **Hydrogen fails often with "agy status ERROR"** (2026-11-19: 4 of about 30 answers, after 9-17 s each, then Argon). The
+  model switching back and forth inside one message is fixed (the model that answered keeps the next rounds); the errors
+  themselves are not looked into yet: is it agy, the Gemini pool, or load? Check `data/bot.log` and agy's own output.
 - **Improve Bot's reminders** (asked 2026-11-18). Today `reminders.js` only sets a one-time reminder at a checked future time
   (set_reminder). Before building, ask me what bothers me / what I want (e.g. repeating reminders, snooze, changing or cancelling one,
   reminders tied to a deadline).

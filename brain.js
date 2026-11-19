@@ -1091,7 +1091,7 @@ ${r.cardText}`; }
     // CLAUDE FIRST (quota.js claudeFirst, 2026-11-15): when the Claude plan's pace is 10+ points better than the agy pools' pace, its week
     // has 20%+ left and its 5-hour window more than half, Claude Code answers first. Never with a photo (only agy can see it).
     const early = image ? { chain: normal, note: "" } : claudeFirst(normal, rows, { now: now() });
-    const order = early.chain;
+    let order = early.chain; // reordered below once a model has answered (sticky for the rest of this message)
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
     const askRaw = image ? (provider, model, q, onText, extra = {}) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {}), { onUsage: extra.onUsage || null }) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
     // agy's OWN web search (search_web inside one agy call) is seen in its step events (providers.js watchSteps -> u.inner). A page read
@@ -1123,6 +1123,11 @@ ${r.cardText}`; }
       let r;
       try {
         r = await askChain(order, prompt, { askOne: askThis, onTry: (m) => log(`[brain] asking ${m.model}`), onFail: (m) => { log(`[brain] ${m.model} failed after ${m.seconds} s: ${m.message}`); try { notePoolFailure(m, m.message); } catch (error) { /* quota never breaks an answer */ } }, ...(stream ? { onText: stream } : {}) });
+        // STICKY (2026-11-19): the model that answered this round answers the next rounds of this message too. Before, every round
+        // started the order from the top again, so after "Hydrogen failed (agy status ERROR), Argon asked for course_read" the next
+        // round went back to Hydrogen: a second failure risk, and one model reading another's half-done work (10-17 s lost each time).
+        const at = r && r.used ? order.findIndex((m) => m.model === r.used.model && (!r.used.provider || m.provider === r.used.provider)) : -1;
+        if (at > 0) order = [order[at], ...order.filter((_, i) => i !== at)];
       } catch (error) {
         // Every model failed. Bot says so honestly; nothing is tried another way. What was already done in an earlier round (a card,
         // a reminder) is reported, and its card is still shown.
