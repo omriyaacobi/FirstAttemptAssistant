@@ -38,7 +38,29 @@ const READ_FUNCTIONS = new Set([
   "mod_forum_get_forum_discussions",
   "mod_forum_get_discussion_posts",
   "core_calendar_get_action_events_by_timesort",
+  // The TEXT of items (2026-11-19): a page's content, an assignment's instructions and dates, a link's address, a label, and the
+  // descriptions of files, folders and books. Each takes a list of course ids and only reads.
+  "mod_page_get_pages_by_courses",
+  "mod_assign_get_assignments",
+  "mod_url_get_urls_by_courses",
+  "mod_label_get_labels_by_courses",
+  "mod_resource_get_resources_by_courses",
+  "mod_folder_get_folders_by_courses",
+  "mod_book_get_books_by_courses",
 ]);
+
+// Which "..._by_courses" read gives the text of each kind of item, and the name of its list in the answer.
+const TEXT_READS = {
+  page: ["mod_page_get_pages_by_courses", "pages"],
+  assign: ["mod_assign_get_assignments", "courses"],
+  url: ["mod_url_get_urls_by_courses", "urls"],
+  label: ["mod_label_get_labels_by_courses", "labels"],
+  resource: ["mod_resource_get_resources_by_courses", "resources"],
+  folder: ["mod_folder_get_folders_by_courses", "folders"],
+  book: ["mod_book_get_books_by_courses", "books"],
+};
+const MAX_HTML_CHARS = 300 * 1024; // per piece of HTML, before it becomes text
+const MAX_CHAPTERS = 20; // book chapters read (each is a small index.html file Moodle lists)
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -188,6 +210,38 @@ function createMoodleWs({ getToken, send = httpsSend, pauseMs = PAUSE_MS, now = 
       if (m.modname !== "folder") throw fail("notfile", "that item is not a folder");
       return { data: filesOf(m).slice(0, 300).map((f, index) => ({ index, name: String(f.filename || "file") })) };
     },
+    // The TEXT of one item (2026-11-19): its description as the course page shows it, plus what the kind's own read gives
+    // (a page's content, an assignment's instructions and dates, a link's address, a book's chapters). HTML comes back as it is;
+    // moodle-tools.js turns it into text. Only the item's own course is asked; the item is found by its number in Moodle's answer.
+    async item({ cmid }) {
+      const m = await moduleOf(cmid);
+      const course = (cms.get(cmid) || {}).course;
+      const html = [];
+      const add = (label, h) => { if (typeof h === "string" && h.trim()) html.push({ label, html: h.slice(0, MAX_HTML_CHARS) }); };
+      const out = { name: String(m.name || ""), module: String(m.modname || ""), html, dates: {}, url: null, files: [] };
+      const read = TEXT_READS[m.modname];
+      let mine = null;
+      if (read && Number.isInteger(course)) {
+        const r = await call(read[0], { courseids: [course] });
+        let list = (r && r[read[1]]) || [];
+        if (m.modname === "assign") list = list.flatMap((c) => (c && c.assignments) || []);
+        mine = list.find((x) => x && (m.modname === "assign" ? x.cmid : x.coursemodule) === cmid) || null;
+      }
+      add("description", (mine && mine.intro) || m.description);
+      if (mine && m.modname === "page") add("page", mine.content);
+      if (mine && m.modname === "assign") {
+        for (const k of ["allowsubmissionsfromdate", "duedate", "cutoffdate"]) if (Number(mine[k]) > 0) out.dates[k] = Number(mine[k]);
+        out.files = (mine.introattachments || []).map((f) => String((f && f.filename) || "")).filter(Boolean);
+      }
+      if (mine && m.modname === "url" && typeof mine.externalurl === "string") out.url = mine.externalurl.slice(0, 500);
+      if (m.modname === "resource" || m.modname === "folder") out.files = filesOf(m).map((f) => String(f.filename || "")).filter(Boolean);
+      if (m.modname === "book") {
+        // a book's chapters are small index.html files that Moodle itself lists for the item (the normal checked download)
+        const chapters = filesOf(m).filter((f) => f.filename === "index.html").slice(0, MAX_CHAPTERS);
+        for (const [i, f] of chapters.entries()) { const got = await download(f); add(`chapter ${i + 1}`, got.bytes.toString("utf8")); }
+      }
+      return { data: out };
+    },
     async folderfile({ cmid, index }) {
       const m = await moduleOf(cmid);
       const f = m.modname === "folder" ? filesOf(m)[index] : null;
@@ -210,15 +264,18 @@ function createMoodleWs({ getToken, send = httpsSend, pauseMs = PAUSE_MS, now = 
 // Bot, the Chrome extension when it is connected. Nothing else is ever tried.
 function createMoodleSource({ ws, bridge, log = () => {} }) {
   const FALL = new Set(["token", "blocked", "network", "timeout"]);
+  // Kinds the Chrome extension cannot do inside its allowlist (it would need a new page address): token route only.
+  const TOKEN_ONLY = new Set(["item"]);
   let said = "";
   async function ask(kind, args = {}) {
     if (ws && ws.enabled()) {
       try { const r = await ws.ask(kind, args); said = ""; return r; } catch (error) {
         if (!FALL.has(error.code)) throw error;
         if (said !== error.code) { said = error.code; log(`[moodle] the token route failed (${error.code}: ${error.message})${bridge && bridge.connected() ? "; using Chrome instead" : ""}`); }
-        if (!bridge || !bridge.connected()) throw error;
+        if (!bridge || !bridge.connected() || TOKEN_ONLY.has(kind)) throw error;
       }
     }
+    if (TOKEN_ONLY.has(kind)) throw fail("tokenonly", "the text of a Moodle item can only be read with the Moodle token, and there is none in .env");
     if (!bridge) throw fail("token", "no Moodle token in .env");
     try { return await bridge.ask(kind, args); } catch (error) {
       // Neither route: with no token and no Chrome, the token is the thing to set up once.
@@ -229,4 +286,4 @@ function createMoodleSource({ ws, bridge, log = () => {} }) {
   return { ask, connected: () => !!(ws && ws.enabled()) || !!(bridge && bridge.connected()), via: () => (ws && ws.enabled() ? "token" : bridge && bridge.connected() ? "chrome" : "none") };
 }
 
-module.exports = { createMoodleWs, createMoodleSource, tokenReader, formBody, checkFileUrl, READ_FUNCTIONS, REST_URL, USER_AGENT };
+module.exports = { createMoodleWs, createMoodleSource, tokenReader, formBody, checkFileUrl, READ_FUNCTIONS, TEXT_READS, REST_URL, USER_AGENT };
