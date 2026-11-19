@@ -868,6 +868,8 @@ ${text}`; } catch (error) {
       moodle_courses: async () => moodleRead(() => moodle.listText(patternFor)),
       moodle_course: async ({ course }) => { aboutCourse(course); return moodleRead(() => moodle.courseText(course, patternFor)); },
       moodle_news: async ({ course, count }) => { aboutCourse(course); return moodleRead(() => moodle.newsText(course, patternFor, count)); },
+      // The text of one Moodle item (2026-11-19). A lookup: it sets sawMoodle like every Moodle read (moodleRead).
+      moodle_read: async ({ course, item }) => { aboutCourse(course); return moodleRead(() => moodle.readText(course, item, patternFor)); },
       // What the Moodle watch posts about ONE course (2026-11-16): new files on or off. Omri's own wish only: refused after a web
       // page, a photo or Moodle text in the same message. The course is a real Bot course (checked); the value is on or off.
       moodle_watch: async ({ course, files, all }) => {

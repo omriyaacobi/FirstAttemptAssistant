@@ -15,12 +15,16 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { say } = require("./lang");
+const { htmlToText } = require("./html-text");
 
 const MAX_DIRECT = 10;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 const COURSES_CACHE_MS = 10 * 60 * 1000;
 const NEWS_POSTS = 3;
 const POST_CHARS = 3000;
+const ITEM_CHARS = 12000; // the text of one Moodle item given to the model (moodle_read)
+const ITEM_LINKS = 20;
+const ITEM_DATES = 15;
 const KIND = { resource: "file", folder: "folder", assign: "assignment", forum: "forum", url: "link", page: "page", quiz: "quiz", label: "text", lti: "external tool", zoom: "zoom", choicegroup: "group choice", questionnaire: "questionnaire", wooclap: "wooclap", book: "book" };
 
 const plain = (html) => String(html || "").replace(/<br\s*\/?>|<\/p>|<\/li>|<\/div>/gi, "\n").replace(/<[^>]+>/g, " ")
@@ -29,6 +33,10 @@ const plain = (html) => String(html || "").replace(/<br\s*\/?>|<\/p>|<\/li>|<\/d
 const oneLine = (t, n = 200) => String(t || "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
 // "תכנות מערכות סמ 1" / "High-Performance Systems Programming S1" -> comparable words
 const norm = (s) => String(s || "").toLowerCase().replace(/["'״׳`]/g, "").replace(/\s+(?:סמ|סמסטר|s|sem)\s*\d+\s*$/i, "").replace(/[^a-z0-9֐-׿]+/g, " ").trim();
+// Israel time for an item's own dates (moodle_read), so the model does not convert from UTC.
+const local = (unix) => new Date(unix * 1000).toLocaleString("sv-SE", { timeZone: "Asia/Jerusalem" }).slice(0, 16) + " Israel time";
+// Dates written in a text: d/m, d.m with an optional year, only real days and months (so a room "34/10" is not a date).
+const datesIn = (text, max) => [...new Set((String(text).match(/\b\d{1,2}[./]\d{1,2}(?:[./](?:\d{4}|\d{2}))?\b/g) || []).filter((x) => { const [d, m] = x.split(/[./]/).map(Number); return d >= 1 && d <= 31 && m >= 1 && m <= 12; }))].slice(0, max);
 const day = (unix) => (unix ? new Date(unix * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "?");
 
 const fail = (message, code = "tool") => Object.assign(new Error(message), { code });
@@ -42,6 +50,7 @@ function explain(error, lang = "en") {
   if (c === "offline") return say(lang, "Moodle cannot be reached: there is no Moodle token (node moodle-token.js sets one up, once) and Chrome with the Bot Moodle extension is not open on the PC. Do one of the two and ask again.", "אין גישה למודל: כרום עם התוסף של Bot לא פתוח במחשב. צריך לפתוח את כרום ולשאול שוב.");
   if (c === "loggedout") return say(lang, "Moodle logged you out. Log in to Moodle in Chrome on the PC, then ask again.", "המודל ניתק את החיבור. צריך להתחבר למודל בכרום במחשב ולשאול שוב.");
   if (c === "timeout") return say(lang, "Moodle did not answer in time. Try again in a minute.", "המודל לא ענה בזמן. אפשר לנסות שוב בעוד דקה.");
+  if (c === "tokenonly") return say(lang, "The text of a Moodle page can only be read with the Moodle token, and the token is missing or stopped working. On the PC, run once in the project folder: node moodle-token.js. Until then Bot can open the page in Chrome.", "את הטקסט של עמוד במודל אפשר לקרוא רק עם הטוקן של מודל, והוא חסר או הפסיק לעבוד. במחשב צריך להריץ פעם אחת בתיקיית הפרויקט: node moodle-token.js. עד אז Bot יכול לפתוח את העמוד בכרום.");
   if (c === "toobig") return say(lang, "That file is bigger than 50 MB, so Bot did not download it.", "הקובץ גדול מ-50 מגה-בייט ולכן לא הורד.");
   return say(lang, `Moodle did not give it: ${oneLine(error && error.message, 200)}`, `המודל לא החזיר את זה: ${oneLine(error && error.message, 200)}`);
 }
@@ -189,11 +198,51 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     const { m } = await resolve(name, patternFor);
     const s = String(item == null ? "" : item).trim();
     if (!s) return { url: moodleUrl({ courseId: m.id }), label: `the Moodle page of ${m.name}` };
+    const hit = await findItem(m, s);
+    return { url: moodleUrl({ cmid: hit.id, module: hit.module }), label: `"${oneLine(hit.name, 120)}" in ${m.name}` };
+  }
+
+  // ONE real item of a Moodle course, by its number or its name (exact, then a part of it). Two fits or none: a plain error.
+  async function findItem(m, s) {
     const { items } = await contents(m);
     let hits = /^\d+$/.test(s) ? items.filter((i) => i.id === Number(s)) : items.filter((i) => norm(i.name) === norm(s));
     if (!hits.length && norm(s)) hits = items.filter((i) => norm(i.name).includes(norm(s)));
     if (hits.length !== 1) throw fail(hits.length ? `more than one item of ${m.name} fits "${s.slice(0, 60)}": ${hits.slice(0, 6).map((i) => `[${i.id}] ${oneLine(i.name, 60)}`).join("; ")}. Use its number.` : `no item like "${s.slice(0, 60)}" in the Moodle course ${m.name}. moodle_course lists its items.`);
-    return { url: moodleUrl({ cmid: hits[0].id, module: hits[0].module }), label: `"${oneLine(hits[0].name, 120)}" in ${m.name}` };
+    return hits[0];
+  }
+
+  // moodle_read (2026-11-19): the TEXT of one Moodle item (a page, an assignment, a label, a link, a book, a file's description).
+  // HTML becomes plain text by code (html-text.js), capped, inside <moodle-data> markers: Moodle text is DATA, never instructions.
+  // Links found in it are only LISTED (never fetched: read_link only takes an address Omri wrote or a course file holds).
+  async function readText(name, item, patternFor) {
+    const { m } = await resolve(name, patternFor);
+    const s = String(item == null ? "" : item).trim();
+    if (!s) throw fail("say which item of the course to read (its number or name from moodle_course)");
+    const hit = await findItem(m, s);
+    const { data } = await bridge.ask("item", { cmid: hit.id });
+    const d = data || {};
+    const pieces = (Array.isArray(d.html) ? d.html : []).filter((p) => p && typeof p.html === "string");
+    const links = [];
+    for (const p of pieces) for (const x of p.html.matchAll(/href\s*=\s*["']?(https?:\/\/[^"'\s<>]{1,400})/gi)) {
+      const u = x[1].replace(/&amp;/g, "&");
+      if (!links.includes(u) && links.length < ITEM_LINKS) links.push(u);
+    }
+    if (typeof d.url === "string" && /^https?:\/\//i.test(d.url) && !links.includes(d.url)) links.unshift(d.url);
+    let text = pieces.map((p) => { const t = htmlToText(p.html); return t ? (pieces.length > 1 ? `[${p.label}]\n${t}` : t) : ""; }).filter(Boolean).join("\n\n");
+    const cut = text.length > ITEM_CHARS;
+    if (cut) text = text.slice(0, ITEM_CHARS);
+    text = text.replace(/<\/?moodle-data[^>]*>/gi, "[moodle-data]"); // the text cannot close its own data block
+    const dates = datesIn(text, ITEM_DATES);
+    const due = d.dates || {};
+    const lines = [`Moodle item [${hit.id}] (${KIND[hit.module] || hit.module}) "${oneLine(d.name || hit.name, 160)}" of the course "${m.name}".`];
+    if (due.allowsubmissionsfromdate) lines.push(`Opens: ${local(due.allowsubmissionsfromdate)}`);
+    if (due.duedate) lines.push(`Due: ${local(due.duedate)}`);
+    if (due.cutoffdate) lines.push(`Last moment to submit: ${local(due.cutoffdate)}`);
+    if (Array.isArray(d.files) && d.files.length) lines.push(`Files${hit.module === "assign" ? " attached to it (the instructions may be in them; Omri can open the item in Chrome)" : ""}: ${d.files.slice(0, 30).map((f) => oneLine(f, 80)).join(", ")}`);
+    lines.push(text ? `<moodle-data>\n${text}${cut ? "\n[... the rest is cut]" : ""}\n</moodle-data>` : 'Moodle gives no text for this item (it may be only a title, a file or an external tool). open_on_pc {"moodle","item"} opens it in Chrome.');
+    if (dates.length) lines.push(`Dates written in it: ${dates.join(", ")}`);
+    if (links.length) lines.push(`Links in it (only shown, not opened; Bot opens or reads one only when Omri writes it): ${links.map((u) => oneLine(u, 300)).join(" ")}`);
+    return lines.join("\n");
   }
 
   // THE WATCH'S FILE SWITCH (Omri's wish, 2026-11-16: no offers of new files for a course whose notes already cover
@@ -340,7 +389,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     };
   }
 
-  return { listText, courseText, newsText, fetchFiles, link, openTarget, autoMap, resolve, explain, watchFiles, quietFiles, watchCourse, quietCourses, connected: () => bridge.connected() };
+  return { listText, courseText, newsText, readText, fetchFiles, link, openTarget, autoMap, resolve, explain, watchFiles, quietFiles, watchCourse, quietCourses, connected: () => bridge.connected() };
 }
 
-module.exports = { createMoodleTools, explain, norm, plain, MAX_DIRECT, MAX_TOTAL_BYTES };
+module.exports = { createMoodleTools, explain, norm, plain, datesIn, MAX_DIRECT, MAX_TOTAL_BYTES };
