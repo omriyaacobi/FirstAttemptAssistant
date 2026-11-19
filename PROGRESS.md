@@ -5,11 +5,22 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 
 ## To do
 
-**FIRST PRIORITY (2026-11-19):** Gemini released a new model that replaces Argon. A side session does a BASIC look only: what
-the model is called, whether `agy` offers it on Google AI Pro, which pool it uses, and what in Bot names Argon (`router.js`
-MODELS, `quota.js` RESERVES, the photo, reading and tutor chains, CLAUDE.md MODELS). Report and a small proposal; no big trials.
+**New Gemini model (2026-11-19, looked at, nothing changed):** it is Gemini 4 Neon (`gemini-4-neon-low/medium/high/xhigh`
+in agy on my Pro login). A blind trial of 42 calls showed all 6 models (Argon low/medium, Neon low/medium, Hydrogen medium,
+Orchestrator (Neon)) correct on all 7 tests. Neon spends the "Gemini Models" pool (Hydrogen's); Argon keeps its own pool.
+Decision for now: keep Hydrogen -> Argon; Neon low is the ready replacement if Argon is retired; the Orchestrator is a no
+(79 s average, about 4x the quota). Reports on branches `claude/gemini-new-model-a82ba6` and `claude/neon-trial-661e83`
+(not merged).
 
 Waiting for quota:
+
+- **Let Neon work on Bot's whole project with leftover Gemini quota** (asked 2026-11-20): at the end of the week, when Gemini
+  quota is left over, I want to improve Bot with Neon instead of my Claude plan. Today the Argon editor in Improve Bot may only
+  change files under `public/` (CLAUDE.md SELF-EDIT). Look first, decide with me before building: (a) let Improve Bot's
+  Neon/Argon editor change code files too, in the same private worktree with my Approve and no push; which protected files
+  stay protected (`selfedit.js` list), and how its tool-call audit changes; or (b) simply use Neon in agy (or the Antigravity
+  editor) by hand on a branch, with no change to Bot. Also check the claim that Neon is "stronger than Opus" on real coding
+  work: our trial was too easy to show it. Touches a protected rule, so nothing is weakened without my OK.
 
 - **Choose the model for one message** (asked 2026-11-18): writing "use Argon" to Bot does nothing, because code picks the model
   before any model reads the message. Plan: a picker next to Send (Auto / Hydrogen / Argon / Sonnet in agy / Claude Code), sent
