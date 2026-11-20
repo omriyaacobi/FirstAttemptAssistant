@@ -5,56 +5,65 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 
 ## To do
 
-**New Gemini model (2026-11-19, looked at, nothing changed):** it is Gemini 4 Neon (`gemini-4-neon-low/medium/high/xhigh`
-in agy on my Pro login). A blind trial of 42 calls showed all 6 models (Argon low/medium, Neon low/medium, Hydrogen medium,
-Orchestrator (Neon)) correct on all 7 tests. Neon spends the "Gemini Models" pool (Hydrogen's); Argon keeps its own pool.
-Decision for now: keep Hydrogen -> Argon; Neon low is the ready replacement if Argon is retired; the Orchestrator is a no
-(79 s average, about 4x the quota). Reports on branches `claude/gemini-new-model-a82ba6` and `claude/neon-trial-661e83`
-(not merged).
+Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my Claude plan (Claude Code sessions);
+"Gemini" = agy's pools (Bot's own answers).
 
-Waiting for quota:
+**No model quota (git, settings, me):**
+1. **Turn the backup on.** `BOT_BACKUP_DIR` is not set in `.env`, so no encrypted copy of `data/` is made. I pick a OneDrive or
+   Google Drive folder and type `BOT_BACKUP_PASSPHRASE` myself; then restart Bot and check the first copy.
+2. **Old branches, my call:** 5 hold only research notes (`long-chat-research`, `moodle-research`, `quota-why`,
+   `study-position-research`, `qa-everyday`): keep them in main (check for real chat text first, the repo is public) or delete.
+   `fable-improve` has 32 commits with no exact copy in main (its features seem to have arrived another way): check, then delete.
+   3 locked folders in `.claude/worktrees/` go once their finished sessions are archived.
+3. **The flaky test** (about 1 run in 5, then all green 6 times): only if it shows again, `node --test --test-reporter=tap` and
+   look for "not ok" to get its name.
 
-- **Let Neon work on Bot's whole project with leftover Gemini quota** (asked 2026-11-20): at the end of the week, when Gemini
-  quota is left over, I want to improve Bot with Neon instead of my Claude plan. Today the Argon editor in Improve Bot may only
-  change files under `public/` (CLAUDE.md SELF-EDIT). Look first, decide with me before building: (a) let Improve Bot's
-  Neon/Argon editor change code files too, in the same private worktree with my Approve and no push; which protected files
-  stay protected (`selfedit.js` list), and how its tool-call audit changes; or (b) simply use Neon in agy (or the Antigravity
-  editor) by hand on a branch, with no change to Bot. Also check the claim that Neon is "stronger than Opus" on real coding
-  work: our trial was too easy to show it. Touches a protected rule, so nothing is weakened without my OK.
+**Tiny (a few Bot calls on Gemini, a short look by the manager):**
+4. **Live tests** (reminder set for 2026-11-20 12:00): a quiz answer sent as a PHOTO (handwriting read with context,
+   `[unclear: ...]` marks), and "open the Mission 3 README from the moodle" (one message).
+5. **Read why Hydrogen fails.** 50 of 357 Hydrogen first tries failed on 15-19 Nov with "agy status ERROR" (fast, 8-19 s, mostly
+   the first round with the long context). Since 2026-11-20 the error carries agy's reason (`agyFailure` in `providers.js`):
+   read the next `[brain] ... agy status ERROR: <reason>` lines in `data/thread/*.jsonl`, then decide (Google's side: leave it;
+   something in the content: fix). Notes: `experiments/2026-11-20-hydrogen-errors.md`.
 
-- **Choose the model for one message** (asked 2026-11-18): writing "use Argon" to Bot does nothing, because code picks the model
-  before any model reads the message. Plan: a picker next to Send (Auto / Hydrogen / Argon / Sonnet in agy / Claude Code), sent
-  with the message to `/api/ask`, put first in the chain with the normal order behind it; the answer's line says "your choice";
-  never read from my words. A ready brief waits as a session card in the manager chat (expires 2026-11-25).
-- **Moodle watch for new lectures and assignments** (a session card in the manager chat).
-- **After the weekly reset: the Moodle read branch** `claude/moodle-read-items-a2f753` (left as it is on 2026-11-19). It has
-  `moodle_read` (Bot reads the text of pages, assignments with due dates, labels, links and books; checked live, all tests green,
-  NOT merged) and `experiments/2026-11-19-moodle-options.md` (what else the token can read; top 5: my submission status, grades
-  and feedback, notifications and messages, `core_course_get_updates_since` for the watch, the Moodle calendar). Merge it, then
-  decide which options to build. Its session: "Moodle: let Bot read the text of items".
-- **Hydrogen fails often with "agy status ERROR"** (2026-11-19: 4 of about 30 answers, after 9-17 s each, then Argon). The
-  model switching back and forth inside one message is fixed (the model that answered keeps the next rounds); the errors
-  themselves: (2026-11-20) 50 of 357 Hydrogen first tries failed on 15-19 Nov, fast (8-19 s), mostly on the first round with
-  the long context; Bot threw agy's reason away. Since 2026-11-20 the error says it (`agyFailure` in `providers.js`), so read
-  the next `[brain] ... agy status ERROR: <reason>` lines in `data/thread/*.jsonl`, then decide (Google's side: leave it;
-  something in the content: fix). Notes: `experiments/2026-11-20-hydrogen-errors.md`.
+**Small (one short Sonnet session, or the manager):**
+6. **Delete `tutor.js` old word lists** (SHOW, HINT, SKIP), a fallback only when the brain sends no "ask", once the live test
+   shows the brain always sends it.
+7. **Merge the Moodle read branch** `claude/moodle-read-items-a2f753` (built, checked live, tests green, NOT merged): `moodle_read`
+   reads pages, assignments with due dates, labels, links and books. Review + tests + merge costs little; its
+   `experiments/2026-11-19-moodle-options.md` lists what else the token can read (submission status, grades and feedback,
+   notifications, `core_course_get_updates_since`, the Moodle calendar): choosing which to build is a talk, building them is
+   Medium. Its session: "Moodle: let Bot read the text of items".
+8. **Two oddities from the 2026-11-19 log:** one message got two identical answers (11:30), and a question over several Moodle
+   courses looked them up one by one (75 s). A Sonnet look, then a small fix.
+9. **End-of-day review proposes lecture-part marks** ("worked on"), with the same quote rule as positions. Small build, but the
+   review itself then spends a little more Gemini each night.
 
-Smaller, any time:
-- Try live: a quiz answer sent as a PHOTO (handwriting read with context, `[unclear: ...]` marks), and "open the Mission 3
-  README from the moodle" (one message).
-- The end-of-day review could propose lecture-part marks ("worked on"), with the same quote rule as positions.
-- `tutor.js` old word lists (SHOW, HINT, SKIP) are only a fallback when the brain sends no "ask": delete them once a live check
-  shows the brain always sends it.
-- BACKUP IS OFF: `BOT_BACKUP_DIR` is not set in `.env`, so no encrypted copy of `data/` is made. I set it up myself (a OneDrive
-  or Google Drive folder + `BOT_BACKUP_PASSPHRASE`).
-- From the log of 2026-11-19: one message got two identical answers (11:30), and a question over several Moodle courses looked
-  them up one by one (75 s).
-- Clean up old finished worktrees and branches (each only with my OK).
-- A test fails now and then (twice, about 1 run in 5); 6 runs in a row on 2026-11-19 were all green. Let go for now: if it
-  shows again, `node --test --test-reporter=tap` and look for "not ok" to get its name.
-- **Improve Bot's reminders** (asked 2026-11-18). Today `reminders.js` only sets a one-time reminder at a checked future time
-  (set_reminder). Before building, ask me what bothers me / what I want (e.g. repeating reminders, snooze, changing or cancelling one,
-  reminders tied to a deadline).
+**Medium (one Sonnet or Opus session that builds and tests):**
+10. **Choose the model for one message** (asked 2026-11-18): writing "use Argon" to Bot does nothing, because code picks the model
+    before any model reads the message. Plan: a picker next to Send (Auto / Hydrogen / Argon / Neon? / Sonnet in agy / Claude
+    Code), sent with the message to `/api/ask`, put first in the chain with the normal order behind it; the answer's line says
+    "your choice"; never read from my words.
+11. **Improve Bot's reminders** (asked 2026-11-18). Today `reminders.js` only sets a one-time reminder at a checked future time.
+    Ask me first what I want (repeating, snooze, change or cancel one, tied to a deadline); size depends on that.
+12. **Moodle watch for new lectures and assignments** (builds on 7; `core_course_get_updates_since` may make it cheap to run).
+
+**Large (Opus, plan first, many files and tests):**
+13. **Let Neon work on Bot's whole project with leftover Gemini quota** (asked 2026-11-20): at the end of the week I want to
+    improve Bot with Neon instead of my Claude plan. Today the Argon editor in Improve Bot may only change files under `public/`
+    (CLAUDE.md SELF-EDIT). Decide with me before building: (a) let Improve Bot's Neon/Argon editor change code files too (same
+    private worktree, my Approve, no push; which protected files stay protected; how the tool-call audit changes), or (b) use Neon
+    in agy or the Antigravity editor by hand on a branch, no change to Bot. Check "Neon is stronger than Opus" on real coding
+    work (our trial was too easy). Costs Claude to build, then SAVES Claude every week after.
+14. **The bigger piece of work I want to start, which includes "Bot looks at my screen"** (2026-11-20, my words: part of a
+    different bigger branch, a pretty big quota user). The screen-look design is done and waits:
+    `experiments/2026-11-19-screen-look.md` (recommended: the Chrome extension captures only the Notability mirror tab, only when
+    my message asks, treated exactly like a photo). Its session: "Bot looks at my screen (Notability mirror) by itself".
+
+**Done lately:** Gemini 4 Neon looked at and trialled (2026-11-19, reports merged: `experiments/2026-11-19-new-gemini-model.md`,
+`experiments/2026-11-19-neon-trial.md`). Neon spends the "Gemini Models" pool (Hydrogen's); Argon keeps its own pool; all 6
+models were correct on all 7 tests; decision: keep Hydrogen -> Argon, Neon low is the ready replacement if Argon is retired, the
+Orchestrator is a no. 21 merged worktrees and about 45 merged branches were deleted (2026-11-19/20).
 
 ## Night of 2026-11-17: study improver and my decisions (merged and pushed)
 
