@@ -8,16 +8,28 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my Claude plan (Claude Code sessions);
 "Gemini" = agy's pools (Bot's own answers).
 
-**Improve Bot changes all of Bot + Neon in Bot: BUILT 2026-11-20, NOT merged yet** (branch `claude/selfedit-neon-build-1519c3`,
-notes `experiments/2026-11-20-selfedit-neon-build.md`). The light gate (git fenced during the test run, `.env` mentions refused
-before tests, 15-minute test limit), risk notes + one Hydrogen review shown on the ready card, Undo, the health guard in
-start-web.cmd, every file open except the guard files, Neon medium as the default editor, a phone push when a change ends, Neon low
-first in the brain, Neon low instead of Claude Sonnet for big PDFs.
-- **Next (the manager, on my word):** check the diff, merge, restart Bot, push.
-- **Live test with me:** one small Improve Bot request with Neon from the page (the push arrives, Approve, then Undo); a normal
-  chat message is answered by Neon low (`data/bot.log` names the model).
-- **After one week (about 2026-11-27):** `node tokenlog.js` and compare Neon low with Hydrogen medium (tokens per answer, failures);
-  decide whether Neon low stays first.
+**Improve Bot changes all of Bot + Neon in Bot: MERGED AND PUSHED 2026-11-20** (notes `experiments/2026-11-20-selfedit-neon-build.md`).
+The light gate (git fenced during the test run, `.env` mentions refused before tests, 15-minute test limit), risk notes + one
+Hydrogen review on the ready card, Undo, the health guard in start-web.cmd, every file open except the guard files, Neon medium as
+the default editor, a phone push when a change ends, Neon low first in the brain, Neon low instead of Claude Sonnet for big PDFs.
+Restore tag before the first big Improve Bot use: `before-ui-review-2026-11-21`.
+- **Live test (2026-11-21):** a "go wild" UI redesign by Neon medium, twice (a follow-up on the same card). The gate worked (page
+  files only, all tests green, no risk notes, Hydrogen review "ok", the real project untouched). I did not like the result and
+  rejected it. Auto-rollback was not exercised yet (page-only changes need no restart); it gets its test with the first code change.
+- **Speed fix: MERGED 2026-11-21** (`experiments/2026-11-20-neon-speed.md`): Neon low was missing from `WARM_MODELS` in `brain.js`,
+  so every Neon answer started agy cold (median 6.8 s; with the fix about 4.8 s, Hydrogen medium about 4.1 s). The brain's log line
+  now shows each model call's seconds (`grep "answered by" data/bot.log`).
+- **After one week (about 2026-11-27):** `node tokenlog.js` and compare Neon low with Hydrogen medium (tokens per answer, failures,
+  seconds); decide whether Neon low stays first.
+
+**New 2026-11-21 (my words):**
+- **The UI: I want to sit on it myself.** Neon's redesign was rejected. Do it with me, step by step (not a "go wild" request):
+  what I use, what goes, how it should look. Medium, Claude or Neon with me watching.
+- **Bot's speed: test the current speed and research how to improve it.** Start from the live per-call seconds in `data/bot.log`
+  (a few days of real messages), then look at where time goes (agy start, context size of about 9k tokens per call, tool rounds,
+  queueing) and what can be cut. Small to medium; one Sonnet session.
+- **Bot can see and update this to-do list** (so I can do tasks from Bot or from Claude Code and both stay up to date). Design
+  agreed with me first: see the decision in the manager chat of 2026-11-21.
 
 **Found in the live tests (2026-11-20), fix after the weekly reset:**
 - **"Start lecture 6" dumped the whole lesson at once.** Usually the brain teaches in the chat itself (course_read, short
@@ -31,7 +43,7 @@ first in the brain, Neon low instead of Claude Sonnet for big PDFs.
   with a fair hint (37 s). First real `ask=` line for item 6.
 
 **No model quota (git, settings, me):**
-1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:UsersUserOneDriveBot-backup` (newest 5 kept;
+1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:\Users\User\OneDrive\Bot-backup` (newest 5 kept;
    first copy 70 MB, 380 files, checked by reading back). The passphrase is in `.env` only, plus my own safe copy; minimum 9
    characters (my choice, `backup.js`).
 2. **Old branches: DONE 2026-11-20.** All deleted (my call, none kept), on the PC and on GitHub; GitHub has only `main`. Locked
@@ -71,15 +83,8 @@ first in the brain, Neon low instead of Claude Sonnet for big PDFs.
 12. **Moodle watch for new lectures and assignments** (builds on 7; `core_course_get_updates_since` may make it cheap to run).
 
 **Large (Opus, plan first, many files and tests):**
-13. **RESEARCH RUNNING (2026-11-20, Opus session "Research: Neon on Bot + Bot changes all of itself", branch
-    `claude/neon-selfedit-research-c3147e`, starts 16:00 and 17:01): a deep Neon trial vs every model on hard tasks, and how
-    Improve Bot could change ALL of Bot safely (prototypes on its branch). Nothing merged until I decide.**
-    Let Neon work on Bot's whole project with leftover Gemini quota** (asked 2026-11-20): at the end of the week I want to
-    improve Bot with Neon instead of my Claude plan. Today the Argon editor in Improve Bot may only change files under `public/`
-    (CLAUDE.md SELF-EDIT). Decide with me before building: (a) let Improve Bot's Neon/Argon editor change code files too (same
-    private worktree, my Approve, no push; which protected files stay protected; how the tool-call audit changes), or (b) use Neon
-    in agy or the Antigravity editor by hand on a branch, no change to Bot. Check "Neon is stronger than Opus" on real coding
-    work (our trial was too easy). Costs Claude to build, then SAVES Claude every week after.
+13. **Neon works on Bot's whole project: DONE 2026-11-20** (research `experiments/2026-11-20-selfedit-full-access.md`,
+    `experiments/2026-11-20-neon-deep-trial.md`; build merged, see the top of this list).
 14. **The bigger piece of work I want to start, which includes "Bot looks at my screen"** (2026-11-20, my words: part of a
     different bigger branch, a pretty big quota user). The screen-look design is done and waits:
     `experiments/2026-11-19-screen-look.md` (recommended: the Chrome extension captures only the Notability mirror tab, only when
