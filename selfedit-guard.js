@@ -4,9 +4,10 @@
 // what is allowed. This is a GUARD file: Bot itself can never change it.
 //
 //   fencedEnv()          the environment of the test run: git can never push to GitHub or use a saved login.
-//   tierOf(file)         "guard" (never changed by Bot), "sensitive" (allowed, but with a second review and a red note), "normal".
+//   tierOf(file)         "guard" (never changed by Bot), "sensitive" (holds safety checks: allowed, with a note), "normal".
 //   riskScan(diff)       reads the ADDED lines of a diff and writes plain-English risk notes; a few patterns block outright.
-//   sizeProblems(...)    a limit on how big one change may be (smaller for sensitive files).
+//                        (The prototype's 200/600-changed-line limits were dropped, Omri's light version: selfedit.js keeps its
+//                        25 files / 300,000 characters.)
 //   auditWide(step, wt)  the tool audit for an agy editor that may write anywhere in its private copy except guard files.
 //   reviewPrompt / parseReview   a second model reads the diff; its answer is checked by code and shown, it never approves.
 //   undoMerge(...)       one-tap undo: a NEW commit that reverts an approved change (history is kept, nothing is forced).
@@ -119,25 +120,9 @@ function riskScan(diff, files = []) {
   for (const f of files) {
     const t = tierOf(f.path);
     if (t === "guard") notes.push({ level: "block", file: f.path, text: `${f.path}: a guard file (Bot may never change it)` });
-    else if (t === "sensitive") notes.push({ level: "high", file: f.path, text: `${f.path}: a safety-check file; read this part of the change yourself` });
+    else if (t === "sensitive") notes.push({ level: "high", file: f.path, text: `${f.path}: this file holds safety checks; read this part of the change yourself` });
   }
   return notes;
-}
-
-// ---- size ----
-const MAX_CHANGED_LINES = 600;
-const MAX_SENSITIVE_LINES = 200;
-function sizeProblems(diff) {
-  let all = 0; const per = {}; let file = null;
-  for (const line of String(diff).split(/\r?\n/)) {
-    const f = /^\+\+\+ b\/(.+)$|^--- a\/(.+)$/.exec(line); if (f) { file = f[1] || f[2] || file; continue; }
-    if ((line.startsWith("+") || line.startsWith("-")) && !/^(\+\+\+|---)/.test(line)) { all++; per[file] = (per[file] || 0) + 1; }
-  }
-  const problems = [];
-  if (all > MAX_CHANGED_LINES) problems.push(`The change is too big to review well (${all} changed lines, the limit is ${MAX_CHANGED_LINES}); ask for a smaller step`);
-  const sens = Object.entries(per).filter(([f]) => tierOf(f) === "sensitive").reduce((a, [, n]) => a + n, 0);
-  if (sens > MAX_SENSITIVE_LINES) problems.push(`Too many changed lines in safety-check files (${sens}, the limit is ${MAX_SENSITIVE_LINES})`);
-  return problems;
 }
 
 // ---- the tool audit for a WIDE agy editor (Neon/Argon): same as the Argon audit, but writes anywhere except guard files ----
@@ -217,5 +202,5 @@ function bootDecision(pending, now = Date.now()) {
   return "wait";
 }
 
-module.exports = { fencedEnv, tierOf, riskScan, removedNames, sizeProblems, auditWide, reviewPrompt, parseReview, undoMerge, bootDecision, addedLines, removedTests,
-  GUARD_FILES, SENSITIVE_FILES, MAX_CHANGED_LINES, MAX_SENSITIVE_LINES, MAX_TRIES };
+module.exports = { fencedEnv, tierOf, riskScan, removedNames, auditWide, reviewPrompt, parseReview, undoMerge, bootDecision, addedLines, removedTests,
+  GUARD_FILES, GUARD_PREFIXES, SENSITIVE_FILES, MAX_TRIES };

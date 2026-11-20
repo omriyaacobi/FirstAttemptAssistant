@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { isProtected } = require("./selfedit");
+const { tierOf } = require("./selfedit-guard");
 
 const ROOT = __dirname;
 const LAST = path.join(ROOT, "data", "improve-watch-last.txt");
@@ -26,7 +27,11 @@ const safeId = (id) => { if (!/^[0-9a-f]{7,40}$/.test(id)) throw new Error("bad 
 // The parts code can judge by itself. files: changed paths. diff: the text of the diff. Returns plain-English warnings.
 function checkChange(files, diff) {
   const out = [];
-  for (const f of files) if (isProtected(f)) out.push(`PROTECTED FILE CHANGED: ${f}`);
+  for (const f of files) {
+    if (isProtected(f)) out.push(`PROTECTED FILE CHANGED: ${f}`);
+    // Since 2026-11-20 Improve Bot may change the files that hold safety checks (server.js, brain.js...): named so they get a look.
+    else if (tierOf(f) === "sensitive") out.push(`SAFETY-CHECK FILE CHANGED (read this part): ${f}`);
+  }
   const added = diff.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
   if (added.some((l) => /\.innerHTML\s*\+?=|insertAdjacentHTML|document\.write/.test(l))) out.push("new code writes raw HTML (innerHTML or similar)");
   if (added.some((l) => /<script[^>]+src=["']?https?:|<link[^>]+href=["']?https?:/i.test(l))) out.push("new external script or link");

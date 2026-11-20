@@ -109,8 +109,8 @@ test("publicOnly: new, deleted and renamed-out files outside public/ are refused
   }
   assert.ok(checkProposal({ files: [f("A", "public/link", "120000")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /Links/.test(p)));
   assert.ok(checkProposal({ files: [f("A", "public/mod", "160000")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /submodules/.test(p)));
-  // protected files stay protected for Argon too
-  assert.ok(checkProposal({ files: [f("M", "server.js")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /Protected/.test(p)));
+  // guard files stay closed for Argon too
+  assert.ok(checkProposal({ files: [f("M", "gitops.js")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /Guard files/.test(p)));
 });
 
 // ---- the whole flow with a fake Argon editor ----

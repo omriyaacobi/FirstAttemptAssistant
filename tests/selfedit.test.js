@@ -13,7 +13,7 @@ const { createSelfEdit, describeStreamLine, isProtected, parseTestSummary, build
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
-// A tiny project with two passing tests, a protected file (server.js) and a data/ folder.
+// A tiny project with two passing tests, a guard file (gitops.js) and a data/ folder.
 function makeProject() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "orch-selfedit-test-"));
   const repoDir = path.join(root, "project");
@@ -24,7 +24,7 @@ function makeProject() {
     'const test = require("node:test");\nconst assert = require("node:assert");\nconst greet = require("./greet");\n' +
       'test("greets", () => assert.strictEqual(greet(), "hello"));\ntest("returns a string", () => assert.strictEqual(typeof greet(), "string"));\n'
   );
-  fs.writeFileSync(path.join(repoDir, "server.js"), "// protected\n");
+  fs.writeFileSync(path.join(repoDir, "gitops.js"), "// protected\n");
   fs.writeFileSync(path.join(repoDir, ".gitignore"), "data/\n");
   git(repoDir, "init", "-q");
   git(repoDir, "config", "user.name", "Test");
@@ -103,13 +103,13 @@ test("a page-only change does not need a restart", async () => {
 });
 
 test("SECURITY: changing a protected file blocks the proposal and cleans up", async () => {
-  const s = setup(({ worktree }) => write(worktree, "server.js", "// weakened security\n"));
+  const s = setup(({ worktree }) => write(worktree, "gitops.js", "// weakened security\n"));
   const { record, finished } = await s.manager.start("tweak the server");
   const done = await finished;
   assert.strictEqual(done.status, "blocked");
-  assert.match(done.blocked.join(" "), /Protected files were changed: server\.js/);
+  assert.match(done.blocked.join(" "), /Guard files were changed[^:]*: gitops\.js/);
   await assert.rejects(s.manager.approve(record.id), /only "ready"/);
-  assert.strictEqual(read(s.repoDir, "server.js"), "// protected\n");
+  assert.strictEqual(read(s.repoDir, "gitops.js"), "// protected\n");
   assert.strictEqual(branches(s.repoDir), "");
   s.cleanup();
 });
@@ -175,9 +175,9 @@ test("retry: a protected file touched by mistake can be undone on the next try",
   const s = setup(({ worktree, attempt }) => {
     if (attempt === 1) {
       goodEdit({ worktree });
-      write(worktree, "server.js", "// oops\n");
+      write(worktree, "gitops.js", "// oops\n");
     } else {
-      write(worktree, "server.js", "// protected\n"); // put it back exactly as it was
+      write(worktree, "gitops.js", "// protected\n"); // put it back exactly as it was
     }
   });
   const { finished } = await s.manager.start("friendlier");
@@ -391,18 +391,18 @@ test("SECURITY: a follow-up that breaks the rules is undone and the earlier vers
   let call = 0;
   const s = setup(({ worktree }) => {
     if (call++ === 0) goodEdit({ worktree });
-    else write(worktree, "server.js", "// hacked\n"); // protected, on every retry
+    else write(worktree, "gitops.js", "// hacked\n"); // a guard file, on every retry
   });
   const { record, finished } = await s.manager.start("friendlier");
   const first = await finished;
-  const second = await (await s.manager.followUp(record.id, "also change server.js")).finished;
+  const second = await (await s.manager.followUp(record.id, "also change gitops.js")).finished;
   assert.strictEqual(second.status, "ready");
   assert.strictEqual(second.treeHash, first.treeHash);
   assert.match(second.chat[second.chat.length - 1].text, /put your previous version back/);
-  assert.strictEqual(read(path.join(s.workRoot, record.id), "server.js"), "// protected\n"); // the bad file is gone again
+  assert.strictEqual(read(path.join(s.workRoot, record.id), "gitops.js"), "// protected\n"); // the bad file is gone again
   const approved = await s.manager.approve(record.id);
   assert.strictEqual(approved.status, "approved");
-  assert.strictEqual(read(s.repoDir, "server.js"), "// protected\n");
+  assert.strictEqual(read(s.repoDir, "gitops.js"), "// protected\n");
   s.cleanup();
 });
 
@@ -452,11 +452,11 @@ test("the editor is told about EVERY protected file (the line is built from the 
   for (const f of PROTECTED_FILES) assert.ok(line.includes(f), f);
 });
 
-test("isProtected: security files, secrets, git and data are protected; normal files are not", () => {
-  for (const file of ["server.js", "SERVER.JS", "selfedit.js", "store.js", "gitops.js", "brain.js", "watchdog.cmd", "bot-watchdog.vbs", "Start-Hidden.vbs", "autostart.ps1", "improve-watch.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
+test("isProtected (the GUARD files, 2026-11-20): the gate, git, keys, data and login-time scripts are closed; safety-check files are open", () => {
+  for (const file of ["selfedit.js", "SELFEDIT.JS", "selfedit-guard.js", "health-guard.js", "auth.js", "backup.js", "moodle-token.js", "moodle-extension/manifest.json", "gitops.js", "watchdog.cmd", "tools/x.bat", "bot-watchdog.vbs", "Start-Hidden.vbs", "autostart.ps1", "improve-watch.js", ".gitignore", "start-web.cmd", "data/conversations/a.json", ".git/config", ".env", "config/.env.local", ".github/workflows/x.yml", "node_modules/x/index.js", "data\\x"]) {
     assert.strictEqual(isProtected(file), true, file);
   }
-  for (const file of ["public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js", "brain-brief.md"]) {
+  for (const file of ["server.js", "brain.js", "store.js", "preview.js", "public/index.html", "router-brief.md", "router.js", "frontdesk.js", "core.js", "PROGRESS.md", "planner.test.js", "public/server.js", "environment.js", "brain-brief.md", "tests/brain.test.js"]) {
     assert.strictEqual(isProtected(file), false, file);
   }
 });

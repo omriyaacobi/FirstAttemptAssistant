@@ -22,21 +22,18 @@ const crypto = require("node:crypto");
 const { ID_PATTERN } = require("./store");
 const guard = require("./selfedit-guard");
 
-// Files and folders the editor may never change. server.js holds the web security checks,
-// store.js validates conversation ids, selfedit.js is this safety gate itself, and the rest
-// protect secrets, git, and your private chats.
-// gitops.js is protected because it pushes to GitHub.
-// brain.js holds the code checks on every tool call the models ask for (Omri decided 2026-11-12; added 2026-11-13).
-// brain-brief.md stays editable: changing the briefing is how Bot is tuned.
-// The starter and watchdog files run with Omri's own rights at every login (the scheduled task "Bot"), and improve-watch.js is run
-// by name by another scheduled task: a change there would run unseen later, so they are protected too (2026-11-13).
-const PROTECTED_FILES = ["server.js", "selfedit.js", "store.js", "gitops.js", "auth.js", "preview.js", "brain.js", ".gitignore", ".gitattributes", "start-web.cmd",
-  "start-hidden.vbs", "stop-bot.cmd", "watchdog.cmd", "bot-watchdog.vbs", "autostart.ps1", "install-autostart.cmd", "remove-autostart.cmd", "improve-watch.js"];
-const PROTECTED_PREFIXES = [".git/", ".github/", "data/", "node_modules/"];
+// Which files Improve Bot may change (2026-11-20, Omri's decision): ALL of Bot except the GUARD files (tierOf in selfedit-guard.js):
+// the gate itself (selfedit.js, selfedit-guard.js, health-guard.js), gitops.js (it pushes to GitHub), auth.js, backup.js,
+// moodle-token.js, the starter, the watchdog and every .cmd/.bat/.vbs/.ps1 file (they run with Omri's rights at login),
+// improve-watch.js (run by name by a scheduled task), .gitignore, .gitattributes, any .env file, and .git/, .github/, data/,
+// node_modules/, moodle-extension/. Files that hold safety checks (server.js, brain.js, the calendar, Moodle, PC and link files...)
+// are open; the ready card notes them, and tests/refusal-rules.test.js guards the "refused after a web page" rules of brain.js.
+// Until 2026-11-20 a fixed list of 18 files was closed instead, server.js, brain.js, store.js and preview.js among them.
+const PROTECTED_FILES = guard.GUARD_FILES;
+const PROTECTED_PREFIXES = guard.GUARD_PREFIXES;
 
 function isProtected(file) {
-  const p = file.replace(/\\/g, "/").toLowerCase();
-  return PROTECTED_FILES.includes(p) || PROTECTED_PREFIXES.some((prefix) => p.startsWith(prefix)) || /(^|\/)\.env/.test(p);
+  return guard.tierOf(file) === "guard";
 }
 
 const MAX_REQUEST_CHARS = 4000;
@@ -53,7 +50,9 @@ Make the change the user asks for. Keep it as small and clear as you can, in the
 
 You can only read and edit files in this folder. You cannot run commands, so add or update tests for what you change (the project uses Node's built-in test runner; test files end in .test.js and live in the tests folder) and reason carefully about whether they will pass.
 
-Do not touch these files: ${PROTECTED_FILES.join(", ")}, any .env file, anything inside ${PROTECTED_PREFIXES.join(" or ")}. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
+Do not touch these files: ${PROTECTED_FILES.join(", ")}, any .cmd, .bat, .vbs or .ps1 file, any .env file, anything inside ${PROTECTED_PREFIXES.join(" or ")}. Changes to them are rejected automatically. Never delete or weaken existing tests. Never add secrets.
+
+Some files hold Bot's safety checks (for example server.js, brain.js, the calendar, Moodle, PC and link files): you may change them when the request needs it, but never weaken a check, a refusal or a limit. Never mention the .env file in code or tests: a change that does is refused before its tests run.
 
 When you finish, reply with a short summary (3 to 6 lines): what you changed, why, and anything the user should check.`;
 
@@ -354,7 +353,7 @@ async function defaultReviewer(prompt) {
 function buildFeedback(problems, tests) {
   let text = "Your previous attempt was checked automatically and has these problems:\n" + problems.map((p) => "- " + p).join("\n");
   if (tests && !tests.ok && tests.tail) text += "\n\nThe end of the test output:\n" + tests.tail;
-  return text + "\n\nYour changes so far are still in the files. Fix these problems (undo any change to protected files) while keeping the change the user asked for.";
+  return text + "\n\nYour changes so far are still in the files. Fix these problems (undo any change to guard files) while keeping the change the user asked for.";
 }
 
 // The rules enforced by code. Returns the list of problems (empty means it passes).
@@ -383,7 +382,7 @@ function publicOnlyProblems(files) {
 function preTestProblems({ files, diff, publicOnly = false }) {
   const problems = publicOnly ? publicOnlyProblems(files) : [];
   const touched = files.filter((f) => isProtected(f.path)).map((f) => f.path);
-  if (touched.length) problems.push(`Protected files were changed: ${touched.join(", ")}`);
+  if (touched.length) problems.push(`Guard files were changed (Bot may never change these): ${touched.join(", ")}`);
   for (const note of guard.riskScan(diff || "").filter((n) => n.level === "block")) problems.push(`Not allowed in a change Bot makes: ${note.text} (line: ${note.line})`);
   return problems;
 }

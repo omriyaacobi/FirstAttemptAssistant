@@ -101,7 +101,7 @@ test("preTestProblems: .env mentions, permission flags and force-pushes are refu
   assert.match(preTestProblems({ files, diff: diffOf("news.js", 'const k = fs.readFileSync("../.env", "utf8");') }).join(" "), /\.env file/);
   assert.match(preTestProblems({ files, diff: diffOf("news.js", 'args.push("--dangerously-skip-permissions");') }).join(" "), /permission checks/);
   assert.match(preTestProblems({ files, diff: diffOf("news.js", 'git(["push", "--force"]);') }).join(" "), /overwrite history/);
-  assert.match(preTestProblems({ files: [{ status: "M", path: "selfedit.js" }], diff: "" }).join(" "), /Protected files were changed: selfedit\.js/);
+  assert.match(preTestProblems({ files: [{ status: "M", path: "selfedit.js" }], diff: "" }).join(" "), /Guard files were changed[^:]*: selfedit\.js/);
   assert.deepStrictEqual(preTestProblems({ files, diff: diffOf("news.js", "const n = 1;") }), []);
   assert.deepStrictEqual(preTestProblems({ files, diff: diffOf("news.js", "if (process.env.PORT) x();") }), []); // process.env is a note, not a block
   assert.deepStrictEqual(preTestProblems({ files: [{ status: "M", path: "README.md" }], diff: diffOf("README.md", "Keys live in .env") }), []); // notes may name it

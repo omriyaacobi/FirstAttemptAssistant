@@ -38,10 +38,9 @@ test("riskScan: removed tests and touched guard/sensitive files are named", () =
   assert.ok(!n2.some((n) => n.file === "lang.js"));
 });
 
-test("sizeProblems: a limit for all files and a smaller one for safety-check files", () => {
-  assert.deepStrictEqual(g.sizeProblems(diffOf("a.js", Array(50).fill("x"))), []);
-  assert.strictEqual(g.sizeProblems(diffOf("a.js", Array(g.MAX_CHANGED_LINES + 1).fill("x"))).length, 1);
-  assert.match(g.sizeProblems(diffOf("brain.js", Array(g.MAX_SENSITIVE_LINES + 1).fill("x"))).join(), /safety-check/);
+test("no changed-line limit (Omri's light version, 2026-11-20): only selfedit.js's 25 files / 300,000 characters", () => {
+  assert.strictEqual(g.sizeProblems, undefined);
+  assert.ok(g.riskScan(diffOf("brain.js", Array(700).fill("x")), [{ path: "brain.js" }]).every((n) => n.level !== "block"));
 });
 
 test("auditWide: only the three file tools, inside the copy, never .git, never a guard file; normal and sensitive files may be written", () => {
