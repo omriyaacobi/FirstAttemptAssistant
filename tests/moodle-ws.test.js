@@ -180,3 +180,62 @@ test("moodle-token.js: the .env line and Moodle's answers", () => {
   assert.match(readTokenAnswer(200, "<html>").error, /not JSON/);
   assert.ok(!readTokenAnswer(200, JSON.stringify({ token: "short" })).token);
 });
+
+// ---- the TEXT of items (2026-11-19): pages, assignments, labels, links, books. Made-up data only. ----
+const { createBridge } = require("../moodle-bridge");
+const ITEM_CONTENTS = [{ id: 21, section: 1, name: "Info", modules: [
+  { id: 301, name: "Schedule", modname: "page", instance: 41, contents: [{ type: "file", filename: "index.html", filesize: 0, fileurl: `${FILES}/9/mod_page/content/3/index.html` }] },
+  { id: 302, name: "Contact", modname: "label", instance: 42, description: "<p>Office: room 1</p>" },
+  { id: 303, name: "HW 1", modname: "assign", instance: 43 },
+  { id: 304, name: "Forum", modname: "forum", instance: 44, description: "<p>Ask here</p>" },
+  { id: 305, name: "Guide", modname: "book", instance: 45, contents: [{ type: "content", filename: "structure", content: "[]" }, { type: "file", filename: "index.html", filesize: 10, fileurl: `${FILES}/9/mod_book/chapter/1/index.html` }] },
+  { id: 306, name: "Site", modname: "url", instance: 46 },
+] }];
+const ITEM_ANSWERS = {
+  core_course_get_contents: ITEM_CONTENTS,
+  core_course_get_course_module: { cm: { id: 301, course: 5, instance: 41, modname: "page" } },
+  mod_page_get_pages_by_courses: { pages: [{ coursemodule: 999, content: "<p>other page</p>" }, { coursemodule: 301, intro: "", content: "<h2>Hours</h2><p>Sunday 10-12</p>" }] },
+  mod_assign_get_assignments: { courses: [{ id: 5, assignments: [{ cmid: 303, intro: "<p>Write a shell</p>", duedate: 1800000000, cutoffdate: 0, allowsubmissionsfromdate: 1790000000, introattachments: [{ filename: "hw1.pdf" }] }] }] },
+  mod_label_get_labels_by_courses: { labels: [{ coursemodule: 302, intro: "<p>Office: room 1</p>" }] },
+  mod_book_get_books_by_courses: { books: [{ coursemodule: 305, intro: "<p>A guide</p>" }] },
+  mod_url_get_urls_by_courses: { urls: [{ coursemodule: 306, intro: "", externalurl: "https://example.org/site" }] },
+};
+
+test("item text: every new function only reads, and each kind of item gives its text", async () => {
+  for (const f of ["mod_page_get_pages_by_courses", "mod_assign_get_assignments", "mod_url_get_urls_by_courses", "mod_label_get_labels_by_courses", "mod_resource_get_resources_by_courses", "mod_folder_get_folders_by_courses", "mod_book_get_books_by_courses"]) assert.ok(READ_FUNCTIONS.has(f), f);
+  const { ws, seen } = make(ITEM_ANSWERS);
+  const page = (await ws.ask("item", { cmid: 301 })).data;
+  assert.strictEqual(page.module, "page");
+  assert.deepStrictEqual(page.html.map((h) => h.label), ["page"]);
+  assert.match(page.html[0].html, /Sunday 10-12/);
+  const asked = new URLSearchParams(seen.find((r) => /mod_page_get_pages/.test(r.body)).body);
+  assert.strictEqual(asked.get("courseids[0]"), "5"); // only the item's own course
+  const label = (await ws.ask("item", { cmid: 302 })).data;
+  assert.match(label.html[0].html, /room 1/);
+  const hw = (await ws.ask("item", { cmid: 303 })).data;
+  assert.deepStrictEqual(hw.dates, { allowsubmissionsfromdate: 1790000000, duedate: 1800000000 });
+  assert.deepStrictEqual(hw.files, ["hw1.pdf"]);
+  const url = (await ws.ask("item", { cmid: 306 })).data;
+  assert.strictEqual(url.url, "https://example.org/site");
+  // a kind with no read of its own (a forum) gives the description Moodle showed, with no extra call
+  const before = seen.length;
+  const forum = (await ws.ask("item", { cmid: 304 })).data;
+  assert.match(forum.html[0].html, /Ask here/);
+  assert.strictEqual(seen.length, before);
+  // a book: its chapters are Moodle's own files, downloaded on the checked road
+  const book = (await ws.ask("item", { cmid: 305 })).data;
+  assert.deepStrictEqual(book.html.map((h) => h.label), ["description", "chapter 1"]);
+  assert.strictEqual(seen[seen.length - 1].url, `${FILES}/9/mod_book/chapter/1/index.html`);
+  assert.ok(!seen.some((r) => r.url.includes(TOKEN)));
+});
+
+test("item text: token route only; the Chrome extension is never asked for it", async () => {
+  const bridge = createBridge();
+  await assert.rejects(bridge.ask("item", { cmid: 301 }), (e) => e.code === "tokenonly");
+  assert.strictEqual(bridge.next({}), null); // nothing was queued for the extension
+  const chrome = { connected: () => true, ask: async () => { throw new Error("Chrome must not be asked"); } };
+  const noToken = createMoodleSource({ ws: make(ITEM_ANSWERS, "").ws, bridge: chrome });
+  await assert.rejects(noToken.ask("item", { cmid: 301 }), (e) => e.code === "tokenonly");
+  const refused = createMoodleSource({ ws: make({ ...ITEM_ANSWERS, core_course_get_course_module: { exception: "x", errorcode: "invalidtoken" } }).ws, bridge: chrome });
+  await assert.rejects(refused.ask("item", { cmid: 301 }), (e) => e.code === "token");
+});

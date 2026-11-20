@@ -27,7 +27,9 @@ const KINDS = {
   file: { cmid: "id" }, // the file of a "resource" item
   folder: { cmid: "id" }, // the file list of a "folder" item (names + numbers only)
   folderfile: { cmid: "id", index: "small" }, // one file of a folder, by its place in that list
+  item: { cmid: "id" }, // the TEXT of one item: token route only (moodle-ws.js); never handed to the extension
 };
+const TOKEN_ONLY = new Set(["item"]);
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_RESULT_CHARS = 70 * 1024 * 1024; // a 50 MB file is about 67 MB as base64
 const JOB_TIMEOUT_MS = 45 * 1000; // a page or a JSON call
@@ -60,6 +62,7 @@ function createBridge({ now = () => Date.now(), jobTimeoutMs = JOB_TIMEOUT_MS, f
   // Ask for one read. Resolves with { data, file? } or rejects with code "offline" | "loggedout" | "timeout" | "moodle" | "refused".
   function ask(kind, args = {}) {
     const clean = checkArgs(kind, args);
+    if (TOKEN_ONLY.has(kind)) return Promise.reject(fail("tokenonly", "the Chrome extension cannot read the text of a Moodle item"));
     if (!connected()) return Promise.reject(fail("offline", "Chrome with the Bot Moodle extension is not connected"));
     const id = crypto.randomBytes(8).toString("hex");
     return new Promise((resolve, reject) => {

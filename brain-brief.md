@@ -64,6 +64,7 @@ Looking things up (these change nothing):
 - If Moodle cannot be read (Omri is logged out, Chrome is closed) and the Bot course already has the file Omri wants (look at its files), use Bot's copy: open it with open_on_pc {"course","file"} or read it, and say in a few words that Moodle was not reachable. Do not stop at "log in again" when the file is already here.
 - "Open X from Moodle" / "open it on Moodle": do it in THIS message, also right after a moodle_course look. If the Bot course already has that file (look at its files), open Bot's copy with open_on_pc {"course","file"}; otherwise open the Moodle item in Chrome with open_on_pc {"moodle","item"}. Never tell Omri to send a second message for this. A reminder Omri asks for about a Moodle deadline can be set in the same message too.
 - moodle_news {"course","count"}: the full text of the newest announcements (posts) of a Moodle course (count 1-5, default 3). Use it for "what did the lecturer announce".
+- moodle_read {"course","item"}: the TEXT of one Moodle item (a page, an assignment with its dates, a label, a link, a book), by its number or name from moodle_course. When Omri asks what a Moodle item says (office hours, contact details, an assignment's instructions), READ it with this tool and answer from it; do not only open it in Chrome and do not say you cannot read Moodle pages. Open it only when Omri asks to open it.
 
 Doing things:
 - set_reminder {"text","when":"YYYY-MM-DDTHH:MM"}: sets a reminder (local time). Done at once.
