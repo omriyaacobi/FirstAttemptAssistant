@@ -58,7 +58,10 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
 12. **Moodle watch for new lectures and assignments** (builds on 7; `core_course_get_updates_since` may make it cheap to run).
 
 **Large (Opus, plan first, many files and tests):**
-13. **Let Neon work on Bot's whole project with leftover Gemini quota** (asked 2026-11-20): at the end of the week I want to
+13. **RESEARCH RUNNING (2026-11-20, Opus session "Research: Neon on Bot + Bot changes all of itself", branch
+    `claude/neon-selfedit-research-c3147e`, starts 16:00 and 17:01): a deep Neon trial vs every model on hard tasks, and how
+    Improve Bot could change ALL of Bot safely (prototypes on its branch). Nothing merged until I decide.**
+    Let Neon work on Bot's whole project with leftover Gemini quota** (asked 2026-11-20): at the end of the week I want to
     improve Bot with Neon instead of my Claude plan. Today the Argon editor in Improve Bot may only change files under `public/`
     (CLAUDE.md SELF-EDIT). Decide with me before building: (a) let Improve Bot's Neon/Argon editor change code files too (same
     private worktree, my Approve, no push; which protected files stay protected; how the tool-call audit changes), or (b) use Neon
