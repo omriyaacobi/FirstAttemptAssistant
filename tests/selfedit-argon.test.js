@@ -406,7 +406,7 @@ test("the Improve Bot window offers Argon next to Sonnet and Opus, and says whic
   assert.match(html, /Uses your Gemini quota, NOT Claude/);
   assert.match(html, /Uses your Claude plan\./);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.ok(server.includes('["sonnet", "opus", "argon"].includes(model)'));
+  assert.ok(server.includes('["neon", "sonnet", "opus", "argon"].includes(model)'));
 });
 
 test("a retry keeps its own TEMP until it has finished (the first run's cleanup must not delete it)", async () => {

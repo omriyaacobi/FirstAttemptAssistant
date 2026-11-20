@@ -38,7 +38,8 @@ test("a run longer than its limit is stopped and says so", async () => {
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.timedOut, true);
   assert.match(result.tail, /stopped after/);
-  fs.rmSync(dir, { recursive: true, force: true });
+  // the stopped run's test worker may hold the folder a moment longer on Windows
+  try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch (error) { /* left in TEMP; harmless */ }
 });
 
 // ---- Phase 1: the git fence and the checks before any test run ----

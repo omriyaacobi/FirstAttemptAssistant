@@ -173,7 +173,7 @@ test("self-edit: list, start, open, approve and reject go through to the manager
   assert.strictEqual(JSON.parse((await s.request("GET", "/api/selfedit")).body).proposals[0].status, "ready");
   const started = await s.post("/api/selfedit", { request: "make it blue" });
   assert.strictEqual(started.status, 202);
-  assert.deepStrictEqual(s.calls[0], ["start", "make it blue", "sonnet"]); // sonnet is the default model
+  assert.deepStrictEqual(s.calls[0], ["start", "make it blue", "neon"]); // Neon is the default editor (2026-11-20)
   assert.strictEqual((await s.request("GET", "/api/selfedit/0123456789abcdef")).status, 200);
   assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/approve", {})).status, 200);
   assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/reject", {})).status, 200);

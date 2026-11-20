@@ -51,7 +51,10 @@ test("auditWide: only the three file tools, inside the copy, never .git, never a
     assert.strictEqual(g.auditWide(step("edit_file", "brain.js"), wt), null);
     assert.strictEqual(g.auditWide(step("read_file", "selfedit.js"), wt), null, "reading a guard file is fine");
     assert.match(g.auditWide(step("edit_file", "selfedit.js"), wt), /guard file/);
-    assert.match(g.auditWide(step("write_file", ".env"), wt), /guard file/);
+    assert.match(g.auditWide(step("write_file", ".env"), wt), /[.]env file/);
+    assert.match(g.auditWide(step("read_file", ".env"), wt), /[.]env file/, "a .env file is never opened, not even to read (2026-11-20)");
+    assert.match(g.auditWide(step("read_file", "config/.env.local"), wt), /[.]env file/);
+    assert.strictEqual(g.auditWide(step("read_file", "environment.js"), wt), null);
     assert.match(g.auditWide(step("edit_file", "start-web.cmd"), wt), /guard file/);
     assert.match(g.auditWide(step("read_file", ".git/config"), wt), /\.git/);
     assert.match(g.auditWide({ step_type: "tool", tool_name: "run_command", tool_info: { parameters: {} } }, wt), /not allowed/);

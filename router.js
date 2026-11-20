@@ -30,6 +30,11 @@ const MODELS = {
   // Hydrogen high: Bot's background jobs since 2026-11-15 (Omri: "use all the background process that use flash and let hydrogen
   // high take it"): the end-of-day summary, the news, the brief's You part, reading uploaded files. Flash stays behind it (same pool).
   hydrogenHigh: { provider: "agy", model: "gemini-4-hydrogen-high", pool: GEMINI },
+  // Gemini 4 Neon (ids checked with "agy models" on 2026-11-20). Same "Gemini Models" pool as Hydrogen and Flash; as correct as Hydrogen
+  // in the deep trial with 25-55% fewer tokens (experiments/2026-11-20-neon-deep-trial.md). Neon low: the brain's first model and a
+  // big-PDF reader; Neon medium: Improve Bot's default editor (selfedit.js NEON_MODEL).
+  neonLow: { provider: "agy", model: "gemini-4-neon-low", pool: GEMINI },
+  neonMedium: { provider: "agy", model: "gemini-4-neon-medium", pool: GEMINI },
   claudeSonnet: { provider: "claude", model: "sonnet", pool: CLAUDE_PLAN },
   claudeOpus: { provider: "claude", model: "opus", pool: [CLAUDE_PLAN, CLAUDE_OPUS_WEEK] },
   claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the tiny quota probe (quota.js)

@@ -565,8 +565,9 @@ function createServer({
     if (url.pathname === "/api/selfedit" && req.method === "POST") {
       const input = await readJsonBody(req, res);
       if (!input) return;
-      const model = input.model === undefined ? "sonnet" : input.model;
-      if (!["sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be sonnet, opus or argon" });
+      // Neon (Gemini 4 Neon medium through agy, the Gemini quota) is the default editor since 2026-11-20; Sonnet/Opus use the Claude plan.
+      const model = input.model === undefined ? "neon" : input.model;
+      if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
       try {
         const { record } = await selfEdit.start(input.request, { model });
         return sendJson(res, 202, { proposal: record });

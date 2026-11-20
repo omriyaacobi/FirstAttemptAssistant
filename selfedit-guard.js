@@ -144,6 +144,7 @@ function auditWide(update, worktree) {
     const root = roots.find((r) => insideFolder(r, clean));
     if (!root) return `it tried to use a path outside the private copy (${clean.slice(0, 160)})`;
     if (/(^|[\\/])\.git([\\/]|$)/i.test(clean)) return "it tried to use the .git folder";
+    if (/(^|[\\/])\.env[^\\/]*$/i.test(clean)) return "it tried to open a .env file"; // where the keys live (a private copy has none, but never)
     if (name !== "read_file" && tierOf(path.relative(root, path.resolve(root, clean))) === "guard") return `it tried to change a guard file (${path.basename(clean)})`;
   }
   return null;
