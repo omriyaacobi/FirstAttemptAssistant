@@ -33,8 +33,9 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
 7. **Moodle read: MERGED 2026-11-20.** `moodle_read` reads pages, assignments with due dates, labels, links and books (token
    route only). Next, my call: which of `experiments/2026-11-19-moodle-options.md` to build (submission status, grades and
    feedback, notifications, `core_course_get_updates_since`, the Moodle calendar); building them is Medium.
-8. **Two oddities from the 2026-11-19 log:** one message got two identical answers (11:30), and a question over several Moodle
-   courses looked them up one by one (75 s). A Sonnet look, then a small fix.
+8. **Two oddities from the 2026-11-19 log: DONE 2026-11-20.** The "two identical answers" were two real messages 2.4 s apart
+   (a "yes" typed on the wrong keyboard layout, then in Hebrew), so the two Moodle pages opened twice; no change. The 75 s was
+   the model asking in two extra rounds; `brain-brief.md` now says to ask for all courses in one round. `experiments/2026-11-20-log-oddities.md`.
 9. **End-of-day review proposes lecture-part marks** ("worked on"), with the same quote rule as positions. Small build, but the
    review itself then spends a little more Gemini each night.
 
