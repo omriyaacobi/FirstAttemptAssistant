@@ -6,6 +6,12 @@ STATUS (working notes, kept current so a later run can pick up):
 - 16:10 four background runs started (2 reps each, 13 tests): Neon low/medium/high; Hydrogen medium/high; Argon low/medium;
   Sonnet low + Opus medium INSIDE agy ("Claude and GPT models" pool). Logs: `neon-deep-log-*.txt`; results
   `neon-deep-results-<model>.json`. Pools at start: Gemini Models week 88% / 5h 100%; Argon week 79%; Claude-and-GPT 100%.
+- 16:22 Sonnet-low + Opus-medium in agy finished. **IMPORTANT side effect:** ~41 calls (incl. 6 long-context calls of ~50-60k
+  tokens) took the "Claude and GPT models" pool from 100% to **0% (five-hour, back at 19:08)** and **48% (week)**. Opus's last 6
+  calls failed with "Individual quota reached" (counted as errors, not wrong answers). So Bot's brain step 3 (Sonnet in agy) is
+  empty until 19:08 today. Lesson: that pool is SMALL; a few long-context calls eat it.
+- 16:25 my key for m-sintan had the WRONG sign (+1/30; the limit is -1/30, checked numerically at x = 0.1, 0.05, 0.02). Opus was
+  right; `table` now regrades math from the stored answers.
 - TODO after the runs: `node experiments/neon-deep.js table`; `blind` and grade the tutor + chain answers blind; Neon xhigh once
   (`run 1 gemini-4-neon-xhigh`); Claude Code Sonnet and Opus (after the 17:00 reset) only on code + long tests:
   `node experiments/neon-deep.js only code-bugfix,code-feature,long-bug 1 claude:sonnet claude:opus`; then Part 2.

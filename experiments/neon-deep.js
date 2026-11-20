@@ -56,7 +56,8 @@ const M5 = [[3, -1, 4, 1, 5], [9, 2, -6, 5, 3], [5, 8, 9, -7, 9], [3, 2, 3, 8, -
 
 // ---------- math (code-checked by number) ----------
 const MATH = [
-  { id: "m-sintan", key: 1 / 30, message: `Find the limit as x -> 0 of (sin(tan x) - tan(sin x)) / x^7. ${DEC}` },
+  { id: "m-sintan", key: -1 / 30, // first written as +1/30: WRONG sign (Opus caught it; checked numerically 2026-11-20)
+    message: `Find the limit as x -> 0 of (sin(tan x) - tan(sin x)) / x^7. ${DEC}` },
   { id: "m-lnln", key: 2 - Math.PI ** 2 / 6, message: `Compute the integral from 0 to 1 of ln(x) * ln(1 - x) dx. ${DEC}` },
   { id: "m-det5", key: Number(det(M5)), message: `Compute the determinant of the 5x5 matrix with rows\n${M5.map((r) => r.join(" ")).join("\n")}\n${DEC}` },
   { id: "m-esin6", key: seriesCoeff(), message: `Find the coefficient of x^6 in the Maclaurin series of e^(sin x). ${DEC}` },
@@ -226,6 +227,7 @@ async function runModel(model, reps, tests) {
 function table() {
   const files = fs.readdirSync(DIR).filter((f) => /^neon-deep-results-.*\.json$/.test(f));
   const runs = files.flatMap((f) => JSON.parse(fs.readFileSync(path.join(DIR, f), "utf8")).runs);
+  for (const r of runs) { const t = MATH.find((x) => x.id === r.test); if (t && !r.error) r.ok = near(num(r.answer), t.key); } // regrade math from the stored answer (a key was fixed after the runs)
   const models = [...new Set(runs.map((r) => r.model))];
   const kinds = { math: MATH.map((t) => t.id), long: LONG.map((t) => t.id), code: CODE.map((t) => t.id), chain: ["chain-reminder"], tutor: ["tutor-he"], photo: ["photo-moved"] };
   let out = "| Model | " + Object.keys(kinds).join(" | ") + " | All | Mean s | Worst s | Tokens (thinking) | Errors |\n|" + "---|".repeat(Object.keys(kinds).length + 6) + "\n";
