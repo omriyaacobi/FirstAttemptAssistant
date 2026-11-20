@@ -12,10 +12,8 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
 1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:UsersUserOneDriveBot-backup` (newest 5 kept;
    first copy 70 MB, 380 files, checked by reading back). The passphrase is in `.env` only, plus my own safe copy; minimum 9
    characters (my choice, `backup.js`).
-2. **Old branches, my call:** 5 hold only research notes (`long-chat-research`, `moodle-research`, `quota-why`,
-   `study-position-research`, `qa-everyday`): keep them in main (check for real chat text first, the repo is public) or delete.
-   `fable-improve` has 32 commits with no exact copy in main (its features seem to have arrived another way): check, then delete.
-   3 locked folders in `.claude/worktrees/` go once their finished sessions are archived.
+2. **Old branches: DONE 2026-11-20.** All deleted (my call, none kept), on the PC and on GitHub; GitHub has only `main`. Locked
+   folders in `.claude/worktrees/` go once their finished sessions are archived.
 3. **The flaky test** (about 1 run in 5, then all green 6 times): only if it shows again, `node --test --test-reporter=tap` and
    look for "not ok" to get its name.
 
