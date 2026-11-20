@@ -114,3 +114,10 @@ test("bootDecision: ok without a pending change or once healthy; wait for the fi
   assert.strictEqual(g.bootDecision({ startedAt: now - 10_000, tries: g.MAX_TRIES }, now), "rollback");
   assert.strictEqual(g.bootDecision({ startedAt: now - 4 * 60_000, tries: 0 }, now), "rollback");
 });
+
+test("riskScan: a regex's .exec( is not 'starts another program'; a name taken off a list in a safety-check file is named", () => {
+  assert.deepStrictEqual(g.riskScan(diffOf("due-date.js", ["  m = /x/.exec(text);"])), []);
+  const n = g.riskScan(diffOf("brain.js", ['  "course_note", "file_folder",'], ['  "set_reminder", "course_note", "file_folder",']));
+  assert.ok(n.some((x) => /removes set_reminder/.test(x.text) && x.level === "high"));
+  assert.deepStrictEqual(g.riskScan(diffOf("lang.js", ['  "b",'], ['  "abc",'])), [], "a normal file is not checked for this");
+});

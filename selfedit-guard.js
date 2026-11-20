@@ -42,7 +42,7 @@ const RISKS = [
   { level: "block", re: /--dangerously-skip-permissions|bypassPermissions/, text: "turns off the editor/agent permission checks" },
   { level: "block", re: /(?<!process)\.env\b/, text: "mentions the .env file (where the keys live)", skipIn: /\.md$/ },
   { level: "block", re: /\bpush\b[^\n]*--force|\bpush\b[^\n]*\s-f\b|reset\s+--hard/, text: "a git command that can overwrite history" },
-  { level: "high", re: /require\(["']node:child_process["']\)|require\(["']child_process["']\)|\b(execSync|execFileSync|spawnSync|spawn|execFile|exec)\(/, text: "starts another program" },
+  { level: "high", re: /require\(["']node:child_process["']\)|require\(["']child_process["']\)|(?<![.\w])(execSync|execFileSync|spawnSync|spawn|execFile|exec)\(/, text: "starts another program" },
   { level: "high", re: /\bfetch\(|https?\.(request|get)\(|net\.connect|new WebSocket|XMLHttpRequest/, text: "talks to the internet" },
   { level: "high", re: /\b(rmSync|rmdirSync|unlinkSync|rm|unlink|rmdir)\(|\brecursive:\s*true[^\n]*force/, text: "deletes files" },
   { level: "high", re: /\beval\(|new Function\(|vm\.run/, text: "runs text as code" },
@@ -70,6 +70,19 @@ function removedTests(diff) { // a test() / it() / assert line removed from a te
   }
   return n;
 }
+// Quoted names ("set_reminder") on removed lines that do not come back on added lines of the same file.
+function removedNames(diff) {
+  const gone = {}, back = {}; let file = null;
+  for (const line of String(diff).split(/\r?\n/)) {
+    const f = /^\+\+\+ b\/(.+)$/.exec(line); if (f) { file = f[1]; continue; }
+    if (/^(---|\+\+\+)/.test(line) || !file) continue;
+    const bag = line.startsWith("-") ? gone : line.startsWith("+") ? back : null; if (!bag) continue;
+    for (const m of line.matchAll(/["']([a-z][a-z0-9_]{2,40})["']/g)) (bag[file] = bag[file] || new Set()).add(m[1]);
+  }
+  const out = {};
+  for (const [f, set] of Object.entries(gone)) { const left = [...set].filter((n) => !(back[f] && back[f].has(n))); if (left.length) out[f] = left.slice(0, 8); }
+  return out;
+}
 function riskScan(diff, files = []) {
   const notes = []; const seen = new Set();
   for (const { file, text } of addedLines(diff)) {
@@ -80,6 +93,8 @@ function riskScan(diff, files = []) {
       notes.push({ level: r.level, file, text: `${file}: ${r.text}`, line: text.trim().slice(0, 160) });
     }
   }
+  for (const [file, names] of Object.entries(removedNames(diff))) // a name taken out of a list in a safety-check file (2026-11-20)
+    if (tierOf(file) !== "normal") notes.push({ level: "high", file, text: `${file}: removes ${names.join(", ")} (was it on a list of what is refused or allowed?)` });
   const gone = removedTests(diff);
   if (gone) notes.push({ level: "high", file: null, text: `${gone} test line(s) were removed or changed (a weaker test can hide a broken check)` });
   for (const f of files) {
@@ -183,5 +198,5 @@ function bootDecision(pending, now = Date.now()) {
   return "wait";
 }
 
-module.exports = { tierOf, riskScan, sizeProblems, auditWide, reviewPrompt, parseReview, undoMerge, bootDecision, addedLines, removedTests,
+module.exports = { tierOf, riskScan, removedNames, sizeProblems, auditWide, reviewPrompt, parseReview, undoMerge, bootDecision, addedLines, removedTests,
   GUARD_FILES, SENSITIVE_FILES, MAX_CHANGED_LINES, MAX_SENSITIVE_LINES, MAX_TRIES };
