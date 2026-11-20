@@ -42,6 +42,7 @@ function setup(argonFn, extra = {}) {
     editor: async (args) => { calls.claude++; if (extra.claudeFn) await extra.claudeFn(args, project); return "claude did it"; },
     argonEditor: async (args) => { calls.argon++; await argonFn(args, project); return "argon did it"; },
     lowPools: extra.lowPools || (async () => []),
+    reviewer: async () => '{"verdict":"ok","matches_request":true,"notes":[]}', // a fake second review: no model is called
   });
   return { ...project, manager, calls };
 }

@@ -1712,6 +1712,29 @@
     return m;
   }
 
+  // The code's risk notes and the second model's review of a ready change (2026-11-20). Shown only: Approve works the same.
+  const REVIEW_LABELS = { ok: "Second review (Hydrogen): looks fine", concern: "Second review (Hydrogen): has a concern", unclear: "Second review (Hydrogen): its answer was unclear" };
+  function renderReview(p) {
+    const box = el("div", "review-notes");
+    const notes = p.riskNotes || [];
+    if (notes.length) {
+      box.appendChild(el("strong", "", "Notes from Bot's code check"));
+      const ul = el("ul");
+      notes.forEach((n) => ul.appendChild(el("li", n.level === "high" ? "err" : "", n.text)));
+      box.appendChild(ul);
+    }
+    const r = p.review;
+    if (r) {
+      box.appendChild(el("strong", r.verdict === "concern" ? "err" : "", REVIEW_LABELS[r.verdict] || "No second review"));
+      if (r.notes && r.notes.length) {
+        const ul = el("ul");
+        r.notes.forEach((t) => ul.appendChild(el("li", "", t)));
+        box.appendChild(ul);
+      }
+    }
+    return box;
+  }
+
   // The card under the last message: what is happening, or what you can do next.
   function statusCard(p) {
     const box = el("div", "msg");
@@ -1739,6 +1762,7 @@
       head.append(statusBadge("ready"), el("span", "", `${nFiles} file${nFiles === 1 ? "" : "s"} changed`), el("span", "badge", p.tests && p.tests.ok ? `tests pass (${p.tests.total})` : "tests?"));
       card.appendChild(head);
       card.appendChild(el("p", "sub", "Nothing is changed in your real Bot yet. Look at it, ask for more changes below, then approve or reject."));
+      card.appendChild(renderReview(p));
       const actions = el("div", "actions");
       const pageChanged = (p.files || []).some((f) => f.path.startsWith("public/"));
       if (pageChanged) {

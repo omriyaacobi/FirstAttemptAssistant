@@ -335,6 +335,21 @@ function makeArgonEditor({ command, prefixArgs = [], noteFailure = null } = {}) 
   };
 }
 
+// ---- The second review (2026-11-20) ----
+// After a change passes every check, ONE other model reads the diff: Hydrogen medium (in the trial it judged 12 of 12 planted
+// diffs right, in about 8 s and 4-8k tokens of the Gemini Models pool). It only ADVISES: its answer is checked by code
+// (parseReview in selfedit-guard.js) and shown on the ready card next to the code's risk notes. Approve works the same either way,
+// and a failed or skipped review just says "no second review". The diff goes to the model as data, never as instructions.
+const REVIEW_MODEL = "gemini-4-hydrogen-medium";
+const REVIEW_TIMEOUT_MS = 3 * 60 * 1000;
+async function defaultReviewer(prompt) {
+  const quota = require("./quota");
+  let low = [];
+  try { low = await quota.getLowPools(); } catch (error) { /* an unknown quota is treated as fine */ }
+  if (low.some((p) => p.pool === "Gemini Models")) throw new Error("the Gemini quota is nearly used up, so no model was asked");
+  return require("./providers").ask("agy", REVIEW_MODEL, prompt, () => {}, { agent: true, timeoutMs: REVIEW_TIMEOUT_MS });
+}
+
 // What the editor is told when its previous try did not pass the checks.
 function buildFeedback(problems, tests) {
   let text = "Your previous attempt was checked automatically and has these problems:\n" + problems.map((p) => "- " + p).join("\n");
@@ -395,6 +410,8 @@ function createSelfEdit({
   argonEditor = makeArgonEditor({ noteFailure: (model, message) => { try { require("./quota").noteFailure(model, message); } catch (error) { /* quota never breaks an edit */ } } }),
   // Which quota pools are nearly empty (quota.js). Asked before an Argon edit starts.
   lowPools = () => require("./quota").getLowPools(),
+  // The second review of a finished change (advice only). Tests pass a fake one, so no model is called.
+  reviewer = defaultReviewer,
 } = {}) {
   const recordsDir = path.join(dataDir, "selfedit");
   let active = null; // id of the proposal being worked on right now (one at a time)
@@ -558,6 +575,18 @@ function createSelfEdit({
     return { result: { files, diff: diff.slice(0, MAX_DIFF_CHARS), treeHash, tests, summary, editorSeconds: seconds(), blocked, attempts } };
   }
 
+  // The code's risk notes ("talks to the internet", "a safety-check file") and the second model's review of a change that passed
+  // every check. Shown on the ready card only. Never throws: a failed review becomes { verdict: "none", notes: [why] }.
+  async function reviewChange(record, result) {
+    const riskNotes = guard.riskScan(result.diff, result.files).filter((n) => n.level !== "block").slice(0, 20);
+    const asked = (record.chat || []).filter((m) => m.role === "user").map((m) => m.text).join("\n\n") || record.request;
+    say(record, "A second model (Hydrogen) is reading the change...");
+    let review;
+    try { review = guard.parseReview(await reviewer(guard.reviewPrompt(asked, result.diff, riskNotes))); }
+    catch (error) { review = { verdict: "none", notes: [String(error.message).replace(/[\u0000-\u001f]/g, " ").slice(0, 200)] }; }
+    return { riskNotes, review };
+  }
+
   // Does the first round of work in the background, then saves the outcome on the record.
   async function work(record) {
     const id = record.id;
@@ -584,6 +613,7 @@ function createSelfEdit({
         return finish({ ...result, status: "blocked", note: `The change still has problems after ${result.attempts.length} attempt(s), so it cannot be approved (see the reasons).` });
       }
       const tries = result.attempts.length > 1 ? ` (it took the editor ${result.attempts.length} attempts)` : "";
+      Object.assign(result, await reviewChange(record, result));
       addChat(record, "bot", result.summary || "Done.");
       say(record, "Done. Ready for you to look at.");
       return finish({ ...result, status: "ready", note: `Ready for your review${tries}.` });
@@ -623,6 +653,7 @@ function createSelfEdit({
         say(record, "That try failed the checks. Your previous version is back.");
         return finish({ status: "ready", note: "The last follow-up failed the checks and was undone; the version before it is still ready." });
       }
+      Object.assign(result, await reviewChange(record, result));
       addChat(record, "bot", result.summary || "Done.");
       say(record, "Done. Ready for you to look at.");
       return finish({ ...result, status: "ready", note: "Ready for your review." });
@@ -767,4 +798,4 @@ function createSelfEdit({
   return { start, followUp, previewDir, get, list, approve, reject, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };

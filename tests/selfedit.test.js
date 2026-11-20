@@ -47,6 +47,7 @@ function setup(editorFn) {
     repoDir: project.repoDir,
     dataDir: project.dataDir,
     workRoot: project.workRoot,
+    reviewer: async () => '{"verdict":"ok","matches_request":true,"notes":[]}', // a fake second review: no model is called
     editor: async (args) => {
       await editorFn(args, project);
       return "I changed things.";

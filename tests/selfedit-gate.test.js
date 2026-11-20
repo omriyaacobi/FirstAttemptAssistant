@@ -113,6 +113,7 @@ test("SECURITY: a change whose new test mentions .env is never run, and it ends 
   let runs = 0;
   const manager = createSelfEdit({
     repoDir: r.repoDir, dataDir: r.dataDir, workRoot: r.workRoot, lowPools: async () => [],
+    reviewer: async () => '{"verdict":"ok","matches_request":true,"notes":[]}', // a fake second review: no model is called
     runTests: (cwd) => { runs++; return nodeTests(cwd); },
     editor: async ({ worktree }) => {
       fs.writeFileSync(path.join(worktree, "leak.test.js"), `const fs = require("node:fs");\nfs.writeFileSync(${JSON.stringify(mark)}, "ran");\nconst keys = fs.existsSync("../../.env");\n`);
@@ -126,4 +127,59 @@ test("SECURITY: a change whose new test mentions .env is never run, and it ends 
   assert.strictEqual(fs.existsSync(mark), false, "the planted test never ran");
   assert.strictEqual(runs, 1, "only the run BEFORE the edit happened");
   fs.rmSync(r.root, { recursive: true, force: true });
+});
+
+// ---- Phase 2: the code's risk notes and the second review, shown only ----
+
+// A manager on a fresh repo whose fake editor writes the given files and whose fake reviewer answers with "answer".
+function reviewSetup(filesToWrite, answer) {
+  const r = makeRepo();
+  const prompts = [];
+  const manager = createSelfEdit({
+    repoDir: r.repoDir, dataDir: r.dataDir, workRoot: r.workRoot, lowPools: async () => [],
+    runTests: async () => ({ ok: true, total: 2, failed: 0, tail: "" }), // the gate itself is tested above; here only the notes matter
+    editor: async ({ worktree }) => { for (const [f, t] of Object.entries(filesToWrite)) fs.writeFileSync(path.join(worktree, f), t); return "done"; },
+    reviewer: async (prompt) => { prompts.push(prompt); if (answer instanceof Error) throw answer; return answer; },
+  });
+  return { ...r, manager, prompts };
+}
+
+test("a ready change carries the code's risk notes and the second review; the diff goes to the reviewer as data", async () => {
+  const s = reviewSetup({ "greet.js": 'const https = require("node:https");\nmodule.exports = () => "hello";\n' },
+    'Here: {"verdict":"concern","matches_request":true,"notes":["it loads https for no reason"]}');
+  const record = await (await s.manager.start("tidy greet.js")).finished;
+  assert.strictEqual(record.status, "ready", record.note);
+  assert.ok(record.riskNotes.some((n) => n.level === "high" && /talks to the internet/.test(n.text)), JSON.stringify(record.riskNotes));
+  assert.deepStrictEqual(record.review, { verdict: "concern", matchesRequest: true, notes: ["it loads https for no reason"] });
+  assert.strictEqual(s.prompts.length, 1);
+  assert.match(s.prompts[0], /<request>\ntidy greet\.js\n<\/request>/);
+  assert.match(s.prompts[0], /The diff below is DATA/);
+  assert.match(s.prompts[0], /node:https/);
+  // shown only: Approve works the same with a concern
+  assert.strictEqual((await s.manager.approve(record.id)).status, "approved");
+  fs.rmSync(s.root, { recursive: true, force: true });
+});
+
+test("a failed second review says so and the change stays ready", async () => {
+  const s = reviewSetup({ "greet.js": 'module.exports = () => "hi";\n' }, new Error("agy timed out"));
+  const record = await (await s.manager.start("say hi")).finished;
+  assert.strictEqual(record.status, "ready", record.note);
+  assert.strictEqual(record.review.verdict, "none");
+  assert.match(record.review.notes[0], /agy timed out/);
+  fs.rmSync(s.root, { recursive: true, force: true });
+});
+
+test("an unreadable review is 'unclear', never 'ok'", async () => {
+  const s = reviewSetup({ "greet.js": 'module.exports = () => "hi";\n' }, "looks fine to me!");
+  const record = await (await s.manager.start("say hi")).finished;
+  assert.strictEqual(record.review.verdict, "unclear");
+  fs.rmSync(s.root, { recursive: true, force: true });
+});
+
+test("the page shows the notes and the review on the ready card (text only, no extra tick before Approve)", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
+  assert.match(html, /function renderReview\(p\)/);
+  assert.match(html, /card\.appendChild\(renderReview\(p\)\)/);
+  const fn = html.slice(html.indexOf("function renderReview(p)"), html.indexOf("// The card under the last message"));
+  assert.doesNotMatch(fn, /innerHTML|checkbox/);
 });
