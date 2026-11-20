@@ -1,7 +1,9 @@
-// selfedit-guard.js  (PROTOTYPE, research branch 2026-11-20; not used by the running Bot)
-// The extra checks that would let Improve Bot change (almost) ALL of Bot instead of only public/ or the non-protected files,
-// and still stay safe and pleasant. Everything here is plain code: a model never decides what is allowed.
+// selfedit-guard.js
+// The checks that let Improve Bot change (almost) ALL of Bot and still stay safe and pleasant (built 2026-11-20 from the
+// research prototype, experiments/2026-11-20-selfedit-full-access.md). Everything here is plain code: a model never decides
+// what is allowed. This is a GUARD file: Bot itself can never change it.
 //
+//   fencedEnv()          the environment of the test run: git can never push to GitHub or use a saved login.
 //   tierOf(file)         "guard" (never changed by Bot), "sensitive" (allowed, but with a second review and a red note), "normal".
 //   riskScan(diff)       reads the ADDED lines of a diff and writes plain-English risk notes; a few patterns block outright.
 //   sizeProblems(...)    a limit on how big one change may be (smaller for sensitive files).
@@ -24,6 +26,20 @@ const GUARD_PREFIXES = [".git/", ".github/", "data/", "node_modules/", "moodle-e
 const SENSITIVE_FILES = ["server.js", "brain.js", "store.js", "preview.js", "providers.js", "calendar.js", "calendar-add.js",
   "moodle-ws.js", "moodle-bridge.js", "moodle-tools.js", "pc-open.js", "pc-find.js", "project-folder.js", "linkfetch.js",
   "link-batch.js", "unzip.js", "upload.js", "profile.js", "reminders.js", "thread-files.js", "webpush.js", "quota.js", "router.js"];
+
+// ---- the git fence for the test run ----
+// A private copy is a linked git worktree: it shares the real repo's settings (origin = Omri's GitHub) and his saved login.
+// The editor cannot run commands, but the gate RUNS the tests it wrote, so a test could call git and push the unreviewed change.
+// Removing origin in a worktree would remove it from the real repo, so the fence is in the ENVIRONMENT of every program the test
+// run starts: git reads GIT_CONFIG_* first. Every push to GitHub goes to a folder that does not exist, saved logins are off,
+// and git may never ask for one. The real repo's settings are never touched.
+const FENCE = [["credential.helper", ""], ["url.file:///no-such-folder/push-blocked/.pushInsteadOf", "https://github.com/"],
+  ["url.file:///no-such-folder/push-blocked/.pushInsteadOf", "git@github.com:"], ["url.file:///no-such-folder/push-blocked/.pushInsteadOf", "ssh://git@github.com/"]];
+function fencedEnv(base = process.env) {
+  const env = { ...base, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_ASKPASS: "", SSH_ASKPASS: "", GIT_CONFIG_COUNT: String(FENCE.length) };
+  FENCE.forEach(([k, v], i) => { env["GIT_CONFIG_KEY_" + i] = k; env["GIT_CONFIG_VALUE_" + i] = v; });
+  return env;
+}
 
 const NORMAL_TEST_STEMS = ["brain-brief"]; // tests named after a sensitive file that test something normal
 const norm = (f) => String(f).replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
@@ -201,5 +217,5 @@ function bootDecision(pending, now = Date.now()) {
   return "wait";
 }
 
-module.exports = { tierOf, riskScan, removedNames, sizeProblems, auditWide, reviewPrompt, parseReview, undoMerge, bootDecision, addedLines, removedTests,
+module.exports = { fencedEnv, tierOf, riskScan, removedNames, sizeProblems, auditWide, reviewPrompt, parseReview, undoMerge, bootDecision, addedLines, removedTests,
   GUARD_FILES, SENSITIVE_FILES, MAX_CHANGED_LINES, MAX_SENSITIVE_LINES, MAX_TRIES };

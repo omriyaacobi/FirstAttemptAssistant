@@ -20,6 +20,7 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { ID_PATTERN } = require("./store");
+const guard = require("./selfedit-guard");
 
 // Files and folders the editor may never change. server.js holds the web security checks,
 // store.js validates conversation ids, selfedit.js is this safety gate itself, and the rest
@@ -83,7 +84,8 @@ const TEST_TIMEOUT_MS = 15 * 60 * 1000;
 function nodeTests(cwd, { timeoutMs = TEST_TIMEOUT_MS } = {}) {
   // When this code itself runs inside "node --test", Node marks the environment so that
   // child processes think they are test workers. Remove that mark or the inner run misbehaves.
-  const env = { ...process.env };
+  // The run is FENCED (selfedit-guard.js fencedEnv): a test the editor wrote can never push to GitHub or use a saved login.
+  const env = guard.fencedEnv();
   delete env.NODE_TEST_CONTEXT;
   return new Promise((resolve) => {
     execFile(process.execPath, ["--test", "--test-reporter=spec"], { windowsHide: true, cwd, env, timeout: timeoutMs, maxBuffer: 5e7 }, (error, stdout, stderr) => {
@@ -360,13 +362,22 @@ function publicOnlyProblems(files) {
   return problems;
 }
 
-function checkProposal({ files, diff, tests, baseline, publicOnly = false }) {
+// What makes a change too risky to even RUN its tests (2026-11-20). Running the tests runs the new code on this PC before Omri has
+// seen anything, so these are checked first: protected files, and the "block" notes of the code scan (a line that mentions the
+// .env file, turns off permission checks, or force-pushes / resets git). Returns plain-English problems; empty means "run them".
+function preTestProblems({ files, diff, publicOnly = false }) {
   const problems = publicOnly ? publicOnlyProblems(files) : [];
   const touched = files.filter((f) => isProtected(f.path)).map((f) => f.path);
   if (touched.length) problems.push(`Protected files were changed: ${touched.join(", ")}`);
+  for (const note of guard.riskScan(diff || "").filter((n) => n.level === "block")) problems.push(`Not allowed in a change Bot makes: ${note.text} (line: ${note.line})`);
+  return problems;
+}
+
+function checkProposal({ files, diff, tests, baseline, publicOnly = false }) {
+  const problems = preTestProblems({ files, diff, publicOnly });
   if (files.length > MAX_FILES) problems.push(`Too many files changed (${files.length}, the limit is ${MAX_FILES})`);
   if (diff.length > MAX_DIFF_CHARS) problems.push("The change is too large to review in the page");
-  if (tests.notRun) problems.push("The tests were not run on this change, because it holds files Argon may not change");
+  if (tests.notRun) problems.push("The tests were not run on this change, because of the problems above (running them would run that code)");
   else if (!tests.ok) problems.push("The tests do not pass");
   else if (tests.total < baseline.total) problems.push(`The number of tests dropped from ${baseline.total} to ${tests.total}`);
   return problems;
@@ -530,8 +541,8 @@ function createSelfEdit({
       }
       diff = await git(wt, ["diff", "--cached", "--no-renames", "HEAD"]);
       treeHash = (await git(wt, ["write-tree"])).trim();
-      if (isArgon && publicOnlyProblems(files).length) {
-        tests = { ok: false, notRun: true, total: null, failed: null, tail: "" }; // nothing of such a change is ever run (see publicOnlyProblems)
+      if (preTestProblems({ files, diff, publicOnly: isArgon }).length) {
+        tests = { ok: false, notRun: true, total: null, failed: null, tail: "" }; // nothing of such a change is ever run (see preTestProblems)
       } else {
         say(record, `Running the tests on the change (${files.length} file${files.length === 1 ? "" : "s"} changed)... this can take up to about 6 minutes.`);
         tests = await runTests(wt);
@@ -756,4 +767,4 @@ function createSelfEdit({
   return { start, followUp, previewDir, get, list, approve, reject, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, nodeTests, TEST_TIMEOUT_MS, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
