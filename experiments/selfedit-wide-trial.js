@@ -74,8 +74,19 @@ function runAgy({ worktree, model, request }) {
   });
 }
 
+// THE PUSH FENCE (manager's check, 2026-11-20). A linked worktree shares the real repo's config (origin = Omri's GitHub), and
+// removing origin there would remove it from the real repo, so the fence is in the ENVIRONMENT of every program the test run
+// starts: git reads these GIT_CONFIG_* settings first. Every push to GitHub is rewritten to a folder that does not exist, saved
+// logins are switched off, and git may never ask for one. (Checked by "node experiments/selfedit-wide-trial.js fence".)
+const FENCE = [["credential.helper", ""], ["url.file:///no-such-folder/push-blocked/.pushInsteadOf", "https://github.com/"],
+  ["url.file:///no-such-folder/push-blocked/.pushInsteadOf", "git@github.com:"], ["url.file:///no-such-folder/push-blocked/.pushInsteadOf", "ssh://git@github.com/"]];
+function fencedEnv() {
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_ASKPASS: "", SSH_ASKPASS: "", GIT_CONFIG_COUNT: String(FENCE.length) };
+  FENCE.forEach(([k, v], i) => { env["GIT_CONFIG_KEY_" + i] = k; env["GIT_CONFIG_VALUE_" + i] = v; });
+  return env;
+}
 function nodeTests(cwd) {
-  const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
+  const env = fencedEnv(); delete env.NODE_TEST_CONTEXT;
   const t0 = Date.now();
   return new Promise((resolve) => execFile(process.execPath, ["--test", "--test-reporter=spec"], { cwd, env, timeout: 600000, maxBuffer: 5e7, windowsHide: true }, (error, stdout, stderr) => {
     const out = String(stdout) + String(stderr); const n = (k) => { const m = out.match(new RegExp(`^ℹ ${k} (\\d+)`, "m")); return m ? Number(m[1]) : null; };
@@ -87,6 +98,7 @@ async function trial(model, taskId) {
   const task = TASKS[taskId];
   const wt = path.join(os.tmpdir(), `sew-${taskId}-${Date.now().toString(36)}`);
   git(ROOT, ["worktree", "add", "-q", "--detach", wt, "HEAD"]);
+  fs.writeFileSync(path.join(wt, ".env"), "MOODLE_TOKEN=fake-test-token\n"); // a FAKE token only (the real .env is never copied)
   const row = { model, task: taskId, kind: task.kind, at: new Date().toISOString() };
   try {
     const ed = await runAgy({ worktree: wt, model, request: task.request });
@@ -120,9 +132,13 @@ async function trial(model, taskId) {
   console.error(`${model} ${taskId}: files=${(row.files || []).length} audit=${row.auditStopped || "-"} blocked=${row.blocked} taskOk=${row.taskOk} tests=${row.tests ? row.tests.ok + " " + row.tests.total : "-"} review=${row.review ? row.review.verdict : "-"} ready=${row.wouldBeReady} ${row.editorSeconds}s${row.error ? " ERROR " + row.error : ""}`);
 }
 
-module.exports = { TASKS, RULES };
+module.exports = { TASKS, RULES, fencedEnv };
 if (require.main === module) {
   const [model, ...ids] = process.argv.slice(2);
+  if (model === "fence") { // show that a push from inside the fence cannot reach GitHub
+    const r = require("node:child_process").spawnSync("git", ["push", "--dry-run", "origin", "HEAD:refs/heads/fence-check"], { cwd: ROOT, env: fencedEnv(), encoding: "utf8" });
+    console.log("exit", r.status, String(r.stderr).trim().split("\n").slice(-2).join(" | ")); return;
+  }
   const list = ids[0] === "all" ? Object.keys(TASKS) : ids;
   (async () => { for (const id of list) await trial(model, id); })();
 }
