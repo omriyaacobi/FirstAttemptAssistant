@@ -384,3 +384,4 @@ The full list with sizes and status: `experiments/2026-11-13-fable-review.md`. T
 - Never put keys in code; `.env` is git-ignored. `data/` never goes to GitHub; its encrypted backup goes to the cloud-synced folder.
 - The Claude CLI lives in `C:\Users\User\npm-global` and is called by full path.
 - Before a long break: read `CLAUDE.md`, this file, then `README.md`.
+- 2026-11-20: brain log line now shows seconds per model call; Neon low added to WARM_MODELS (it started cold on every call); speed measured: experiments/2026-11-20-neon-speed.md.
