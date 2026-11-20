@@ -74,17 +74,24 @@ function parseTestSummary(output) {
   return { total: num("tests"), failed: num("fail") };
 }
 
+// The full test suite takes about 1 minute on a quiet PC and about 6 when the PC is busy (343 s measured 2026-11-20). The old
+// limit of 240 s cut busy runs off, so Improve Bot could fail at its first step. 15 minutes leaves room; a run that still needs
+// longer is stopped and says so.
+const TEST_TIMEOUT_MS = 15 * 60 * 1000;
+
 // Runs the project's tests in a folder. Never rejects: failures come back as ok: false.
-function nodeTests(cwd) {
+function nodeTests(cwd, { timeoutMs = TEST_TIMEOUT_MS } = {}) {
   // When this code itself runs inside "node --test", Node marks the environment so that
   // child processes think they are test workers. Remove that mark or the inner run misbehaves.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   return new Promise((resolve) => {
-    execFile(process.execPath, ["--test", "--test-reporter=spec"], { windowsHide: true, cwd, env, timeout: 240000, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+    execFile(process.execPath, ["--test", "--test-reporter=spec"], { windowsHide: true, cwd, env, timeout: timeoutMs, maxBuffer: 5e7 }, (error, stdout, stderr) => {
       const output = String(stdout) + String(stderr);
       const { total, failed } = parseTestSummary(output);
-      resolve({ ok: !error && failed === 0 && total > 0, total, failed, tail: output.trim().split("\n").slice(-25).join("\n") });
+      const timedOut = !!(error && error.killed);
+      const tail = output.trim().split("\n").slice(-25).join("\n");
+      resolve({ ok: !error && failed === 0 && total > 0, total, failed, timedOut, tail: timedOut ? `${tail}\n(The test run was stopped after ${Math.round(timeoutMs / 60000)} minutes.)` : tail });
     });
   });
 }
@@ -526,7 +533,7 @@ function createSelfEdit({
       if (isArgon && publicOnlyProblems(files).length) {
         tests = { ok: false, notRun: true, total: null, failed: null, tail: "" }; // nothing of such a change is ever run (see publicOnlyProblems)
       } else {
-        say(record, `Running the tests on the change (${files.length} file${files.length === 1 ? "" : "s"} changed)... this takes a minute or two.`);
+        say(record, `Running the tests on the change (${files.length} file${files.length === 1 ? "" : "s"} changed)... this can take up to about 6 minutes.`);
         tests = await runTests(wt);
       }
       tests.baselineTotal = baseline.total;
@@ -551,7 +558,7 @@ function createSelfEdit({
       await git(repoDir, ["worktree", "add", "-b", branchFor(id), wt, "HEAD"]);
 
       // The tests must pass BEFORE the edit, otherwise we cannot tell who broke what.
-      say(record, "Running Bot's tests before changing anything...");
+      say(record, "Running Bot's tests before changing anything (up to about 6 minutes)...");
       const baseline = await runTests(wt);
       if (!baseline.ok) {
         await cleanup(id);
@@ -749,4 +756,4 @@ function createSelfEdit({
   return { start, followUp, previewDir, get, list, approve, reject, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, nodeTests, TEST_TIMEOUT_MS, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
