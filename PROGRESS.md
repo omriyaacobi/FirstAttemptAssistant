@@ -24,16 +24,15 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
 5. **Read why Hydrogen fails.** 50 of 357 Hydrogen first tries failed on 15-19 Nov with "agy status ERROR" (fast, 8-19 s, mostly
    the first round with the long context). Since 2026-11-20 the error carries agy's reason (`agyFailure` in `providers.js`):
    read the next `[brain] ... agy status ERROR: <reason>` lines in `data/thread/*.jsonl`, then decide (Google's side: leave it;
-   something in the content: fix). Notes: `experiments/2026-11-20-hydrogen-errors.md`.
+   something in the content: fix). Notes: `experiments/2026-11-20-hydrogen-errors.md`. (2026-11-20 morning: no new failure yet.)
 
 **Small (one short Sonnet session, or the manager):**
-6. **Delete `tutor.js` old word lists** (SHOW, HINT, SKIP), a fallback only when the brain sends no "ask", once the live test
-   shows the brain always sends it.
-7. **Merge the Moodle read branch** `claude/moodle-read-items-a2f753` (built, checked live, tests green, NOT merged): `moodle_read`
-   reads pages, assignments with due dates, labels, links and books. Review + tests + merge costs little; its
-   `experiments/2026-11-19-moodle-options.md` lists what else the token can read (submission status, grades and feedback,
-   notifications, `core_course_get_updates_since`, the Moodle calendar): choosing which to build is a talk, building them is
-   Medium. Its session: "Moodle: let Bot read the text of items".
+6. **Delete `tutor.js` old word lists** (SHOW, HINT, SKIP), a fallback only when the brain sends no "ask". Since 2026-11-20 the
+   log says it: `[brain] tool quiz_answer (course) ask=answer|hint|show|skip|missing` in `data/thread/*.jsonl`. After a few real
+   quiz replies with no `ask=missing`, delete them (a small Sonnet job).
+7. **Moodle read: MERGED 2026-11-20.** `moodle_read` reads pages, assignments with due dates, labels, links and books (token
+   route only). Next, my call: which of `experiments/2026-11-19-moodle-options.md` to build (submission status, grades and
+   feedback, notifications, `core_course_get_updates_since`, the Moodle calendar); building them is Medium.
 8. **Two oddities from the 2026-11-19 log:** one message got two identical answers (11:30), and a question over several Moodle
    courses looked them up one by one (75 s). A Sonnet look, then a small fix.
 9. **End-of-day review proposes lecture-part marks** ("worked on"), with the same quote rule as positions. Small build, but the
