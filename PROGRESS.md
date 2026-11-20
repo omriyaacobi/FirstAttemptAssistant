@@ -8,6 +8,15 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my Claude plan (Claude Code sessions);
 "Gemini" = agy's pools (Bot's own answers).
 
+**Found in the live tests (2026-11-20), fix after the weekly reset:**
+- **"Start lecture 6" dumped the whole lesson at once.** Usually the brain teaches in the chat itself (course_read, short
+  answers of 200-500 characters, asking me as it goes). This time Hydrogen called `teach_next`, which by design (CLAUDE.md
+  CATCH-UP) gives ONE big chunk: 3 steps + an example + one check question (1,600 characters, all of lecture 6 part 1).
+  It happened 3 times so far (15, 17 and 20 Nov). Fix idea: make `teach_next` (`catchup.js`) teach like the chat does, one
+  small step and a question, wait for my answer; or tell the brain (`brain-brief.md`) to start a lecture in the chat and use
+  teach_next only when I ask for a whole part. Decide with me first (it changes an agreed rule).
+- The Moodle test worked ("open the Mission 3 README" in one message, 16 s).
+
 **No model quota (git, settings, me):**
 1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:UsersUserOneDriveBot-backup` (newest 5 kept;
    first copy 70 MB, 380 files, checked by reading back). The passphrase is in `.env` only, plus my own safe copy; minimum 9
