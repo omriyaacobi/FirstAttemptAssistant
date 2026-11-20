@@ -183,3 +183,104 @@ test("the page shows the notes and the review on the ready card (text only, no e
   const fn = html.slice(html.indexOf("function renderReview(p)"), html.indexOf("// The card under the last message"));
   assert.doesNotMatch(fn, /innerHTML|checkbox/);
 });
+
+// ---- Phase 3: Undo and the health guard ----
+
+const { runGuard, markHealthy } = require("../health-guard");
+const OK_REVIEW = '{"verdict":"ok","matches_request":true,"notes":[]}';
+const pendingOf = (s) => { try { return JSON.parse(fs.readFileSync(path.join(s.dataDir, "selfedit-pending.json"), "utf8")); } catch (error) { return null; } };
+
+test("approve leaves a pending note for the health guard (code changes only); Undo reverts the change with a NEW commit", async () => {
+  const s = reviewSetup({ "greet.js": 'module.exports = () => "hello world";\n' }, OK_REVIEW);
+  const record = await (await s.manager.start("friendlier")).finished;
+  const approved = await s.manager.approve(record.id);
+  assert.strictEqual(approved.needsRestart, true);
+  assert.strictEqual(pendingOf(s).mergedCommit, approved.mergedCommit);
+  assert.strictEqual(git(s.repoDir, "rev-list", "--count", "HEAD"), "2");
+
+  const undone = await s.manager.undo(record.id);
+  assert.strictEqual(undone.status, "undone");
+  assert.strictEqual(fs.readFileSync(path.join(s.repoDir, "greet.js"), "utf8"), 'module.exports = () => "hello";\n');
+  assert.strictEqual(git(s.repoDir, "rev-list", "--count", "HEAD"), "3", "initial, change, revert: the history is kept");
+  assert.strictEqual(git(s.repoDir, "rev-parse", "HEAD"), undone.undoCommit);
+  assert.strictEqual(pendingOf(s), null, "nothing left for the health guard to undo");
+  assert.strictEqual(git(s.repoDir, "status", "--porcelain"), "");
+  await assert.rejects(s.manager.undo(record.id), /only an approved one/);
+  fs.rmSync(s.root, { recursive: true, force: true });
+});
+
+test("Undo: only the LAST approved change, never with uncommitted work, and bad ids are refused", async () => {
+  let n = 0;
+  const r = makeRepo();
+  const manager = createSelfEdit({
+    repoDir: r.repoDir, dataDir: r.dataDir, workRoot: r.workRoot, lowPools: async () => [], reviewer: async () => OK_REVIEW,
+    runTests: async () => ({ ok: true, total: 2, failed: 0, tail: "" }),
+    editor: async ({ worktree }) => { n++; fs.writeFileSync(path.join(worktree, `note${n}.js`), `module.exports = ${n};\n`); return "done"; },
+  });
+  const first = await (await manager.start("one")).finished;
+  await manager.approve(first.id);
+  const second = await (await manager.start("two")).finished;
+  await manager.approve(second.id);
+  await assert.rejects(manager.undo(first.id), /only the last approved change/);
+  fs.writeFileSync(path.join(r.repoDir, "greet.js"), "// Omri is editing\n");
+  await assert.rejects(manager.undo(second.id), /uncommitted/);
+  assert.strictEqual(fs.readFileSync(path.join(r.repoDir, "greet.js"), "utf8"), "// Omri is editing\n");
+  git(r.repoDir, "checkout", "--", "greet.js");
+  await assert.rejects(manager.undo("../x"), /not found/);
+  assert.strictEqual((await manager.undo(second.id)).status, "undone");
+  assert.strictEqual(manager.get(first.id).status, "approved"); // the earlier change stays
+  fs.rmSync(r.root, { recursive: true, force: true });
+});
+
+test("health guard with a real approve: two broken starts lead to a revert; a healthy start keeps the change", async () => {
+  const broken = reviewSetup({ "greet.js": "throw new Error('broken start');\n" }, OK_REVIEW);
+  const rec = await (await broken.manager.start("break it")).finished;
+  await broken.manager.approve(rec.id);
+  const now = Date.now();
+  const guardAt = (t) => runGuard({ repoDir: broken.repoDir, dataDir: broken.dataDir, now: t });
+  assert.strictEqual(guardAt(now).decision, "wait"); // start 1 (it crashes: no markHealthy)
+  assert.strictEqual(pendingOf(broken).startedAt, now);
+  assert.strictEqual(guardAt(now + 5000).decision, "wait"); // start 2 crashes too
+  const r = guardAt(now + 10000); // start 3: the change is undone before the old code starts
+  assert.strictEqual(r.decision, "rollback");
+  assert.strictEqual(r.undone, true);
+  assert.strictEqual(fs.readFileSync(path.join(broken.repoDir, "greet.js"), "utf8"), 'module.exports = () => "hello";\n');
+  assert.strictEqual(broken.manager.rollback().undone, true); // the page can explain it
+  assert.match(fs.readFileSync(path.join(broken.dataDir, "bot.log"), "utf8"), /\[health-guard\] .*undone/);
+  fs.rmSync(broken.root, { recursive: true, force: true });
+
+  const fine = reviewSetup({ "greet.js": 'module.exports = () => "hi";\n' }, OK_REVIEW);
+  const rec2 = await (await fine.manager.start("say hi")).finished;
+  await fine.manager.approve(rec2.id);
+  assert.strictEqual(runGuard({ repoDir: fine.repoDir, dataDir: fine.dataDir }).decision, "wait");
+  assert.strictEqual(markHealthy(fine.dataDir), true); // what server.js does once it listens
+  assert.strictEqual(runGuard({ repoDir: fine.repoDir, dataDir: fine.dataDir }).decision, "ok");
+  assert.strictEqual(pendingOf(fine), null);
+  assert.strictEqual(fs.readFileSync(path.join(fine.repoDir, "greet.js"), "utf8"), 'module.exports = () => "hi";\n');
+  assert.strictEqual(fine.manager.rollback(), null);
+  fs.rmSync(fine.root, { recursive: true, force: true });
+});
+
+test("approving long after (the restart comes later) does not count as a failed start", async () => {
+  const s = reviewSetup({ "greet.js": 'module.exports = () => "hi";\n' }, OK_REVIEW);
+  const rec = await (await s.manager.start("say hi")).finished;
+  await s.manager.approve(rec.id);
+  // the first start happens an hour after approving: it is a first try, not a time-out
+  assert.strictEqual(runGuard({ repoDir: s.repoDir, dataDir: s.dataDir, now: Date.now() + 60 * 60 * 1000 }).decision, "wait");
+  fs.rmSync(s.root, { recursive: true, force: true });
+});
+
+test("start-web.cmd runs the health guard right before every start of server.js; server.js marks itself healthy", () => {
+  const root = path.join(__dirname, "..");
+  const cmd = fs.readFileSync(path.join(root, "start-web.cmd"), "utf8");
+  assert.match(cmd, /:run\r?\n(rem [^\n]*\r?\n)?"%NODE%" health-guard\.js\r?\n"%NODE%" server\.js/);
+  assert.match(fs.readFileSync(path.join(root, "server.js"), "utf8"), /require\("\.\/health-guard"\)\.markHealthy\(path\.join\(__dirname, "data"\)\)/);
+  assert.strictEqual(markHealthy(tmp("bot-gate-nothing-")), false); // no pending change: nothing written
+});
+
+test("the page has an Undo button on an approved change and explains a roll-back", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
+  assert.match(html, /decide\(p\.id, "undo"\)/);
+  assert.match(html, /id="improveRollback"/);
+  assert.match(html, /selfedit-rollback\.json/);
+});

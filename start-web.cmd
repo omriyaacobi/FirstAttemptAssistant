@@ -31,6 +31,8 @@ rem                   so a broken change cannot crash again and again.
 set CRASHES=0
 
 :run
+rem The health guard: if a change approved in Improve Bot keeps Bot from starting, it is undone here (health-guard.js).
+"%NODE%" health-guard.js
 "%NODE%" server.js
 set CODE=%errorlevel%
 if %CODE%==75 (

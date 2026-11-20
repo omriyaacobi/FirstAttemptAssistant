@@ -29,6 +29,8 @@ async function start(handle = async () => ({ mode: "single", answer: "hello", us
     list: () => [{ id: "0123456789abcdef", status: "ready" }],
     approve: async (id) => { calls.push(["approve", id]); if (id === "ffffffffffffffff") throw new Error("proposal not found"); return { id, status: "approved" }; },
     reject: async (id) => { calls.push(["reject", id]); return { id, status: "rejected" }; },
+    undo: async (id) => { calls.push(["undo", id]); if (id === "ffffffffffffffff") throw new Error("only the last approved change can be undone here"); return { id, status: "undone" }; },
+    rollback: () => null,
     followUp: async (id, message) => { calls.push(["message", id, message]); if (!message) throw new Error("write what you want changed"); return { record: { id, status: "running" } }; },
     previewDir: (id) => (id === "0123456789abcdef" ? PREVIEW_DIR : null),
     isActive: () => false,
@@ -176,6 +178,16 @@ test("self-edit: list, start, open, approve and reject go through to the manager
   assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/approve", {})).status, 200);
   assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/reject", {})).status, 200);
   assert.deepStrictEqual(s.calls.slice(1), [["approve", "0123456789abcdef"], ["reject", "0123456789abcdef"]]);
+  await s.close();
+});
+
+test("self-edit: Undo goes through to the manager, and a refused undo is a 409", async () => {
+  const s = await start();
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/undo", {})).status, 200);
+  assert.strictEqual((await s.post("/api/selfedit/ffffffffffffffff/undo", {})).status, 409);
+  assert.deepStrictEqual(s.calls, [["undo", "0123456789abcdef"], ["undo", "ffffffffffffffff"]]);
+  assert.strictEqual(JSON.parse((await s.request("GET", "/api/selfedit")).body).rollback, null);
+  assert.strictEqual((await s.post("/api/selfedit/0123456789abcdef/undo", {}, { Origin: "https://evil.example.com" })).status, 403);
   await s.close();
 });
 

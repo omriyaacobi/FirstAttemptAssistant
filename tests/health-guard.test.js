@@ -1,4 +1,4 @@
-// Tests for the health-guard PROTOTYPE (research branch 2026-11-20): a merged change that keeps Bot from coming up is undone.
+// Tests for health-guard.js: a merged change that keeps Bot from coming up is undone (start-web.cmd runs it before every start).
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");

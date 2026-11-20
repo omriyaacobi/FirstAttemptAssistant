@@ -784,7 +784,47 @@ function createSelfEdit({
     await cleanup(id);
 
     const needsRestart = record.files.some((f) => !f.path.startsWith("public/") && !f.path.endsWith(".md"));
-    return save(Object.assign(record, { status: "approved", note: "Merged into your project (not pushed to GitHub).", mergedCommit, needsRestart, finishedAt: Date.now() }));
+    // The health guard (health-guard.js, which start-web.cmd runs before every start): if the new code keeps Bot from coming up,
+    // the change is undone by itself. A page-only change needs no restart, so nothing is written for it.
+    if (needsRestart) writePending({ id, mergedCommit, approvedAt: Date.now(), tries: 0 });
+    return save(Object.assign(record, { status: "approved", note: "Merged into your project (not pushed to GitHub).", mergedCommit, needsRestart, approvedAt: Date.now(), finishedAt: Date.now() }));
+  }
+
+  // ---- Undo and the health guard's files (2026-11-20) ----
+  const pendingFile = path.join(dataDir, "selfedit-pending.json");
+  const rollbackFile = path.join(dataDir, "selfedit-rollback.json");
+  function writePending(pending) {
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(pendingFile, JSON.stringify(pending));
+  }
+  function allRecords() {
+    if (!fs.existsSync(recordsDir)) return [];
+    return fs.readdirSync(recordsDir).filter((name) => name.endsWith(".json")).map((name) => load(name.slice(0, -5))).filter(Boolean);
+  }
+
+  // One-tap Undo: reverts the LAST approved change as a NEW commit (the history is kept; never a reset, never forced, never pushed).
+  // undoMerge (selfedit-guard.js) refuses a project with uncommitted changes, a commit that is not in the history, and a conflict
+  // with a later change; then nothing changes and the reason is shown.
+  async function undo(id) {
+    const record = get(id);
+    if (!record) throw new Error("proposal not found");
+    if (record.status !== "approved") throw new Error(`this proposal is "${record.status}", only an approved one can be undone`);
+    if (active) throw new Error("another proposal is still running");
+    const newest = allRecords().filter((r) => r.status === "approved").sort((a, b) => (b.approvedAt || b.finishedAt || 0) - (a.approvedAt || a.finishedAt || 0))[0];
+    if (!newest || newest.id !== record.id) throw new Error("only the last approved change can be undone here");
+    const undoCommit = guard.undoMerge({ repoDir, mergedCommit: record.mergedCommit });
+    try { if (JSON.parse(fs.readFileSync(pendingFile, "utf8")).mergedCommit === record.mergedCommit) fs.rmSync(pendingFile, { force: true }); } catch (error) { /* no pending file */ }
+    return save(Object.assign(record, { status: "undone", note: "Undone with a new commit (on your computer only, not pushed to GitHub).", undoCommit, undoneAt: Date.now() }));
+  }
+
+  // What the health guard did after the last restart (data/selfedit-rollback.json), for the page; only for a week.
+  function rollback() {
+    try {
+      const info = JSON.parse(fs.readFileSync(rollbackFile, "utf8"));
+      return Date.now() - Date.parse(info.at) < 7 * 24 * 60 * 60 * 1000 ? info : null;
+    } catch (error) {
+      return null;
+    }
   }
 
   async function reject(id) {
@@ -795,7 +835,7 @@ function createSelfEdit({
     return save(Object.assign(record, { status: "rejected", note: "Thrown away. Nothing was changed.", finishedAt: Date.now() }));
   }
 
-  return { start, followUp, previewDir, get, list, approve, reject, isActive: () => active !== null };
+  return { start, followUp, previewDir, get, list, approve, reject, undo, rollback, isActive: () => active !== null };
 }
 
 module.exports = { createSelfEdit, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };

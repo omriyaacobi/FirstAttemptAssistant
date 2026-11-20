@@ -705,6 +705,7 @@
     </div>
     <div id="improveBody" class="improve-body">
       <div class="scroll" id="improveScroll"><div class="inner">
+        <p class="err" id="improveRollback" hidden></p>
         <div id="improveThread" aria-live="polite"></div>
         <details class="card" id="moreCard">
           <summary>Earlier requests and GitHub</summary>
@@ -1477,7 +1478,7 @@
   history.replaceState(navState, ""); // the base screen: Back from here leaves the app
 
   // ---- Improve Bot (self-edit) ----
-  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted" };
+  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted", undone: "muted" };
   let openProposalId = null;
   let pollTimer = null;
 
@@ -1625,7 +1626,13 @@
 
   async function loadProposals(adopt) {
     try {
-      const { proposals, busy } = await (await fetch("/api/selfedit")).json();
+      const { proposals, busy, rollback } = await (await fetch("/api/selfedit")).json();
+      // The health guard undid an approved change because Bot did not come up after it (data/selfedit-rollback.json, health-guard.js).
+      const rb = $("improveRollback");
+      rb.hidden = !rollback;
+      if (rollback) rb.textContent = rollback.undone
+        ? `Bot did not start after the last approved change (${String(rollback.at).slice(0, 16).replace("T", " ")} UTC), so it was undone by itself with a new commit (${String(rollback.revertCommit).slice(0, 7)}). Your Bot runs the code from before that change. The details are in data/bot.log and data/selfedit-rollback.json.`
+        : `Bot did not start after the last approved change (${String(rollback.at).slice(0, 16).replace("T", " ")} UTC), and undoing it by itself did not work: ${rollback.why || "unknown reason"}. Ask Claude Code to look at data/bot.log.`;
       const list = $("proposals");
       list.replaceChildren();
       if (!proposals.length) list.appendChild(el("li", "sub", "No requests yet."));
@@ -1785,6 +1792,19 @@
       const actions = el("div", "actions");
       const go = el("button", "", p.needsRestart ? "Restart Bot now" : "Reload the page");
       go.addEventListener("click", p.needsRestart ? restartBot : () => location.reload());
+      // Undo: the last approved change is reverted with a NEW commit (never pushed). The server refuses an older one and says why.
+      const undoBtn = el("button", "danger", "Undo this change");
+      undoBtn.title = "Put Bot back the way it was before this change (a new commit; nothing is pushed)";
+      undoBtn.addEventListener("click", () => decide(p.id, "undo"));
+      actions.append(go, undoBtn);
+      card.appendChild(actions);
+    } else if (p.status === "undone") {
+      head.append(statusBadge("undone"), el("span", "", "Undone"));
+      card.append(head, el("p", "", `Undone with a new commit (${String(p.undoCommit).slice(0, 7)}). It is on your computer only.`));
+      card.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Code changed back: restart Bot to load it." : "Only the page changed back: reload it."));
+      const actions = el("div", "actions");
+      const go = el("button", "", p.needsRestart ? "Restart Bot now" : "Reload the page");
+      go.addEventListener("click", p.needsRestart ? restartBot : () => location.reload());
       actions.appendChild(go);
       card.appendChild(actions);
     } else {
@@ -1855,7 +1875,9 @@
   }
 
   async function decide(id, action) {
-    const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub." : "Throw this away?\n\nNothing in your project will change.";
+    const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub."
+      : action === "undo" ? "Undo this change?\n\nBot makes a new commit that puts the code back the way it was. Nothing is pushed to GitHub."
+      : "Throw this away?\n\nNothing in your project will change.";
     if (!confirm(text)) return;
     try {
       const res = await fetch(`/api/selfedit/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
