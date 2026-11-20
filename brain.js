@@ -1178,7 +1178,10 @@ ${r.cardText}`; }
       } else if (term && coach) {
         const c = term.course ? matchCourse(term.course, list) : ctx.course;
         await slowSlot(); // a quiz or a lesson is long model work
-        log(`[brain] tool ${term.tool}${c ? ` (${c.name})` : ""}`);
+        // (2026-11-20) a quiz reply logs which "ask" came with it (closed list, never Omri's words), so the log can show whether the
+        // brain always sends it; then tutor.js's old word lists (its fallback when "ask" is missing) can go.
+        const askNote = term.tool === "quiz_answer" ? ` ask=${["answer", "hint", "show", "skip"].includes(term.ask) ? term.ask : "missing"}` : "";
+        log(`[brain] tool ${term.tool}${c ? ` (${c.name})` : ""}${askNote}`);
         if (DIRECT[term.tool]) {
           const res = await DIRECT[term.tool](c, term, lang, onPartial || null);
           return { ...res, mode: "study", brain: true, seconds: seconds(), ...(c && term.tool !== "study_plan" ? { courseId: c.id, courseName: c.name } : {}) };
