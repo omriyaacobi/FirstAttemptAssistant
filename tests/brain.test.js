@@ -267,7 +267,7 @@ test("a photo message is in the token log too: the photo model's onUsage is pass
   const { brain } = setup([], { askImage, photoChain: [{ provider: "agy", model: "photo-a" }], tokenLog: { add: (calls) => added.push(calls) } });
   const r = await run(brain, "what is this?", { image: { path: "x.png" } });
   assert.strictEqual(r.answer, "A cat.");
-  assert.deepStrictEqual(added, [[{ model: "photo-a", input: 900, output: 20 }]]);
+  assert.deepStrictEqual(added.map((calls) => calls.map(({ seconds, ...rest }) => rest)), [[{ model: "photo-a", input: 900, output: 20 }]]); // seconds: each call also carries how long it took
 });
 
 test("a photo: the second photo model takes over when the first fails", async () => {

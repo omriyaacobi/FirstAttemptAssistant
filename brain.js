@@ -120,7 +120,10 @@ function costOf(spent) {
   // agy's own tool (web search) ran inside a call: each use is one more model turn that read the whole prompt again.
   const inner = spent.flatMap((c) => (Array.isArray(c.inner) ? c.inner : []));
   const web = inner.length ? `, ${inner.length} web search step${inner.length === 1 ? "" : "s"} inside agy` : "";
-  return { calls: spent.length, tokens, text: spent.length ? `${spent.length} model call${spent.length === 1 ? "" : "s"}, ${tokens.toLocaleString("en-US")} tokens${web}` : "" };
+  // How long each call took, when known: "2 model calls (3.1 s, 5.2 s), 2,020 tokens".
+  const times = spent.map((c) => c.seconds).filter((s) => typeof s === "number");
+  const each = times.length ? ` (${times.map((s) => `${s.toFixed(1)} s`).join(", ")})` : "";
+  return { calls: spent.length, tokens, text: spent.length ? `${spent.length} model call${spent.length === 1 ? "" : "s"}${each}, ${tokens.toLocaleString("en-US")} tokens${web}` : "" };
 }
 
 // The order the models are asked in, from the pool levels. Two steps:
@@ -1101,7 +1104,14 @@ ${r.cardText}`; }
     const askRaw = image ? (provider, model, q, onText, extra = {}) => (provider === "agy" ? askImage(model, q, image.path, onText || (() => {}), { onUsage: extra.onUsage || null }) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
     // agy's OWN web search (search_web inside one agy call) is seen in its step events (providers.js watchSteps -> u.inner). A page read
     // that way counts as a web page for the afterWeb rule: no doing-tool may run after it in this message (Omri, 2026-11-13).
-    const askThis = (provider, model, q, onText) => askRaw(provider, model, q, onText, { onUsage: (u) => { spent.push({ model, ...u }); if (usedWebSearch(u && u.inner)) ctx.sawWeb = true; } });
+    // Each call's own seconds (2026-11-20) are written on its spent entry when it ends, so the answer's log line can show them.
+    const askThis = (provider, model, q, onText) => {
+      const started = now();
+      let mine = null;
+      const stamp = () => { if (mine) mine.seconds = Number(((now() - started) / 1000).toFixed(1)); };
+      const call = askRaw(provider, model, q, onText, { onUsage: (u) => { mine = { model, ...u }; spent.push(mine); if (usedWebSearch(u && u.inner)) ctx.sawWeb = true; } });
+      return call.then((text) => { stamp(); return text; }, (error) => { stamp(); throw error; });
+    };
     if (early.note) log(`[brain] ${early.note}: asking ${order[0].model} first`);
     else if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
     else if (!image && paced.note) log(`[brain] ${paced.note}: asking ${order[0].model} first`);
