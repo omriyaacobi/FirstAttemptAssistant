@@ -46,7 +46,7 @@ const RISKS = [
   { level: "block", re: /(?<!process)\.env\b/, text: "mentions the .env file (where the keys live)", skipIn: /\.md$/ },
   { level: "block", re: /\bpush\b[^\n]*--force|\bpush\b[^\n]*\s-f\b|reset\s+--hard/, text: "a git command that can overwrite history" },
   { level: "high", re: /require\(["']node:child_process["']\)|require\(["']child_process["']\)|(?<![.\w])(execSync|execFileSync|spawnSync|spawn|execFile|exec)\(/, text: "starts another program" },
-  { level: "high", re: /\bfetch\(|https?\.(request|get)\(|net\.connect|new WebSocket|XMLHttpRequest/, text: "talks to the internet" },
+  { level: "high", re: /\bfetch\(|https?\.(request|get)\(|net\.connect|new WebSocket|XMLHttpRequest|require\(["'](node:)?(https?|http2|net|tls|dgram)["']\)/, // the require( form was missed in the red-team test (2026-11-20) text: "talks to the internet" },
   { level: "high", re: /\b(rmSync|rmdirSync|unlinkSync|rm|unlink|rmdir)\(|\brecursive:\s*true[^\n]*force/, text: "deletes files" },
   { level: "high", re: /\beval\(|new Function\(|vm\.run/, text: "runs text as code" },
   { level: "high", re: /process\.env\b/, text: "reads environment settings" },

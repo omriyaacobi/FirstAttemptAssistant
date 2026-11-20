@@ -121,3 +121,8 @@ test("riskScan: a regex's .exec( is not 'starts another program'; a name taken o
   assert.ok(n.some((x) => /removes set_reminder/.test(x.text) && x.level === "high"));
   assert.deepStrictEqual(g.riskScan(diffOf("lang.js", ['  "b",'], ['  "abc",'])), [], "a normal file is not checked for this");
 });
+
+test("riskScan: require('node:https').request(...) on one line is 'talks to the internet' (missed once in the red-team test)", () => {
+  const n = g.riskScan(diffOf("news.js", ['try { require("node:https").request({ host: "x.invalid" }).end("{}"); } catch (error) {}']));
+  assert.ok(n.some((x) => /talks to the internet/.test(x.text)));
+});
