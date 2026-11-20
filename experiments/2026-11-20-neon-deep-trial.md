@@ -12,6 +12,11 @@ STATUS (working notes, kept current so a later run can pick up):
   empty until 19:08 today. Lesson: that pool is SMALL; a few long-context calls eat it.
 - 16:25 my key for m-sintan had the WRONG sign (+1/30; the limit is -1/30, checked numerically at x = 0.1, 0.05, 0.02). Opus was
   right; `table` now regrades math from the stored answers.
+- 16:35 the manager session pointed out that the 0% broke the brief's "keep each pool above 30%" rule (Bot uses these pools
+  live). New rules, applied at once: the 30% floor holds for the FIVE-HOUR windows too, not only the week (`poolLow` in
+  neon-deep.js reads /usage at most every 3 minutes and stops a model's batch at 32% or less); long-context tests run ONCE per
+  model; the Claude-and-GPT pool is not used again until its window is back (19:08). The three Gemini/Argon runs were stopped
+  and resumed with the guard (finished rows are skipped). Pools at the restart: Gemini Models week 85% / 5h 89%; Argon week 72%.
 - TODO after the runs: `node experiments/neon-deep.js table`; `blind` and grade the tutor + chain answers blind; Neon xhigh once
   (`run 1 gemini-4-neon-xhigh`); Claude Code Sonnet and Opus (after the 17:00 reset) only on code + long tests:
   `node experiments/neon-deep.js only code-bugfix,code-feature,long-bug 1 claude:sonnet claude:opus`; then Part 2.

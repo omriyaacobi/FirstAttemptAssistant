@@ -206,11 +206,27 @@ async function runOne(model, t) {
   return { text: out.text, rounds: [out], ok: !!t.ok(out.text), answer: lastAnswer(out.text) };
 }
 
+// POOL FLOOR (manager, 2026-11-20): Bot uses these pools live. Before every test, this model's batch stops when its pool's
+// five-hour OR weekly window is at or under FLOOR percent. The Claude-and-GPT pool is not used again until its window is back.
+const FLOOR = 32;
+const poolOf = (m) => m.startsWith("claude:") ? null : /argon/.test(m) ? "Gemini 4 Argon" : /^(claude|gpt)/.test(m) ? "Claude and GPT models" : "Gemini Models";
+function poolLow(model) {
+  const pool = poolOf(model); if (!pool) return null;
+  if (!poolLow.at || Date.now() - poolLow.at > 3 * 60 * 1000) { poolLow.seen = usage(); poolLow.at = Date.now(); } // /usage can take 100 s: read it at most every 3 min
+  const lines = poolLow.seen.filter((l) => l.startsWith(pool + " /"));
+  if (!lines.length) return "could not read /usage (stopping to be safe)";
+  const bad = lines.filter((l) => { const m = l.match(/(\d+)%/); return !m || Number(m[1]) <= FLOOR; });
+  return bad.length ? "pool low: " + bad.join("; ") : null;
+}
 async function runModel(model, reps, tests) {
   const file = RES(model); const res = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { usage: {}, runs: [] };
   const save = () => fs.writeFileSync(file, JSON.stringify(res, null, 2));
   if (!model.startsWith("claude:")) { res.usage[`before ${new Date().toISOString()}`] = usage(); save(); }
   for (let rep = 1; rep <= reps; rep++) for (const t of tests) {
+    if (t.kind === "long" && rep > 1) continue; // long-context tests: ONE run per model (manager, 2026-11-20)
+    if (res.runs.some((r) => r.model === model && r.test === t.id && r.rep === rep && !r.error)) continue; // resume
+    const low = poolLow(model);
+    if (low) { console.error(`${model}: STOP, ${low}`); res.stopped = (res.stopped || []).concat(`${new Date().toISOString()} ${low}`); save(); return; }
     const t0 = Date.now(); let row;
     try {
       const r = await runOne(model, t);
