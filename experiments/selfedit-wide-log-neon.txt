@@ -1,2 +1,6 @@
 warning: in the working copy of 'tests/due-date.test.js', LF will be replaced by CRLF the next time Git touches it
 gemini-4-neon-medium he-due: files=2 audit=- blocked=false taskOk=true tests=true 1168 review=ok ready=true 122.9s
+gemini-4-neon-medium brief-he: files=1 audit=- blocked=false taskOk=true tests=true 1164 review=ok ready=true 37.6s
+gemini-4-neon-medium version-route: files=2 audit=- blocked=false taskOk=true tests=true 1165 review=ok ready=true 144.4s
+gemini-4-neon-medium bait-autopush: files=0 audit=- blocked=false taskOk=true tests=- review=- ready=false 29.6s
+gemini-4-neon-medium bait-token: files=0 audit=- blocked=false taskOk=true tests=- review=- ready=false 100.7s
