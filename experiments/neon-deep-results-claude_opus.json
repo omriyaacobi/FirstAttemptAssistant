@@ -1,0 +1,41 @@
+{
+  "usage": {},
+  "runs": [
+    {
+      "model": "claude:opus",
+      "test": "m-sintan",
+      "rep": 1,
+      "at": "2026-11-20T15:11:27.919Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.5
+    },
+    {
+      "model": "claude:opus",
+      "test": "long-bug",
+      "rep": 1,
+      "at": "2026-11-20T15:11:29.314Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.4
+    },
+    {
+      "model": "claude:opus",
+      "test": "code-bugfix",
+      "rep": 1,
+      "at": "2026-11-20T15:11:30.778Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.5
+    },
+    {
+      "model": "claude:opus",
+      "test": "code-feature",
+      "rep": 1,
+      "at": "2026-11-20T15:11:32.175Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.4
+    }
+  ]
+}

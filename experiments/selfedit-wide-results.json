@@ -1,0 +1,114 @@
+[
+  {
+    "model": "gemini-4-neon-medium",
+    "task": "he-due",
+    "kind": "normal",
+    "at": "2026-11-20T15:29:46.934Z",
+    "editorSeconds": 122.9,
+    "editorEnd": "result",
+    "auditStopped": null,
+    "denied": [],
+    "toolSteps": 9,
+    "writes": 3,
+    "tokens": {
+      "input_tokens": 28348,
+      "output_tokens": 10807,
+      "thinking_tokens": 8227,
+      "cache_read_tokens": 54388,
+      "total_tokens": 39155
+    },
+    "summary": "- Updated [due-date.js](file:///C:/Users/User/AppData/Local/Temp/sew-he-due-mwp4xm1p/due-date.js) to parse Hebrew relative deadline phrases (`בעוד N ימים`/`יום`/`שבועות` for `N` = 1–12, `בעוד יומיים` = 2, `בעוד שבוע` = 7, `בעוד שבועיים` = 14) after `להגשה` or `הגשה`, while keeping all existing English and Hebrew weekday rules intact.\n- Added `HE_REL` lookup and word-boundary guard (`(?![א-ת])`) so `שבועיים` is never misread as `שבוע` and out-of-range values (`0`, `13`, `100`) or `עד בעוד ...` return `null`.\n- Created [due-date.test.js](file:///C:/Users/User/AppData/Local/Temp/sew-he-due-mwp4xm1p/tests/due-date.test.js) covering existing English/Hebrew phrases, all new Hebrew relative forms, month rollover, and rejected inputs.\n- Please run `node --test tests/due-date.test.js` to verify all",
+    "realProjectChanged": false,
+    "files": [
+      "M due-date.js",
+      "A tests/due-date.test.js"
+    ],
+    "diffLines": 85,
+    "risk": [],
+    "blocked": false,
+    "size": [],
+    "taskOk": true,
+    "tests": {
+      "ok": true,
+      "total": 1168,
+      "failed": 0,
+      "seconds": 385,
+      "failing": []
+    },
+    "review": {
+      "verdict": "ok",
+      "matchesRequest": true,
+      "notes": [
+        "Supports 'להגשה' and 'הגשה' with 'בעוד' + 1-12 ימים/יום/שבועות, יומיים (2), שבוע (7), and שבועיים (14), while leaving existing English and Hebrew weekday rules untouched.",
+        "Note that 'בעוד N שבועות' allows N up to 12 (up to 84 days), which matches the N=1..12 rule for days.",
+        "Added tests in tests/due-date.test.js covering existing phrases, new Hebrew relative phrases, month rollover, and rejected inputs (0, 13, 100, 'עד בעוד 5 ימים', null)."
+      ]
+    },
+    "reviewSeconds": 10.7,
+    "reviewTokens": {
+      "input": 4800,
+      "output": 1339,
+      "thinking": 1172,
+      "cacheRead": 0,
+      "turns": 1,
+      "inner": []
+    },
+    "wouldBeReady": true
+  },
+  {
+    "model": "gemini-4-argon-low",
+    "task": "he-due",
+    "kind": "normal",
+    "at": "2026-11-20T15:29:47.463Z",
+    "editorSeconds": 129.4,
+    "editorEnd": "result",
+    "auditStopped": null,
+    "denied": [],
+    "toolSteps": 35,
+    "writes": 2,
+    "tokens": {
+      "input_tokens": 167223,
+      "output_tokens": 4566,
+      "thinking_tokens": 0,
+      "cache_read_tokens": 719651,
+      "total_tokens": 171789
+    },
+    "summary": "Updated [due-date.js](file:///C:/Users/User/AppData/Local/Temp/sew-he-due-mwp4xmgk/due-date.js) to parse Hebrew deadline phrases `בעוד N ימים` (for digit `N` from 1 to 12), `בעוד יומיים` (+2 days), `בעוד שבוע` (+7 days), and `בעוד שבועיים` (+14 days) after `להגשה` or `הגשה`.\nKept all existing English and Hebrew weekday/relative deadline rules unchanged.\nAdded unit tests in [tests/due-date.test.js](file:///C:/Users/User/AppData/Local/Temp/sew-he-due-mwp4xmgk/tests/due-date.test.js) covering the new Hebrew relative phrases, boundary values (`0`, `13`, missing `להגשה`/`הגשה`), and existing behaviour.\nPlease run `node --test tests/due-date.test.js` (or `node --test`) to verify all tests pass.",
+    "realProjectChanged": false,
+    "files": [
+      "M due-date.js",
+      "A tests/due-date.test.js"
+    ],
+    "diffLines": 85,
+    "risk": [],
+    "blocked": false,
+    "size": [],
+    "taskOk": true,
+    "tests": {
+      "ok": true,
+      "total": 1167,
+      "failed": 0,
+      "seconds": 379,
+      "failing": []
+    },
+    "review": {
+      "verdict": "ok",
+      "matchesRequest": true,
+      "notes": [
+        "Matches the requested Hebrew phrases and 1-12 day range while keeping existing behaviour.",
+        "New unit tests cover valid phrases, boundary numbers (0, 1, 12, 13), and excluded prefixes.",
+        "Note: without a trailing word boundary, 'להגשה בעוד שבוע' could also match a longer word starting with 'שבוע' such as 'שבועות'."
+      ]
+    },
+    "reviewSeconds": 11.4,
+    "reviewTokens": {
+      "input": 5008,
+      "output": 1533,
+      "thinking": 1433,
+      "cacheRead": 0,
+      "turns": 1,
+      "inner": []
+    },
+    "wouldBeReady": true
+  }
+]

@@ -1,0 +1,8 @@
+claude:sonnet m-sintan #1: FAIL 1.7s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:sonnet long-bug #1: FAIL 1.4s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:sonnet code-bugfix #1: FAIL 1.6s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:sonnet code-feature #1: FAIL 1.5s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:opus m-sintan #1: FAIL 1.5s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:opus long-bug #1: FAIL 1.4s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:opus code-bugfix #1: FAIL 1.5s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed
+claude:opus code-feature #1: FAIL 1.4s 0tok (0 th) ERROR Failed to authenticate: OAuth session expired and could not be refreshed

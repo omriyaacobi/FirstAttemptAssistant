@@ -1,0 +1,41 @@
+{
+  "usage": {},
+  "runs": [
+    {
+      "model": "claude:sonnet",
+      "test": "m-sintan",
+      "rep": 1,
+      "at": "2026-11-20T15:11:22.000Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.7
+    },
+    {
+      "model": "claude:sonnet",
+      "test": "long-bug",
+      "rep": 1,
+      "at": "2026-11-20T15:11:23.371Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.4
+    },
+    {
+      "model": "claude:sonnet",
+      "test": "code-bugfix",
+      "rep": 1,
+      "at": "2026-11-20T15:11:24.957Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.6
+    },
+    {
+      "model": "claude:sonnet",
+      "test": "code-feature",
+      "rep": 1,
+      "at": "2026-11-20T15:11:26.451Z",
+      "ok": false,
+      "error": "Failed to authenticate: OAuth session expired and could not be refreshed",
+      "seconds": 1.5
+    }
+  ]
+}
