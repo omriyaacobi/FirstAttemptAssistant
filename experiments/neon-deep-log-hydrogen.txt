@@ -1,0 +1,54 @@
+gemini-4-hydrogen-medium m-sintan #1: FAIL 23.5s 11748tok (4139 th) ans=-0.03333333
+gemini-4-hydrogen-medium m-lnln #1: OK 15.7s 8058tok (2412 th) ans=0.35506593
+gemini-4-hydrogen-medium m-det5 #1: OK 26.5s 12866tok (4697 th) ans=-6557.00
+gemini-4-hydrogen-medium m-esin6 #1: OK 18.9s 8059tok (2390 th) ans=-0.0041666667
+gemini-4-hydrogen-medium m-idem #1: OK 9.4s 4168tok (607 th) ans=54.000000
+gemini-4-hydrogen-medium m-hn #1: OK 9.6s 5239tok (1059 th) ans=1.38629436
+gemini-4-hydrogen-medium m-gl3 #1: OK 9.7s 3920tok (496 th) ans=168.000
+gemini-4-hydrogen-medium long-bug #1: OK 12.3s 49795tok (1279 th) ans=reminders.js:parseWhen
+gemini-4-hydrogen-medium long-notes #1: OK 11.9s 43297tok (1593 th) ans=2026-12-17
+gemini-4-hydrogen-medium code-bugfix #1: OK 43s 20017tok (7953 th)
+gemini-4-hydrogen-medium code-feature #1: OK 24.1s 10798tok (2985 th)
+gemini-4-hydrogen-medium chain-reminder #1: OK 32.8s 16932tok (2162 th)
+gemini-4-hydrogen-medium tutor-he #1: OK 11.6s 4517tok (780 th) ans=
+gemini-4-hydrogen-medium photo-moved #1: OK 16s 23899tok (1406 th)
+gemini-4-hydrogen-medium m-sintan #2: FAIL 25.8s 12528tok (4436 th) ans=-0.03333333
+gemini-4-hydrogen-medium m-lnln #2: OK 15.8s 7722tok (2296 th) ans=0.35506593
+gemini-4-hydrogen-medium m-det5 #2: OK 28.2s 13650tok (5180 th) ans=-6557.00
+gemini-4-hydrogen-medium m-esin6 #2: OK 15.2s 6989tok (1885 th) ans=-0.004166667
+gemini-4-hydrogen-medium m-idem #2: OK 152.6s 4667tok (834 th) ans=54.0000
+gemini-4-hydrogen-medium m-hn #2: OK 77s 5075tok (991 th) ans=1.38629436
+gemini-4-hydrogen-medium m-gl3 #2: OK 7.4s 4044tok (552 th) ans=168.000
+gemini-4-hydrogen-medium long-bug #2: OK 11.4s 49974tok (1376 th) ans=reminders.js:parseWhen
+gemini-4-hydrogen-medium long-notes #2: OK 11.9s 43541tok (1712 th) ans=2026-12-17
+gemini-4-hydrogen-medium code-bugfix #2: OK 52.1s 24110tok (10004 th)
+gemini-4-hydrogen-medium code-feature #2: OK 24s 11581tok (3314 th)
+gemini-4-hydrogen-medium chain-reminder #2: OK 29s 15982tok (1690 th)
+gemini-4-hydrogen-medium tutor-he #2: OK 11.6s 4466tok (763 th) ans=
+gemini-4-hydrogen-medium photo-moved #2: OK 19.2s 23752tok (1321 th)
+gemini-4-hydrogen-high m-sintan #1: FAIL 33.7s 18592tok (7527 th) ans=-0.03333333
+gemini-4-hydrogen-high m-lnln #1: OK 21.1s 11319tok (4083 th) ans=0.35506593
+gemini-4-hydrogen-high m-det5 #1: OK 38s 18293tok (7406 th) ans=-6557.00
+gemini-4-hydrogen-high m-esin6 #1: OK 22.2s 10738tok (3696 th) ans=-0.0041666667
+gemini-4-hydrogen-high m-idem #1: OK 9s 4554tok (794 th) ans=54.000000
+gemini-4-hydrogen-high m-hn #1: OK 52.6s 6247tok (1612 th) ans=1.38629436
+gemini-4-hydrogen-high m-gl3 #1: OK 17.8s 7167tok (2119 th) ans=168.000
+gemini-4-hydrogen-high long-bug #1: OK 11.3s 50046tok (1400 th) ans=reminders.js:parseWhen
+gemini-4-hydrogen-high long-notes #1: OK 13.5s 43850tok (1865 th) ans=2026-12-17
+gemini-4-hydrogen-high code-bugfix #1: OK 81.9s 38782tok (17237 th)
+gemini-4-hydrogen-high code-feature #1: OK 40.5s 18259tok (6535 th)
+gemini-4-hydrogen-high chain-reminder #1: OK 30.3s 18352tok (2861 th)
+gemini-4-hydrogen-high tutor-he #1: OK 11.8s 5344tok (1192 th) ans=
+gemini-4-hydrogen-high photo-moved #1: OK 27.2s 28875tok (3901 th)
+gemini-4-hydrogen-high m-sintan #2: OK 43.6s 21009tok (8648 th) ans=-0.033333333
+gemini-4-hydrogen-high m-lnln #2: OK 20.2s 10176tok (3495 th) ans=0.3550659332
+gemini-4-hydrogen-high m-det5 #2: OK 37.6s 17666tok (7026 th) ans=-6557.000
+gemini-4-hydrogen-high m-esin6 #2: OK 61.7s 8814tok (2786 th) ans=-0.0041666667
+gemini-4-hydrogen-high m-idem #2: OK 43.2s 4488tok (773 th) ans=54.0000
+gemini-4-hydrogen-high m-hn #2: OK 71.8s 8522tok (2727 th) ans=1.38629436
+gemini-4-hydrogen-high m-gl3 #2: OK 10.9s 5199tok (1121 th) ans=168.000
+gemini-4-hydrogen-high code-bugfix #2: OK 59.4s 27848tok (11799 th)
+gemini-4-hydrogen-high code-feature #2: OK 30s 14842tok (4934 th)
+gemini-4-hydrogen-high chain-reminder #2: OK 31.9s 17721tok (2548 th)
+gemini-4-hydrogen-high tutor-he #2: OK 13s 6111tok (1575 th) ans=
+gemini-4-hydrogen-high photo-moved #2: OK 25.1s 27817tok (3349 th)

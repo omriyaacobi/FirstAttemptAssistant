@@ -705,6 +705,7 @@
     </div>
     <div id="improveBody" class="improve-body">
       <div class="scroll" id="improveScroll"><div class="inner">
+        <p class="err" id="improveRollback" hidden></p>
         <div id="improveThread" aria-live="polite"></div>
         <details class="card" id="moreCard">
           <summary>Earlier requests and GitHub</summary>
@@ -722,7 +723,7 @@
       <div class="composer" id="improveComposer"><div class="inner">
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
         <div class="row">
-          <label id="improveModelLabel">Editor <select id="improveModel"><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option><option value="argon">Argon (page only)</option></select> <span class="sub" id="improveQuotaNote">Uses your Claude plan.</span></label>
+          <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option><option value="argon">Argon (page only)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
           <span class="status" id="improveStatus" role="status"></span>
           <button id="improveStart">Send</button>
         </div>
@@ -1477,7 +1478,7 @@
   history.replaceState(navState, ""); // the base screen: Back from here leaves the app
 
   // ---- Improve Bot (self-edit) ----
-  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted" };
+  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted", undone: "muted" };
   let openProposalId = null;
   let pollTimer = null;
 
@@ -1625,7 +1626,13 @@
 
   async function loadProposals(adopt) {
     try {
-      const { proposals, busy } = await (await fetch("/api/selfedit")).json();
+      const { proposals, busy, rollback } = await (await fetch("/api/selfedit")).json();
+      // The health guard undid an approved change because Bot did not come up after it (data/selfedit-rollback.json, health-guard.js).
+      const rb = $("improveRollback");
+      rb.hidden = !rollback;
+      if (rollback) rb.textContent = rollback.undone
+        ? `Bot did not start after the last approved change (${String(rollback.at).slice(0, 16).replace("T", " ")} UTC), so it was undone by itself with a new commit (${String(rollback.revertCommit).slice(0, 7)}). Your Bot runs the code from before that change. The details are in data/bot.log and data/selfedit-rollback.json.`
+        : `Bot did not start after the last approved change (${String(rollback.at).slice(0, 16).replace("T", " ")} UTC), and undoing it by itself did not work: ${rollback.why || "unknown reason"}. Ask Claude Code to look at data/bot.log.`;
       const list = $("proposals");
       list.replaceChildren();
       if (!proposals.length) list.appendChild(el("li", "sub", "No requests yet."));
@@ -1712,6 +1719,29 @@
     return m;
   }
 
+  // The code's risk notes and the second model's review of a ready change (2026-11-20). Shown only: Approve works the same.
+  const REVIEW_LABELS = { ok: "Second review (Hydrogen): looks fine", concern: "Second review (Hydrogen): has a concern", unclear: "Second review (Hydrogen): its answer was unclear" };
+  function renderReview(p) {
+    const box = el("div", "review-notes");
+    const notes = p.riskNotes || [];
+    if (notes.length) {
+      box.appendChild(el("strong", "", "Notes from Bot's code check"));
+      const ul = el("ul");
+      notes.forEach((n) => ul.appendChild(el("li", n.level === "high" ? "err" : "", n.text)));
+      box.appendChild(ul);
+    }
+    const r = p.review;
+    if (r) {
+      box.appendChild(el("strong", r.verdict === "concern" ? "err" : "", REVIEW_LABELS[r.verdict] || "No second review"));
+      if (r.notes && r.notes.length) {
+        const ul = el("ul");
+        r.notes.forEach((t) => ul.appendChild(el("li", "", t)));
+        box.appendChild(ul);
+      }
+    }
+    return box;
+  }
+
   // The card under the last message: what is happening, or what you can do next.
   function statusCard(p) {
     const box = el("div", "msg");
@@ -1739,6 +1769,7 @@
       head.append(statusBadge("ready"), el("span", "", `${nFiles} file${nFiles === 1 ? "" : "s"} changed`), el("span", "badge", p.tests && p.tests.ok ? `tests pass (${p.tests.total})` : "tests?"));
       card.appendChild(head);
       card.appendChild(el("p", "sub", "Nothing is changed in your real Bot yet. Look at it, ask for more changes below, then approve or reject."));
+      card.appendChild(renderReview(p));
       const actions = el("div", "actions");
       const pageChanged = (p.files || []).some((f) => f.path.startsWith("public/"));
       if (pageChanged) {
@@ -1758,6 +1789,19 @@
       head.append(statusBadge("approved"), el("span", "", "Merged into your project"));
       card.append(head, el("p", "", `Commit ${String(p.mergedCommit).slice(0, 7)}. It is on your computer only; use "Push to GitHub" under "Earlier requests and GitHub" when you are happy with it.`));
       card.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Code changed: restart Bot to load it." : "Only the page changed: reload it to see the result."));
+      const actions = el("div", "actions");
+      const go = el("button", "", p.needsRestart ? "Restart Bot now" : "Reload the page");
+      go.addEventListener("click", p.needsRestart ? restartBot : () => location.reload());
+      // Undo: the last approved change is reverted with a NEW commit (never pushed). The server refuses an older one and says why.
+      const undoBtn = el("button", "danger", "Undo this change");
+      undoBtn.title = "Put Bot back the way it was before this change (a new commit; nothing is pushed)";
+      undoBtn.addEventListener("click", () => decide(p.id, "undo"));
+      actions.append(go, undoBtn);
+      card.appendChild(actions);
+    } else if (p.status === "undone") {
+      head.append(statusBadge("undone"), el("span", "", "Undone"));
+      card.append(head, el("p", "", `Undone with a new commit (${String(p.undoCommit).slice(0, 7)}). It is on your computer only.`));
+      card.appendChild(el("p", p.needsRestart ? "err" : "", p.needsRestart ? "Code changed back: restart Bot to load it." : "Only the page changed back: reload it."));
       const actions = el("div", "actions");
       const go = el("button", "", p.needsRestart ? "Restart Bot now" : "Reload the page");
       go.addEventListener("click", p.needsRestart ? restartBot : () => location.reload());
@@ -1831,7 +1875,9 @@
   }
 
   async function decide(id, action) {
-    const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub." : "Throw this away?\n\nNothing in your project will change.";
+    const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub."
+      : action === "undo" ? "Undo this change?\n\nBot makes a new commit that puts the code back the way it was. Nothing is pushed to GitHub."
+      : "Throw this away?\n\nNothing in your project will change.";
     if (!confirm(text)) return;
     try {
       const res = await fetch(`/api/selfedit/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1994,7 +2040,7 @@
   $("newImprove").addEventListener("click", newImprove);
   $("improveStart").addEventListener("click", sendImprove);
   // Which quota the chosen editor spends, in plain words. Argon only changes the web page (the public folder).
-  const QUOTA_NOTES = { sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
+  const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
   $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });
   $("improveText").addEventListener("keydown", (e) => {
     // Like the main chat: Enter sends, Shift+Enter makes a new line (on the phone's keyboard Enter is a new line).

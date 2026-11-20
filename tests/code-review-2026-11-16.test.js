@@ -125,6 +125,7 @@ test("Improve Bot (Argon): such a file is never executed, and the change ends bl
   });
   const manager = createSelfEdit({
     repoDir, dataDir: path.join(repoDir, "data"), workRoot: path.join(root, "work"), runTests: realTests, lowPools: async () => [],
+    reviewer: async () => '{"verdict":"ok","matches_request":true,"notes":[]}', // a fake second review: no model is called
     editor: async () => "claude",
     argonEditor: async ({ worktree }) => { fs.writeFileSync(path.join(worktree, "public", "sneaky.test.js"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`); return "done"; },
   });

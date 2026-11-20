@@ -163,16 +163,16 @@ test("the brain prints what an answer cost next to the model that answered, and 
   const r = await handle("what reminders do I have?");
   assert.strictEqual(r.answer, "Nothing is waiting.");
   assert.strictEqual(r.tokens, 2020);
-  assert.ok(logs.some((l) => /^\[brain\] answered by gemini-4-hydrogen-medium in [\d.]+ s, tools: reminders_list, 2 model calls, 2,020 tokens$/.test(l)), logs.join("\n"));
+  assert.ok(logs.some((l) => /^\[brain\] answered by gemini-4-neon-low in [\d.]+ s, tools: reminders_list, 2 model calls, 2,020 tokens$/.test(l)), logs.join("\n"));
   assert.strictEqual(added.length, 1);
-  assert.deepStrictEqual(added[0], [{ model: "gemini-4-hydrogen-medium", input: 1000, output: 10, thinking: 0, cacheRead: 0 }, { model: "gemini-4-hydrogen-medium", input: 1000, output: 10, thinking: 0, cacheRead: 0 }]);
+  assert.deepStrictEqual(added[0], [{ model: "gemini-4-neon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }, { model: "gemini-4-neon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }]);
 });
 
 test("a failed model call is counted too (it was paid for), and a broken token log never breaks an answer", async () => {
   const added = [];
   const a = brainWith({ replies: [new Error("boom"), "Fine."], tokenLog: { add: (calls) => added.push(calls) } });
   assert.strictEqual((await a.handle("hello")).answer, "Fine.");
-  assert.deepStrictEqual(added[0].map((c) => c.model), ["gemini-4-hydrogen-medium", "gemini-4-argon-low"]);
+  assert.deepStrictEqual(added[0].map((c) => c.model), ["gemini-4-neon-low", "gemini-4-hydrogen-medium"]);
   const b = brainWith({ replies: ["Fine."], tokenLog: { add: () => { throw new Error("disk full"); } } });
   assert.strictEqual((await b.handle("hello")).answer, "Fine.");
 });
@@ -283,13 +283,24 @@ test("pacing never beats the safety rules: Argon in its reserve steps back even 
   assert.strictEqual(await send(), "gemini-4-argon-low");
 });
 
-test("the real brain chain (2026-11-15): Hydrogen medium first; when the Gemini Models pool falls behind its week, Argon answers first", async () => {
-  assert.strictEqual(BRAIN_CHAIN[0].model, "gemini-4-hydrogen-medium");
-  assert.deepStrictEqual(chainFor("claude").map((m) => m.model).slice(0, 2), ["sonnet", "gemini-4-hydrogen-medium"]);
+test("the real brain chain (2026-11-20): Neon low first; when the Gemini Models pool falls behind its week, Argon answers first", async () => {
+  assert.strictEqual(BRAIN_CHAIN[0].model, "gemini-4-neon-low");
+  assert.deepStrictEqual(chainFor("claude").map((m) => m.model).slice(0, 3), ["sonnet", "gemini-4-neon-low", "gemini-4-hydrogen-medium"]);
   const { state, send } = pacedBrain(BRAIN_CHAIN);
-  assert.strictEqual(await send(), "gemini-4-hydrogen-medium");
-  state.rows = [week("Gemini Models", 96, 6.5), week(ARGON_POOL, 54, 5.5)]; // the real start: Hydrogen's pool far ahead
-  assert.strictEqual(await send(), "gemini-4-hydrogen-medium");
+  assert.strictEqual(await send(), "gemini-4-neon-low");
+  state.rows = [week("Gemini Models", 96, 6.5), week(ARGON_POOL, 54, 5.5)]; // the real start: the Gemini pool far ahead
+  assert.strictEqual(await send(), "gemini-4-neon-low");
   state.rows = [week("Gemini Models", 40, 5.6), week(ARGON_POOL, 90, 5.6)]; // Gemini 40 behind its week, Argon +10
   assert.strictEqual(await send(), "gemini-4-argon-low");
+});
+
+test("paceOrder paces the first two agy POOLS, not the first two models: Neon and Hydrogen share one pool (2026-11-20)", () => {
+  const rows = [week("Gemini Models", 40, 5.6), week(ARGON_POOL, 90, 5.6)]; // Gemini behind its week, Argon ahead
+  const r = paceOrder(BRAIN_CHAIN, rows, { now: NOW });
+  assert.deepStrictEqual(r.chain.map((m) => m.model), ["gemini-4-argon-low", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "claude-sonnet-5-5-low", "sonnet"]);
+  assert.strictEqual(r.lead, "gemini-4-argon-low");
+  // the Gemini pool ahead: the chain stays as written
+  assert.deepStrictEqual(paceOrder(BRAIN_CHAIN, [week("Gemini Models", 96, 6.5), week(ARGON_POOL, 54, 5.5)], { now: NOW }).chain, BRAIN_CHAIN);
+  // only one pool among the agy models: nothing to pace
+  assert.strictEqual(paceOrder([MODELS.neonLow, MODELS.hydrogenMedium], rows, { now: NOW }).lead, null);
 });

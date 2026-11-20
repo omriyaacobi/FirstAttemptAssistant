@@ -1,0 +1,14 @@
+gemini-4-neon-xhigh m-sintan #1: OK 121.9s 33420tok (15195 th) ans=-0.0333333333
+gemini-4-neon-xhigh m-lnln #1: OK 85s 23919tok (10612 th) ans=0.3550659332
+gemini-4-neon-xhigh m-det5 #1: OK 141s 33066tok (14907 th) ans=-6557.00
+gemini-4-neon-xhigh m-esin6 #1: OK 107.5s 16788tok (7030 th) ans=-0.0041666667
+gemini-4-neon-xhigh m-idem #1: OK 21.7s 6416tok (1989 th) ans=54.0000
+gemini-4-neon-xhigh m-hn #1: OK 50.1s 13495tok (5462 th) ans=1.3862943611
+gemini-4-neon-xhigh m-gl3 #1: OK 29s 7071tok (2313 th) ans=168.000
+gemini-4-neon-xhigh long-bug #1: OK 30.3s 52853tok (3043 th) ans=reminders.js:parseWhen
+gemini-4-neon-xhigh long-notes #1: OK 49.1s 49744tok (5046 th) ans=2026-12-17
+gemini-4-neon-xhigh code-bugfix #1: FAIL 420.1s 0tok (0 th) ERROR gemini-4-neon-xhigh timed out after 420 s
+gemini-4-neon-xhigh code-feature #1: OK 172.7s 44186tok (19448 th)
+gemini-4-neon-xhigh chain-reminder #1: OK 343.6s 27705tok (8585 th)
+gemini-4-neon-xhigh tutor-he #1: OK 66.4s 15527tok (6547 th) ans=
+gemini-4-neon-xhigh photo-moved #1: OK 74.8s 33584tok (6498 th)

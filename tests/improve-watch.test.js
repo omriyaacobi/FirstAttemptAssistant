@@ -10,7 +10,8 @@ test("a plain page change gives no warning", () => {
 });
 
 test("protected files, raw HTML, outside scripts and secrets are all flagged", () => {
-  assert.match(checkChange(["server.js"], "")[0], /PROTECTED FILE CHANGED: server\.js/);
+  assert.match(checkChange(["gitops.js"], "")[0], /PROTECTED FILE CHANGED: gitops\.js/);
+  assert.match(checkChange(["server.js"], "")[0], /SAFETY-CHECK FILE CHANGED \(read this part\): server\.js/); // open to Improve Bot since 2026-11-20
   assert.match(checkChange([".env"], "")[0], /PROTECTED/);
   assert.match(checkChange(["public/index.html"], diffOf("public/index.html", "+  box.innerHTML = text;"))[0], /raw HTML/);
   assert.match(checkChange(["public/index.html"], diffOf("public/index.html", '+<script src="https://evil.example/x.js"></script>'))[0], /external/);

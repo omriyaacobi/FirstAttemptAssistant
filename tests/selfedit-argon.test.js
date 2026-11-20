@@ -42,6 +42,7 @@ function setup(argonFn, extra = {}) {
     editor: async (args) => { calls.claude++; if (extra.claudeFn) await extra.claudeFn(args, project); return "claude did it"; },
     argonEditor: async (args) => { calls.argon++; await argonFn(args, project); return "argon did it"; },
     lowPools: extra.lowPools || (async () => []),
+    reviewer: async () => '{"verdict":"ok","matches_request":true,"notes":[]}', // a fake second review: no model is called
   });
   return { ...project, manager, calls };
 }
@@ -108,8 +109,8 @@ test("publicOnly: new, deleted and renamed-out files outside public/ are refused
   }
   assert.ok(checkProposal({ files: [f("A", "public/link", "120000")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /Links/.test(p)));
   assert.ok(checkProposal({ files: [f("A", "public/mod", "160000")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /submodules/.test(p)));
-  // protected files stay protected for Argon too
-  assert.ok(checkProposal({ files: [f("M", "server.js")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /Protected/.test(p)));
+  // guard files stay closed for Argon too
+  assert.ok(checkProposal({ files: [f("M", "gitops.js")], diff: "", tests: okTests, baseline, publicOnly: true }).some((p) => /Guard files/.test(p)));
 });
 
 // ---- the whole flow with a fake Argon editor ----
@@ -405,7 +406,7 @@ test("the Improve Bot window offers Argon next to Sonnet and Opus, and says whic
   assert.match(html, /Uses your Gemini quota, NOT Claude/);
   assert.match(html, /Uses your Claude plan\./);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.ok(server.includes('["sonnet", "opus", "argon"].includes(model)'));
+  assert.ok(server.includes('["neon", "sonnet", "opus", "argon"].includes(model)'));
 });
 
 test("a retry keeps its own TEMP until it has finished (the first run's cleanup must not delete it)", async () => {

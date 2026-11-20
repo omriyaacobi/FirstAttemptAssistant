@@ -8,6 +8,17 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my Claude plan (Claude Code sessions);
 "Gemini" = agy's pools (Bot's own answers).
 
+**Improve Bot changes all of Bot + Neon in Bot: BUILT 2026-11-20, NOT merged yet** (branch `claude/selfedit-neon-build-1519c3`,
+notes `experiments/2026-11-20-selfedit-neon-build.md`). The light gate (git fenced during the test run, `.env` mentions refused
+before tests, 15-minute test limit), risk notes + one Hydrogen review shown on the ready card, Undo, the health guard in
+start-web.cmd, every file open except the guard files, Neon medium as the default editor, a phone push when a change ends, Neon low
+first in the brain, Neon low instead of Claude Sonnet for big PDFs.
+- **Next (the manager, on my word):** check the diff, merge, restart Bot, push.
+- **Live test with me:** one small Improve Bot request with Neon from the page (the push arrives, Approve, then Undo); a normal
+  chat message is answered by Neon low (`data/bot.log` names the model).
+- **After one week (about 2026-11-27):** `node tokenlog.js` and compare Neon low with Hydrogen medium (tokens per answer, failures);
+  decide whether Neon low stays first.
+
 **Found in the live tests (2026-11-20), fix after the weekly reset:**
 - **"Start lecture 6" dumped the whole lesson at once.** Usually the brain teaches in the chat itself (course_read, short
   answers of 200-500 characters, asking me as it goes). This time Hydrogen called `teach_next`, which by design (CLAUDE.md
@@ -26,7 +37,9 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
 2. **Old branches: DONE 2026-11-20.** All deleted (my call, none kept), on the PC and on GitHub; GitHub has only `main`. Locked
    folders in `.claude/worktrees/` go once their finished sessions are archived.
 3. **The flaky test** (about 1 run in 5, then all green 6 times): only if it shows again, `node --test --test-reporter=tap` and
-   look for "not ok" to get its name.
+   look for "not ok" to get its name. Seen on 2026-11-20 (once each in about 12 runs): `tests/watchdog.test.js` "nothing on the
+   port" (the PowerShell time stamp came back empty), and `tests/selfedit-argon.test.js` "safe flags ... private TEMP" (its check
+   fails when the random temp folder name starts with "x").
 
 **Tiny (a few Bot calls on Gemini, a short look by the manager):**
 4. **Live tests: DONE 2026-11-20** (both worked; see "Found in the live tests" above).

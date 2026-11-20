@@ -1,0 +1,80 @@
+gemini-4-neon-low m-sintan #1: FAIL 32.8s 8363tok (2709 th) ans=-0.0333333
+gemini-4-neon-low m-lnln #1: OK 17.3s 4827tok (1090 th) ans=0.355065933
+gemini-4-neon-low m-det5 #1: OK 27.8s 9878tok (3439 th) ans=-6557.00
+gemini-4-neon-low m-esin6 #1: OK 19.6s 6054tok (1655 th) ans=-0.0041666667
+gemini-4-neon-low m-idem #1: OK 10s 3235tok (397 th) ans=54.000000
+gemini-4-neon-low m-hn #1: OK 10.8s 3853tok (721 th) ans=1.38629436
+gemini-4-neon-low m-gl3 #1: OK 10.2s 3694tok (648 th) ans=168.000
+gemini-4-neon-low long-bug #1: OK 14.9s 48523tok (901 th) ans=reminders.js:parseWhen
+gemini-4-neon-low long-notes #1: OK 19.3s 41651tok (1044 th) ans=2026-12-17
+gemini-4-neon-low code-bugfix #1: OK 33.4s 8744tok (2633 th)
+gemini-4-neon-low code-feature #1: OK 30.5s 7678tok (1688 th)
+gemini-4-neon-low chain-reminder #1: OK 30.7s 12926tok (1198 th)
+gemini-4-neon-low tutor-he #1: OK 10.6s 3695tok (639 th) ans=
+gemini-4-neon-low photo-moved #1: OK 13.1s 21463tok (585 th)
+gemini-4-neon-low m-sintan #2: FAIL 27.2s 8153tok (2605 th) ans=-0.03333333
+gemini-4-neon-low m-lnln #2: OK 15.7s 4779tok (1074 th) ans=0.355065933
+gemini-4-neon-low m-det5 #2: OK 38s 10467tok (3734 th) ans=-6557.00
+gemini-4-neon-low m-esin6 #2: OK 157s 6475tok (1836 th) ans=-0.004166667
+gemini-4-neon-low m-idem #2: OK 71.5s 3390tok (492 th) ans=54.0000
+gemini-4-neon-low m-hn #2: OK 13.1s 3780tok (613 th) ans=1.38629436
+gemini-4-neon-low m-gl3 #2: OK 9.8s 3347tok (471 th) ans=168.000
+gemini-4-neon-low long-bug #2: OK 14s 48456tok (867 th) ans=reminders.js:parseWhen
+gemini-4-neon-low long-notes #2: OK 12.3s 41432tok (925 th) ans=2026-12-17
+gemini-4-neon-low code-bugfix #2: OK 25.4s 7473tok (1981 th)
+gemini-4-neon-low code-feature #2: OK 22s 6319tok (990 th)
+gemini-4-neon-low chain-reminder #2: OK 27.9s 12635tok (1043 th)
+gemini-4-neon-low tutor-he #2: OK 11.7s 3817tok (697 th) ans=
+gemini-4-neon-low photo-moved #2: OK 21s 22410tok (1033 th)
+gemini-4-neon-medium m-sintan #1: FAIL 40.4s 10167tok (3428 th) ans=-0.03333333
+gemini-4-neon-medium m-lnln #1: OK 27.5s 7957tok (2637 th) ans=0.3550659332
+gemini-4-neon-medium m-det5 #1: OK 57.6s 16260tok (6698 th) ans=-6557.00
+gemini-4-neon-medium m-esin6 #1: OK 25.9s 7134tok (2209 th) ans=-0.0041666667
+gemini-4-neon-medium m-idem #1: OK 10.7s 3681tok (623 th) ans=54.0000
+gemini-4-neon-medium m-hn #1: OK 16s 4743tok (1097 th) ans=1.3862943611
+gemini-4-neon-medium m-gl3 #1: OK 11.6s 3988tok (795 th) ans=168.000
+gemini-4-neon-medium long-bug #1: OK 20.5s 49469tok (1373 th) ans=reminders.js:parseWhen
+gemini-4-neon-medium long-notes #1: OK 19.7s 42764tok (1582 th) ans=2026-12-17
+gemini-4-neon-medium code-bugfix #1: OK 84.2s 21941tok (9094 th)
+gemini-4-neon-medium code-feature #1: OK 30.9s 10455tok (2963 th)
+gemini-4-neon-medium chain-reminder #1: OK 30.8s 13943tok (1707 th)
+gemini-4-neon-medium tutor-he #1: OK 12.7s 4217tok (887 th) ans=
+gemini-4-neon-medium photo-moved #1: OK 21.2s 23523tok (1587 th)
+gemini-4-neon-medium m-sintan #2: OK 39.5s 10883tok (3869 th) ans=-0.0333333333
+gemini-4-neon-medium m-lnln #2: OK 27.7s 8249tok (2806 th) ans=0.355065933152
+gemini-4-neon-medium m-det5 #2: OK 108s 20700tok (8850 th) ans=-6557.00
+gemini-4-neon-medium m-esin6 #2: OK 70.8s 7314tok (2280 th) ans=-0.0041666667
+gemini-4-neon-medium m-idem #2: OK 10.4s 3464tok (525 th) ans=54.0000
+gemini-4-neon-medium m-hn #2: OK 13.5s 4618tok (1060 th) ans=1.38629436
+gemini-4-neon-medium m-gl3 #2: OK 9.7s 3510tok (550 th) ans=168.000
+gemini-4-neon-medium code-bugfix #2: OK 75.1s 19179tok (7760 th)
+gemini-4-neon-medium code-feature #2: OK 39.8s 10029tok (2709 th)
+gemini-4-neon-medium chain-reminder #2: OK 40.5s 14442tok (1943 th)
+gemini-4-neon-medium tutor-he #2: OK 13.5s 4018tok (800 th) ans=
+gemini-4-neon-medium photo-moved #2: OK 22.5s 23905tok (1746 th)
+gemini-4-neon-high m-sintan #1: OK 47.8s 17410tok (7148 th) ans=-0.0333333333
+gemini-4-neon-high m-lnln #1: OK 38.3s 11065tok (4228 th) ans=0.3550659332
+gemini-4-neon-high m-det5 #1: OK 85.3s 22758tok (9828 th) ans=-6557.00
+gemini-4-neon-high m-esin6 #1: OK 57s 7127tok (2194 th) ans=-0.0041666667
+gemini-4-neon-high m-idem #1: OK 38.4s 4347tok (947 th) ans=54.000000
+gemini-4-neon-high m-hn #1: OK 52.9s 7942tok (2700 th) ans=1.386294361
+gemini-4-neon-high m-gl3 #1: OK 42.6s 3807tok (698 th) ans=168.000
+gemini-4-neon-high long-bug #1: OK 16.8s 49772tok (1520 th) ans=reminders.js:parseWhen
+gemini-4-neon-high long-notes #1: OK 23.6s 44065tok (2215 th) ans=2026-12-17
+gemini-4-neon-high code-bugfix #1: OK 165.3s 41874tok (19038 th)
+gemini-4-neon-high code-feature #1: OK 53.3s 16352tok (5852 th)
+gemini-4-neon-high chain-reminder #1: OK 47.5s 16130tok (2798 th)
+gemini-4-neon-high tutor-he #1: OK 18.6s 4303tok (933 th) ans=
+gemini-4-neon-high photo-moved #1: OK 31.7s 25570tok (2578 th)
+gemini-4-neon-high m-sintan #2: OK 65.2s 17853tok (7210 th) ans=-0.0333333333
+gemini-4-neon-high m-lnln #2: OK 39.3s 11084tok (4190 th) ans=0.3550659332
+gemini-4-neon-high m-det5 #2: OK 98.8s 19541tok (8280 th) ans=-6557.00
+gemini-4-neon-high m-esin6 #2: OK 56.7s 8754tok (3028 th) ans=-0.0041666667
+gemini-4-neon-high m-idem #2: OK 47.9s 3939tok (756 th) ans=54.000000
+gemini-4-neon-high m-hn #2: OK 31.5s 9124tok (3297 th) ans=1.3862943611
+gemini-4-neon-high m-gl3 #2: OK 13.3s 4203tok (877 th) ans=168.000
+gemini-4-neon-high code-bugfix #2: OK 169.8s 43663tok (19854 th)
+gemini-4-neon-high code-feature #2: OK 69.6s 19250tok (7376 th)
+gemini-4-neon-high chain-reminder #2: OK 51.5s 15183tok (2333 th)
+gemini-4-neon-high tutor-he #2: OK 23.8s 5639tok (1589 th) ans=
+gemini-4-neon-high photo-moved #2: OK 47.8s 26575tok (3054 th)

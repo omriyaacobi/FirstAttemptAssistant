@@ -48,12 +48,15 @@ const BRIEF_FILE = path.join(__dirname, "brain-brief.md");
 // correct as Argon on every test (hard math, C++, tools, Hebrew), about 30% faster and about 10x cheaper per call, from the "Gemini
 // Models" pool that was almost unused. It is not Flash (13 of 13 and then 24 of 24 math answers right). Argon low is second.
 // Going back: the git tag before-hydrogen-2026-11-15.
-const CHAIN = [MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
+// The brain's order (2026-11-20, Omri's decision after experiments/2026-11-20-neon-deep-trial.md): Neon low first (as correct as
+// Hydrogen medium, 25-55% fewer tokens of the SAME "Gemini Models" pool), Hydrogen medium behind it, then Argon low, Sonnet in agy and
+// Claude Code last. The reserve, the 15% rule, the pacing (paceOrder) and claudeFirst work on it as before.
+const CHAIN = [MODELS.neonLow, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
 // BOT_BRAIN_FIRST=claude in .env (a restart reads it): Claude Code Sonnet (the Pro plan) is asked FIRST, for a few hours when the
 // agy pools are low (Omri, 2026-11-12). The normal 15% rule still moves it to the end when the plan's 5-hour window is nearly used.
 // Any other value, or none, = the normal order above.
 function chainFor(first) {
-  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy] : CHAIN;
+  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.neonLow, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy] : CHAIN;
 }
 // A message with a photo: only agy can look at a picture here. Argon low first: on an unclear photo ("lecture moved", no end date)
 // it made a careful one-time card 5 of 5 times, Hydrogen guessed "weekly" 4 of 6 times (round 3). Hydrogen medium if Argon fails

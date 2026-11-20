@@ -505,8 +505,9 @@ test("a PDF that cannot be cut is still read whole, as before", async () => {
   assert.strictEqual(calls.length, 1);
 });
 
-test("a cut chunk goes to the most accurate reader first, then along the chain, and Claude is told which file to open", async () => {
-  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-argon-low", "sonnet", "gemini-4-hydrogen-high"]);
+test("a cut chunk goes to the most accurate reader first, then along the chain (Neon low replaced Claude Sonnet, 2026-11-20)", async () => {
+  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-argon-low", "gemini-4-neon-low", "gemini-4-hydrogen-high"]);
+  assert.ok(!CUT_CHAIN.some((m) => m.provider === "claude"), "the big-PDF reader never spends Omri's Claude plan");
   const { courses, course, file } = cutCourse(3);
   const asked = [];
   const reader = async (model, prompt, fp, options) => {
@@ -516,7 +517,7 @@ test("a cut chunk goes to the most accurate reader first, then along the chain, 
     return "=== PAGE 1 ===\none\n=== PAGE 2 ===\ntwo\n=== PAGE 3 ===\nthree";
   };
   await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: reader });
-  assert.deepStrictEqual(asked, [["gemini-4-argon-low", "agy"], ["sonnet", "claude"], ["gemini-4-hydrogen-high", "agy"]]);
+  assert.deepStrictEqual(asked, [["gemini-4-argon-low", "agy"], ["gemini-4-neon-low", "agy"], ["gemini-4-hydrogen-high", "agy"]]);
   assert.strictEqual(courses.getFile(course.id, file.id).pages, 3);
 });
 

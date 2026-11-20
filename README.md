@@ -25,7 +25,7 @@ model, checks and runs the tools it asks for) -> the answer is saved in the thre
 | `moodle-bridge.js`, `moodle-tools.js`, `moodle-extension/`, `moodle.js` | read-only BGU Moodle through Omri's own logged-in Chrome: the extension takes read jobs from Bot's waiting list (`/api/moodle/next`), the brain's `moodle_*` tools use them. `moodle.js` is an older direct Node client (login form; kept, only its request helper is used) |
 | `moodle-ws.js`, `moodle-token.js`, `moodle-watch.js` | Moodle WITHOUT Chrome: the read-only client for Moodle's phone-app web service with `MOODLE_TOKEN` from `.env` (token first, the Chrome extension as fallback); the script Omri runs once to get the token; and the 3-hour watch that tells Omri what is new (code only, no model) |
 | `thread*.js`, `unzip.js`, `zip-filing.js`, `upload.js`, `office.js`, `pdfcut.js`, `photo.js` | the one conversation, file and zip upload, reading files |
-| `selfedit.js`, `preview.js`, `gitops.js`, `improve-watch.js` | Improve Bot (self edit) and its safety checks |
+| `selfedit.js`, `selfedit-guard.js`, `health-guard.js`, `preview.js`, `gitops.js`, `improve-watch.js` | Improve Bot (self edit) and its safety checks: the guard files, the git fence, risk notes and review, Undo, the roll-back after a failed restart |
 | `backup.js`, `auth.js`, `store.js`, `webpush.js`, `botlog.js` | backup, login, storage of the old chats and course chats, phone pushes, the log file `data/bot.log` |
 | `public/` | the web page and phone app (plain HTML/JS, `index.html`, `study.js`, `sw.js`) |
 | `tests/` | all tests (`*.test.js`) and the test helpers `testzip.js` (builds zips) and `pagesandbox.js` (runs the page's drawing code without a browser) |

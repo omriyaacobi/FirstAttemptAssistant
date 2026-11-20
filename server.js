@@ -19,6 +19,7 @@
 //   POST   /api/selfedit           -> start one: an editor model changes a PRIVATE COPY of the project
 //   GET    /api/selfedit/:id       -> one proposal (diff, test results)
 //   POST   /api/selfedit/:id/approve | /reject  -> merge it into the project, or throw it away
+//   POST   /api/selfedit/:id/undo     -> undo the LAST approved change with a new commit (never pushed)
 //   POST   /api/selfedit/:id/message  -> a follow-up message: the editor continues in the SAME private copy
 //   GET    /api/selfedit/:id/preview  -> the changed page, sandboxed, with sample data (see preview.js)
 //   (see selfedit.js: nothing changes in your project until you approve, and nothing is pushed)
@@ -222,7 +223,7 @@ async function readJsonBody(req, res, { photo = false } = {}) {
 }
 
 // Turns an error from selfedit.js into an HTTP status.
-const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|uncommitted|new commits|only "ready"|blocked|changed after/.test(error.message) ? 409 : 400);
+const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|uncommitted|new commits|only "ready"|blocked|changed after|only an approved|only the last|cannot be undone|not in the project/.test(error.message) ? 409 : 400);
 
 function createServer({
   handle = null, // tests only: a fake that answers a message. The real Bot answers with the brain (makeBrain).
@@ -257,6 +258,12 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Every message of the thread is answered by the brain. (Tests pass their own `handle` instead.)
   const brain = makeBrain ? makeBrain() : null;
+  // Improve Bot runs in the background: one push when a change is ready or could not be finished (no change text on the lock
+  // screen, none at night; finishPush in selfedit.js).
+  if (selfEdit.onFinish) selfEdit.onFinish(({ id, status }) => {
+    const message = require("./selfedit").finishPush(status);
+    if (message) push.notifyAll({ ...message, tag: `selfedit-${id}` }).catch(() => {});
+  });
   const threadHandle = brain ? (task, options = {}) => brain.handle(task, options) : handle;
   const jobs = createJobs({
     handle: threadHandle,
@@ -558,13 +565,15 @@ function createServer({
     // Self-edit proposals. Only YOU start these (from the "Improve Bot" panel);
     // the models can never start one on their own.
     if (url.pathname === "/api/selfedit" && req.method === "GET") {
-      return sendJson(res, 200, { proposals: selfEdit.list(), busy: selfEdit.isActive() });
+      // rollback: what the health guard did after the last restart (an approved change that kept Bot from starting was undone).
+      return sendJson(res, 200, { proposals: selfEdit.list(), busy: selfEdit.isActive(), rollback: selfEdit.rollback ? selfEdit.rollback() : null });
     }
     if (url.pathname === "/api/selfedit" && req.method === "POST") {
       const input = await readJsonBody(req, res);
       if (!input) return;
-      const model = input.model === undefined ? "sonnet" : input.model;
-      if (!["sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be sonnet, opus or argon" });
+      // Neon (Gemini 4 Neon medium through agy, the Gemini quota) is the default editor since 2026-11-20; Sonnet/Opus use the Claude plan.
+      const model = input.model === undefined ? "neon" : input.model;
+      if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
       try {
         const { record } = await selfEdit.start(input.request, { model });
         return sendJson(res, 202, { proposal: record });
@@ -572,7 +581,7 @@ function createServer({
         return sendJson(res, selfEditStatus(error), { error: error.message });
       }
     }
-    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject|message|preview))?$/);
+    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject|undo|message|preview))?$/);
     if (selfEditRoute) {
       const [, id, action] = selfEditRoute;
       if (!action && req.method === "GET") {
@@ -597,10 +606,10 @@ function createServer({
           return sendJson(res, selfEditStatus(error), { error: error.message });
         }
       }
-      if ((action === "approve" || action === "reject") && req.method === "POST") {
+      if ((action === "approve" || action === "reject" || action === "undo") && req.method === "POST") {
         if (!(await readJsonBody(req, res))) return;
         try {
-          const proposal = action === "approve" ? await selfEdit.approve(id) : await selfEdit.reject(id);
+          const proposal = action === "approve" ? await selfEdit.approve(id) : action === "undo" ? await selfEdit.undo(id) : await selfEdit.reject(id);
           return sendJson(res, 200, { proposal });
         } catch (error) {
           return sendJson(res, selfEditStatus(error), { error: error.message });
@@ -831,6 +840,8 @@ if (require.main === module) {
     v6.on("error", (error) => console.log(`[server] also listening on ::1 did not work (${error.code || error.message}); localhost just stays 0.2 s slower`));
     v6.listen(PORT, "::1");
     try { require("./providers").removeStaleWorkDirs(); } catch (error) { /* only housekeeping */ } // old bot-file-* / bot-photo-* folders from earlier runs
+    // Bot came up: a change approved in Improve Bot that waited for this restart is fine, so the health guard keeps it (health-guard.js).
+    try { require("./health-guard").markHealthy(path.join(__dirname, "data")); } catch (error) { /* never stops Bot */ }
     getReminders().start(); // checks for due reminders every 30 s; missed ones fire right now (catch-up)
     backup.start(); // first check 2 minutes after start, then hourly; a copy is made at most once a day (backup.js)
     morning.start(); // does nothing until you turn the morning brief on in the page
