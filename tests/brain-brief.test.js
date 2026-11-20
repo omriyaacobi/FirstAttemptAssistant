@@ -24,3 +24,7 @@ test("the briefing says how to check code: the main problems first with line num
 test("the briefing says to use Bot's own copy of a file when Moodle cannot be read (review 4.6)", () => {
   assert.match(brief, /If Moodle cannot be read .* use Bot's copy/);
 });
+
+test("the briefing tells the model to look up all the Moodle courses it needs in the same round (log oddity 2026-11-19)", () => {
+  assert.match(brief, /ask for what you need from ALL of them in the same round/);
+});
