@@ -16,6 +16,8 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
   small step and a question, wait for my answer; or tell the brain (`brain-brief.md`) to start a lecture in the chat and use
   teach_next only when I ask for a whole part. Decide with me first (it changes an agreed rule).
 - The Moodle test worked ("open the Mission 3 README" in one message, 16 s).
+- The photo quiz answer worked: Argon low read the handwriting (the photo chain), `quiz_answer ask=answer`, graded "partly"
+  with a fair hint (37 s). First real `ask=` line for item 6.
 
 **No model quota (git, settings, me):**
 1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:UsersUserOneDriveBot-backup` (newest 5 kept;
@@ -27,8 +29,7 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
    look for "not ok" to get its name.
 
 **Tiny (a few Bot calls on Gemini, a short look by the manager):**
-4. **Live tests** (reminder set for 2026-11-20 12:00): a quiz answer sent as a PHOTO (handwriting read with context,
-   `[unclear: ...]` marks), and "open the Mission 3 README from the moodle" (one message).
+4. **Live tests: DONE 2026-11-20** (both worked; see "Found in the live tests" above).
 5. **Read why Hydrogen fails.** 50 of 357 Hydrogen first tries failed on 15-19 Nov with "agy status ERROR" (fast, 8-19 s, mostly
    the first round with the long context). Since 2026-11-20 the error carries agy's reason (`agyFailure` in `providers.js`):
    read the next `[brain] ... agy status ERROR: <reason>` lines in `data/thread/*.jsonl`, then decide (Google's side: leave it;
