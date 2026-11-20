@@ -258,6 +258,12 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Every message of the thread is answered by the brain. (Tests pass their own `handle` instead.)
   const brain = makeBrain ? makeBrain() : null;
+  // Improve Bot runs in the background: one push when a change is ready or could not be finished (no change text on the lock
+  // screen, none at night; finishPush in selfedit.js).
+  if (selfEdit.onFinish) selfEdit.onFinish(({ id, status }) => {
+    const message = require("./selfedit").finishPush(status);
+    if (message) push.notifyAll({ ...message, tag: `selfedit-${id}` }).catch(() => {});
+  });
   const threadHandle = brain ? (task, options = {}) => brain.handle(task, options) : handle;
   const jobs = createJobs({
     handle: threadHandle,

@@ -285,3 +285,42 @@ test("the page has an Undo button on an approved change and explains a roll-back
   assert.match(html, /id="improveRollback"/);
   assert.match(html, /selfedit-rollback\.json/);
 });
+
+// ---- Phase 6: one phone push when a change ends ----
+
+const { finishPush } = require("../selfedit");
+
+test("finishPush: one plain line per ending, never the change itself, nothing at night or while running", () => {
+  const day = Date.parse("2026-11-20T10:00:00Z"); // 12:00 in Israel
+  const night = Date.parse("2026-11-20T22:30:00Z"); // 00:30 in Israel
+  assert.deepStrictEqual(finishPush("ready", day), { title: "Bot", body: "Improve Bot: your change is ready to review." });
+  assert.match(finishPush("failed", day).body, /could not be finished/);
+  assert.match(finishPush("blocked", day).body, /could not be finished/);
+  assert.strictEqual(finishPush("running", day), null);
+  assert.strictEqual(finishPush("approved", day), null);
+  assert.strictEqual(finishPush("ready", night), null);
+});
+
+test("the manager tells its listener once when a run ends (ready or failed), with the id and status only", async () => {
+  const good = reviewSetup({ "greet.js": 'module.exports = () => "hi";\n' }, OK_REVIEW);
+  const heard = [];
+  good.manager.onFinish((e) => heard.push(e));
+  const rec = await (await good.manager.start("secret request words")).finished;
+  assert.deepStrictEqual(heard, [{ id: rec.id, status: "ready" }]);
+  fs.rmSync(good.root, { recursive: true, force: true });
+
+  const r = makeRepo();
+  const bad = createSelfEdit({ repoDir: r.repoDir, dataDir: r.dataDir, workRoot: r.workRoot, lowPools: async () => [], reviewer: async () => OK_REVIEW,
+    runTests: async () => ({ ok: true, total: 2, failed: 0, tail: "" }), editor: async () => { throw new Error("editor crashed"); } });
+  const heard2 = [];
+  bad.onFinish((e) => { heard2.push(e); throw new Error("a broken listener changes nothing"); });
+  const rec2 = await (await bad.start("x")).finished;
+  assert.strictEqual(rec2.status, "failed");
+  assert.deepStrictEqual(heard2, [{ id: rec2.id, status: "failed" }]);
+  fs.rmSync(r.root, { recursive: true, force: true });
+});
+
+test("server.js sends that push through the normal push path, with the plain text only", () => {
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.match(server, /selfEdit\.onFinish\(\(\{ id, status \}\) => \{\s*const message = require\("\.\/selfedit"\)\.finishPush\(status\);\s*if \(message\) push\.notifyAll\(\{ \.\.\.message, tag: `selfedit-\$\{id\}` \}\)/);
+});

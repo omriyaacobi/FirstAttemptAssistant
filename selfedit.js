@@ -385,6 +385,18 @@ const NEON_PROFILE = { name: "Neon", rules: NEON_RULES, map: wideFolderMap, audi
 const makeArgonEditor = (options = {}) => makeAgyEditor({ ...options, profile: ARGON_PROFILE });
 const makeNeonEditor = (options = {}) => makeAgyEditor({ ...options, profile: NEON_PROFILE });
 
+// ---- The phone push when a change ends (2026-11-20) ----
+// One push when a run ends "ready", "blocked" or "failed", so Omri can leave the page. The lock screen never shows what the change is
+// (no request text, no file names), and nothing is sent at night (22:00-08:00 Israel time, like the other pushes).
+const PUSH_QUIET = { from: "22:00", to: "08:00" };
+function finishPush(status, nowMs = Date.now()) {
+  const body = status === "ready" ? "Improve Bot: your change is ready to review." : status === "blocked" || status === "failed" ? "Improve Bot: your change could not be finished. Open Bot to see why." : null;
+  if (!body) return null;
+  const plan = require("./study-plan");
+  if (plan.inQuietHours(nowMs, PUSH_QUIET, plan.TIMEZONE)) return null;
+  return { title: "Bot", body };
+}
+
 // What the editor is told when its previous try did not pass the checks.
 function buildFeedback(problems, tests) {
   let text = "Your previous attempt was checked automatically and has these problems:\n" + problems.map((p) => "- " + p).join("\n");
@@ -456,6 +468,11 @@ function createSelfEdit({
 } = {}) {
   const recordsDir = path.join(dataDir, "selfedit");
   let active = null; // id of the proposal being worked on right now (one at a time)
+  let finishListener = null; // server.js sends the phone push from here (onFinish)
+  const announce = (record) => {
+    if (!finishListener || !["ready", "blocked", "failed"].includes(record.status)) return;
+    try { finishListener({ id: record.id, status: record.status }); } catch (error) { /* a push never changes a result */ }
+  };
 
   const fileFor = (id) => path.join(recordsDir, id + ".json");
   const workDir = (id) => path.join(workRoot, id);
@@ -666,6 +683,7 @@ function createSelfEdit({
       return finish({ status: "failed", note: String(error.message).slice(0, 500) });
     } finally {
       active = null;
+      announce(record);
     }
   }
 
@@ -713,6 +731,7 @@ function createSelfEdit({
       return finish({ status: "ready", note: "The last follow-up failed and was undone; the version before it is still ready." });
     } finally {
       active = null;
+      announce(record);
     }
   }
 
@@ -881,7 +900,7 @@ function createSelfEdit({
     return save(Object.assign(record, { status: "rejected", note: "Thrown away. Nothing was changed.", finishedAt: Date.now() }));
   }
 
-  return { start, followUp, previewDir, get, list, approve, reject, undo, rollback, isActive: () => active !== null };
+  return { start, followUp, previewDir, get, list, approve, reject, undo, rollback, onFinish: (fn) => { finishListener = fn; }, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, makeNeonEditor, NEON_MODEL, NEON_RULES, wideFolderMap, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, finishPush, makeNeonEditor, NEON_MODEL, NEON_RULES, wideFolderMap, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
