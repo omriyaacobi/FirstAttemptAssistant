@@ -94,7 +94,9 @@ const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, note
 const SLIM_AGENT = process.env.BOT_BRAIN_AGENT !== "off";
 const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
 const warmUp = () => { try { pool.warmUp(CHAIN[0].model, null); } catch (error) { /* only makes the first message slower */ } }; // the brain's first model (Hydrogen medium since 2026-11-15)
-const WARM_MODELS = new Set([MODELS.hydrogenMedium.model, MODELS.argonLow.model]); // the warm pool keeps one spare per model
+// The warm pool keeps one waiting agy process per model (saves the 2-3 s start). Neon low joined on 2026-11-20: it had become the
+// first model but was missing here, so its spare was started and never used, and every Neon call started cold (experiments/2026-11-20-neon-speed.md).
+const WARM_MODELS = new Set([MODELS.neonLow.model, MODELS.hydrogenMedium.model, MODELS.argonLow.model]);
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
 // THE BRAIN'S TIME LIMIT (2026-11-16). The models' general limits (providers.js: Argon 240 s) are sized for reading big files. In
 // Omri's real use the brain's 293 successful calls took 9 s in the middle and 50 s at most, and the one call that hung made Omri wait
@@ -1254,4 +1256,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { createBrain, costOf, askWarm, brainTimeout, BRAIN_TIMEOUT_MS, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { WARM_MODELS, createBrain, costOf, askWarm, brainTimeout, BRAIN_TIMEOUT_MS, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

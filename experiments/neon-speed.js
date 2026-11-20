@@ -32,15 +32,17 @@ const FILLER = Array.from({ length: 220 }, (_, i) => `Digest line ${i + 1}: the 
 FILLER[137] = "Digest line 138: it was agreed that the group quiz will be held in week 9, in room 204.";
 const LONG = FILLER.join("\n");
 
+// Bot stores a reminder time as a UTC ISO string: compare in LOCAL time (the hour, and the date when given).
+const localIs = (iso, h, m, day) => { const d = new Date(iso); const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; return d.getHours() === h && d.getMinutes() === m && (!day || ymd === day); };
 // kind -> the messages; ok(text, seen) is the code check of the answer
 const T = [
   { id: "short-en", kind: "short", msg: "What is the derivative of x^3 * ln(x)? Answer in one line.", ok: (t) => /x\^?2|x²/.test(t) && /ln/i.test(t) },
   { id: "short-en2", kind: "short", msg: "Explain in two sentences what a foreign key is.", ok: (t) => /foreign key/i.test(t) && /(refer|point|link)/i.test(t) },
   { id: "hebrew", kind: "hebrew", msg: "מה ההבדל בין מחסנית לתור במבני נתונים?", ok: (t) => (t.match(/[֐-׿]/g) || []).length > 30 && /LIFO|FIFO|אחרון|ראשון/.test(t) },
   { id: "course-q", kind: "course", msg: "In Intro to Databases, which normal form does the assignment ask me to reach?", ok: (t) => /3NF|third normal/i.test(t) },
-  { id: "reminder", kind: "one-tool", msg: "Remind me tomorrow at 9:00 to submit the lab report.", ok: (t, seen) => seen.reminders.length === 1 && /lab report/i.test(seen.reminders[0].text || "") && /T09:00/.test(String(seen.reminders[0].at)) },
+  { id: "reminder", kind: "one-tool", msg: "Remind me tomorrow at 9:00 to submit the lab report.", ok: (t, seen) => seen.reminders.length === 1 && /lab report/i.test(seen.reminders[0].text || "") && localIs(seen.reminders[0].at, 9, 0) },
   { id: "calendar", kind: "one-tool", msg: "What do I have on my calendar this week?", ok: (t) => /Databases/.test(t) && /(Thursday|Tuesday|Wednesday)/.test(t) },
-  { id: "chain", kind: "chain-3", msg: "In Intro to Databases: look at the course files, read the assignment, check my calendar, and then remind me at 20:00 on the evening before it is due.", ok: (t, seen) => seen.reminders.length === 1 && /2026-12-02T20:00/.test(String(seen.reminders[0].at)) },
+  { id: "chain", kind: "chain-3", msg: "In Intro to Databases: look at the course files, read the assignment, check my calendar, and then remind me at 20:00 on the evening before it is due.", ok: (t, seen) => seen.reminders.length === 1 && localIs(seen.reminders[0].at, 20, 0, "2026-12-02") },
   { id: "long", kind: "long-ctx", msg: `Here is a digest the study group wrote:\n${LONG}\n\nIn which week is the group quiz?`, ok: (t) => /week 9|9/.test(t) && /204|9/.test(t) },
 ];
 

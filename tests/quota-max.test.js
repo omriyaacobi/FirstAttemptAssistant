@@ -157,6 +157,11 @@ test("costOf: calls and tokens in plain words", () => {
   assert.strictEqual(costOf([{ input: 1000, cacheRead: 500 }, { input: 2000, output: 5, thinking: 5 }]).text, "2 model calls, 3,510 tokens");
 });
 
+test("the brain's first model always has a warm spare process (a missing one made every call start cold)", () => {
+  const { WARM_MODELS, CHAIN } = require("../brain");
+  assert.ok(WARM_MODELS.has(CHAIN[0].model), CHAIN[0].model + " must be in WARM_MODELS");
+});
+
 test("costOf: per-call seconds are shown when known (2026-11-20)", () => {
   assert.strictEqual(costOf([{ input: 1000, seconds: 3.14 }, { input: 2000, seconds: 5 }]).text, "2 model calls (3.1 s, 5.0 s), 3,000 tokens");
 });

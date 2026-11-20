@@ -1,0 +1,1798 @@
+{
+  "started": "2026-11-20T22:06:06.421Z",
+  "usage": [
+    {
+      "afterRound": 1,
+      "at": "2026-11-20T22:11:20.420Z",
+      "geminiFiveHour": 88
+    },
+    {
+      "afterRound": 2,
+      "at": "2026-11-20T22:16:35.404Z",
+      "geminiFiveHour": 85
+    },
+    {
+      "afterRound": 3,
+      "at": "2026-11-20T22:22:07.643Z",
+      "geminiFiveHour": 79
+    }
+  ],
+  "runs": [
+    {
+      "arm": "neon-warm",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 3.5,
+      "firstText": 3.3,
+      "calls": 1,
+      "perCall": [
+        3.4
+      ],
+      "tokens": 9227,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$3x^2 \\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 1,
+      "poolBefore": 91
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 4.4,
+      "firstText": 4.3,
+      "calls": 1,
+      "perCall": [
+        4.4
+      ],
+      "tokens": 9746,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "The derivative of $x^3 \\ln(x)$ is $3x^2 \\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 1,
+      "poolBefore": 91
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 2.5,
+      "firstText": 2.3,
+      "calls": 1,
+      "perCall": [
+        2.5
+      ],
+      "tokens": 9750,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$x^2(3\\ln(x) + 1)$ (or $3x^2\\ln(x) + x^2$).",
+      "round": 1,
+      "poolBefore": 91
+    },
+    {
+      "arm": "neon-cold",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 5.5,
+      "firstText": 5.2,
+      "calls": 1,
+      "perCall": [
+        5.5
+      ],
+      "tokens": 9215,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$\\frac{d}{dx}(x^3 \\ln x) = 3x^2 \\ln x + x^2 = x^2(3\\ln x + 1)$",
+      "round": 1,
+      "poolBefore": 91
+    },
+    {
+      "arm": "neon-cold",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 6,
+      "firstText": 5.7,
+      "calls": 1,
+      "perCall": [
+        6
+      ],
+      "tokens": 9357,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 1,
+      "poolBefore": 91
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 4.7,
+      "firstText": 4.3,
+      "calls": 1,
+      "perCall": [
+        4.7
+      ],
+      "tokens": 10250,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 1,
+      "poolBefore": 91
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 5.4,
+      "firstText": 5.2,
+      "calls": 1,
+      "perCall": [
+        5.4
+      ],
+      "tokens": 10165,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "neon-warm",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 3.8,
+      "firstText": 3.4,
+      "calls": 1,
+      "perCall": [
+        3.8
+      ],
+      "tokens": 9335,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "neon-warm",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 5.1,
+      "firstText": 3.4,
+      "calls": 1,
+      "perCall": [
+        5.1
+      ],
+      "tokens": 9424,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל העיקרי הוא בסדר שבו האיברים יוצאים:\n\n- **מחסנית (Stack)** עובדת בשיטת **LI",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 5.9,
+      "firstText": 4.8,
+      "calls": 1,
+      "perCall": [
+        5.9
+      ],
+      "tokens": 10108,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא הסדר שבו האיברים יוצאים:\n\n* **מחסנית (Stack)** עובדת בשיטת **LI",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 4.2,
+      "firstText": 3.2,
+      "calls": 1,
+      "perCall": [
+        4.2
+      ],
+      "tokens": 10562,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר שבו מוציאים איברים:\n\n- **מחסנית (Stack)** עובדת בשיטת **LI",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "neon-cold",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 11.3,
+      "firstText": 9.6,
+      "calls": 1,
+      "perCall": [
+        11.3
+      ],
+      "tokens": 10048,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל העיקרי הוא בסדר שבו איברים יוצאים:\n\n- **מחסנית (Stack)** עובדת בשיטת **LIF",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "neon-cold",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 6.8,
+      "firstText": 6.5,
+      "calls": 1,
+      "perCall": [
+        6.8
+      ],
+      "tokens": 9493,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third Normal Form (3NF)**.",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 2.1,
+      "firstText": 2,
+      "calls": 1,
+      "perCall": [
+        2.1
+      ],
+      "tokens": 9910,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Third normal form (3NF).",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 4.9,
+      "firstText": 4.9,
+      "calls": 1,
+      "perCall": [
+        4.9
+      ],
+      "tokens": 10012,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Third normal form (3NF).",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "neon-warm",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 3.3,
+      "firstText": 3.1,
+      "calls": 1,
+      "perCall": [
+        3.3
+      ],
+      "tokens": 9443,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks for **Third normal form (3NF)**.",
+      "round": 1,
+      "poolBefore": 90
+    },
+    {
+      "arm": "neon-warm",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 5.2,
+      "firstText": 4.8,
+      "calls": 1,
+      "perCall": [
+        5.1
+      ],
+      "tokens": 9580,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00: submit the lab report.",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 5.7,
+      "firstText": 5.4,
+      "calls": 1,
+      "perCall": [
+        5.7
+      ],
+      "tokens": 10107,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, 22 November) at 09:00: submit the lab report.",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 5.3,
+      "firstText": 4.9,
+      "calls": 1,
+      "perCall": [
+        5.3
+      ],
+      "tokens": 10537,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, November 22) at 09:00: submit the lab report.",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "neon-cold",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 9,
+      "firstText": 8.4,
+      "calls": 1,
+      "perCall": [
+        9
+      ],
+      "tokens": 9528,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Nov 22) at 09:00 to submit the lab report.",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "neon-cold",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 8.5,
+      "firstText": 7.8,
+      "calls": 1,
+      "perCall": [
+        8.5
+      ],
+      "tokens": 9988,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Nothing is on your calendar for this week (Nov 21–28). Your next events are next",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 5.9,
+      "firstText": 5.5,
+      "calls": 1,
+      "perCall": [
+        5.9
+      ],
+      "tokens": 10856,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Nothing is on your calendar for this week (Nov 21–28).\n\nYour next listed events ",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 8.1,
+      "firstText": 7.6,
+      "calls": 1,
+      "perCall": [
+        8.1
+      ],
+      "tokens": 11195,
+      "ok": false,
+      "error": null,
+      "tools": [],
+      "answerStart": "Nothing is scheduled for this week (Nov 21–28). Your next events on the calendar",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "neon-warm",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 5.9,
+      "firstText": 5.3,
+      "calls": 1,
+      "perCall": [
+        5.9
+      ],
+      "tokens": 9809,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "You have nothing on your calendar for the rest of this week (Nov 21–28). Your ne",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "neon-warm",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 10.5,
+      "firstText": 8.7,
+      "calls": 1,
+      "perCall": [
+        10.5
+      ],
+      "tokens": 11278,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Here's what you have for **Intro to Databases**:\n\n- **Course files:** `Assignmen",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 10.1,
+      "firstText": 9.3,
+      "calls": 1,
+      "perCall": [
+        10.1
+      ],
+      "tokens": 12672,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** D",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 6.6,
+      "firstText": 5.8,
+      "calls": 1,
+      "perCall": [
+        6.5
+      ],
+      "tokens": 12153,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** D",
+      "round": 1,
+      "poolBefore": 89
+    },
+    {
+      "arm": "neon-cold",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 12.5,
+      "firstText": 11,
+      "calls": 1,
+      "perCall": [
+        12.5
+      ],
+      "tokens": 11302,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Files in Intro to Databases:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **As",
+      "round": 1,
+      "poolBefore": 88
+    },
+    {
+      "arm": "neon-cold",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 5.3,
+      "firstText": 5.2,
+      "calls": 1,
+      "perCall": [
+        5.3
+      ],
+      "tokens": 16471,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 1,
+      "poolBefore": 88
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 3.1,
+      "firstText": 2.8,
+      "calls": 1,
+      "perCall": [
+        3.1
+      ],
+      "tokens": 17381,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 1,
+      "poolBefore": 88
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 5.9,
+      "firstText": 5.7,
+      "calls": 1,
+      "perCall": [
+        5.9
+      ],
+      "tokens": 17315,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "The group quiz is in **week 9** (in room 204).",
+      "round": 1,
+      "poolBefore": 88
+    },
+    {
+      "arm": "neon-warm",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 3.1,
+      "firstText": 3,
+      "calls": 1,
+      "perCall": [
+        3.1
+      ],
+      "tokens": 16411,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 1,
+      "poolBefore": 88
+    },
+    {
+      "arm": "neon-cold",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 5.6,
+      "firstText": 5.4,
+      "calls": 1,
+      "perCall": [
+        5.5
+      ],
+      "tokens": 9234,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$\\frac{d}{dx}(x^3 \\ln x) = 3x^2 \\ln x + x^2 = x^2(3\\ln x + 1)$",
+      "round": 2,
+      "poolBefore": 88
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 3,
+      "firstText": 2.8,
+      "calls": 1,
+      "perCall": [
+        3
+      ],
+      "tokens": 9792,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$x^2(3\\ln(x) + 1)$ (using the product rule: $3x^2\\ln(x) + x^3 \\cdot \\frac{1}{x}$",
+      "round": 2,
+      "poolBefore": 88
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 5.3,
+      "firstText": 5.1,
+      "calls": 1,
+      "perCall": [
+        5.2
+      ],
+      "tokens": 9742,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "The derivative of $x^3 \\ln(x)$ is $3x^2 \\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 2,
+      "poolBefore": 88
+    },
+    {
+      "arm": "neon-warm",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 3.3,
+      "firstText": 3.1,
+      "calls": 1,
+      "perCall": [
+        3.3
+      ],
+      "tokens": 9224,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$\\frac{d}{dx}(x^3 \\ln(x)) = 3x^2 \\ln(x) + x^2 = x^2(3\\ln(x) + 1)$",
+      "round": 2,
+      "poolBefore": 88
+    },
+    {
+      "arm": "neon-warm",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 5.3,
+      "firstText": 4.8,
+      "calls": 1,
+      "perCall": [
+        5.3
+      ],
+      "tokens": 9473,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 6.5,
+      "firstText": 6.1,
+      "calls": 1,
+      "perCall": [
+        6.5
+      ],
+      "tokens": 10521,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 4.4,
+      "firstText": 4,
+      "calls": 1,
+      "perCall": [
+        4.4
+      ],
+      "tokens": 10148,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "neon-cold",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 6.2,
+      "firstText": 5.9,
+      "calls": 1,
+      "perCall": [
+        6.2
+      ],
+      "tokens": 9321,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "neon-cold",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 7.7,
+      "firstText": 5.9,
+      "calls": 1,
+      "perCall": [
+        7.7
+      ],
+      "tokens": 9509,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר שבו מוציאים איברים:\n\n- **מחסנית (Stack)** עובדת בשיטת **LI",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 5.1,
+      "firstText": 4.1,
+      "calls": 1,
+      "perCall": [
+        5.1
+      ],
+      "tokens": 10710,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר שבו האיברים יוצאים:\n\n* **Stack (מחסנית):** עובדת בשיטת **L",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 8.1,
+      "firstText": 7,
+      "calls": 1,
+      "perCall": [
+        8.1
+      ],
+      "tokens": 10642,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר היציאה של האיברים:\n\n- **Stack (מחסנית):** עובדת בשיטת **LI",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "neon-warm",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 6.9,
+      "firstText": 5.5,
+      "calls": 1,
+      "perCall": [
+        6.9
+      ],
+      "tokens": 9935,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר שבו מוציאים איברים:\n\n- **מחסנית (Stack) — LIFO** (Last In,",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "neon-warm",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 3.6,
+      "firstText": 3.5,
+      "calls": 1,
+      "perCall": [
+        3.6
+      ],
+      "tokens": 9600,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third Normal Form (3NF)**.",
+      "round": 2,
+      "poolBefore": 87
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 4.3,
+      "firstText": 4.2,
+      "calls": 1,
+      "perCall": [
+        4.3
+      ],
+      "tokens": 10050,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third normal form (3NF)**.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 2.8,
+      "firstText": 2.7,
+      "calls": 1,
+      "perCall": [
+        2.8
+      ],
+      "tokens": 10336,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third normal form (3NF)**.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "neon-cold",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 5.1,
+      "firstText": 5,
+      "calls": 1,
+      "perCall": [
+        5.1
+      ],
+      "tokens": 9360,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third Normal Form (3NF)**.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "neon-cold",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 6.7,
+      "firstText": 6.3,
+      "calls": 1,
+      "perCall": [
+        6.6
+      ],
+      "tokens": 9473,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00: submit the lab report.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 3.2,
+      "firstText": 2.7,
+      "calls": 1,
+      "perCall": [
+        3.2
+      ],
+      "tokens": 10172,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Nov 22) at 9:00 to submit the lab report.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 5.7,
+      "firstText": 5.4,
+      "calls": 1,
+      "perCall": [
+        5.7
+      ],
+      "tokens": 10077,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00: submit the lab report.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "neon-warm",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 3.8,
+      "firstText": 3.5,
+      "calls": 1,
+      "perCall": [
+        3.8
+      ],
+      "tokens": 9257,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00: submit the lab report.",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "neon-warm",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 6.7,
+      "firstText": 6,
+      "calls": 1,
+      "perCall": [
+        6.7
+      ],
+      "tokens": 9999,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Here is what's on your calendar:\n\n- **Tuesday, Dec 1:** 10:00–12:00 — Algorithms",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 6.9,
+      "firstText": 6.5,
+      "calls": 1,
+      "perCall": [
+        6.9
+      ],
+      "tokens": 10950,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Nothing is on your calendar for this week (Nov 21–28).\n\nYour next upcoming event",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 4.8,
+      "firstText": 4.3,
+      "calls": 1,
+      "perCall": [
+        4.8
+      ],
+      "tokens": 10544,
+      "ok": false,
+      "error": null,
+      "tools": [],
+      "answerStart": "Nothing is on your calendar for this week (Nov 21–28).\n\nThe next events listed a",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "neon-cold",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 10.4,
+      "firstText": 9.8,
+      "calls": 1,
+      "perCall": [
+        10.4
+      ],
+      "tokens": 9990,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "You have nothing on your calendar for this coming week (Nov 21–28). Your next ev",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "neon-cold",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 11.4,
+      "firstText": 10.4,
+      "calls": 1,
+      "perCall": [
+        11.4
+      ],
+      "tokens": 11055,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Files:** `Assignment_2.pdf`, `lecture4.pdf`\n- **Assignment 2:** Design a 3NF",
+      "round": 2,
+      "poolBefore": 86
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 7.7,
+      "firstText": 7,
+      "calls": 1,
+      "perCall": [
+        7.7
+      ],
+      "tokens": 12178,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "In **Intro to Databases**, you have two files: `Assignment_2.pdf` and `lecture4.",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 11.1,
+      "firstText": 10.1,
+      "calls": 1,
+      "perCall": [
+        11.1
+      ],
+      "tokens": 12574,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** D",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "neon-warm",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 9.8,
+      "firstText": 8.6,
+      "calls": 1,
+      "perCall": [
+        9.8
+      ],
+      "tokens": 11220,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** Design a",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "neon-warm",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 3.1,
+      "firstText": 3,
+      "calls": 1,
+      "perCall": [
+        3.1
+      ],
+      "tokens": 16437,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 5.4,
+      "firstText": 5.3,
+      "calls": 1,
+      "perCall": [
+        5.4
+      ],
+      "tokens": 17139,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "The group quiz is in **week 9** (in room 204).",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 2.4,
+      "firstText": 2.3,
+      "calls": 1,
+      "perCall": [
+        2.4
+      ],
+      "tokens": 17057,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "neon-cold",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 5.6,
+      "firstText": 5.5,
+      "calls": 1,
+      "perCall": [
+        5.6
+      ],
+      "tokens": 16445,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 2,
+      "poolBefore": 85
+    },
+    {
+      "arm": "neon-warm",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 3.1,
+      "firstText": 3,
+      "calls": 1,
+      "perCall": [
+        3.1
+      ],
+      "tokens": 9204,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$3x^2 \\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 3,
+      "poolBefore": 85
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 4.9,
+      "firstText": 4.8,
+      "calls": 1,
+      "perCall": [
+        4.9
+      ],
+      "tokens": 9776,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$3x^2 \\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 4,
+      "firstText": 3.9,
+      "calls": 1,
+      "perCall": [
+        4
+      ],
+      "tokens": 9756,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$3x^2 \\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "neon-cold",
+      "test": "short-en",
+      "kind": "short",
+      "seconds": 5.4,
+      "firstText": 5.3,
+      "calls": 1,
+      "perCall": [
+        5.4
+      ],
+      "tokens": 9203,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "$3x^2\\ln(x) + x^2$ (or $x^2(3\\ln(x) + 1)$).",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "neon-cold",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 5.8,
+      "firstText": 5.4,
+      "calls": 1,
+      "perCall": [
+        5.8
+      ],
+      "tokens": 9277,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 4.2,
+      "firstText": 3.8,
+      "calls": 1,
+      "perCall": [
+        4.2
+      ],
+      "tokens": 10207,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 5.4,
+      "firstText": 5,
+      "calls": 1,
+      "perCall": [
+        5.3
+      ],
+      "tokens": 10072,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "neon-warm",
+      "test": "short-en2",
+      "kind": "short",
+      "seconds": 4.8,
+      "firstText": 4.4,
+      "calls": 1,
+      "perCall": [
+        4.8
+      ],
+      "tokens": 9151,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "A foreign key is a column (or set of columns) in one table that references the p",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "neon-warm",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 5.6,
+      "firstText": 3.9,
+      "calls": 1,
+      "perCall": [
+        5.6
+      ],
+      "tokens": 9545,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל העיקרי הוא בסדר שבו האיברים יוצאים:\n\n- **מחסנית (Stack) – LIFO** (Last In,",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 6.8,
+      "firstText": 5.6,
+      "calls": 1,
+      "perCall": [
+        6.8
+      ],
+      "tokens": 10601,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר שבו האיברים יוצאים:\n\n* **מחסנית (Stack)** – עובדת בשיטת **",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 3.4,
+      "firstText": 2.5,
+      "calls": 1,
+      "perCall": [
+        3.4
+      ],
+      "tokens": 10325,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל המרכזי הוא בסדר שבו האיברים יוצאים:\n\n* **Stack (מחסנית):** עובדת בשיטת **L",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "neon-cold",
+      "test": "hebrew",
+      "kind": "hebrew",
+      "seconds": 9.1,
+      "firstText": 7.7,
+      "calls": 1,
+      "perCall": [
+        9.1
+      ],
+      "tokens": 10079,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "ההבדל העיקרי הוא בסדר שבו מוציאים איברים:\n\n- **מחסנית (Stack)** עובדת בשיטת **LI",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "neon-cold",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 5.5,
+      "firstText": 5.5,
+      "calls": 1,
+      "perCall": [
+        5.5
+      ],
+      "tokens": 9457,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third Normal Form (3NF)**.",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 2.4,
+      "firstText": 2.3,
+      "calls": 1,
+      "perCall": [
+        2.4
+      ],
+      "tokens": 10101,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks your schema to reach **Third normal form (3NF)**.",
+      "round": 3,
+      "poolBefore": 84
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 6.5,
+      "firstText": 6.4,
+      "calls": 1,
+      "perCall": [
+        6.5
+      ],
+      "tokens": 10083,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks you to reach **Third Normal Form (3NF)**.",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "neon-warm",
+      "test": "course-q",
+      "kind": "course",
+      "seconds": 3.8,
+      "firstText": 3.6,
+      "calls": 1,
+      "perCall": [
+        3.8
+      ],
+      "tokens": 9454,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Assignment 2 asks for **Third Normal Form (3NF)**.",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "neon-warm",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 4.7,
+      "firstText": 4.3,
+      "calls": 1,
+      "perCall": [
+        4.7
+      ],
+      "tokens": 9388,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00: submit the lab report.",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 6.5,
+      "firstText": 6.2,
+      "calls": 1,
+      "perCall": [
+        6.5
+      ],
+      "tokens": 10214,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00: submit the lab report.",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 3.7,
+      "firstText": 3.4,
+      "calls": 1,
+      "perCall": [
+        3.7
+      ],
+      "tokens": 10140,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 9:00: Submit the lab report.",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "neon-cold",
+      "test": "reminder",
+      "kind": "one-tool",
+      "seconds": 8.2,
+      "firstText": 7.8,
+      "calls": 1,
+      "perCall": [
+        8.2
+      ],
+      "tokens": 9664,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "Reminder set for tomorrow (Sunday, Nov 22) at 09:00 to submit the lab report.",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "neon-cold",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 8.5,
+      "firstText": 7.9,
+      "calls": 1,
+      "perCall": [
+        8.5
+      ],
+      "tokens": 9756,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Here's what's on your calendar:\n\n- **Tuesday, Dec 1:** 10:00–12:00 — Algorithms ",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 6,
+      "firstText": 5.4,
+      "calls": 1,
+      "perCall": [
+        6
+      ],
+      "tokens": 11404,
+      "ok": false,
+      "error": null,
+      "tools": [],
+      "answerStart": "You have nothing on your calendar for this week (Nov 21–28). \n\nYour next events ",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 9,
+      "firstText": 8.5,
+      "calls": 1,
+      "perCall": [
+        9
+      ],
+      "tokens": 11202,
+      "ok": false,
+      "error": null,
+      "tools": [],
+      "answerStart": "Nothing is on your calendar for this coming week (Nov 21–28).\n\nThe next events l",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "neon-warm",
+      "test": "calendar",
+      "kind": "one-tool",
+      "seconds": 5.1,
+      "firstText": 4.6,
+      "calls": 1,
+      "perCall": [
+        5.1
+      ],
+      "tokens": 9732,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Here's what's on your calendar:\n\n- **Tuesday, 1 December:** 10:00–12:00 — Algori",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "neon-warm",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 8.8,
+      "firstText": 7.6,
+      "calls": 1,
+      "perCall": [
+        8.8
+      ],
+      "tokens": 10910,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf`, `lecture4.pdf`\n- **Assignment 2:** Desig",
+      "round": 3,
+      "poolBefore": 83
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 9.3,
+      "firstText": 8.4,
+      "calls": 1,
+      "perCall": [
+        9.2
+      ],
+      "tokens": 12365,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** D",
+      "round": 3,
+      "poolBefore": 82
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 7.4,
+      "firstText": 6.6,
+      "calls": 1,
+      "perCall": [
+        7.4
+      ],
+      "tokens": 12473,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** D",
+      "round": 3,
+      "poolBefore": 82
+    },
+    {
+      "arm": "neon-cold",
+      "test": "chain",
+      "kind": "chain-3",
+      "seconds": 12.4,
+      "firstText": 11.3,
+      "calls": 1,
+      "perCall": [
+        12.4
+      ],
+      "tokens": 11221,
+      "ok": true,
+      "error": null,
+      "tools": [
+        "set_reminder"
+      ],
+      "answerStart": "- **Course files:** `Assignment_2.pdf` and `lecture4.pdf`.\n- **Assignment 2:** D",
+      "round": 3,
+      "poolBefore": 82
+    },
+    {
+      "arm": "neon-cold",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 5.3,
+      "firstText": 5.2,
+      "calls": 1,
+      "perCall": [
+        5.2
+      ],
+      "tokens": 16436,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 3,
+      "poolBefore": 81
+    },
+    {
+      "arm": "hydrogen-warm",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 3.8,
+      "firstText": 3.7,
+      "calls": 1,
+      "perCall": [
+        3.8
+      ],
+      "tokens": 17001,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 3,
+      "poolBefore": 80
+    },
+    {
+      "arm": "hydrogen-cold",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 5,
+      "firstText": 4.9,
+      "calls": 1,
+      "perCall": [
+        5
+      ],
+      "tokens": 17011,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 3,
+      "poolBefore": 80
+    },
+    {
+      "arm": "neon-warm",
+      "test": "long",
+      "kind": "long-ctx",
+      "seconds": 3.3,
+      "firstText": 3.2,
+      "calls": 1,
+      "perCall": [
+        3.3
+      ],
+      "tokens": 16409,
+      "ok": true,
+      "error": null,
+      "tools": [],
+      "answerStart": "Week 9 (in room 204).",
+      "round": 3,
+      "poolBefore": 80
+    }
+  ]
+}
