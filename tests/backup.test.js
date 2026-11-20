@@ -158,7 +158,7 @@ test("loadBackupConfig: needs a folder and a long passphrase; keep is bounded", 
   try {
     assert.strictEqual(b.loadBackupConfig(f).enabled, false);
     fs.writeFileSync(f, "BOT_BACKUP_DIR=C:\\Drive\\bk\nBOT_BACKUP_PASSPHRASE=short\n");
-    assert.match(b.loadBackupConfig(f).reason, /at least 12/);
+    assert.match(b.loadBackupConfig(f).reason, /at least 9/);
     fs.writeFileSync(f, `BOT_BACKUP_DIR=${d}\nBOT_BACKUP_PASSPHRASE=${PASS}\nBOT_BACKUP_KEEP=99\n`);
     const c = b.loadBackupConfig(f);
     assert.ok(c.enabled);

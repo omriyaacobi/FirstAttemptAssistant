@@ -40,7 +40,7 @@ const ARCHIVE_MAGIC = Buffer.from("BKD1");
 const SALT_LEN = 16, IV_LEN = 12, TAG_LEN = 16;
 const NAME_PATTERN = /^bot-backup-\d{8}-\d{6}\.botbak$/; // only files with this name are ever pruned
 const MAX_TOTAL_BYTES = 1024 * 1024 * 1024; // the whole backup is built in memory, so refuse above 1 GB
-const MIN_PASSPHRASE = 12;
+const MIN_PASSPHRASE = 9; // my choice 2026-11-20 (was 12): a passphrase I can remember; the scrypt key slows every guess
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETRY_MS = 60 * 60 * 1000; // after a failure, try again after an hour
 const STATUS_NAME = "backup-status.json";
