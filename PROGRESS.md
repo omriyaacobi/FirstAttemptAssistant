@@ -9,8 +9,9 @@ Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my C
 "Gemini" = agy's pools (Bot's own answers).
 
 **No model quota (git, settings, me):**
-1. **Turn the backup on.** `BOT_BACKUP_DIR` is not set in `.env`, so no encrypted copy of `data/` is made. I pick a OneDrive or
-   Google Drive folder and type `BOT_BACKUP_PASSPHRASE` myself; then restart Bot and check the first copy.
+1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:UsersUserOneDriveBot-backup` (newest 5 kept;
+   first copy 70 MB, 380 files, checked by reading back). The passphrase is in `.env` only, plus my own safe copy; minimum 9
+   characters (my choice, `backup.js`).
 2. **Old branches, my call:** 5 hold only research notes (`long-chat-research`, `moodle-research`, `quota-why`,
    `study-position-research`, `qa-everyday`): keep them in main (check for real chat text first, the repo is public) or delete.
    `fable-improve` has 32 commits with no exact copy in main (its features seem to have arrived another way): check, then delete.
