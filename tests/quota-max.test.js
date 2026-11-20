@@ -157,15 +157,25 @@ test("costOf: calls and tokens in plain words", () => {
   assert.strictEqual(costOf([{ input: 1000, cacheRead: 500 }, { input: 2000, output: 5, thinking: 5 }]).text, "2 model calls, 3,510 tokens");
 });
 
+test("the brain's first model always has a warm spare process (a missing one made every call start cold)", () => {
+  const { WARM_MODELS, CHAIN } = require("../brain");
+  assert.ok(WARM_MODELS.has(CHAIN[0].model), CHAIN[0].model + " must be in WARM_MODELS");
+});
+
+test("costOf: per-call seconds are shown when known (2026-11-20)", () => {
+  assert.strictEqual(costOf([{ input: 1000, seconds: 3.14 }, { input: 2000, seconds: 5 }]).text, "2 model calls (3.1 s, 5.0 s), 3,000 tokens");
+});
+
 test("the brain prints what an answer cost next to the model that answered, and adds it to the day's log", async () => {
   const added = [];
   const { handle, logs } = brainWith({ replies: ['CALL {"tool":"reminders_list"}', "Nothing is waiting."], tokenLog: { add: (calls) => added.push(calls) } });
   const r = await handle("what reminders do I have?");
   assert.strictEqual(r.answer, "Nothing is waiting.");
   assert.strictEqual(r.tokens, 2020);
-  assert.ok(logs.some((l) => /^\[brain\] answered by gemini-4-neon-low in [\d.]+ s, tools: reminders_list, 2 model calls, 2,020 tokens$/.test(l)), logs.join("\n"));
+  assert.ok(logs.some((l) => /^\[brain\] answered by gemini-4-neon-low in [\d.]+ s, tools: reminders_list, 2 model calls \([\d.]+ s, [\d.]+ s\), 2,020 tokens$/.test(l)), logs.join("\n"));
   assert.strictEqual(added.length, 1);
-  assert.deepStrictEqual(added[0], [{ model: "gemini-4-neon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }, { model: "gemini-4-neon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }]);
+  assert.deepStrictEqual(added[0].map(({ seconds, ...rest }) => rest), [{ model: "gemini-4-neon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }, { model: "gemini-4-neon-low", input: 1000, output: 10, thinking: 0, cacheRead: 0 }]);
+  assert.ok(added[0].every((c) => typeof c.seconds === "number"), "every call carries its seconds");
 });
 
 test("a failed model call is counted too (it was paid for), and a broken token log never breaks an answer", async () => {
