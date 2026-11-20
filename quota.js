@@ -229,18 +229,23 @@ function paceOf(rows, pool, now = Date.now()) {
 // stays where it is). lead is the model that went first last time (or null): it keeps the lead until the other is PACE_MARGIN
 // points ahead, so the choice does not flip with every message. Returns { chain, lead, note } (note: plain words when the order changed).
 function paceOrder(chain, rows, { now = Date.now(), margin = PACE_MARGIN, lead = null } = {}) {
-  const spots = chain.map((m, i) => [m, i]).filter(([m]) => m.provider === "agy").slice(0, 2);
-  if (spots.length < 2) return { chain: chain.slice(), lead: null, note: "" };
-  const [[a, ia], [b, ib]] = spots;
   const pool = (m) => poolsOf(m)[0];
+  // The first agy model, and the first agy model of ANOTHER pool (2026-11-20: Neon low and Hydrogen medium, both "Gemini Models",
+  // now lead the brain's chain, so "the first two agy models" would be one pool and pacing would quietly stop).
+  const agy = chain.map((m, i) => [m, i]).filter(([m]) => m.provider === "agy");
+  const spotA = agy[0];
+  const spotB = spotA && agy.find(([m]) => pool(m) !== pool(spotA[0]));
+  if (!spotA || !spotB) return { chain: chain.slice(), lead: null, note: "" };
+  const [[a, ia], [b, ib]] = [spotA, spotB];
   const pa = paceOf(rows, pool(a), now), pb = paceOf(rows, pool(b), now);
   if (pa === null || pb === null || pool(a) === pool(b)) return { chain: chain.slice(), lead: null, note: "" };
   const current = lead === b.model ? b : a; // without a lead, the chain's own order
   const other = current === a ? b : a;
   const gap = (other === a ? pa : pb) - (current === a ? pa : pb);
   const first = gap >= margin ? other : current;
-  const out = chain.slice();
-  if (first === b) { out[ia] = b; out[ib] = a; }
+  let out = chain.slice();
+  // b moves in front of a; the rest keep their order (for two neighbours this is the old swap)
+  if (first === b) { out = chain.filter((m, i) => i !== ib); out.splice(ia, 0, b); }
   const note = first === b ? `pacing the week: ${pool(b)} is ${pb - pa} point${pb - pa === 1 ? "" : "s"} ahead of ${pool(a)} (quota left compared with the days left)` : "";
   return { chain: out, lead: first.model, note };
 }
