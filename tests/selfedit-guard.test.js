@@ -12,7 +12,7 @@ const diffOf = (file, added, removed = []) => `diff --git a/${file} b/${file}\n-
 test("tiers: the gate, keys, git, data and login-time scripts are guard; safety-check files are sensitive; the rest is normal", () => {
   for (const f of ["selfedit.js", "selfedit-guard.js", "gitops.js", "auth.js", ".env", "config/.env.local", "data/profile.md", ".git/config", "start-web.cmd", "x.vbs", "tools/run.ps1", "health-guard.js", "moodle-extension/manifest.json"]) assert.strictEqual(g.tierOf(f), "guard", f);
   for (const f of ["server.js", "brain.js", "calendar.js", "pc-open.js", "tests/brain.test.js", "tests/server-routes.test.js"]) assert.strictEqual(g.tierOf(f), "sensitive", f);
-  for (const f of ["public/index.html", "due-date.js", "brain-brief.md", "tests/due-date.test.js", "README.md"]) assert.strictEqual(g.tierOf(f), "normal", f);
+  for (const f of ["public/index.html", "due-date.js", "brain-brief.md", "tests/due-date.test.js", "tests/brain-brief.test.js", "README.md"]) assert.strictEqual(g.tierOf(f), "normal", f);
   assert.strictEqual(g.tierOf("SELFEDIT.JS"), "guard");
   assert.strictEqual(g.tierOf(".\\gitops.js"), "guard");
 });

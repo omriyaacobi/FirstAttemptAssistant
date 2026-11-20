@@ -25,14 +25,17 @@ const SENSITIVE_FILES = ["server.js", "brain.js", "store.js", "preview.js", "pro
   "moodle-ws.js", "moodle-bridge.js", "moodle-tools.js", "pc-open.js", "pc-find.js", "project-folder.js", "linkfetch.js",
   "link-batch.js", "unzip.js", "upload.js", "profile.js", "reminders.js", "thread-files.js", "webpush.js", "quota.js", "router.js"];
 
+const NORMAL_TEST_STEMS = ["brain-brief"]; // tests named after a sensitive file that test something normal
 const norm = (f) => String(f).replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
 function tierOf(file) {
   const p = norm(file);
   if (GUARD_FILES.includes(p) || GUARD_PREFIXES.some((x) => p.startsWith(x)) || /(^|\/)\.env/.test(p) || /\.(cmd|bat|vbs|ps1|exe|dll|lnk)$/.test(p)) return "guard";
   if (SENSITIVE_FILES.includes(p)) return "sensitive";
   // a test that checks a sensitive or guard file is as sensitive as the file it guards
-  const m = /^tests\/(.+?)(?:-[a-z]+)?\.test\.js$/.exec(p);
-  if (m && (SENSITIVE_FILES.includes(m[1] + ".js") || GUARD_FILES.includes(m[1] + ".js"))) return "sensitive";
+  // (tests/brain-study.test.js tests brain.js; but tests/brain-brief.test.js tests the brief, a normal file: found in the real trial)
+  const m = /^tests\/((.+?)(?:-[a-z]+)?)\.test\.js$/.exec(p);
+  const guards = (stem) => SENSITIVE_FILES.includes(stem + ".js") || GUARD_FILES.includes(stem + ".js");
+  if (m && !NORMAL_TEST_STEMS.includes(m[1]) && (guards(m[1]) || guards(m[2]))) return "sensitive";
   return "normal";
 }
 
