@@ -78,22 +78,38 @@ function parseTestSummary(output) {
 // limit of 240 s cut busy runs off, so Improve Bot could fail at its first step. 15 minutes leaves room; a run that still needs
 // longer is stopped and says so.
 const TEST_TIMEOUT_MS = 15 * 60 * 1000;
+const BASELINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // a stored green baseline is trusted for a week at most
+
+// The Stop button (2026-11-21): when the signal fires, the child AND everything it started (the test workers, agy's helpers)
+// are killed (taskkill /T on Windows; providers.killTree).
+function killOnSignal(child, signal) {
+  if (!signal) return;
+  const kill = () => { try { require("./providers").killTree(child); } catch (error) { /* already gone */ } };
+  if (signal.aborted) kill();
+  else signal.addEventListener("abort", kill, { once: true });
+}
+
+// Raised inside a run when the person pressed Stop.
+class StoppedError extends Error {
+  constructor() { super("stopped by you"); this.stopped = true; }
+}
 
 // Runs the project's tests in a folder. Never rejects: failures come back as ok: false.
-function nodeTests(cwd, { timeoutMs = TEST_TIMEOUT_MS } = {}) {
+function nodeTests(cwd, { timeoutMs = TEST_TIMEOUT_MS, signal = null } = {}) {
   // When this code itself runs inside "node --test", Node marks the environment so that
   // child processes think they are test workers. Remove that mark or the inner run misbehaves.
   // The run is FENCED (selfedit-guard.js fencedEnv): a test the editor wrote can never push to GitHub or use a saved login.
   const env = guard.fencedEnv();
   delete env.NODE_TEST_CONTEXT;
   return new Promise((resolve) => {
-    execFile(process.execPath, ["--test", "--test-reporter=spec"], { windowsHide: true, cwd, env, timeout: timeoutMs, maxBuffer: 5e7 }, (error, stdout, stderr) => {
+    const child = execFile(process.execPath, ["--test", "--test-reporter=spec"], { windowsHide: true, cwd, env, timeout: timeoutMs, maxBuffer: 5e7 }, (error, stdout, stderr) => {
       const output = String(stdout) + String(stderr);
       const { total, failed } = parseTestSummary(output);
       const timedOut = !!(error && error.killed);
       const tail = output.trim().split("\n").slice(-25).join("\n");
       resolve({ ok: !error && failed === 0 && total > 0, total, failed, timedOut, tail: timedOut ? `${tail}\n(The test run was stopped after ${Math.round(timeoutMs / 60000)} minutes.)` : tail });
     });
+    killOnSignal(child, signal);
   });
 }
 
@@ -122,7 +138,7 @@ function describeStreamLine(line) {
 // --tools limits it to reading and editing files; --permission-prompts none means anything
 // not allowed is refused automatically instead of asking. The stream output lets the page show
 // what the editor is doing right now (onProgress), so you can tell it is alive.
-function claudeEditor({ worktree, request, model, feedback = "", onProgress = () => {} }) {
+function claudeEditor({ worktree, request, model, feedback = "", onProgress = () => {}, signal = null }) {
   const { CLAUDE_CMD, claudeEnv } = require("./providers");
   if (!/^[\w.-]+$/.test(model)) return Promise.reject(new Error("bad model name"));
   const cmd = `${CLAUDE_CMD} -p --model ${model} --output-format stream-json --verbose --restricted --tools "Read,Glob,Grep,Edit,Write" --permission-mode acceptEdits --permission-prompts none --no-session-persistence`;
@@ -153,6 +169,7 @@ function claudeEditor({ worktree, request, model, feedback = "", onProgress = ()
       buffer = lines.pop();
       lines.forEach(handleLine);
     });
+    killOnSignal(child, signal);
     child.stdin.end(`${EDITOR_RULES}\n\nThe change the user wants:\n${request}${feedback ? "\n\n" + feedback : ""}`);
   });
 }
@@ -285,7 +302,7 @@ function removeAgyTmp(tmp, tmpRoot, rm = fs.rmSync, rmdir = fs.rmdirSync) {
 function makeAgyEditor({ command, prefixArgs = [], noteFailure = null, profile } = {}) {
   const failed = (why, retryable) => agyFailed(profile.name, why, retryable);
   // One run of agy. Rejects with failed(...).
-  function runOnce({ worktree, request, feedback, onProgress, model, reminder }) {
+  function runOnce({ worktree, request, feedback, onProgress, model, reminder, signal }) {
     const { AGY_CMD, killTree } = require("./providers");
     const tmpRoot = path.dirname(worktree) + "-agytmp";
     fs.mkdirSync(tmpRoot, { recursive: true });
@@ -311,6 +328,10 @@ function makeAgyEditor({ command, prefixArgs = [], noteFailure = null, profile }
         finish(reject, failed(why, retryable));
       };
       const timer = setTimeout(() => fail("it took too long and was stopped."), EDITOR_TIMEOUT_MS);
+      if (signal) { // the Stop button: kill agy and its helpers (finish does killTree), and say "stopped", not a failure of the model
+        const onAbort = () => finish(reject, new StoppedError());
+        if (signal.aborted) onAbort(); else signal.addEventListener("abort", onAbort, { once: true });
+      }
       for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on("error", () => {});
       child.stderr.on("data", (d) => { stderr = (stderr + d).slice(-600); });
       child.on("error", (error) => fail("agy could not start (" + error.message + ")."));
@@ -350,17 +371,17 @@ function makeAgyEditor({ command, prefixArgs = [], noteFailure = null, profile }
     });
   }
 
-  return async function agyEditor({ worktree, request, feedback = "", onProgress = () => {}, model = profile.model }) {
+  return async function agyEditor({ worktree, request, feedback = "", onProgress = () => {}, model = profile.model, signal = null }) {
     require("./providers").checkModelName(model);
     try {
-      return await runOnce({ worktree, request, feedback, onProgress, model, reminder: "" });
+      return await runOnce({ worktree, request, feedback, onProgress, model, reminder: "", signal });
     } catch (error) {
       if (!error.retryable) throw error;
       // The model tried something it may not do (Argon likes to explore with a shell command). agy refuses those, but the turn
       // ends. One more try with a reminder; if it happens again the person is told plainly.
       onProgress(`${profile.name} tried something that is not allowed, so I am asking it again...`);
       const reminder = `\n\nYour previous try was stopped because ${error.why.replace(/^it was stopped because /, "").replace(/\.$/, "")}. Use ONLY read_file, edit_file and write_file with absolute paths inside the folder above (${profile.writeWhere}). There is no command tool, no web search and no directory listing: the files you can open are listed above. Do the change now.`;
-      return await runOnce({ worktree, request, feedback, onProgress, model, reminder });
+      return await runOnce({ worktree, request, feedback, onProgress, model, reminder, signal });
     }
   };
 }
@@ -469,6 +490,47 @@ function createSelfEdit({
   const recordsDir = path.join(dataDir, "selfedit");
   let active = null; // id of the proposal being worked on right now (one at a time)
   let finishListener = null; // server.js sends the phone push from here (onFinish)
+
+  // ---- Stop (2026-11-21) ----
+  // One run at a time, so one `run`: its AbortSignal reaches the editor and the test run (they kill their whole process tree),
+  // and `guarded` makes every long wait end at once even if a fake or a slow step ignores the signal. stop() waits for the work
+  // loop to finish, which cleans up like Reject and saves "stopped". `active` is cleared by the loop's own finally.
+  let run = null;
+  function newRun() {
+    const ac = new AbortController();
+    const r = { ac, signal: ac.signal, stopped: false, finished: null, onStop: () => {} };
+    r.stopPromise = new Promise((resolve, reject) => { r.onStop = () => reject(new StoppedError()); });
+    r.stopPromise.catch(() => {}); // never an unhandled rejection when nobody is waiting
+    return r;
+  }
+  const guarded = (promise) => (run ? Promise.race([promise, run.stopPromise]) : promise);
+  const checkStopped = () => { if (run && run.stopped) throw new StoppedError(); };
+  const isStop = (error) => !!(error && error.stopped) || !!(run && run.stopped);
+
+  // ---- The last green baseline (2026-11-21) ----
+  // The full suite on the UNCHANGED copy takes about 6 minutes. When the copy starts from exactly the commit whose tests
+  // already passed (data/selfedit-baseline.json: commit, test total, time; at most 7 days old) and the project is clean,
+  // that result is reused. Anything else (another commit, a missing or broken file, an old record) runs the suite as before.
+  // A failed run is never stored. After an approved change the merged commit is stored too: it holds exactly the tree whose
+  // tests just passed (approve checks the tree hash).
+  const baselineFile = path.join(dataDir, "selfedit-baseline.json");
+  function readBaseline() {
+    try {
+      const b = JSON.parse(fs.readFileSync(baselineFile, "utf8"));
+      const age = Date.now() - b.at;
+      if (b && /^[0-9a-f]{40}$/.test(b.commit) && Number.isInteger(b.total) && b.total > 0 && Number.isFinite(b.at) && age >= -60000 && age <= BASELINE_MAX_AGE_MS) return b;
+    } catch (error) { /* missing or broken: run the tests */ }
+    return null;
+  }
+  function writeBaseline(commit, total) {
+    try {
+      if (!/^[0-9a-f]{40}$/.test(commit) || !Number.isInteger(total) || total <= 0) return;
+      fs.mkdirSync(dataDir, { recursive: true });
+      const temp = baselineFile + ".tmp";
+      fs.writeFileSync(temp, JSON.stringify({ commit, total, at: Date.now() }));
+      fs.renameSync(temp, baselineFile);
+    } catch (error) { /* a missing record only means the next run tests again */ }
+  }
   const announce = (record) => {
     if (!finishListener || !["ready", "blocked", "failed"].includes(record.status)) return;
     try { finishListener({ id: record.id, status: record.status }); } catch (error) { /* a push never changes a result */ }
@@ -586,7 +648,8 @@ function createSelfEdit({
       const isAgy = isArgon || record.model === "neon"; // the editors through agy: their work folder is watched from outside too
       const before = isAgy ? await outsideSnapshot(id) : null;
       const runEditor = isArgon ? argonEditor : record.model === "neon" ? neonEditor : editor;
-      summary = await runEditor({ worktree: wt, request: record.request, model: isAgy ? undefined : record.model, feedback, attempt, onProgress: editorSayer(record) });
+      summary = await guarded(runEditor({ worktree: wt, request: record.request, model: isAgy ? undefined : record.model, feedback, attempt, onProgress: editorSayer(record), signal: run && run.signal }));
+      checkStopped();
 
       // The editor was only supposed to touch its private copy. If it did not, stop at once:
       // this is a safety failure, not a mistake to retry.
@@ -623,7 +686,8 @@ function createSelfEdit({
         tests = { ok: false, notRun: true, total: null, failed: null, tail: "" }; // nothing of such a change is ever run (see preTestProblems)
       } else {
         say(record, `Running the tests on the change (${files.length} file${files.length === 1 ? "" : "s"} changed)... this can take up to about 6 minutes.`);
-        tests = await runTests(wt);
+        tests = await guarded(runTests(wt, { signal: run && run.signal }));
+        checkStopped();
       }
       tests.baselineTotal = baseline.total;
 
@@ -643,8 +707,9 @@ function createSelfEdit({
     const asked = (record.chat || []).filter((m) => m.role === "user").map((m) => m.text).join("\n\n") || record.request;
     say(record, "A second model (Hydrogen) is reading the change...");
     let review;
-    try { review = guard.parseReview(await reviewer(guard.reviewPrompt(asked, result.diff, riskNotes))); }
-    catch (error) { review = { verdict: "none", notes: [String(error.message).replace(/[\u0000-\u001f]/g, " ").slice(0, 200)] }; }
+    try { review = guard.parseReview(await guarded(reviewer(guard.reviewPrompt(asked, result.diff, riskNotes)))); }
+    catch (error) {
+      if (isStop(error)) throw error; review = { verdict: "none", notes: [String(error.message).replace(/[\u0000-\u001f]/g, " ").slice(0, 200)] }; }
     return { riskNotes, review };
   }
 
@@ -657,13 +722,26 @@ function createSelfEdit({
       fs.mkdirSync(workRoot, { recursive: true });
       say(record, "Making a private copy of Bot to work in...");
       await git(repoDir, ["worktree", "add", "-b", branchFor(id), wt, "HEAD"]);
+      checkStopped();
 
-      // The tests must pass BEFORE the edit, otherwise we cannot tell who broke what.
-      say(record, "Running Bot's tests before changing anything (up to about 6 minutes)...");
-      const baseline = await runTests(wt);
-      if (!baseline.ok) {
-        await cleanup(id);
-        return finish({ status: "failed", note: "The project's own tests fail before any change, so editing was not started.", tests: { baseline } });
+      // The tests must pass BEFORE the edit, otherwise we cannot tell who broke what. When this exact commit already passed
+      // (see readBaseline) and the project is clean, that result is reused and the 6 minutes are saved.
+      const startCommit = (await git(wt, ["rev-parse", "HEAD"])).trim();
+      const known = readBaseline();
+      let baseline;
+      if (known && known.commit === startCommit && !(await mainTreeStatus())) {
+        baseline = { ok: true, total: known.total, failed: 0, reused: true, tail: "" };
+        record.baselineReused = true;
+        say(record, "Bot's tests already passed on this version, skipping the first run.");
+      } else {
+        say(record, "Running Bot's tests before changing anything (up to about 6 minutes)...");
+        baseline = await guarded(runTests(wt, { signal: run && run.signal }));
+        checkStopped();
+        if (!baseline.ok) {
+          await cleanup(id);
+          return finish({ status: "failed", note: "The project's own tests fail before any change, so editing was not started.", tests: { baseline } });
+        }
+        writeBaseline(startCommit, baseline.total);
       }
 
       const out = await editRounds(record, wt, baseline, "");
@@ -679,10 +757,13 @@ function createSelfEdit({
       say(record, "Done. Ready for you to look at.");
       return finish({ ...result, status: "ready", note: `Ready for your review${tries}.` });
     } catch (error) {
+      const stopped = isStop(error);
       await cleanup(id);
+      if (stopped) return finish({ status: "stopped", note: "Stopped by you. Nothing was changed." });
       return finish({ status: "failed", note: String(error.message).slice(0, 500) });
     } finally {
       active = null;
+      run = null;
       announce(record);
     }
   }
@@ -726,11 +807,17 @@ function createSelfEdit({
         await cleanup(id);
         return finish({ status: "failed", note: `${String(error.message).slice(0, 300)} (and the previous version could not be restored)` });
       }
+      if (isStop(error)) {
+        addChat(record, "bot", "Stopped by you. Your previous version is back.");
+        say(record, "Stopped. Your previous version is back.");
+        return finish({ status: "ready", note: "The follow-up was stopped by you; the version before it is still ready." });
+      }
       addChat(record, "bot", `Something went wrong: ${String(error.message).slice(0, 300)}. Your previous version is back.`);
       say(record, "That try failed. Your previous version is back.");
       return finish({ status: "ready", note: "The last follow-up failed and was undone; the version before it is still ready." });
     } finally {
       active = null;
+      run = null;
       announce(record);
     }
   }
@@ -766,7 +853,9 @@ function createSelfEdit({
       progress: [],
     });
     active = id;
+    run = newRun();
     const finished = work(record);
+    run.finished = finished;
     finished.catch(() => {}); // a failure is saved on the record; never let it crash the server
     return { record, finished };
   }
@@ -790,7 +879,9 @@ function createSelfEdit({
     delete record.finishedAt;
     save(record);
     active = id;
+    run = newRun();
     const finished = continueWork(record, message.trim());
+    run.finished = finished;
     finished.catch(() => {});
     return { record, finished };
   }
@@ -847,6 +938,7 @@ function createSelfEdit({
     await git(repoDir, ["merge", "--ff-only", "-q", branchFor(id)]);
     const mergedCommit = (await git(repoDir, ["rev-parse", "HEAD"])).trim();
     await cleanup(id);
+    if (record.tests && record.tests.ok) writeBaseline(mergedCommit, record.tests.total); // the merged commit holds exactly the tree whose tests passed
 
     const needsRestart = record.files.some((f) => !f.path.startsWith("public/") && !f.path.endsWith(".md"));
     // The health guard (health-guard.js, which start-web.cmd runs before every start): if the new code keeps Bot from coming up,
@@ -900,7 +992,21 @@ function createSelfEdit({
     return save(Object.assign(record, { status: "rejected", note: "Thrown away. Nothing was changed.", finishedAt: Date.now() }));
   }
 
-  return { start, followUp, previewDir, get, list, approve, reject, undo, rollback, onFinish: (fn) => { finishListener = fn; }, isActive: () => active !== null };
+  // The Stop button: kills the editor and the test run (whole process trees), waits until the work loop has cleaned up, and returns
+  // the saved record ("stopped": the private copy and its branch are gone, nothing was merged). Works in every phase.
+  async function stop(id) {
+    const record = get(id);
+    if (!record) throw new Error("proposal not found");
+    if (record.status !== "running" || active !== id || !run) throw new Error("it is not running, so there is nothing to stop");
+    const current = run;
+    current.stopped = true;
+    current.ac.abort();
+    current.onStop();
+    await Promise.resolve(current.finished).catch(() => {});
+    return get(id);
+  }
+
+  return { start, followUp, previewDir, get, list, approve, reject, undo, stop, rollback, onFinish: (fn) => { finishListener = fn; }, isActive: () => active !== null };
 }
 
 module.exports = { createSelfEdit, finishPush, makeNeonEditor, NEON_MODEL, NEON_RULES, wideFolderMap, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, makeArgonEditor, removeAgyTmp, auditAgyStep, describeAgyStep, checkProposal, publicOnlyProblems, ARGON_MODEL, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };

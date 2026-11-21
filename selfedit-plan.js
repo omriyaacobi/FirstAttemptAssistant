@@ -217,8 +217,8 @@ function buildImplementationRequest(plan, extraNote = "") {
 
 // Default model caller: uses providers.ask with the slim agent (saves ~7,000 tokens per call,
 // no shell and no file-write tools) on Gemini Models pool only.
-function defaultAskOne(model, prompt) {
-  return require("./providers").ask(model.provider, model.model, prompt, () => {}, { agent: true, timeoutMs: PLAN_TIMEOUT_MS });
+function defaultAskOne(model, prompt, { signal } = {}) {
+  return require("./providers").ask(model.provider, model.model, prompt, () => {}, { agent: true, timeoutMs: PLAN_TIMEOUT_MS, signal });
 }
 
 function createPlanner({
@@ -230,6 +230,9 @@ function createPlanner({
 } = {}) {
   const plansDir = path.join(dataDir, "selfedit-plans");
   let active = null; // id of the plan currently running a model turn
+  // The Stop / Discard button while it plans (2026-11-21): the model's process is killed through the signal, and `guarded` ends the wait at once.
+  let run = null;
+  const guarded = (promise) => (run ? Promise.race([promise, run.stopPromise]) : promise);
 
   const fileFor = (id) => path.join(plansDir, id + ".json");
 
@@ -278,10 +281,12 @@ function createPlanner({
     let lastError = null;
     for (const m of PLANNER_CHAIN) {
       try {
-        const answer = String(await askOne(m, prompt)).trim();
+        const answer = String(await guarded(askOne(m, prompt, { signal: run && run.signal }))).trim();
+        if (run && run.stopped) throw new Error("stopped");
         if (answer) return answer;
         lastError = new Error(`${m.model} returned an empty reply`);
       } catch (error) {
+        if (run && run.stopped) throw error; // stopped by you: no quota note, no next model
         lastError = error;
         noteFailure(m, String(error.message || ""));
       }
@@ -320,6 +325,12 @@ function createPlanner({
       record.updatedAt = Date.now();
       return save(record);
     } catch (error) {
+      if (run && run.stopped) { // Discard while planning: the plan is thrown away, nothing else happened
+        record.status = "discarded";
+        record.phase = "";
+        record.updatedAt = Date.now();
+        return save(record);
+      }
       record.status = "failed";
       record.error = String(error.message || "Planning failed").slice(0, 400);
       record.phase = "";
@@ -327,7 +338,16 @@ function createPlanner({
       return save(record);
     } finally {
       active = null;
+      run = null;
     }
+  }
+
+  function newRun() {
+    const ac = new AbortController();
+    const r = { signal: ac.signal, abort: () => ac.abort(), stopped: false, finished: null };
+    r.stopPromise = new Promise((resolve, reject) => { r.onStop = () => reject(new Error("stopped")); });
+    r.stopPromise.catch(() => {});
+    return r;
   }
 
   async function start(request, { model = "neon" } = {}) {
@@ -350,7 +370,9 @@ function createPlanner({
       updatedAt: now,
     });
     active = id;
+    run = newRun();
     const finished = runTurn(record);
+    run.finished = finished;
     finished.catch(() => {});
     return { record, finished };
   }
@@ -375,7 +397,9 @@ function createPlanner({
     record.updatedAt = Date.now();
     save(record);
     active = id;
+    run = newRun();
     const finished = runTurn(record);
+    run.finished = finished;
     finished.catch(() => {});
     return { record, finished };
   }
@@ -412,7 +436,20 @@ function createPlanner({
     return save(record);
   }
 
-  return { start, message, prepareStart, markStarted, discard, get, latestOpen, isActive: () => active !== null };
+  // Discard while it is planning: stops the model call and throws the plan away.
+  async function stop(id) {
+    const record = get(id);
+    if (!record) throw new Error("plan not found");
+    if (record.status !== "planning" || active !== id || !run) throw new Error("it is not running, so there is nothing to stop");
+    const current = run;
+    current.stopped = true;
+    current.abort();
+    current.onStop();
+    await Promise.resolve(current.finished).catch(() => {});
+    return get(id);
+  }
+
+  return { start, message, prepareStart, markStarted, discard, stop, get, latestOpen, isActive: () => active !== null };
 }
 
 module.exports = {
