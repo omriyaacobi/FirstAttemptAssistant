@@ -17,6 +17,7 @@ model, checks and runs the tools it asks for) -> the answer is saved in the thre
 | `history.js`, `thread-context.js`, `course-material.js`, `project-folder.js` | what code hands the brain with each message: the recent talk, the course's assignment and best pages, the linked code folder (read-only) |
 | `pc-find.js`, `pc-open.js` | PC hands: find folders and files by name under the search roots, and open pages (Chrome), documents, code (VS Code) and folders; never programs |
 | `jobs.js`, `providers.js`, `router.js`, `quota.js`, `warmagy.js` | one job per message; running `agy` and `claude`; the models and their quota pools; the pre-warmed `agy` |
+| `todo.js` | Omri's to-do list for Bot: the file `data/todo.md` (private, outside git) that Bot (`todo_read` / `todo_update`) and every Claude Code session read and change; checked edits, undo for 2 hours |
 | `tokenlog.js` | what the answers cost in tokens, per day and per model (`data/token-log.json`, numbers only). `node tokenlog.js` prints the last 7 days |
 | `calendar*.js`, `reminders.js`, `morning.js`, `news.js`, `brief-me.js`, `profile.js`, `recall.js` | Google Calendar (cards), reminders, the morning brief (a small newspaper: news from fixed feeds and the "You" part), the profile and saved facts, search in earlier talk |
 | `courses.js`, `course-routes.js`, `course-pages.js`, `ingest.js`, `search.js` | courses, reading their files, picking pages for a question |

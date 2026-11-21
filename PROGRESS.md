@@ -5,95 +5,9 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 
 ## To do
 
-Ordered from the least quota to the most (estimated 2026-11-20). "Claude" = my Claude plan (Claude Code sessions);
-"Gemini" = agy's pools (Bot's own answers).
+The to-do list is `data/todo.md`, outside git (private, in the daily encrypted backup; absolute path `C:\Claude Code Project\FirstAttemptAssistant\data\todo.md`). Bot and every Claude Code session read and update it (CLAUDE.md). Moved there on 2026-11-21; a copy of the old section: `experiments/2026-11-21-todo-list.md`.
 
-**Improve Bot changes all of Bot + Neon in Bot: MERGED AND PUSHED 2026-11-20** (notes `experiments/2026-11-20-selfedit-neon-build.md`).
-The light gate (git fenced during the test run, `.env` mentions refused before tests, 15-minute test limit), risk notes + one
-Hydrogen review on the ready card, Undo, the health guard in start-web.cmd, every file open except the guard files, Neon medium as
-the default editor, a phone push when a change ends, Neon low first in the brain, Neon low instead of Claude Sonnet for big PDFs.
-Restore tag before the first big Improve Bot use: `before-ui-review-2026-11-21`.
-- **Live test (2026-11-21):** a "go wild" UI redesign by Neon medium, twice (a follow-up on the same card). The gate worked (page
-  files only, all tests green, no risk notes, Hydrogen review "ok", the real project untouched). I did not like the result and
-  rejected it. Auto-rollback was not exercised yet (page-only changes need no restart); it gets its test with the first code change.
-- **Speed fix: MERGED 2026-11-21** (`experiments/2026-11-20-neon-speed.md`): Neon low was missing from `WARM_MODELS` in `brain.js`,
-  so every Neon answer started agy cold (median 6.8 s; with the fix about 4.8 s, Hydrogen medium about 4.1 s). The brain's log line
-  now shows each model call's seconds (`grep "answered by" data/bot.log`).
-- **After one week (about 2026-11-27):** `node tokenlog.js` and compare Neon low with Hydrogen medium (tokens per answer, failures,
-  seconds); decide whether Neon low stays first.
-
-**New 2026-11-21 (my words):**
-- **The UI: I want to sit on it myself.** Neon's redesign was rejected. Do it with me, step by step (not a "go wild" request):
-  what I use, what goes, how it should look. Medium, Claude or Neon with me watching.
-- **Bot's speed: test the current speed and research how to improve it.** Start from the live per-call seconds in `data/bot.log`
-  (a few days of real messages), then look at where time goes (agy start, context size of about 9k tokens per call, tool rounds,
-  queueing) and what can be cut. Small to medium; one Sonnet session.
-- **Bot can see and update this to-do list** (so I can do tasks from Bot or from Claude Code and both stay up to date). Design
-  agreed with me first: see the decision in the manager chat of 2026-11-21.
-
-**Found in the live tests (2026-11-20), fix after the weekly reset:**
-- **"Start lecture 6" dumped the whole lesson at once.** Usually the brain teaches in the chat itself (course_read, short
-  answers of 200-500 characters, asking me as it goes). This time Hydrogen called `teach_next`, which by design (CLAUDE.md
-  CATCH-UP) gives ONE big chunk: 3 steps + an example + one check question (1,600 characters, all of lecture 6 part 1).
-  It happened 3 times so far (15, 17 and 20 Nov). Fix idea: make `teach_next` (`catchup.js`) teach like the chat does, one
-  small step and a question, wait for my answer; or tell the brain (`brain-brief.md`) to start a lecture in the chat and use
-  teach_next only when I ask for a whole part. Decide with me first (it changes an agreed rule).
-- The Moodle test worked ("open the Mission 3 README" in one message, 16 s).
-- The photo quiz answer worked: Argon low read the handwriting (the photo chain), `quiz_answer ask=answer`, graded "partly"
-  with a fair hint (37 s). First real `ask=` line for item 6.
-
-**No model quota (git, settings, me):**
-1. **Backup: ON since 2026-11-20.** Daily encrypted copy of `data/` in `C:\Users\User\OneDrive\Bot-backup` (newest 5 kept;
-   first copy 70 MB, 380 files, checked by reading back). The passphrase is in `.env` only, plus my own safe copy; minimum 9
-   characters (my choice, `backup.js`).
-2. **Old branches: DONE 2026-11-20.** All deleted (my call, none kept), on the PC and on GitHub; GitHub has only `main`. Locked
-   folders in `.claude/worktrees/` go once their finished sessions are archived.
-3. **The flaky test** (about 1 run in 5, then all green 6 times): only if it shows again, `node --test --test-reporter=tap` and
-   look for "not ok" to get its name. Seen on 2026-11-20 (once each in about 12 runs): `tests/watchdog.test.js` "nothing on the
-   port" (the PowerShell time stamp came back empty), and `tests/selfedit-argon.test.js` "safe flags ... private TEMP" (its check
-   fails when the random temp folder name starts with "x").
-
-**Tiny (a few Bot calls on Gemini, a short look by the manager):**
-4. **Live tests: DONE 2026-11-20** (both worked; see "Found in the live tests" above).
-5. **Read why Hydrogen fails.** 50 of 357 Hydrogen first tries failed on 15-19 Nov with "agy status ERROR" (fast, 8-19 s, mostly
-   the first round with the long context). Since 2026-11-20 the error carries agy's reason (`agyFailure` in `providers.js`):
-   read the next `[brain] ... agy status ERROR: <reason>` lines in `data/thread/*.jsonl`, then decide (Google's side: leave it;
-   something in the content: fix). Notes: `experiments/2026-11-20-hydrogen-errors.md`. (2026-11-20 morning: no new failure yet.)
-
-**Small (one short Sonnet session, or the manager):**
-6. **Delete `tutor.js` old word lists** (SHOW, HINT, SKIP), a fallback only when the brain sends no "ask". Since 2026-11-20 the
-   log says it: `[brain] tool quiz_answer (course) ask=answer|hint|show|skip|missing` in `data/thread/*.jsonl`. After a few real
-   quiz replies with no `ask=missing`, delete them (a small Sonnet job).
-7. **Moodle read: MERGED 2026-11-20.** `moodle_read` reads pages, assignments with due dates, labels, links and books (token
-   route only). Next, my call: which of `experiments/2026-11-19-moodle-options.md` to build (submission status, grades and
-   feedback, notifications, `core_course_get_updates_since`, the Moodle calendar); building them is Medium.
-8. **Two oddities from the 2026-11-19 log: DONE 2026-11-20.** The "two identical answers" were two real messages 2.4 s apart
-   (a "yes" typed on the wrong keyboard layout, then in Hebrew), so the two Moodle pages opened twice; no change. The 75 s was
-   the model asking in two extra rounds; `brain-brief.md` now says to ask for all courses in one round. `experiments/2026-11-20-log-oddities.md`.
-9. **End-of-day review proposes lecture-part marks** ("worked on"), with the same quote rule as positions. Small build, but the
-   review itself then spends a little more Gemini each night.
-
-**Medium (one Sonnet or Opus session that builds and tests):**
-10. **Choose the model for one message** (asked 2026-11-18): writing "use Argon" to Bot does nothing, because code picks the model
-    before any model reads the message. Plan: a picker next to Send (Auto / Hydrogen / Argon / Neon? / Sonnet in agy / Claude
-    Code), sent with the message to `/api/ask`, put first in the chain with the normal order behind it; the answer's line says
-    "your choice"; never read from my words.
-11. **Improve Bot's reminders** (asked 2026-11-18). Today `reminders.js` only sets a one-time reminder at a checked future time.
-    Ask me first what I want (repeating, snooze, change or cancel one, tied to a deadline); size depends on that.
-12. **Moodle watch for new lectures and assignments** (builds on 7; `core_course_get_updates_since` may make it cheap to run).
-
-**Large (Opus, plan first, many files and tests):**
-13. **Neon works on Bot's whole project: DONE 2026-11-20** (research `experiments/2026-11-20-selfedit-full-access.md`,
-    `experiments/2026-11-20-neon-deep-trial.md`; build merged, see the top of this list).
-14. **The bigger piece of work I want to start, which includes "Bot looks at my screen"** (2026-11-20, my words: part of a
-    different bigger branch, a pretty big quota user). The screen-look design is done and waits:
-    `experiments/2026-11-19-screen-look.md` (recommended: the Chrome extension captures only the Notability mirror tab, only when
-    my message asks, treated exactly like a photo). Its session: "Bot looks at my screen (Notability mirror) by itself".
-
-**Done lately:** Gemini 4 Neon looked at and trialled (2026-11-19, reports merged: `experiments/2026-11-19-new-gemini-model.md`,
-`experiments/2026-11-19-neon-trial.md`). Neon spends the "Gemini Models" pool (Hydrogen's); Argon keeps its own pool; all 6
-models were correct on all 7 tests; decision: keep Hydrogen -> Argon, Neon low is the ready replacement if Argon is retired, the
-Orchestrator is a no. 21 merged worktrees and about 45 merged branches were deleted (2026-11-19/20).
+**2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
 ## Night of 2026-11-17: study improver and my decisions (merged and pushed)
 
