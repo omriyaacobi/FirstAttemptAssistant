@@ -1625,7 +1625,7 @@
             : planMode
               ? "Describe what you want to change or add. Bot will check what's possible, point out limitations, and make a plan before editing."
               : "Describe a change to Bot. For example: make the page more colorful.";
-    $("improveStart").textContent = mine ? "Queue" : (!current && !inPlan && planMode) ? "Plan" : "Send";
+    $("improveStart").textContent = mine ? "Queue" : (!openChange() && !inPlan && planMode) ? "Plan" : "Send";
     $("improveStart").disabled = planning || (!mine && status !== "ready" && !inPlan && Boolean(serverBusy)); // another editor runs elsewhere
     if (!mine && status !== "ready" && !inPlan && serverBusy) setStatus("improveStatus", "Another editor is still working...");
     else if (!$("improveStatus").classList.contains("bad")) setStatus("improveStatus", "");

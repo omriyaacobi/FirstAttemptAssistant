@@ -32,5 +32,6 @@ test("sending, drawing and the message box all use openChange, not any shown cha
   assert.match(send.slice(0, 400), /const p = openChange\(\);/);
   assert.match(html, /const inPlan = Boolean\(currentPlan && !openChange\(\)\);/);
   assert.match(html, /const plan = !openChange\(\) \? currentPlan : null;/);
+  assert.match(html, /\(!openChange\(\) && !inPlan && planMode\) \? "Plan" : "Send"/, "the button says Plan after a finished change too");
   assert.doesNotMatch(html, /const p = current;\s*\n\s*const plan = !p \? currentPlan : null;/);
 });
