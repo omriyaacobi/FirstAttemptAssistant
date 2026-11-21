@@ -111,8 +111,12 @@ test("Improve Bot is a chat: progress, follow-ups, preview, and simple Approve a
   assert.match(html, /\.preview-box \{/); // Preview is a popup over the dimmed chat, not a full page
 });
 
-test("the list of what Bot knows about me is folded until you open it", () => {
-  assert.match(html, /<details>\s*<summary[^>]*><strong>What Bot knows about me<\/strong><\/summary>\s*<div id="memory"/);
+test("the 'What Bot knows about me' sidebar section is gone, while in-chat Save/Forget/Undo cards remain", () => {
+  assert.doesNotMatch(html, /What Bot knows about me/);
+  assert.doesNotMatch(html, /id="memory"|id="profileNote"|loadMemory/);
+  assert.match(html, /function rememberButtons\(fact, id\)/);
+  assert.match(html, /function undoButton\(id\)/);
+  assert.match(html, /fetch\("\/api\/memory"/);
 });
 
 const study = fs.readFileSync(path.join(__dirname, "..", "public", "study.js"), "utf8");

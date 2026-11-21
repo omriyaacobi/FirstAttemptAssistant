@@ -469,3 +469,26 @@ test("the linked folder: recent files stop riding along once they pass the size 
   assert.ok(!b.seen.prompts[1].includes("second_marker"));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("memory_list: lists all saved facts as data (pinned first, then newest) and handles an empty list", async () => {
+  const empty = setup(['CALL {"tool":"memory_list"}', "Nothing saved yet."]);
+  const rEmpty = await run(empty.brain, "what facts have you saved about me?");
+  assert.strictEqual(rEmpty.answer, "Nothing saved yet.");
+  assert.match(empty.seen.prompts[1], /<tool-result[^>]*>\nNo saved facts yet\.\n<\/tool-result/);
+  assert.deepStrictEqual(rEmpty.tools, ["memory_list"]);
+
+  let added = 0;
+  const facts = [
+    { id: "0000000000000001", text: "Omri drinks black coffee", at: 100 },
+    { id: "0000000000000002", text: "Omri prefers short answers", at: 50, pinned: true },
+    { id: "0000000000000003", text: "Omri studies at BGU", at: 200 },
+  ];
+  const filled = setup(['CALL {"tool":"memory_list"}', "Here are your saved facts."], {
+    memory: { list: () => facts, add: () => { added++; return { fact: {}, already: false }; } },
+  });
+  const rFilled = await run(filled.brain, "tell me all the saved facts");
+  assert.strictEqual(rFilled.answer, "Here are your saved facts.");
+  assert.strictEqual(added, 0, "memory_list is read-only");
+  const resultBlock = filled.seen.prompts[1].match(/<tool-result[^>]*>([\s\S]*?)<\/tool-result/)?.[1] || "";
+  assert.match(resultBlock, /1\. Omri prefers short answers \(always used\)\n2\. Omri studies at BGU\n3\. Omri drinks black coffee/);
+});

@@ -204,7 +204,6 @@
   .reminder .when { color: var(--muted); font-size: .75rem; }
   .reminder button { background: transparent; color: var(--muted); padding: 0 6px; font-weight: 400; }
   .reminder button:hover { color: var(--bad); }
-  #memory { max-height: 240px; overflow-y: auto; } /* a full memory must not push the rest of the sidebar away */
   button.mic { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px 12px; }
   button.mic.listening { background: var(--bad); color: #fff; border-color: var(--bad); }
   .tools { display: flex; gap: 8px; align-items: center; }
@@ -583,14 +582,6 @@
         <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
       </div>
       <div id="reminders" class="sub">None yet. Try: "remind me tomorrow at 9 to call the bank".</div>
-    </section>
-    <section aria-label="What Bot knows about me">
-      <!-- Folded by default: the list only shows when you open it. -->
-      <details>
-        <summary style="cursor:pointer"><strong>What Bot knows about me</strong></summary>
-        <div id="memory" class="sub">Nothing saved yet. Try: "remember that I prefer short answers".</div>
-        <div id="profileNote" class="sub" hidden>Your profile file (data/profile.md) is loaded.</div>
-      </details>
     </section>
     <section aria-label="Morning brief" id="morningBox" hidden>
       <div class="row" style="margin-top:0">
@@ -1146,7 +1137,6 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "could not save");
         actions.replaceChildren(el("span", "sub", !fact ? "Forgotten." : data.already ? "Bot already knew this." : "Saved."));
-        loadMemory();
       } catch (error) {
         save.disabled = skip.disabled = false;
         note.textContent = error.message;
@@ -1216,14 +1206,12 @@
   }
 
   function undoButton(id) {
-    loadMemory(); // the fact was saved just now
     const actions = el("div", "actions");
     const undo = el("button", "ghost", "Undo");
     undo.addEventListener("click", async () => {
       undo.disabled = true;
       const res = await fetch("/api/memory/" + id, { method: "DELETE" }).catch(() => null);
       actions.replaceChildren(el("span", "sub", res && res.ok ? "Forgotten." : "It was already gone."));
-      loadMemory();
     });
     actions.appendChild(undo);
     return actions;
@@ -2300,51 +2288,6 @@
     }
   }
 
-  // The facts Bot remembers (data/memory.json). Each can be forgotten with the x.
-  async function loadMemory() {
-    try {
-      const res = await fetch("/api/memory");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "could not read memory");
-      $("profileNote").hidden = !data.profile.loaded;
-      const box = $("memory");
-      if (!data.facts.length) {
-        box.className = "sub";
-        box.textContent = 'Nothing saved yet. Try: "remember that I prefer short answers".';
-        return;
-      }
-      box.className = "";
-      const shown = [...data.facts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.at - a.at); // pinned, then newest
-      box.replaceChildren(...shown.map((f) => {
-        const row = el("div", "reminder");
-        const what = el("div", "what");
-        const text = el("div", "", f.text);
-        text.dir = "auto";
-        what.appendChild(text);
-        // A pinned fact goes to the models with every message; the others only when the message is about them.
-        const pin = el("button", "", f.pinned ? "★" : "☆");
-        pin.title = f.pinned ? "Always used. Tap to use it only when it fits" : "Used only when it fits. Tap to always use it";
-        pin.setAttribute("aria-label", (f.pinned ? "Stop always using: " : "Always use: ") + f.text);
-        pin.setAttribute("aria-pressed", String(!!f.pinned));
-        pin.addEventListener("click", async () => {
-          await fetch("/api/memory/" + f.id + "/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !f.pinned }) }).catch(() => {});
-          loadMemory();
-        });
-        const forget = el("button", "", "✕");
-        forget.title = "Forget this";
-        forget.setAttribute("aria-label", "Forget: " + f.text);
-        forget.addEventListener("click", async () => {
-          await fetch("/api/memory/" + f.id, { method: "DELETE" }).catch(() => {});
-          loadMemory();
-        });
-        row.append(what, pin, forget);
-        return row;
-      }));
-    } catch (error) {
-      $("memory").textContent = error.message;
-    }
-  }
-
   // The morning brief (morning.js). The box stays hidden if this Bot has none (for example in the Improve Bot preview).
   async function saveMorning(change) {
     const res = await fetch("/api/morning", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
@@ -2528,11 +2471,10 @@
     }
     setupNotifyButton();
     loadReminders();
-    loadMemory();
     loadMorning();
     loadBackup();
     setInterval(loadReminders, 30000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadReminders(); loadMemory(); } });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
     window.botThread.start(); // the one conversation (the thread script below)
     loadQuota();
     if (!session.remote) $("task").focus(); // on the phone, don't pop the keyboard up

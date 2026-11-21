@@ -627,6 +627,14 @@ ${text}`; } catch (error) {
         ctx.extras.calendarAdd = cards.add(proposal, { supersedes: history.map((h) => h.cardId).filter(Boolean) });
         return `A card with ${proposal.events.length} event(s) is now shown to Omri. NOTHING is added until Omri taps Confirm on it. Tell Omri that in one short line; do not list the events again (the card shows them).`;
       },
+      // All saved facts Omri asked Bot to remember (data/memory.json). Read-only lookup; wrapped as data.
+      memory_list: async () => {
+        const facts = memory && typeof memory.list === "function" ? memory.list() : [];
+        if (!facts.length) return "No saved facts yet.";
+        const sorted = [...facts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (Number(b.at) || 0) - (Number(a.at) || 0));
+        const lines = sorted.map((f, i) => `${i + 1}. ${f.text}${f.pinned ? " (always used)" : ""}`).join("\n");
+        return block("saved-facts", clip(lines, LIMITS.result));
+      },
       remember: async ({ fact }) => {
         const clean = checkFact(fact);
         if (explicitRemember(task, clean)) { // Omri's own short message says "remember that ...": saved at once, the page offers Undo

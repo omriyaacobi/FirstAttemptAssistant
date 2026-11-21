@@ -28,3 +28,8 @@ test("the briefing says to use Bot's own copy of a file when Moodle cannot be re
 test("the briefing tells the model to look up all the Moodle courses it needs in the same round (log oddity 2026-11-19)", () => {
   assert.match(brief, /ask for what you need from ALL of them in the same round/);
 });
+
+test("the briefing documents memory_list under Looking things up so Bot can list saved facts in chat", () => {
+  const lookup = brief.slice(brief.indexOf("Looking things up"), brief.indexOf("Doing things:"));
+  assert.match(lookup, /memory_list \{\}/);
+});
