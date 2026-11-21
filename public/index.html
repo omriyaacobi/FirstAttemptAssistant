@@ -724,6 +724,7 @@
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
         <div class="row">
           <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option><option value="argon">Argon (page only)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
+          <label id="improvePlanLabel" title="Discuss feasibility, limitations and a plan before editing any files"><input type="checkbox" id="improvePlanMode" checked> Plan first</label>
           <span class="status" id="improveStatus" role="status"></span>
           <button id="improveStart">Send</button>
         </div>
@@ -1590,17 +1591,20 @@
   // and shows what the editor is doing in plain words. Messages typed while it is busy wait in `queued`
   // and are sent on their own when it finishes, so you can keep talking to it like a normal chat.
   let current = null;
+  let currentPlan = null;
+  let openPlanId = null;
   let queued = [];
   let renderedKey = null;
   let serverOffset = 0; // server clock minus this device's clock, so "N seconds ago" is right on the phone too
   let declined = false; // you pressed "New request": do not jump back to the open one
 
-  // While an editor is working, refresh every 2 seconds; stop when it is done.
+  // While an editor or planner is working, refresh every 2 seconds; stop when it is done.
   function schedulePoll(busy) {
     if (busy && !pollTimer) {
       pollTimer = setInterval(() => {
         loadProposals();
         if (openProposalId) openProposal(openProposalId, true);
+        if (openPlanId && currentPlan && currentPlan.status === "planning") openPlan(openPlanId, true);
       }, 2000);
     } else if (!busy && pollTimer) {
       clearInterval(pollTimer);
@@ -1612,21 +1616,31 @@
   function updateImproveComposer(serverBusy) {
     const status = current && current.status;
     const mine = status === "running";
+    const inPlan = Boolean(currentPlan && !current);
+    const planning = Boolean(inPlan && currentPlan.status === "planning");
+    const planMode = Boolean($("improvePlanMode") && $("improvePlanMode").checked);
     $("improveModelLabel").hidden = status === "ready" || mine;
+    $("improvePlanLabel").hidden = inPlan || status === "ready" || mine;
     $("improveText").placeholder = mine
       ? "The editor is busy. Write more here: it is sent when the editor finishes."
       : status === "ready"
         ? "Ask for another change, or press Approve above if you like it."
-        : "Describe a change to Bot. For example: make the page more colorful.";
-    $("improveStart").textContent = mine ? "Queue" : "Send";
-    $("improveStart").disabled = !mine && status !== "ready" && Boolean(serverBusy); // another editor runs elsewhere
-    if (!mine && status !== "ready" && serverBusy) setStatus("improveStatus", "Another editor is still working...");
+        : planning
+          ? "Planning... wait a moment for the reply."
+          : inPlan
+            ? "Reply to refine the plan, answer questions, or ask about limitations..."
+            : planMode
+              ? "Describe what you want to change or add. Bot will check what's possible, point out limitations, and make a plan before editing."
+              : "Describe a change to Bot. For example: make the page more colorful.";
+    $("improveStart").textContent = mine ? "Queue" : (!current && !inPlan && planMode) ? "Plan" : "Send";
+    $("improveStart").disabled = planning || (!mine && status !== "ready" && !inPlan && Boolean(serverBusy)); // another editor runs elsewhere
+    if (!mine && status !== "ready" && !inPlan && serverBusy) setStatus("improveStatus", "Another editor is still working...");
     else if (!$("improveStatus").classList.contains("bad")) setStatus("improveStatus", "");
   }
 
   async function loadProposals(adopt) {
     try {
-      const { proposals, busy, rollback } = await (await fetch("/api/selfedit")).json();
+      const { proposals, busy, rollback, activePlan } = await (await fetch("/api/selfedit")).json();
       // The health guard undid an approved change because Bot did not come up after it (data/selfedit-rollback.json, health-guard.js).
       const rb = $("improveRollback");
       rb.hidden = !rollback;
@@ -1640,17 +1654,18 @@
         const li = el("li", "proposal" + (p.id === openProposalId ? " active" : ""));
         const open = el("button", "open");
         open.append(statusBadge(p.status), document.createTextNode(" " + p.request));
-        open.addEventListener("click", () => { queued = []; openProposal(p.id); });
+        open.addEventListener("click", () => { queued = []; currentPlan = null; openPlanId = null; openProposal(p.id); });
         li.appendChild(open);
         list.appendChild(li);
       });
-      // Coming back to this page: carry on with the request that is running, or waiting for your decision.
-      if (adopt && !openProposalId && !declined) {
+      // Coming back to this page: carry on with the request that is running, waiting for your decision, or being planned.
+      if (adopt && !openProposalId && !openPlanId && !declined) {
         const live = proposals.find((p) => p.status === "running" || p.status === "ready");
         if (live) openProposal(live.id);
+        else if (activePlan && activePlan.id) openPlan(activePlan.id);
       }
       updateImproveComposer(busy);
-      schedulePoll(busy);
+      schedulePoll(busy || Boolean(currentPlan && currentPlan.status === "planning"));
     } catch (error) { /* the list refreshes again on the next poll */ }
   }
 
@@ -1827,14 +1842,61 @@
     return box;
   }
 
+  // The card under a planning conversation: shows progress while thinking, or Start editing / Discard when ready.
+  function planStatusCard(plan) {
+    const box = el("div", "msg");
+    const card = el("div", "bot" + (plan.status === "planning" ? " think" : ""));
+    const head = el("div", "step-head");
+    box.appendChild(card);
+    if (plan.status === "planning") {
+      head.append(el("span", "spinner"), el("span", "", "Planning"));
+      card.append(head, el("div", "think-step", plan.phase || "Reading the project map and thinking..."));
+      card.appendChild(el("div", "think-hint", "Nothing is being edited yet. Planning uses Gemini (Neon low), not Claude, and checks what Bot can and cannot change before spending edit quota."));
+      return box;
+    }
+    if (plan.status === "open") {
+      head.append(statusBadge("plan"), el("span", "", "Plan ready to refine or build"));
+      card.appendChild(head);
+      card.appendChild(el("p", "sub", "Nothing has changed in Bot yet. Reply below to adjust the plan, switch Editor if needed, or start editing with this plan."));
+      const actions = el("div", "actions");
+      const startBtn = el("button", "approve", "Start editing with this plan");
+      startBtn.addEventListener("click", () => startFromPlan(plan.id));
+      const discardBtn = el("button", "danger", "Discard plan");
+      discardBtn.addEventListener("click", () => discardPlan(plan.id));
+      actions.append(startBtn, discardBtn);
+      card.appendChild(actions);
+      return box;
+    }
+    head.append(statusBadge(plan.status), el("span", "", plan.status === "discarded" ? "Plan discarded" : "Planning stopped"));
+    card.append(head, el("p", plan.status === "discarded" ? "sub" : "err", plan.error || "Write a reply below to try again, or press New request."));
+    if (plan.status === "failed") {
+      const actions = el("div", "actions");
+      const discardBtn = el("button", "danger", "Discard plan");
+      discardBtn.addEventListener("click", () => discardPlan(plan.id));
+      actions.appendChild(discardBtn);
+      card.appendChild(actions);
+    }
+    return box;
+  }
+
   function renderImprove() {
     const thread = $("improveThread");
     const scroller = $("improveScroll");
     const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
     thread.replaceChildren();
     const p = current;
-    if (!p) {
-      thread.appendChild(el("p", "empty", "Tell Bot what to change about itself. A copy of Bot is edited in private, you can watch it work, steer it with more messages, preview the result, and only then approve it."));
+    const plan = !p ? currentPlan : null;
+    if (!p && !plan) {
+      thread.appendChild(el("p", "empty", "Tell Bot what to change about itself. With Plan first on, Bot checks what is possible, points out limitations and makes a plan before editing. When editing starts, a private copy is edited and tested before you approve it."));
+    } else if (plan) {
+      (plan.chat || []).forEach((m) => {
+        const node = bubble(m.role, m.text);
+        if (m.role === "bot" && m.filesRead && m.filesRead.length) {
+          node.firstChild.appendChild(el("p", "sub", "Checked: " + m.filesRead.join(", ")));
+        }
+        thread.appendChild(node);
+      });
+      thread.appendChild(planStatusCard(plan));
     } else {
       const chat = p.chat || [{ role: "user", text: p.request }, ...(p.summary ? [{ role: "bot", text: p.summary }] : [])];
       chat.forEach((m) => thread.appendChild(bubble(m.role, m.text)));
@@ -1842,7 +1904,7 @@
       thread.appendChild(statusCard(p));
     }
     updateImproveClock();
-    if (nearBottom || !p) scroller.scrollTop = scroller.scrollHeight;
+    if (nearBottom || (!p && !plan)) scroller.scrollTop = scroller.scrollHeight;
   }
 
   // Every second while the editor works: the timer, and how long ago it last reported something.
@@ -1853,6 +1915,69 @@
     const now = Date.now() + serverOffset;
     elapsed.textContent = clock(now - (p.roundStartedAt || p.createdAt));
     $("improveAlive").textContent = `Last sign of life: ${ago(now - (p.updatedAt || p.createdAt))}`;
+  }
+
+  async function openPlan(id, quiet) {
+    try {
+      const res = await fetch("/api/selfedit/plan/" + id);
+      if (!res.ok) return;
+      const { plan } = await res.json();
+      const key = `plan|${plan.status}|${plan.phase}|${(plan.chat || []).length}`;
+      if (quiet && id === openPlanId && key === renderedKey) return;
+      openPlanId = id;
+      currentPlan = plan;
+      current = null;
+      openProposalId = null;
+      declined = false;
+      renderedKey = key;
+      if (plan.model && $("improveModel")) {
+        $("improveModel").value = plan.model;
+        $("improveQuotaNote").textContent = QUOTA_NOTES[plan.model] || "";
+      }
+      renderImprove();
+      updateImproveComposer();
+      schedulePoll(plan.status === "planning");
+    } catch (error) { /* try again on the next poll */ }
+  }
+
+  async function startFromPlan(id) {
+    if (sending) return;
+    sending = true;
+    setStatus("improveStatus", "Starting the editor with your plan...");
+    try {
+      const model = $("improveModel").value;
+      const res = await fetch(`/api/selfedit/plan/${id}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+      setStatus("improveStatus", "");
+      currentPlan = null;
+      openPlanId = null;
+      openProposalId = data.proposal.id;
+      current = data.proposal;
+      renderedKey = null;
+      renderImprove();
+      loadProposals();
+    } catch (error) {
+      setStatus("improveStatus", error.message, true);
+    } finally {
+      sending = false;
+      updateImproveComposer();
+    }
+  }
+
+  async function discardPlan(id) {
+    try {
+      const res = await fetch(`/api/selfedit/plan/${id}/discard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+      newImprove();
+    } catch (error) {
+      setStatus("improveStatus", error.message, true);
+    }
   }
 
   async function openProposal(id, quiet) {
@@ -1908,12 +2033,41 @@
   $("previewOverlay").addEventListener("click", (e) => { if (e.target === $("previewOverlay")) closePreview(); }); // a tap on the dimmed area closes it
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("previewOverlay").hidden) closePreview(); });
 
-  // Send: a new request, a follow-up on the open request, or (while the editor is busy) a message that waits its turn.
+  // Send: a plan message, a new request, a follow-up on the open request, or (while the editor is busy) a message that waits its turn.
   let sending = false;
   async function sendImprove() {
     const sentRaw = $("improveText").value;
     const typed = sentRaw.trim();
     const p = current;
+    const plan = !p ? currentPlan : null;
+    if (plan) {
+      if (!typed || sending || plan.status === "planning") return;
+      sending = true;
+      $("improveStart").disabled = true;
+      setStatus("improveStatus", "Sending...");
+      try {
+        const res = await fetch(`/api/selfedit/plan/${plan.id}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: typed, model: $("improveModel").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+        if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, "");
+        setStatus("improveStatus", "");
+        currentPlan = data.plan;
+        openPlanId = data.plan.id;
+        renderedKey = null;
+        renderImprove();
+        schedulePoll(true);
+      } catch (error) {
+        setStatus("improveStatus", error.message, true);
+      } finally {
+        sending = false;
+        updateImproveComposer();
+      }
+      return;
+    }
     if (typed && p && p.status === "running") {
       queued.push(typed);
       $("improveText").value = "";
@@ -1922,27 +2076,45 @@
     }
     const text = queued.length && p && p.status === "ready" ? queued.concat(typed || []).join("\n\n") : typed;
     if (!text || sending) return;
+    const startPlan = !p && Boolean($("improvePlanMode") && $("improvePlanMode").checked);
     sending = true;
     const wasQueue = text !== typed;
     $("improveStart").disabled = true;
-    setStatus("improveStatus", "Sending...");
+    setStatus("improveStatus", startPlan ? "Planning..." : "Sending...");
     try {
-      const followUp = p && p.status === "ready";
-      const res = await fetch(followUp ? `/api/selfedit/${p.id}/message` : "/api/selfedit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(followUp ? { message: text } : { request: text, model: $("improveModel").value }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
-      if (wasQueue) queued = [];
-      else if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, ""); // words typed while it was sending stay
-      setStatus("improveStatus", "");
-      openProposalId = data.proposal.id;
-      current = data.proposal;
-      renderedKey = null;
-      renderImprove();
-      loadProposals();
+      if (startPlan) {
+        const res = await fetch("/api/selfedit/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ request: text, model: $("improveModel").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+        if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, "");
+        setStatus("improveStatus", "");
+        currentPlan = data.plan;
+        openPlanId = data.plan.id;
+        renderedKey = null;
+        renderImprove();
+        schedulePoll(true);
+      } else {
+        const followUp = p && p.status === "ready";
+        const res = await fetch(followUp ? `/api/selfedit/${p.id}/message` : "/api/selfedit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(followUp ? { message: text } : { request: text, model: $("improveModel").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+        if (wasQueue) queued = [];
+        else if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, ""); // words typed while it was sending stay
+        setStatus("improveStatus", "");
+        openProposalId = data.proposal.id;
+        current = data.proposal;
+        renderedKey = null;
+        renderImprove();
+        loadProposals();
+      }
     } catch (error) {
       setStatus("improveStatus", error.message, true); // the text stays in the box (or the queue)
     } finally {
@@ -1955,6 +2127,8 @@
   function newImprove() {
     current = null;
     openProposalId = null;
+    currentPlan = null;
+    openPlanId = null;
     declined = true;
     renderedKey = null;
     queued = [];
@@ -2042,6 +2216,11 @@
   // Which quota the chosen editor spends, in plain words. Argon only changes the web page (the public folder).
   const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
   $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });
+  try { $("improvePlanMode").checked = localStorage.getItem("botImprovePlan") !== "0"; } catch (error) { /* private mode */ }
+  $("improvePlanMode").addEventListener("change", () => {
+    try { localStorage.setItem("botImprovePlan", $("improvePlanMode").checked ? "1" : "0"); } catch (error) { /* private mode */ }
+    updateImproveComposer();
+  });
   $("improveText").addEventListener("keydown", (e) => {
     // Like the main chat: Enter sends, Shift+Enter makes a new line (on the phone's keyboard Enter is a new line).
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); sendImprove(); }

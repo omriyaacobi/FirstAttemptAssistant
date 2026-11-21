@@ -63,6 +63,7 @@ const zlib = require("node:zlib");
 const { execFile } = require("node:child_process");
 const { createStore } = require("./store");
 const { createSelfEdit } = require("./selfedit");
+const { createPlanner } = require("./selfedit-plan");
 const { buildPreviewHtml, PREVIEW_CSP } = require("./preview");
 const { createGitOps } = require("./gitops");
 const { getReminders } = require("./reminders");
@@ -222,8 +223,8 @@ async function readJsonBody(req, res, { photo = false } = {}) {
   }
 }
 
-// Turns an error from selfedit.js into an HTTP status.
-const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|uncommitted|new commits|only "ready"|blocked|changed after|only an approved|only the last|cannot be undone|not in the project/.test(error.message) ? 409 : 400);
+// Turns an error from selfedit.js or selfedit-plan.js into an HTTP status.
+const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|still planning|another plan|only an open|nearly used up|uncommitted|new commits|only "ready"|blocked|changed after|only an approved|only the last|cannot be undone|not in the project/.test(error.message) ? 409 : 400);
 
 function createServer({
   handle = null, // tests only: a fake that answers a message. The real Bot answers with the brain (makeBrain).
@@ -232,6 +233,7 @@ function createServer({
   claudeUsage = async () => (await require("./quota").getPoolRows()).filter((r) => /^Claude plan/.test(r.pool) && Number.isFinite(r.remaining) && Date.parse(r.resets) > Date.now()),
   store = createStore(path.join(__dirname, "data", "conversations")),
   selfEdit = createSelfEdit({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
+  selfEditPlan = createPlanner({ repoDir: __dirname, dataDir: path.join(__dirname, "data") }),
   gitOps = createGitOps({ repoDir: __dirname }),
   reminders = getReminders(),
   calendarCards = getCards(), // the calendar cards waiting for a tap (calendar-add.js); tests pass cards with a fake calendar
@@ -566,7 +568,7 @@ function createServer({
     // the models can never start one on their own.
     if (url.pathname === "/api/selfedit" && req.method === "GET") {
       // rollback: what the health guard did after the last restart (an approved change that kept Bot from starting was undone).
-      return sendJson(res, 200, { proposals: selfEdit.list(), busy: selfEdit.isActive(), rollback: selfEdit.rollback ? selfEdit.rollback() : null });
+      return sendJson(res, 200, { proposals: selfEdit.list(), busy: selfEdit.isActive(), rollback: selfEdit.rollback ? selfEdit.rollback() : null, activePlan: selfEditPlan ? selfEditPlan.latestOpen() : null });
     }
     if (url.pathname === "/api/selfedit" && req.method === "POST") {
       const input = await readJsonBody(req, res);
@@ -579,6 +581,57 @@ function createServer({
         return sendJson(res, 202, { proposal: record });
       } catch (error) {
         return sendJson(res, selfEditStatus(error), { error: error.message });
+      }
+    }
+    // Improve Bot planning mode (selfedit-plan.js): read-only discussion of feasibility, limitations and a plan before editing.
+    if (url.pathname === "/api/selfedit/plan" && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      const model = input.model === undefined ? "neon" : input.model;
+      if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
+      try {
+        const { record } = await selfEditPlan.start(input.request, { model });
+        return sendJson(res, 202, { plan: record });
+      } catch (error) {
+        return sendJson(res, selfEditStatus(error), { error: error.message });
+      }
+    }
+    const selfEditPlanRoute = url.pathname.match(/^\/api\/selfedit\/plan\/([^/]+?)(?:\/(message|start|discard))?$/);
+    if (selfEditPlanRoute) {
+      const [, id, action] = selfEditPlanRoute;
+      if (!action && req.method === "GET") {
+        const plan = selfEditPlan.get(id);
+        return plan ? sendJson(res, 200, { plan, now: Date.now() }) : sendJson(res, 404, { error: "plan not found" });
+      }
+      if (action === "message" && req.method === "POST") {
+        const input = await readJsonBody(req, res);
+        if (!input) return;
+        try {
+          const { record } = await selfEditPlan.message(id, input.message, { model: input.model });
+          return sendJson(res, 202, { plan: record });
+        } catch (error) {
+          return sendJson(res, selfEditStatus(error), { error: error.message });
+        }
+      }
+      if (action === "start" && req.method === "POST") {
+        const input = await readJsonBody(req, res);
+        if (!input) return;
+        try {
+          const { request, model } = selfEditPlan.prepareStart(id, { model: input.model, note: input.note });
+          const { record } = await selfEdit.start(request, { model });
+          const plan = selfEditPlan.markStarted(id, record.id, model);
+          return sendJson(res, 202, { proposal: record, plan });
+        } catch (error) {
+          return sendJson(res, selfEditStatus(error), { error: error.message });
+        }
+      }
+      if (action === "discard" && req.method === "POST") {
+        if (!(await readJsonBody(req, res))) return;
+        try {
+          return sendJson(res, 200, { plan: selfEditPlan.discard(id) });
+        } catch (error) {
+          return sendJson(res, selfEditStatus(error), { error: error.message });
+        }
       }
     }
     const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject|undo|message|preview))?$/);
@@ -639,7 +692,7 @@ function createServer({
       if (!supervised) {
         return sendJson(res, 409, { error: "Bot can only restart itself when it was started with start-web.cmd. Close this server and double-click start-web.cmd." });
       }
-      if (jobs.running() > 0 || selfEdit.isActive() || (courseRoutes && !courseRoutes.idle())) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
+      if (jobs.running() > 0 || selfEdit.isActive() || (selfEditPlan && selfEditPlan.isActive()) || (courseRoutes && !courseRoutes.idle())) return sendJson(res, 409, { error: "busy: wait until the running tasks and edits finish" });
       sendJson(res, 200, { restarting: true });
       restart();
       return;
