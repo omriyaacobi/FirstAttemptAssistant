@@ -1601,10 +1601,15 @@
   }
 
   // What the Send button and the box under the chat do right now.
+  // The change still in play: only a running or ready one takes follow-ups. A finished one (approved, rejected, failed,
+  // undone) may still be shown, but it must not block "Plan first": before 2026-11-21 it did, and a planning message
+  // started a real edit (copy + tests) instead of a plan.
+  const openChange = () => (current && (current.status === "running" || current.status === "ready") ? current : null);
+
   function updateImproveComposer(serverBusy) {
     const status = current && current.status;
     const mine = status === "running";
-    const inPlan = Boolean(currentPlan && !current);
+    const inPlan = Boolean(currentPlan && !openChange());
     const planning = Boolean(inPlan && currentPlan.status === "planning");
     const planMode = Boolean($("improvePlanMode") && $("improvePlanMode").checked);
     $("improveModelLabel").hidden = status === "ready" || mine;
@@ -1872,8 +1877,8 @@
     const scroller = $("improveScroll");
     const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
     thread.replaceChildren();
-    const p = current;
-    const plan = !p ? currentPlan : null;
+    const plan = !openChange() ? currentPlan : null;
+    const p = plan ? null : current;
     if (!p && !plan) {
       thread.appendChild(el("p", "empty", "Tell Bot what to change about itself. With Plan first on, Bot checks what is possible, points out limitations and makes a plan before editing. When editing starts, a private copy is edited and tested before you approve it."));
     } else if (plan) {
@@ -2026,7 +2031,7 @@
   async function sendImprove() {
     const sentRaw = $("improveText").value;
     const typed = sentRaw.trim();
-    const p = current;
+    const p = openChange();
     const plan = !p ? currentPlan : null;
     if (plan) {
       if (!typed || sending || plan.status === "planning") return;
