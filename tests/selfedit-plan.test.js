@@ -69,6 +69,13 @@ test("parseReadCall parses READ JSON requests, caps file count, and ignores norm
   assert.strictEqual(parseReadCall("READ {not valid json}"), null);
 });
 
+test("parseReadCall ignores stray text after the JSON (seen live: ...]}modern)", () => {
+  const live = 'READ {"files":[{"path":"selfedit-plan.js","start":1,"end":250},{"path":"photo.js","start":1,"end":120}]}modern';
+  assert.deepStrictEqual(parseReadCall(live).map((f) => f.path), ["selfedit-plan.js", "photo.js"]);
+  assert.strictEqual(parseReadCall('READ {"files":[]}modern'), null);
+  assert.strictEqual(parseReadCall('Sure. READ {"files":[{"path":"a.js"}]}'), null, "READ must still open the reply");
+});
+
 test("buildProjectContext lists real files, guard files, sensitive files, and Argon's page-only limit", () => {
   const p = tempProject();
   try {

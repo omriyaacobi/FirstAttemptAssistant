@@ -99,11 +99,16 @@ function safeReadFile(repoDir, req) {
 // Parses a planner request to read files: a single reply of the form
 //   READ {"files":[{"path":"server.js","start":1,"end":120}]}
 // Returns a capped array of { path, start, end } or null if this is a normal reply.
+// Stray text a model adds AFTER the JSON (seen live 2026-11-21: `...]}modern`) is ignored: the first complete JSON
+// object after READ is the request.
 function parseReadCall(text) {
-  const match = String(text || "").trim().match(/^READ\s+(\{[\s\S]*\})$/);
+  const match = String(text || "").trim().match(/^READ\s+(\{[\s\S]*)$/);
   if (!match) return null;
-  let parsed;
-  try { parsed = JSON.parse(match[1]); } catch (error) { return null; }
+  let parsed = null;
+  const body = match[1];
+  for (let end = body.indexOf("}"); end !== -1 && !parsed; end = body.indexOf("}", end + 1)) {
+    try { parsed = JSON.parse(body.slice(0, end + 1)); } catch (error) { parsed = null; }
+  }
   if (!parsed || !Array.isArray(parsed.files)) return null;
   const files = parsed.files
     .filter((f) => f && typeof f.path === "string" && f.path.trim())
