@@ -5,7 +5,7 @@ Short on purpose. The full history up to 2026-11-12 (every step, branch and meas
 
 ## To do
 
-The to-do list is `data/todo.md`, outside git (private, in the daily encrypted backup; absolute path `C:Claude Code ProjectFirstAttemptAssistantdata	odo.md`). Bot and every Claude Code session read and update it (CLAUDE.md). Moved there on 2026-11-21; a copy of the old section: `experiments/2026-11-21-todo-list.md`.
+The to-do list is `data/todo.md`, outside git (private, in the daily encrypted backup; absolute path `C:\Claude Code Project\FirstAttemptAssistant\data\todo.md`). Bot and every Claude Code session read and update it (CLAUDE.md). Moved there on 2026-11-21; a copy of the old section: `experiments/2026-11-21-todo-list.md`.
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
