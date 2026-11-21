@@ -487,7 +487,7 @@ const PROVIDERS = {
 // for background work nobody waits on (the morning brief's news and "You" calls, server.js).
 function ask(provider, model, question, onText, extra = {}) {
   if (!PROVIDERS[provider]) throw new Error(`Unknown provider: ${provider}`);
-  if (onText && provider === "agy") return askAgyStream(question, model, onText, { agent: extra.agent === true, onUsage: extra.onUsage || null, timeoutMs: extra.timeoutMs || null });
+  if (onText && provider === "agy") return askAgyStream(question, model, onText, { agent: extra.agent === true, onUsage: extra.onUsage || null, timeoutMs: extra.timeoutMs || null, signal: extra.signal || undefined });
   if (provider === "claude") return askClaude(question, model, { onUsage: extra.onUsage || null });
   return PROVIDERS[provider](question, model);
 }

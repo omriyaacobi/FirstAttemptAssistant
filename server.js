@@ -19,6 +19,8 @@
 //   POST   /api/selfedit           -> start one: an editor model changes a PRIVATE COPY of the project
 //   GET    /api/selfedit/:id       -> one proposal (diff, test results)
 //   POST   /api/selfedit/:id/approve | /reject  -> merge it into the project, or throw it away
+//   POST   /api/selfedit/:id/stop     -> stop a change that is running (kills the editor and the tests; nothing is changed)
+//   POST   /api/selfedit/plan/:id/stop -> stop a plan that is planning (the plan is discarded)
 //   POST   /api/selfedit/:id/undo     -> undo the LAST approved change with a new commit (never pushed)
 //   POST   /api/selfedit/:id/message  -> a follow-up message: the editor continues in the SAME private copy
 //   GET    /api/selfedit/:id/preview  -> the changed page, sandboxed, with sample data (see preview.js)
@@ -224,7 +226,7 @@ async function readJsonBody(req, res, { photo = false } = {}) {
 }
 
 // Turns an error from selfedit.js or selfedit-plan.js into an HTTP status.
-const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|still planning|another plan|only an open|nearly used up|uncommitted|new commits|only "ready"|blocked|changed after|only an approved|only the last|cannot be undone|not in the project/.test(error.message) ? 409 : 400);
+const selfEditStatus = (error) => (/not found/.test(error.message) ? 404 : /still running|still planning|not running|another plan|only an open|nearly used up|uncommitted|new commits|only "ready"|blocked|changed after|only an approved|only the last|cannot be undone|not in the project/.test(error.message) ? 409 : 400);
 
 function createServer({
   handle = null, // tests only: a fake that answers a message. The real Bot answers with the brain (makeBrain).
@@ -596,7 +598,7 @@ function createServer({
         return sendJson(res, selfEditStatus(error), { error: error.message });
       }
     }
-    const selfEditPlanRoute = url.pathname.match(/^\/api\/selfedit\/plan\/([^/]+?)(?:\/(message|start|discard))?$/);
+    const selfEditPlanRoute = url.pathname.match(/^\/api\/selfedit\/plan\/([^/]+?)(?:\/(message|start|discard|stop))?$/);
     if (selfEditPlanRoute) {
       const [, id, action] = selfEditPlanRoute;
       if (!action && req.method === "GET") {
@@ -625,6 +627,14 @@ function createServer({
           return sendJson(res, selfEditStatus(error), { error: error.message });
         }
       }
+      if (action === "stop" && req.method === "POST") {
+        if (!(await readJsonBody(req, res))) return;
+        try {
+          return sendJson(res, 200, { plan: await selfEditPlan.stop(id) });
+        } catch (error) {
+          return sendJson(res, selfEditStatus(error), { error: error.message });
+        }
+      }
       if (action === "discard" && req.method === "POST") {
         if (!(await readJsonBody(req, res))) return;
         try {
@@ -634,7 +644,7 @@ function createServer({
         }
       }
     }
-    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject|undo|message|preview))?$/);
+    const selfEditRoute = url.pathname.match(/^\/api\/selfedit\/([^/]+?)(?:\/(approve|reject|undo|stop|message|preview))?$/);
     if (selfEditRoute) {
       const [, id, action] = selfEditRoute;
       if (!action && req.method === "GET") {
@@ -659,10 +669,10 @@ function createServer({
           return sendJson(res, selfEditStatus(error), { error: error.message });
         }
       }
-      if ((action === "approve" || action === "reject" || action === "undo") && req.method === "POST") {
+      if ((action === "approve" || action === "reject" || action === "undo" || action === "stop") && req.method === "POST") {
         if (!(await readJsonBody(req, res))) return;
         try {
-          const proposal = action === "approve" ? await selfEdit.approve(id) : action === "undo" ? await selfEdit.undo(id) : await selfEdit.reject(id);
+          const proposal = action === "approve" ? await selfEdit.approve(id) : action === "undo" ? await selfEdit.undo(id) : action === "stop" ? await selfEdit.stop(id) : await selfEdit.reject(id);
           return sendJson(res, 200, { proposal });
         } catch (error) {
           return sendJson(res, selfEditStatus(error), { error: error.message });

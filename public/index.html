@@ -1467,7 +1467,7 @@
   history.replaceState(navState, ""); // the base screen: Back from here leaves the app
 
   // ---- Improve Bot (self-edit) ----
-  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted", undone: "muted" };
+  const STATUS_CLASS = { ready: "ok", approved: "ok", running: "run", blocked: "bad", failed: "bad", rejected: "muted", stopped: "muted", undone: "muted" };
   let openProposalId = null;
   let pollTimer = null;
 
@@ -1770,6 +1770,13 @@
       const live = el("div", "think-hint");
       live.id = "improveAlive";
       card.appendChild(live);
+      // Stop (2026-11-21): kills the editor and the test run and throws the private copy away; nothing in Bot changes.
+      const stopActions = el("div", "actions");
+      const stopBtn = el("button", "danger", "Stop");
+      stopBtn.title = "Stop this change. Nothing in Bot will change.";
+      stopBtn.addEventListener("click", () => decide(p.id, "stop"));
+      stopActions.appendChild(stopBtn);
+      card.appendChild(stopActions);
       return box;
     }
     if (p.status === "ready") {
@@ -1816,9 +1823,10 @@
       actions.appendChild(go);
       card.appendChild(actions);
     } else {
-      head.append(statusBadge(p.status), el("span", "", p.status === "rejected" ? "Thrown away" : "Stopped"));
-      card.append(head, el("p", p.status === "rejected" ? "sub" : "err", p.note || ""));
-      if (p.status !== "rejected") {
+      const gone = p.status === "rejected" || p.status === "stopped";
+      head.append(statusBadge(p.status), el("span", "", p.status === "rejected" ? "Thrown away" : p.status === "stopped" ? "Stopped by you" : "Stopped"));
+      card.append(head, el("p", gone ? "sub" : "err", p.note || ""));
+      if (!gone) {
         const actions = el("div", "actions");
         const dismiss = el("button", "danger", "Dismiss");
         dismiss.addEventListener("click", () => decide(p.id, "reject"));
@@ -1845,6 +1853,12 @@
       head.append(el("span", "spinner"), el("span", "", "Planning"));
       card.append(head, el("div", "think-step", plan.phase || "Reading the project map and thinking..."));
       card.appendChild(el("div", "think-hint", "Nothing is being edited yet. Planning uses Gemini (Neon low), not Claude, and checks what Bot can and cannot change before spending edit quota."));
+      const stopActions = el("div", "actions");
+      const stopBtn = el("button", "danger", "Stop and discard plan");
+      stopBtn.title = "Stop planning. Nothing in Bot will change.";
+      stopBtn.addEventListener("click", () => stopPlan(plan.id));
+      stopActions.appendChild(stopBtn);
+      card.appendChild(stopActions);
       return box;
     }
     if (plan.status === "open") {
@@ -1962,6 +1976,18 @@
     }
   }
 
+  async function stopPlan(id) {
+    if (!confirm("Stop this plan?\n\nNothing in Bot will change.")) return;
+    try {
+      const res = await fetch(`/api/selfedit/plan/${id}/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
+      newImprove();
+    } catch (error) {
+      setStatus("improveStatus", error.message, true);
+    }
+  }
+
   async function discardPlan(id) {
     try {
       const res = await fetch(`/api/selfedit/plan/${id}/discard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1994,6 +2020,7 @@
 
   async function decide(id, action) {
     const text = action === "approve" ? "Merge this change into your project?\n\nIt stays on your computer. Nothing is pushed to GitHub."
+      : action === "stop" ? "Stop this change?\n\nNothing in Bot will change."
       : action === "undo" ? "Undo this change?\n\nBot makes a new commit that puts the code back the way it was. Nothing is pushed to GitHub."
       : "Throw this away?\n\nNothing in your project will change.";
     if (!confirm(text)) return;
