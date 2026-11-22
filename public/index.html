@@ -983,13 +983,18 @@
   // The direction of a line of an answer: Hebrew or English by which has MORE letters (code and formulas left out). The browser's
   // dir="auto" looks only at the FIRST letter, so a Hebrew line starting "Process (תהליך): ..." was laid out left to right and its
   // brackets jumped around (2026-11-18). Hebrew counts a little more: its words have fewer letters. No letters at all: "auto".
-  function lineDir(t) {
+  // (2026-11-22) Inside a Hebrew ANSWER, a line with any Hebrew in it is right to left: "2. **`size_t x`** — גודל וקטור
+  // ה-embedding (ב-integers)" has more English letters than Hebrew, was laid out left to right, and its number jumped to the left.
+  function lineDir(t, answerDir) {
     const s = String(t).replace(/`[^`]*`?|\$\$[\s\S]*?\$\$|\$[^$\n]*\$|\\\(.*?\\\)|\\\[.*?\\\]/g, "");
     const he = (s.match(/[֐-׿]/g) || []).length, la = (s.match(/[A-Za-z]/g) || []).length;
+    if (he && answerDir === "rtl") return "rtl";
     return !he && !la ? "auto" : he * 1.5 >= la ? "rtl" : "ltr";
   }
   function fillMarkdown(box, text) {
     box.replaceChildren();
+    const whole = lineDir(text.replace(/^\s*```[\s\S]*?^\s*```/gm, "")); // the answer's own language, code blocks left out
+    const lineDirIn = (t) => lineDir(t, whole);
     let para = null, list = null, listTag = "", code = null, paraText = "", listText = "";
     const lines = text.replace(/\r/g, "").split("\n");
     for (let i = 0; i < lines.length; i++) {
@@ -1028,7 +1033,7 @@
       } else if ((m = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line))) {
         para = list = null;
         const h = box.appendChild(el("h" + m[1].length));
-        h.dir = lineDir(m[2]); // right-to-left text (Hebrew) lines up correctly
+        h.dir = lineDirIn(m[2]); // right-to-left text (Hebrew) lines up correctly
         addInline(h, m[2]);
       } else if ((m = /^\s*(?:([-*+•])|(\d+)[.)])\s+(.*)$/.exec(line))) {
         para = null;
@@ -1040,16 +1045,16 @@
           if (m[2]) list.start = Number(m[2]);
         }
         listText += "\n" + m[3];
-        list.dir = lineDir(listText); // the bullets sit on the side of the language most items are in
+        list.dir = lineDirIn(listText); // the bullets sit on the side of the language most items are in
         const li = list.appendChild(el("li"));
-        li.dir = lineDir(m[3]);
+        li.dir = lineDirIn(m[3]);
         addInline(li, m[3]);
       } else {
         list = null;
         if (!para) { para = box.appendChild(el("p")); paraText = ""; }
         else para.appendChild(document.createTextNode("\n"));
         paraText += "\n" + line;
-        para.dir = lineDir(paraText);
+        para.dir = lineDirIn(paraText);
         addInline(para, line.trim());
       }
     }
