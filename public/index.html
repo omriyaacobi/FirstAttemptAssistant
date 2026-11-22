@@ -487,7 +487,8 @@
   /* Every child of this grid needs its own place. Without one, the quote chip fell into the first free cell (row 1, the
      narrow "auto" column on the left); an auto column grows to fit a long quote, so the text box was squeezed (2026-11-14). */
   #form .quote-chip { grid-column: 1 / -1; grid-row: 1; margin: 6px 6px 4px; }
-  #form .photo-chip, #form .photo-tray { grid-column: 1 / -1; grid-row: 2; margin: 6px 6px 4px; }
+  #form .photo-chip { grid-column: 1 / -1; grid-row: 2; margin: 6px 6px 4px; }
+  #form .photo-tray { grid-column: 1 / -1; grid-row: 2; margin: 6px 6px 4px; } /* the photos' row; a file chip and photos never show together */
   #form textarea#task { grid-column: 2; grid-row: 3; min-height: 44px; height: 44px; max-height: 220px; resize: none; border: 0; border-radius: 0; background: transparent; padding: 11px 4px; outline: none; line-height: 1.4; }
   #form .row:not(.tools-row) { grid-column: 1 / -1; grid-row: 4; margin: 0; padding: 0 8px; min-height: 0; }
   #form .row:not(.tools-row) .status { max-width: 100%; white-space: normal; padding: 2px 0 4px; }
