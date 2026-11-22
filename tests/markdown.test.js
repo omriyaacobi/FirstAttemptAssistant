@@ -57,6 +57,17 @@ test("2026-11-18: a Hebrew line that STARTS with an English word is still right 
   assert.match(html, /\.answer :not\(pre\) > code \{[^}]*direction: ltr; unicode-bidi: isolate/, "inline code keeps its own order inside Hebrew");
 });
 
+test("2026-11-22: in a Hebrew answer, a list line with more English letters than Hebrew is still right to left", () => {
+  const box = sandbox.renderText("כמעט נכון, שני דברים:\n\n1. **`const std::string& name`** — השם של הקובץ.\n2. **`std::size_t blockSize`** — גודל ה-buffer (ב-bytes).\n\nמה קורה כשהקובץ ריק?");
+  const list = box.children[1];
+  assert.strictEqual(list.dir, "rtl");
+  assert.strictEqual(list.children[1].dir, "rtl", "the second item has more English letters, but the answer is Hebrew");
+  const english = sandbox.renderText("Two fixes:\n\n1. The `size` is per model (גודל).\n2. Read the buffer in blocks.");
+  assert.strictEqual(english.children[1].children[0].dir, "ltr", "an English answer with one Hebrew word stays left to right");
+  const mixed = sandbox.renderText("שאלה קצרה על הקוד:\n\nThe function returns early.");
+  assert.strictEqual(mixed.children[1].dir, "ltr", "a line with no Hebrew at all keeps its own direction");
+});
+
 test("HTML or script inside an answer stays inert text", () => {
   const evil = '<script>alert(1)</script> <img src=x onerror=alert(2)>\n# <b>head</b>\n- <i>item</i>\n**<u>x</u>**';
   const box = sandbox.renderText(evil);
