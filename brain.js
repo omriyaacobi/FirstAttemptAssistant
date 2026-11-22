@@ -20,6 +20,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { MODELS } = require("./router");
+const { chosenFor } = require("./model-choice");
 const { ask, askChain, timeoutFor, askAgyStreamWithImage } = require("./providers");
 const { createWarmAgy } = require("./warmagy");
 const { historyBlock } = require("./history");
@@ -297,6 +298,7 @@ function createBrain({
   notePoolFailure = noteFailure, // a "you've hit your limit" error marks that pool low until its reset
   reserves = RESERVES,
   chain = CHAIN,
+  modelChoice = null, // model-choice.js: the model Omri picked on the page for an hour goes FIRST (null = the normal order only)
   tokenLog = null, // tokenlog.js: per-day totals of what the answers cost (numbers only); null = not kept
   folderRules = {}, // extra options for project-folder.js checkFolder (tests only)
   findWslHomes = wslHomes, // pc-find.js wslHomes: WSL homes from the linked folders (a test passes a fake one)
@@ -1152,7 +1154,16 @@ ${r.cardText}`; }
       const call = askRaw(provider, model, q, onText, { onUsage: (u) => { mine = { model, ...u }; spent.push(mine); if (usedWebSearch(u && u.inner)) ctx.sawWeb = true; } });
       return call.then((text) => { stamp(); return text; }, (error) => { stamp(); throw error; });
     };
-    if (early.note) log(`[brain] ${early.note}: asking ${order[0].model} first`);
+    // OMRI'S CHOICE (2026-11-22, model-choice.js): the model picked on the page goes first, before pacing and Claude-first; the normal
+    // order stays behind it, so a failure still gets an answer. A Claude Code choice is skipped with a photo (only agy can see it).
+    const choice = (() => { try { return modelChoice ? modelChoice.get() : null; } catch (error) { return null; } })();
+    const chosen = chosenFor(choice, { photo: Boolean(image) });
+    if (chosen) {
+      order = [chosen, ...order.filter((m) => m.model !== chosen.model)];
+      ctx.extras.choice = { label: choice.label, model: chosen.model }; // the answer's line says so (handleAndRefresh)
+      log(`[brain] your choice (${choice.label}, until ${new Date(choice.until).toTimeString().slice(0, 5)}): asking ${chosen.model} first`);
+    } else if (choice) log(`[brain] your choice (${choice.label}) cannot look at a photo: the normal photo order answers`);
+    else if (early.note) log(`[brain] ${early.note}: asking ${order[0].model} first`);
     else if (!image && order[0] !== paced.chain[0]) log(`[brain] ${describeLow(lowWithReserve(levels, reserves))}: asking ${order[0].model} first`);
     else if (!image && paced.note) log(`[brain] ${paced.note}: asking ${order[0].model} first`);
     const transcript = []; // what was called and what came back, for the next round
@@ -1285,7 +1296,15 @@ ${r.cardText}`; }
   // What the message cost in tokens is added to the day's totals (tokenlog.js), answered or not: a failed call was paid for too.
   async function handleAndRefresh(task, options = {}) {
     const spent = [];
-    try { return await handle(task, { ...options, spent }); } finally {
+    try {
+      const result = await handle(task, { ...options, spent });
+      // Omri's picked model (model-choice.js): the answer's line says "your choice" when that model really answered.
+      if (result && result.choice && result.used && typeof result.reason === "string") {
+        const pickedAnswered = result.used.model === result.choice.model;
+        result.reason = `${result.reason} · ${pickedAnswered ? "your choice" : "your choice failed, the next model answered"}`;
+      }
+      return result;
+    } finally {
       if (tokenLog && spent.length) { try { tokenLog.add(spent); } catch (error) { /* never breaks an answer */ } }
       try { Promise.resolve(refreshPools()).catch(() => {}); } catch (error) { /* never breaks an answer */ }
     }

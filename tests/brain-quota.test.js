@@ -116,3 +116,18 @@ test("agy prompts always go through the streaming call (stdin), even when nothin
   assert.strictEqual(r.answer, "fine");
   assert.deepStrictEqual(asked, [{ provider: "agy", model: "claude-sonnet-5-5-low", streams: true }]);
 });
+
+test("OMRI'S CHOICE (model-choice.js): the picked model is asked first, the answer says so, and if it fails the normal order answers", async () => {
+  const pick = { get: () => ({ key: "neonMedium", label: "Neon medium", until: Date.parse("2026-11-11T13:00:00Z"), model: MODELS.neonMedium }) };
+  const { brain, seen } = brainWith({ modelChoice: pick });
+  const r = await run(brain);
+  assert.strictEqual(seen.models[0], MODELS.neonMedium.model);
+  assert.match(r.reason, /your choice$/);
+  const failing = brainWith({ modelChoice: pick, askOne: async (provider, model) => { if (model === MODELS.neonMedium.model) throw new Error("down"); return "An answer."; } });
+  const r2 = await run(failing.brain);
+  assert.notStrictEqual(r2.used.model, MODELS.neonMedium.model);
+  assert.match(r2.reason, /your choice failed, the next model answered/);
+  const none = brainWith({ modelChoice: { get: () => null } });
+  await run(none.brain);
+  assert.strictEqual(none.seen.models[0], CHAIN[0].model);
+});

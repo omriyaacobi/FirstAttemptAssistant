@@ -255,6 +255,7 @@ function createServer({
   courseRoutes = null, // the study notebooks (course-routes.js); off unless given, so tests never touch data/courses
   backup = null, // the data/ backup (backup.js); off unless given, so tests never read data/
   morning = null, // the morning brief (morning.js); off unless given, so tests never touch data/morning.json
+  modelChoice = null, // the model Omri picked next to Send (model-choice.js); off unless given, so tests never touch data/
   // Restarting only works when start-web.cmd is watching, because it is what starts us again.
   supervised = process.env.BOT_SUPERVISED === "1",
   restart = () => setTimeout(() => process.exit(RESTART_EXIT_CODE), 300), // give the reply time to reach the page
@@ -714,6 +715,17 @@ function createServer({
     }
 
     // Restart, to load new code after an approved change.
+    // The model Omri picked next to Send (model-choice.js): first for an hour, on every device. GET shows it, POST { key } sets it
+    // ("auto" = the normal order). A closed list, checked in model-choice.js.
+    if (modelChoice && url.pathname === "/api/model-choice" && (req.method === "GET" || req.method === "POST")) {
+      const { CHOICES } = require("./model-choice");
+      const view = (c) => ({ choice: c ? { key: c.key, label: c.label, until: c.until } : null, choices: CHOICES, now: Date.now() });
+      if (req.method === "GET") return sendJson(res, 200, view(modelChoice.get()));
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      try { return sendJson(res, 200, view(modelChoice.set(input.key === undefined ? null : input.key))); } catch (error) { return sendJson(res, error.status || 400, { error: error.message }); }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/restart") {
       if (!(await readJsonBody(req, res))) return;
       if (!supervised) {
@@ -886,17 +898,20 @@ if (require.main === module) {
     source: moodleSource, tools: moodleTools, courseRoutes, file: path.join(__dirname, "data", "moodle-watch.json"), thread, push, sort: watchSort, log: console.log,
     patternFor: (c) => { try { const ref = coach.tracker.refsFor([c])[0]; const p = ref && (coach.tracker.timetable().courses || []).find((x) => x.key === ref.key); return p ? new RegExp(p.match, "i") : null; } catch (error) { return null; } },
   });
+  // The model Omri picks next to Send (model-choice.js): ONE store, read by the brain and set by /api/model-choice.
+  const modelChoice = require("./model-choice").createModelChoice({ file: path.join(__dirname, "data", "model-choice.json") });
   const makeBrain = () => (brainRef = require("./brain").createBrain({
     courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), todo: require("./todo").createTodo({ file: path.join(__dirname, "data", "todo.md") }), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
     courseWork: (courseId) => require("./course-work").workDone(thread.page({ limit: 400 }).messages, courseId),
     tokenLog: require("./tokenlog").createTokenLog({ file: path.join(__dirname, "data", "token-log.json") }), // what the answers cost, numbers only
+    modelChoice, // the model Omri picked on the page goes first for an hour (model-choice.js)
     // Omri's PC: find folders and files by name under the search roots (data/pc-roots.json), never in Bot's own folder (pc-find.js).
     finder: require("./pc-find").createFinder({ dataDir: path.join(__dirname, "data"), forbidden: [__dirname] }),
     // BOT_BRAIN_FIRST=claude in .env: Claude Code Sonnet first for a while. Bot does not load .env into process.env, so read the file.
     chain: require("./brain").chainFor((() => { try { return require("./auth").parseEnv(fs.readFileSync(path.join(__dirname, ".env"), "utf8")).BOT_BRAIN_FIRST; } catch (error) { return ""; } })()),
   }));
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, coach, summaries, threadFiles, linkBatches, makeBrain, moodleBridge });
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, coach, summaries, threadFiles, linkBatches, makeBrain, modelChoice, moodleBridge });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;
