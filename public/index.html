@@ -503,6 +503,8 @@
   #form button.mic { height: 40px; min-height: 40px; margin-bottom: 2px; padding: 0 12px; border-radius: 999px; border: 0; color: var(--muted); font-weight: 500; }
   #form button.mic.listening { color: #fff; }
   #form #micLang { margin: 0 0 4px; border-radius: 999px; font-size: .8rem; }
+  #form .model-pick { min-height: 44px; max-width: 9.5rem; margin: 0 0 0; padding: 0 8px; border-radius: 999px; font-size: .8rem; color: var(--muted); text-overflow: ellipsis; }
+  #form .model-pick.picked { color: var(--accent); border-color: var(--accent); }
 
   /* --- other screens --- */
   .scroll { padding: 28px 22px; }
@@ -653,6 +655,7 @@
             </button>
           </span>
           <span class="tools">
+            <select id="modelPick" class="model-pick" aria-label="Which model answers" title="Which model answers: Auto is Bot's normal order. A picked model answers first for one hour, on the PC and the phone." hidden><option value="auto">Auto</option></select>
             <button type="button" class="mic" id="mic" hidden title="Talk to Bot: speak, and it is sent when you stop">Mic</button>
             <button type="submit" id="send">Send</button>
           </span>
@@ -3397,6 +3400,41 @@
     // Pictures (2026-11-22): when the first file is a picture, ALL the files go to the photo road, which adds the pictures up to the
     // limit and says what was left out. Any other file: one per message, so only the first one is used (pickFile).
     // Other boxes on the page (Improve Bot, the login) are left alone.
+    // WHICH MODEL ANSWERS (2026-11-22, model-choice.js): Auto = Bot's normal order. A picked model answers first for one hour, on
+    // the PC and the phone (the server keeps it), with the normal order behind it. The page only shows and sets it.
+    function setupModelPick() {
+      const pick = $("modelPick");
+      const hhmm = (ms) => new Date(ms).toTimeString().slice(0, 5);
+      let endsAt = 0; // this device's clock
+      const draw = (data) => {
+        pick.replaceChildren(el("option", "", "Auto"));
+        pick.firstChild.value = "auto";
+        Object.entries(data.choices || {}).forEach(([key, label]) => { const o = el("option", "", label); o.value = key; pick.appendChild(o); });
+        const c = data.choice;
+        if (c) {
+          endsAt = Date.now() + (c.until - (data.now || Date.now()));
+          const o = [...pick.options].find((x) => x.value === c.key);
+          if (o) o.textContent = `${c.label} until ${hhmm(endsAt)}`;
+          pick.value = c.key;
+        } else { endsAt = 0; pick.value = "auto"; }
+        pick.classList.toggle("picked", Boolean(c));
+        pick.hidden = false;
+      };
+      const load = async () => { try { const r = await fetch("/api/model-choice"); if (r.ok) draw(await r.json()); } catch (error) { /* next look */ } };
+      pick.addEventListener("change", async () => {
+        try {
+          const r = await fetch("/api/model-choice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: pick.value }) });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || `server answered ${r.status}`);
+          draw(data);
+          $("status").textContent = data.choice ? `${data.choice.label} answers first until ${hhmm(endsAt)}.` : "Back to Bot's normal order.";
+        } catch (error) { toast("Not changed: " + error.message); load(); }
+      });
+      load();
+      // The hour ends by itself; the other device may change it too.
+      setInterval(() => { if (!document.hidden) load(); }, 60000);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+    }
     function firstFile(list) {
       return list && list.length ? list[0] : null;
     }
@@ -3872,6 +3910,7 @@
       $("photoRemove").addEventListener("click", clearFile);
       setupPasteAndDrop();
       setupQuotes();
+      setupModelPick();
       $("tabStudyText").textContent = "Study";
       document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
       window.addEventListener("focus", () => { poll(); });
