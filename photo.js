@@ -13,6 +13,10 @@ const crypto = require("node:crypto");
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024; // decoded size
 const MAX_B64 = Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 4; // base64 text is about 4/3 bigger than the bytes
 const MAX_PHOTO_BODY = MAX_B64 + 20000; // the whole request: the photo plus the other fields
+// Several pictures in one message (2026-11-22): the thread and Improve Bot planning take up to MAX_PHOTOS. The page reads the
+// same number from /api/session (maxPhotos), so there is one place to change it. Each picture keeps the 3 MB limit.
+const MAX_PHOTOS = 4;
+const MAX_PHOTOS_BODY = MAX_PHOTOS * MAX_B64 + 20000; // the whole request: every picture plus the other fields
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
@@ -47,4 +51,41 @@ function savePhoto(dir, { bytes, ext }) {
   return { path: file, ext };
 }
 
-module.exports = { parsePhoto, savePhoto, sniffImage, MAX_PHOTO_BYTES, MAX_PHOTO_BODY };
+// The pictures of one request: the old single field (`one`, e.g. "image") OR the list field (`many`, e.g. "images"), never both.
+// EVERY picture is checked with parsePhoto (real bytes, 3 MB); one bad picture refuses the whole request and says which one.
+// Returns the parsed pictures in the order they were sent ([] when none came).
+function parsePhotos(input, { one, many }) {
+  const single = input[one], list = input[many];
+  const hasOne = single !== undefined && single !== null, hasMany = list !== undefined && list !== null;
+  if (hasOne && hasMany) throw fail(400, `send the picture in "${one}" or the pictures in "${many}", not both`);
+  if (hasOne) return [parsePhoto(single)];
+  if (!hasMany) return [];
+  if (!Array.isArray(list)) throw fail(400, `"${many}" must be a list of pictures`);
+  if (list.length > MAX_PHOTOS) throw fail(413, `at most ${MAX_PHOTOS} pictures per message (${list.length} were sent)`);
+  return list.map((dataUrl, i) => {
+    try { return parsePhoto(dataUrl); } catch (error) {
+      throw list.length > 1 ? fail(error.status || 400, `picture ${i + 1}: ${error.message}`) : error;
+    }
+  });
+}
+
+// Saves checked pictures (savePhoto, random names). If one cannot be saved, the ones already saved are deleted again.
+function savePhotos(dir, parsed) {
+  const saved = [];
+  try {
+    for (const p of parsed) saved.push(savePhoto(dir, p));
+    return saved;
+  } catch (error) {
+    removePhotos(saved);
+    throw error;
+  }
+}
+const removePhotos = (saved) => { for (const s of saved || []) { try { fs.rmSync(typeof s === "string" ? s : s.path, { force: true }); } catch (error) { /* already gone */ } } };
+
+// The fixed names the pictures get in agy's private folder, from their real types (never a name from the sender):
+// one picture is "photo.jpg" (as it always was), several are "photo1.jpg", "photo2.png", ... in the order they were sent.
+function photoNames(exts) {
+  return exts.length === 1 ? ["photo" + exts[0]] : exts.map((ext, i) => `photo${i + 1}${ext}`);
+}
+
+module.exports = { parsePhoto, parsePhotos, savePhoto, savePhotos, removePhotos, photoNames, sniffImage, MAX_PHOTO_BYTES, MAX_PHOTO_BODY, MAX_PHOTOS, MAX_PHOTOS_BODY };

@@ -42,6 +42,18 @@ test("a pasted screenshot goes to the paperclip's input and nothing else happens
   assert.deepStrictEqual(p.photoInput.events, ["change"]); // the same change event the paperclip sends: photo road or pickFile
 });
 
+test("several pasted or dropped pictures ALL go to the photo road (it keeps them up to the limit); a file that is not first goes along and is left out there", () => {
+  const p = page();
+  const a = file("a.png", "image/png"), b = file("b.jpg", "image/jpeg"), c = file("c.pdf", "application/pdf");
+  p.listeners.paste(p.event({ target: p.task, clipboardData: { files: [a, b, c] } }));
+  assert.deepStrictEqual(p.photoInput.files, [a, b, c]);
+  assert.deepStrictEqual(p.photoInput.events, ["change"]);
+  assert.strictEqual(p.status.textContent, ""); // the photo road says what it left out
+  const d = page();
+  d.listeners.drop(d.event({ dataTransfer: { types: ["Files"], files: [b, a] } }));
+  assert.deepStrictEqual(d.photoInput.files, [b, a]);
+});
+
 test("pasting with the focus outside any box (on the page) works too; only the first of many files is used, and the page says so", () => {
   const p = page();
   const a = file("a.pdf", "application/pdf"), b = file("b.pdf", "application/pdf");
@@ -107,6 +119,7 @@ function improvePage({ improveHidden = false, planMode = true, inPlan = false, r
     currentPlan: inPlan ? { id: "p1", status: "open" } : null,
     openChange: () => (running ? { id: "c1", status: "running" } : null),
     setStatus: (id, text, bad) => statuses.push({ id, text, bad: Boolean(bad) }),
+    isPicture: (f) => Boolean(f && f.type && f.type.startsWith("image/")),
     DataTransfer,
     Event: class { constructor(type) { this.type = type; } },
   };
@@ -126,6 +139,16 @@ test("pasting a screenshot in Improve Bot Planning Mode attaches to improvePhoto
   assert.deepStrictEqual(p.improvePhotoInput.events, ["change"]);
   assert.strictEqual(p.photoInput.files, null);
   assert.deepStrictEqual(p.photoInput.events, []);
+});
+
+test("several screenshots pasted in Improve Bot all go to improvePhotoInput, without the non-picture files", () => {
+  const p = improvePage();
+  const a = file("a.png", "image/png"), b = file("b.pdf", "application/pdf"), c = file("c.png", "image/png");
+  const e = p.event({ target: p.improveText, clipboardData: { files: [a, b, c] } });
+  p.listeners.paste(e);
+  assert.strictEqual(e.prevented, true);
+  assert.deepStrictEqual(p.improvePhotoInput.files, [a, c]);
+  assert.strictEqual(p.photoInput.files, null);
 });
 
 test("Improve Bot paste ignores plain text, non-image files, hidden Improve view, and non-plan edit mode", () => {

@@ -233,6 +233,12 @@
   .photo-chip .chip-text span { overflow-wrap: anywhere; }
   .photo-chip progress { width: 100%; height: 8px; accent-color: var(--accent); }
   .photo-chip.error #photoInfo { color: var(--bad); }
+  /* several pictures (2026-11-22): a row of thumbnails, each with its own remove button under it */
+  .photo-tray { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .photo-tray[hidden] { display: none; }
+  .photo-tray .shot { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+  .photo-tray .shot img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+  .photo-tray .shot button { width: 64px; height: 32px; padding: 0; border-radius: 10px; background: var(--mine); color: var(--muted); font-size: 1rem; line-height: 1; }
   .tfilechoice { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .tfilechoice button { min-height: 44px; }
   .me img { display: block; max-width: min(240px, 100%); border-radius: 8px; margin-bottom: 6px; }
@@ -289,6 +295,7 @@
     .composer .row label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
     input[type="checkbox"] { width: 24px; height: 24px; flex: none; }
     .photo-chip button { width: 44px; min-width: 44px; height: 44px; }
+    .photo-tray .shot button { height: 44px; }
     .me { margin-left: 5%; }
   }
 
@@ -481,6 +488,7 @@
      narrow "auto" column on the left); an auto column grows to fit a long quote, so the text box was squeezed (2026-11-14). */
   #form .quote-chip { grid-column: 1 / -1; grid-row: 1; margin: 6px 6px 4px; }
   #form .photo-chip { grid-column: 1 / -1; grid-row: 2; margin: 6px 6px 4px; }
+  #form .photo-tray { grid-column: 1 / -1; grid-row: 2; margin: 6px 6px 4px; } /* the photos' row; a file chip and photos never show together */
   #form textarea#task { grid-column: 2; grid-row: 3; min-height: 44px; height: 44px; max-height: 220px; resize: none; border: 0; border-radius: 0; background: transparent; padding: 11px 4px; outline: none; line-height: 1.4; }
   #form .row:not(.tools-row) { grid-column: 1 / -1; grid-row: 4; margin: 0; padding: 0 8px; min-height: 0; }
   #form .row:not(.tools-row) .status { max-width: 100%; white-space: normal; padding: 2px 0 4px; }
@@ -621,6 +629,7 @@
           <span class="qtext" id="quoteText" dir="auto"></span>
           <button type="button" id="quoteRemove" aria-label="Do not reply to the marked part">✕</button>
         </div>
+        <div class="photo-tray" id="photoTray" hidden aria-label="Attached photos"></div>
         <div class="photo-chip" id="photoChip" hidden>
           <img id="photoThumb" alt="Attached photo">
           <span class="file-icon" id="fileIcon" hidden aria-hidden="true">FILE</span>
@@ -634,7 +643,7 @@
         </div>
         <div class="row tools-row">
           <span class="tools">
-            <input type="file" id="photoInput" accept="image/*" hidden>
+            <input type="file" id="photoInput" accept="image/*" multiple hidden>
             <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
             <button type="button" class="attach" id="camera" aria-label="Take a photo" title="Take a photo with the camera">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1.2-1.6A1 1 0 0 1 9.5 4h5a1 1 0 0 1 .8.4L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
@@ -712,18 +721,14 @@
         </details>
       </div></div>
       <div class="composer" id="improveComposer"><div class="inner">
-        <div class="photo-chip" id="improvePhotoChip" hidden>
-          <img id="improvePhotoThumb" alt="Attached screenshot">
-          <span id="improvePhotoInfo" dir="auto">Screenshot attached</span>
-          <button type="button" id="improvePhotoRemove" aria-label="Remove screenshot">✕</button>
-        </div>
+        <div class="photo-tray" id="improvePhotoChip" hidden aria-label="Attached screenshots"></div>
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
         <div class="row">
           <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option><option value="argon">Argon (page only)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
           <label id="improvePlanLabel" title="Discuss feasibility, limitations and a plan before editing any files"><input type="checkbox" id="improvePlanMode" checked> Plan first</label>
           <span class="status" id="improveStatus" role="status"></span>
           <span class="tools">
-            <input type="file" id="improvePhotoInput" accept="image/*" hidden>
+            <input type="file" id="improvePhotoInput" accept="image/*" multiple hidden>
             <button type="button" class="attach" id="improveAttach" aria-label="Attach a screenshot" title="Attach a screenshot (or paste with Ctrl+V)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l8-8"/></svg>
             </button>
@@ -1253,13 +1258,56 @@
   // The phone's photo is shrunk in the page first (a canvas is a drawing surface we can read back as a JPEG),
   // because a 4000px camera picture is several MB, but 1600px is plenty to read a schedule.
   const MAX_PHOTO_SIDE = 1600;
-  let photo = null; // { dataUrl } while one is attached
+  // Several pictures in one message (2026-11-22): up to session.maxPhotos (photo.js MAX_PHOTOS; the server tells the page in
+  // /api/session, so the number lives in one place). An older Bot that does not say takes one. The server checks every picture again.
+  const maxPhotos = () => (Number.isInteger(session.maxPhotos) && session.maxPhotos > 0 ? session.maxPhotos : 1);
+  const isPicture = (f) => Boolean(f && f.type && f.type.startsWith("image/"));
+  // A row of thumbnails, one per picture, each with its own remove button. Used by the conversation ("photo") and by Improve Bot
+  // planning ("screenshot"). add() takes pictures up to the limit and returns a plain note about anything left out ("" if none).
+  function photoTray(boxId, what) {
+    const items = []; // { dataUrl }, in the order they were added (that order is photo1, photo2, ... for the model)
+    let reading = 0; // pictures still being shrunk, so two quick pastes never pass the limit
+    function render() {
+      const box = $(boxId);
+      box.textContent = "";
+      items.forEach((item, i) => {
+        const cell = el("div", "shot");
+        const img = document.createElement("img");
+        img.src = item.dataUrl;
+        img.alt = what + " " + (i + 1);
+        const remove = el("button", "", "✕");
+        remove.type = "button";
+        remove.setAttribute("aria-label", "Remove " + what + " " + (i + 1));
+        remove.addEventListener("click", () => { items.splice(i, 1); render(); });
+        cell.append(img, remove);
+        box.appendChild(cell);
+      });
+      box.hidden = !items.length;
+    }
+    async function add(files) {
+      const list = [...(files || [])];
+      const pics = list.filter(isPicture);
+      let tooMany = 0, unreadable = 0;
+      for (const file of pics) {
+        if (items.length + reading >= maxPhotos()) { tooMany++; continue; }
+        reading++;
+        try { items.push({ dataUrl: await shrinkPhoto(file) }); } catch (error) { unreadable++; } finally { reading--; }
+        render();
+      }
+      const notes = [];
+      if (tooMany) notes.push(`${tooMany === 1 ? "One " + what + " was" : tooMany + " " + what + "s were"} left out: Bot takes ${maxPhotos()} at most in one message.`);
+      if (unreadable) notes.push(`Could not read ${unreadable === 1 ? "one " + what : unreadable + " " + what + "s"}.`);
+      const other = list.length - pics.length;
+      if (other && pics.length) notes.push(`${other === 1 ? "One file" : other + " files"} that ${other === 1 ? "is" : "are"} not a picture ${other === 1 ? "was" : "were"} left out.`);
+      return notes.join(" ");
+    }
+    return { add, clear: () => { items.length = 0; render(); }, dataUrls: () => items.map((item) => item.dataUrl), count: () => items.length };
+  }
+  const photos = photoTray("photoTray", "photo");
 
   function clearPhoto() {
-    photo = null;
-    $("photoChip").hidden = true;
+    photos.clear();
     $("photoInput").value = "";
-    $("photoThumb").removeAttribute("src");
   }
 
   async function shrinkPhoto(file) {
@@ -1294,22 +1342,15 @@
     }
     $("cameraInput").value = "";
   });
+  // Every picture picked at once (the phone's picker with several selected), pasted, dropped, shared or taken with the camera is ADDED
+  // to the row, up to the limit; the page says plainly what was left out.
   $("photoInput").addEventListener("change", async () => {
-    const file = $("photoInput").files[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { $("status").textContent = "That is not a picture."; return; }
-    try {
-      const dataUrl = await shrinkPhoto(file);
-      photo = { dataUrl };
-      $("photoThumb").src = dataUrl;
-      $("photoInfo").textContent = "Photo attached (" + Math.round(dataUrl.length * 0.75 / 1024) + " KB)";
-      $("photoChip").hidden = false;
-      $("status").textContent = "";
-    } catch (error) {
-      $("status").textContent = "Could not read that picture.";
-    }
+    const files = [...($("photoInput").files || [])];
+    $("photoInput").value = ""; // so the same picture can be picked again
+    if (!files.length) return;
+    if (!files.some(isPicture)) { $("status").textContent = "That is not a picture."; return; }
+    $("status").textContent = await photos.add(files);
   });
-  $("photoRemove").addEventListener("click", clearPhoto);
 
   // ---- Sending a message ----
   // Bot runs each message as a background JOB on the PC (jobs.js startThread). Sending and following the jobs belong to the thread
@@ -1633,7 +1674,7 @@
     $("improveModelLabel").hidden = status === "ready" || mine;
     $("improvePlanLabel").hidden = inPlan || status === "ready" || mine;
     if ($("improveAttach")) $("improveAttach").hidden = !canAttachPhoto;
-    if (!canAttachPhoto && improvePhoto) clearImprovePhoto();
+    if (!canAttachPhoto && improvePhotos.count()) clearImprovePhoto();
     $("improveText").placeholder = mine
       ? "The editor is busy. Write more here: it is sent when the editor finishes."
       : status === "ready"
@@ -2084,32 +2125,24 @@
   $("previewOverlay").addEventListener("click", (e) => { if (e.target === $("previewOverlay")) closePreview(); }); // a tap on the dimmed area closes it
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("previewOverlay").hidden) closePreview(); });
 
-  // Screenshot attachment for Improve Bot's Planning Mode (1 screenshot per message; shrunk like the main chat).
-  let improvePhoto = null; // { dataUrl } while a screenshot is waiting to be sent
+  // Screenshots for Improve Bot's Planning Mode: up to the same limit as the conversation (maxPhotos), shrunk the same way, one
+  // thumbnail each with its own remove button (photoTray, 2026-11-22).
+  const improvePhotos = photoTray("improvePhotoChip", "screenshot");
 
   function clearImprovePhoto() {
-    improvePhoto = null;
-    if ($("improvePhotoChip")) $("improvePhotoChip").hidden = true;
+    improvePhotos.clear();
     if ($("improvePhotoInput")) $("improvePhotoInput").value = "";
-    if ($("improvePhotoThumb")) $("improvePhotoThumb").removeAttribute("src");
   }
 
-  async function setImprovePhoto(file) {
-    if (!file) return;
-    if (!file.type || !file.type.startsWith("image/")) {
+  async function setImprovePhoto(files) {
+    const list = [...(files || [])];
+    if (!list.length) return;
+    if (!list.some(isPicture)) {
       setStatus("improveStatus", "Only image screenshots can be attached in Planning Mode.", true);
       return;
     }
-    try {
-      const dataUrl = await shrinkPhoto(file);
-      improvePhoto = { dataUrl };
-      $("improvePhotoThumb").src = dataUrl;
-      $("improvePhotoInfo").textContent = "Screenshot attached (" + Math.round(dataUrl.length * 0.75 / 1024) + " KB)";
-      $("improvePhotoChip").hidden = false;
-      setStatus("improveStatus", "");
-    } catch (error) {
-      setStatus("improveStatus", "Could not read that screenshot.", true);
-    }
+    const note = await improvePhotos.add(list);
+    setStatus("improveStatus", note, Boolean(note));
   }
 
   // Pasting a screenshot in Improve Bot (Planning Mode only): scoped so it never touches the main chat's photoInput.
@@ -2126,17 +2159,16 @@
       if (target && target !== $("improveText") && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || "")) return;
       const files = [...(e.clipboardData.files || [])];
       if (!files.length) return; // plain text pastes normally
-      const img = files.find((f) => f && f.type && f.type.startsWith("image/"));
-      if (!img) {
+      const imgs = files.filter(isPicture);
+      if (!imgs.length) {
         setStatus("improveStatus", "Only image screenshots can be pasted in Planning Mode.", true);
         return;
       }
       e.preventDefault();
       const transfer = new DataTransfer();
-      transfer.items.add(img);
+      for (const img of imgs) transfer.items.add(img); // every pasted picture; the row takes them up to the limit and says what was left out
       $("improvePhotoInput").files = transfer.files;
       $("improvePhotoInput").dispatchEvent(new Event("change"));
-      if (files.length > 1) setStatus("improveStatus", "Planning Mode takes one screenshot per message, so only the first image is attached.");
     });
   }
 
@@ -2148,7 +2180,7 @@
     const p = openChange();
     const plan = !p ? currentPlan : null;
     if (plan) {
-      const attached = improvePhoto;
+      const attached = improvePhotos.count() ? improvePhotos.dataUrls() : null;
       if ((!typed && !attached) || sending || plan.status === "planning") return;
       sending = true;
       $("improveStart").disabled = true;
@@ -2157,7 +2189,7 @@
         const res = await fetch(`/api/selfedit/plan/${plan.id}/message`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: typed, model: $("improveModel").value, ...(attached ? { photo: attached.dataUrl } : {}) }),
+          body: JSON.stringify({ message: typed, model: $("improveModel").value, ...(attached ? { photos: attached } : {}) }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
@@ -2185,7 +2217,7 @@
     }
     const text = queued.length && p && p.status === "ready" ? queued.concat(typed || []).join("\n\n") : typed;
     const startPlan = !p && Boolean($("improvePlanMode") && $("improvePlanMode").checked);
-    const attached = startPlan ? improvePhoto : null;
+    const attached = startPlan && improvePhotos.count() ? improvePhotos.dataUrls() : null;
     if ((!text && !attached) || sending) return;
     sending = true;
     const wasQueue = text !== typed;
@@ -2196,7 +2228,7 @@
         const res = await fetch("/api/selfedit/plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ request: text, model: $("improveModel").value, ...(attached ? { photo: attached.dataUrl } : {}) }),
+          body: JSON.stringify({ request: text, model: $("improveModel").value, ...(attached ? { photos: attached } : {}) }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
@@ -2327,10 +2359,10 @@
   $("improveStart").addEventListener("click", sendImprove);
   $("improveAttach").addEventListener("click", () => $("improvePhotoInput").click());
   $("improvePhotoInput").addEventListener("change", () => {
-    const file = $("improvePhotoInput").files[0];
-    if (file) setImprovePhoto(file);
+    const files = [...($("improvePhotoInput").files || [])];
+    $("improvePhotoInput").value = ""; // so the same screenshot can be picked again
+    setImprovePhoto(files);
   });
-  $("improvePhotoRemove").addEventListener("click", clearImprovePhoto);
   setupImprovePaste();
   // Which quota the chosen editor spends, in plain words. Argon only changes the web page (the public folder).
   const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
@@ -2615,7 +2647,7 @@
 <script id="threadScript">
   // ===== The ONE conversation (always on) =====
   // With the switch off nothing below runs: window.botThread.start() is only called when /api/session says "thread: true".
-  // It reuses the page's own helpers (el, renderResult, renderText, botCard, logDetails, errorCard, photo) and takes over
+  // It reuses the page's own helpers (el, renderResult, renderText, botCard, logDetails, errorCard, photos) and takes over
   // sending and following jobs. All text goes in with textContent; the only HTML-like thing is the existing math path.
 
   // <thread-pure>
@@ -3145,8 +3177,9 @@
     }
 
     // ---- sending ----
-    async function ask(task, image, noPlan, route, quote) {
-      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(route ? { route } : {}), ...(image ? { image } : {}), ...(quote ? { quote } : {}) }) });
+    // pictures: null, or the list of data URLs of this message's photos (one or several; the server checks each one)
+    async function ask(task, pictures, noPlan, route, quote) {
+      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(route ? { route } : {}), ...(pictures && pictures.length ? { images: pictures } : {}), ...(quote ? { quote } : {}) }) });
       const job = body.job;
       T.offset = job.now - Date.now();
       T.jobs.set(job.id, job);
@@ -3160,14 +3193,14 @@
     async function threadSend() {
       if (attachedFile && T.quote) { $("status").textContent = "A marked part goes with a text message or a photo, not with a file. Remove the file or the marked part."; return; }
       if (attachedFile) { if (!T.busy) await sendFile(); return; }
-      const attached = photo;
+      const attached = photos.count() ? photos.dataUrls() : null; // every photo in the row, in order
       const sentRaw = $("task").value;
       const task = $("task").value.trim(); // a photo may go with no words (Omri, 2026-11-16): Bot reads it from the talk, never a made-up English line
       if ((!task && !attached) || T.busy) return;
       T.busy = true;
       $("send").disabled = true;
       try {
-        await ask(task, attached ? attached.dataUrl : null, false, undefined, T.quote);
+        await ask(task, attached, false, undefined, T.quote);
         clearSentText(sentRaw);
         clearPhoto();
         clearQuote();
@@ -3361,18 +3394,21 @@
     // A picture pasted with Ctrl+V (PrintScreen, Win+Shift+S) or a file copied in Explorer, or a file dropped on the page, goes to the
     // paperclip's own input, exactly like the Share menu: a picture becomes the photo (shrunk, sent with the message, counts as a photo),
     // any other file goes to pickFile (the upload road with its checks). Nothing is sent until Send. Pasting TEXT works as before.
-    // Only one attachment per message, so only the first file is used. Other boxes on the page (Improve Bot, the login) are left alone.
+    // Pictures (2026-11-22): when the first file is a picture, ALL the files go to the photo road, which adds the pictures up to the
+    // limit and says what was left out. Any other file: one per message, so only the first one is used (pickFile).
+    // Other boxes on the page (Improve Bot, the login) are left alone.
     function firstFile(list) {
       return list && list.length ? list[0] : null;
     }
     function attachFromOutside(files, what) {
       const file = firstFile(files);
       if (!file) return false;
+      const pictures = Boolean(file.type && file.type.startsWith("image/"));
       const transfer = new DataTransfer();
-      transfer.items.add(file);
+      for (const f of pictures ? files : [file]) transfer.items.add(f);
       $("photoInput").files = transfer.files;
       $("photoInput").dispatchEvent(new Event("change")); // the paperclip's own path
-      if (files.length > 1) $("status").textContent = "Bot takes one file per message, so only the first " + what + " file is attached.";
+      if (!pictures && files.length > 1) $("status").textContent = "Bot takes one file per message, so only the first " + what + " file is attached.";
       return true;
     }
     function composerShown() { return $("task").offsetParent !== null; }
@@ -3517,7 +3553,7 @@
 
     function pickFile(file) {
       clearFile();
-      if (photo) clearPhoto();
+      if (photos.count()) clearPhoto();
       if (!FILE_TYPES.test(file.name)) { $("status").textContent = "Bot can read PDF, pptx, docx, txt and md files, zips of them, and pictures."; return; }
       const isZip = /\.zip$/i.test(file.name);
       if (file.size > (isZip ? MAX_ZIP : MAX_FILE)) { $("status").textContent = "That file is " + sizeText(file.size) + ". The most is " + (isZip ? "200" : "50") + " MB."; return; }
