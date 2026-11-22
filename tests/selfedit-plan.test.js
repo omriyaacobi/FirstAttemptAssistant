@@ -313,7 +313,7 @@ test("planner accepts photoPath in start and message, passes it to askOne, and s
   } finally { p.cleanup(); }
 });
 
-test("server plan routes validate and save screenshots, pass photoPath to planner, and reject invalid photos", async () => {
+test("server plan routes validate and save screenshots, pass photoPath to planner, delete them after the turn, and reject invalid photos", async () => {
   const p = tempProject();
   const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-plan-photo-store-"));
   const seenPhotos = [];
@@ -327,7 +327,8 @@ test("server plan routes validate and save screenshots, pass photoPath to planne
     dataDir: p.dataDir,
     lowPools: async () => [],
     askOne: async (model, prompt, opts) => {
-      seenPhotos.push(opts && opts.photoPath ? opts.photoPath : null);
+      const shot = opts && opts.photoPath ? opts.photoPath : null;
+      seenPhotos.push(shot ? { path: shot, existed: fs.existsSync(shot) } : null);
       return "Looks good based on the screenshot.";
     },
   });
@@ -374,7 +375,8 @@ test("server plan routes validate and save screenshots, pass photoPath to planne
     }
     assert.strictEqual(plan.status, "open");
     assert.strictEqual(plan.chat[0].hasPhoto, true);
-    assert.ok(seenPhotos[0] && seenPhotos[0].endsWith(".png") && fs.existsSync(seenPhotos[0]));
+    assert.ok(seenPhotos[0] && seenPhotos[0].path.endsWith(".png") && seenPhotos[0].existed);
+    assert.strictEqual(fs.existsSync(seenPhotos[0].path), false); // 2026-11-22: deleted once the turn is answered
 
     // Reject bad photo on plan message, accept valid PNG on plan message
     assert.strictEqual((await post(`/api/selfedit/plan/${planId}/message`, { message: "also this", photo: fakePng })).status, 415);
@@ -387,7 +389,8 @@ test("server plan routes validate and save screenshots, pass photoPath to planne
     }
     assert.strictEqual(plan.status, "open");
     assert.strictEqual(plan.chat[2].hasPhoto, true);
-    assert.ok(seenPhotos[1] && seenPhotos[1].endsWith(".png") && fs.existsSync(seenPhotos[1]));
+    assert.ok(seenPhotos[1] && seenPhotos[1].path.endsWith(".png") && seenPhotos[1].existed);
+    assert.strictEqual(fs.existsSync(seenPhotos[1].path), false);
   } finally {
     await new Promise((r) => server.close(r));
     p.cleanup();

@@ -81,7 +81,7 @@ const { visibleProposals } = require("./suggestion-filter");
 const { readRawBody } = require("./upload");
 const { checkQuote } = require("./quote");
 const { MAX_ZIP_BYTES } = require("./unzip");
-const { parsePhoto, savePhoto, MAX_PHOTO_BODY } = require("./photo");
+const { parsePhotos, savePhotos, removePhotos, MAX_PHOTOS, MAX_PHOTOS_BODY } = require("./photo");
 const { createMemory, loadProfile, PROFILE_FILE } = require("./profile");
 const { createCourses, validId: validCourseId } = require("./courses");
 const { createCourseRoutes } = require("./course-routes");
@@ -204,18 +204,18 @@ function sendStatic(req, res, file, type, { revalidate = true } = {}) {
 // Reads a JSON request body. Sends the error response itself and returns null if the request is bad.
 // Only "Content-Type: application/json" is accepted. A web page on another site cannot send JSON
 // to us without the browser first asking our permission, and we never give it.
-// { photo: true } is only used by routes that accept a photo (/api/ask, /api/selfedit/plan*):
-// a request carrying a photo in `photoField` may be bigger (MAX_PHOTO_BODY).
+// { photo: true } is only used by routes that accept photos (/api/ask, /api/selfedit/plan*):
+// a request carrying a photo in `photoField` (one) or `photosField` (a list of up to MAX_PHOTOS) may be bigger (MAX_PHOTOS_BODY).
 // A request WITHOUT a photo still has to fit in MAX_BODY, like everywhere else.
-async function readJsonBody(req, res, { photo = false, photoField = "image" } = {}) {
+async function readJsonBody(req, res, { photo = false, photoField = "image", photosField = "images" } = {}) {
   if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
     sendJson(res, 415, { error: "send JSON" });
     return null;
   }
   try {
-    const raw = await readBody(req, photo ? MAX_PHOTO_BODY : MAX_BODY);
+    const raw = await readBody(req, photo ? MAX_PHOTOS_BODY : MAX_BODY);
     const parsed = JSON.parse(raw);
-    if (photo && raw.length > MAX_BODY && (!parsed || typeof parsed !== "object" || parsed[photoField] === undefined)) {
+    if (photo && raw.length > MAX_BODY && (!parsed || typeof parsed !== "object" || (parsed[photoField] === undefined && parsed[photosField] === undefined))) {
       throw Object.assign(new Error("request too large"), { status: 413 });
     }
     if (parsed && typeof parsed === "object") return parsed;
@@ -351,6 +351,7 @@ function createServer({
         phoneAccess: auth.enabled,
         loggedIn: remote ? auth.isLoggedIn(req) : true,
         images: true, // this Bot can receive a photo with a message
+        maxPhotos: MAX_PHOTOS, // how many pictures one message may carry (photo.js): the page reads it here, so the number lives in one place
         ...(thread ? { thread: true } : {}), ...(thread && coach ? { study: true } : {}), // one conversation: the page shows the thread
         pushKey: !remote || auth.isLoggedIn(req) ? push.publicKey() : null,
       });
@@ -589,23 +590,21 @@ function createServer({
     // Improve Bot planning mode (selfedit-plan.js): read-only discussion of feasibility, limitations and a plan before editing.
     const planPhotoDir = selfEditPlan && selfEditPlan.photosDir ? selfEditPlan.photosDir : path.join(__dirname, "data", "selfedit-plans", "photos");
     if (url.pathname === "/api/selfedit/plan" && req.method === "POST") {
-      const input = await readJsonBody(req, res, { photo: true, photoField: "photo" });
+      const input = await readJsonBody(req, res, { photo: true, photoField: "photo", photosField: "photos" });
       if (!input) return;
       const model = input.model === undefined ? "neon" : input.model;
       if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
-      let savedPhoto = null;
-      if (input.photo !== undefined && input.photo !== null) {
-        try {
-          savedPhoto = savePhoto(planPhotoDir, parsePhoto(input.photo));
-        } catch (error) {
-          return sendJson(res, error.status || 400, { error: error.message });
-        }
+      let saved = [];
+      try {
+        saved = savePhotos(planPhotoDir, parsePhotos(input, { one: "photo", many: "photos" }));
+      } catch (error) {
+        return sendJson(res, error.status || 400, { error: error.message });
       }
       try {
-        const { record } = await selfEditPlan.start(input.request, { model, ...(savedPhoto ? { photoPath: savedPhoto.path } : {}) });
+        const { record } = await selfEditPlan.start(input.request, { model, ...(saved.length ? { photoPaths: saved.map((s) => s.path) } : {}) });
         return sendJson(res, 202, { plan: record });
       } catch (error) {
-        if (savedPhoto) fs.rmSync(savedPhoto.path, { force: true });
+        removePhotos(saved); // the turn never started, so nothing else will delete them
         return sendJson(res, selfEditStatus(error), { error: error.message });
       }
     }
@@ -617,21 +616,19 @@ function createServer({
         return plan ? sendJson(res, 200, { plan, now: Date.now() }) : sendJson(res, 404, { error: "plan not found" });
       }
       if (action === "message" && req.method === "POST") {
-        const input = await readJsonBody(req, res, { photo: true, photoField: "photo" });
+        const input = await readJsonBody(req, res, { photo: true, photoField: "photo", photosField: "photos" });
         if (!input) return;
-        let savedPhoto = null;
-        if (input.photo !== undefined && input.photo !== null) {
-          try {
-            savedPhoto = savePhoto(planPhotoDir, parsePhoto(input.photo));
-          } catch (error) {
-            return sendJson(res, error.status || 400, { error: error.message });
-          }
+        let saved = [];
+        try {
+          saved = savePhotos(planPhotoDir, parsePhotos(input, { one: "photo", many: "photos" }));
+        } catch (error) {
+          return sendJson(res, error.status || 400, { error: error.message });
         }
         try {
-          const { record } = await selfEditPlan.message(id, input.message, { model: input.model, ...(savedPhoto ? { photoPath: savedPhoto.path } : {}) });
+          const { record } = await selfEditPlan.message(id, input.message, { model: input.model, ...(saved.length ? { photoPaths: saved.map((s) => s.path) } : {}) });
           return sendJson(res, 202, { plan: record });
         } catch (error) {
-          if (savedPhoto) fs.rmSync(savedPhoto.path, { force: true });
+          removePhotos(saved);
           return sendJson(res, selfEditStatus(error), { error: error.message });
         }
       }
@@ -756,7 +753,7 @@ function createServer({
       // Never trust what arrives: check the type and the size.
       const task = typeof input.task === "string" ? input.task.trim() : "";
       // A photo may come with no words (Omri, 2026-11-16: it is usually an answer to what Bot asked); text alone must not be empty.
-      if (!task && input.image === undefined) return sendJson(res, 400, { error: "task is empty" });
+      if (!task && input.image === undefined && !(Array.isArray(input.images) && input.images.length)) return sendJson(res, 400, { error: "task is empty" });
       if (task.length > MAX_TASK_CHARS) return sendJson(res, 413, { error: `task is longer than ${MAX_TASK_CHARS} characters` });
 
       // An optional quote: the part of an earlier message Omri marked and replies to. Code checks it is really in that message (quote.js).
@@ -765,24 +762,24 @@ function createServer({
         try { quote = checkQuote(thread, input.quote); } catch (error) { return sendJson(res, error.status || 400, { error: error.message }); }
       }
 
-      // An optional photo: really check it (size, then the first bytes) and save it under a random name.
-      let image = null;
-      if (input.image !== undefined) {
-        try {
-          image = savePhoto(uploadDir, parsePhoto(input.image));
-        } catch (error) {
-          return sendJson(res, error.status || 400, { error: error.message });
-        }
+      // Optional photos ("image": one, or "images": up to MAX_PHOTOS): EVERY one is really checked (size, then the first bytes)
+      // and saved under a random name. One bad picture refuses the whole message.
+      let images = [];
+      try {
+        images = savePhotos(uploadDir, parsePhotos(input, { one: "image", many: "images" }));
+      } catch (error) {
+        return sendJson(res, error.status || 400, { error: error.message });
       }
+      if (!task && !images.length) return sendJson(res, 400, { error: "task is empty" }); // e.g. "image": null or an empty list, no words
 
       // One conversation: there is no chat, so no chat id and no course id is read. Every message is its own job (jobs.js startThread).
-      if (!thread) { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 503, { error: "the conversation is not set up on this server" }); }
+      if (!thread) { removePhotos(images); return sendJson(res, 503, { error: "the conversation is not set up on this server" }); }
       try {
-        if (input.route !== undefined && input.route !== "general") { if (image) fs.rmSync(image.path, { force: true }); return sendJson(res, 400, { error: 'route can only be "general"' }); }
-        const job = jobs.startThread({ task, noPlan: input.noPlan === true, image, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote });
+        if (input.route !== undefined && input.route !== "general") { removePhotos(images); return sendJson(res, 400, { error: 'route can only be "general"' }); }
+        const job = jobs.startThread({ task, noPlan: input.noPlan === true, images, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote });
         return sendJson(res, 202, { job });
       } catch (error) {
-        if (image) fs.rmSync(image.path, { force: true }); // the job never started, so nothing else will delete the photo
+        removePhotos(images); // the job never started, so nothing else will delete the photos
         return sendJson(res, error.status || 500, { error: error.message });
       }
     }

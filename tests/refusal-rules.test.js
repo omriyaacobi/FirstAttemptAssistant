@@ -49,6 +49,8 @@ const SOURCES = {
   web: { first: [`CALL {"tool":"read_link","url":"${URL}"}`], said: "after reading a web page" },
   moodle: { first: ['CALL {"tool":"moodle_courses"}'], said: "after reading Moodle" },
   photo: { first: [], said: "with a photo", photo: true },
+  // 2026-11-22: several photos in one message are still "a message that carries a photo": the same refusals, the same parts_done exception
+  photos: { first: [], said: "with a photo", photos: 3, label: "with 3 photos" },
 };
 
 async function runRow(row, source) {
@@ -79,7 +81,7 @@ async function runRow(row, source) {
     now: () => Date.parse("2026-11-20T10:00:00Z"),
     folderRules: { system: [] },
   });
-  await brain.handle(`please do it: ${URL} C:\\x`, { history: [], courses: COURSES, ...(s.photo ? { image: { path: path.join(os.tmpdir(), "photo.png") } } : {}) });
+  await brain.handle(`please do it: ${URL} C:\\x`, { history: [], courses: COURSES, ...(s.photo ? { image: { path: path.join(os.tmpdir(), "photo.png") } } : {}), ...(s.photos ? { images: Array.from({ length: s.photos }, (_, k) => ({ path: path.join(os.tmpdir(), `shot${k}.jpg`) })) } : {}) });
   const all = prompts.join("\n");
   const refused = new RegExp(`FAILED, nothing was done: Bot does not [^\\n]*${s.said}`).test(all);
   return { refused, effects, all };
@@ -87,8 +89,8 @@ async function runRow(row, source) {
 
 for (const source of Object.keys(SOURCES)) {
   for (const row of ROWS) {
-    const allowed = (source === "moodle" && row.moodleOk) || (source === "photo" && row.photoOk);
-    test(`${row.label || row.tool} ${allowed ? "is ALLOWED" : "is refused"} ${SOURCES[source].said}`, async () => {
+    const allowed = (source === "moodle" && row.moodleOk) || ((source === "photo" || source === "photos") && row.photoOk);
+    test(`${row.label || row.tool} ${allowed ? "is ALLOWED" : "is refused"} ${SOURCES[source].label || SOURCES[source].said}`, async () => {
       const r = await runRow(row, source);
       if (allowed) assert.strictEqual(r.refused, false, `${row.tool} must not be refused ${SOURCES[source].said}`);
       else {

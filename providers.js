@@ -7,6 +7,7 @@ const { exec, execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { photoNames, MAX_PHOTOS } = require("./photo");
 
 // EVERY model call runs in this empty folder. agy and claude are agents that can see (and try
 // to edit) the folder they start in, and read project files into their context, which is slower
@@ -311,12 +312,18 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
 
 // The brain looking at a photo: the same streaming call (the long prompt goes through stdin, never the command line), run in a
 // brand-new EMPTY folder that holds only a copy of the photo under a fixed name ("photo.png"). The folder is deleted afterwards.
+// Several photos (2026-11-22): imagePath may be a list; they all go into the SAME empty folder as "photo1.jpg", "photo2.png", ...
+// in the order given (photo.js photoNames; the name never comes from the sender). Checked with real agy calls first:
+// experiments/2026-11-22-multi-photo.md (Argon low and Hydrogen medium opened every picture).
 // onUsage (optional): what the call cost in tokens, like every other brain call (so photo messages are in the token log too).
 async function askAgyStreamWithImage(model, question, imagePath, onText = () => {}, { stream = askAgyStream, onUsage = null, signal = undefined } = {}) {
   checkModelName(model);
+  const paths = Array.isArray(imagePath) ? imagePath : [imagePath];
+  if (!paths.length || paths.length > MAX_PHOTOS) throw new Error(`1 to ${MAX_PHOTOS} photos at a time`);
+  const names = photoNames(paths.map((p) => path.extname(p)));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
   try {
-    fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
+    paths.forEach((p, i) => fs.copyFileSync(p, path.join(dir, names[i])));
     return await stream(question, model, onText, { cwd: dir, timeoutMs: imageTimeoutFor(model), onUsage, ...(signal ? { signal } : {}) });
   } finally {
     cleanWorkDir(dir);
