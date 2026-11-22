@@ -109,3 +109,12 @@ test("the bottom bar comes back when the keyboard goes away although the box kee
   assert.match(html, /h >= heightNoKeyboard - 80\) document\.body\.classList\.remove\("typing"\)/);
   assert.match(html, /document\.addEventListener\("input"[^\n]*classList\.add\("typing"\)/);
 });
+
+test("on a phone the message box spans the full width above the tools row, so a wide model picker cannot squeeze what you type", () => {
+  const phoneBlocks = [...html.matchAll(/@media \(max-width: 760px\) \{([\s\S]*?)\n  \}/g)].map((m) => m[1]).join("\n");
+  assert.match(phoneBlocks, /#form textarea#task \{[^}]*grid-column: 1 \/ -1;[^}]*grid-row: 3;/);
+  assert.match(phoneBlocks, /#form \.tools-row > \.tools:first-child \{[^}]*grid-row: 4;/);
+  assert.match(phoneBlocks, /#form \.tools-row > \.tools:last-child \{[^}]*grid-row: 4;/);
+  assert.match(phoneBlocks, /#form \.row:not\(\.tools-row\) \{[^}]*grid-row: 5;/);
+  assert.match(phoneBlocks, /#form \.model-pick \{[^}]*max-width: 7\.5rem;/);
+});

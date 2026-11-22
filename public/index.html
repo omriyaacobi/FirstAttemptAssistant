@@ -530,6 +530,12 @@
     .troute { opacity: .75; }
     #form.composer { padding: 4px 10px 8px; }
     #form.composer .inner { border-radius: 24px; padding: 4px 6px; column-gap: 2px; }
+    /* On a phone the text box gets the full width on its own row, above the buttons and model picker, so a wide picker never squeezes what you type. */
+    #form textarea#task { grid-column: 1 / -1; grid-row: 3; padding: 8px 10px; }
+    #form .tools-row > .tools:first-child { grid-column: 1; grid-row: 4; }
+    #form .tools-row > .tools:last-child { grid-column: 3; grid-row: 4; gap: 4px; }
+    #form .row:not(.tools-row) { grid-column: 1 / -1; grid-row: 5; }
+    #form .model-pick { max-width: 7.5rem; min-width: 0; }
     #form button.attach { width: 40px; height: 44px; min-height: 44px; }
     [data-theme="midnight"] #form #send, #form button.mic { height: 44px; min-height: 44px; margin-bottom: 0; }
     [data-theme="midnight"] #form #send { padding: 0 16px; }
