@@ -1596,6 +1596,12 @@
   let renderedKey = null;
   let serverOffset = 0; // server clock minus this device's clock, so "N seconds ago" is right on the phone too
   let declined = false; // you pressed "New request": do not jump back to the open one
+  let knownLive = null; // ids of the live change and the open plan at the last look (null before the first): only something NEW makes the page follow it
+
+  // While Improve Bot is on screen and nothing is busy, look every 5 seconds anyway, and at once when this tab comes back,
+  // so a change started or answered on the OTHER device (phone <-> PC) shows up here too. The list is small.
+  setInterval(() => { if (!pollTimer && !document.hidden && !$("improveView").hidden) loadProposals(); }, 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("improveView").hidden) loadProposals(); });
 
   // While an editor or planner is working, refresh every 2 seconds; stop when it is done.
   function schedulePoll(busy) {
@@ -1666,11 +1672,22 @@
         list.appendChild(li);
       });
       // Coming back to this page: carry on with the request that is running, waiting for your decision, or being planned.
-      if (adopt && !openProposalId && !openPlanId && !declined) {
-        const live = proposals.find((p) => p.status === "running" || p.status === "ready");
-        if (live) openProposal(live.id);
-        else if (activePlan && activePlan.id) openPlan(activePlan.id);
+      // SYNC (2026-11-22): something started on ANOTHER device (the phone pressed "Start editing" on the plan this PC shows)
+      // is NEW since the last look, so this page follows it too, unless it already shows a live change or the live plan.
+      const live = proposals.find((p) => p.status === "running" || p.status === "ready");
+      const plan = activePlan && activePlan.id ? activePlan : null;
+      const fresh = (id) => Boolean(knownLive && !knownLive.has(id));
+      const showingLive = Boolean(openChange()) || Boolean(plan && openPlanId === plan.id);
+      if (!showingLive) {
+        if (live && ((adopt && !declined) || fresh(live.id))) {
+          queued = []; currentPlan = null; openPlanId = null; openProposal(live.id);
+        } else if (!live && plan && ((adopt && !declined) || fresh(plan.id))) {
+          queued = []; openPlan(plan.id);
+        }
+      } else if (plan && openPlanId === plan.id && currentPlan && plan.updatedAt > (currentPlan.updatedAt || 0)) {
+        openPlan(plan.id, true); // a reply sent from the other device
       }
+      knownLive = new Set([live && live.id, plan && plan.id].filter(Boolean));
       updateImproveComposer(busy);
       schedulePoll(busy || Boolean(currentPlan && currentPlan.status === "planning"));
     } catch (error) { /* the list refreshes again on the next poll */ }
