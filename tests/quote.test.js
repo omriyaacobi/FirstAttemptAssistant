@@ -82,7 +82,8 @@ test("SECURITY: the quote reaches the brain beside the message, never inside it,
   // (2026-11-16: the message block is built first as `words`, so a photo with no words gets its own line; the quote stays outside it.)
   // (also 2026-11-16: a photo with words gets a code-written line after the block, ${withPhoto}; it holds no quote text)
   assert.match(brainCode, /`## Omri's new message\\n<message>\\n\$\{noCtl\(task\)\}\\n<\/message>\$\{withPhoto\}`/);
-  assert.match(brainCode, /const withPhoto = image \? `\\nThe photo is part of THIS message/);
+  assert.match(brainCode, /const withPhoto = image && shots\.length > 1 \? `\\nThe \$\{shots\.length\} photos are part of THIS message/); // several photos (2026-11-22)
+  assert.match(brainCode, /: image \? `\\nThe photo is part of THIS message/);
   assert.match(brainCode, /const tail = quoteBlock\(quote, zone\) \+ words \+ languageLine\(said, history\)/);
   assert.match(brainCode, /const mine = new Set\(\[\.\.\.urlsIn\(task\), \.\.\.history\.filter\(\(h\) => h\.role === "user"\)\.flatMap\(\(h\) => urlsIn\(h\.text\)\)\]\);/);
   assert.doesNotMatch(brainCode, /urlsIn\([^)]*quote/);
@@ -163,7 +164,7 @@ test("SERVER: a quote that is not in that message is refused before anything is 
 test("the page: the button, the chip, Send carries the quote and clears it, a file with a quote is stopped, a sent quote is shown", () => {
   assert.match(html, /<div class="quote-chip" id="quoteChip" hidden>/);
   assert.match(html, /\.\.\.\(quote \? \{ quote \} : \{\}\)/); // ask() sends it only when there is one
-  assert.match(html, /await ask\(task, attached \? attached\.dataUrl : null, false, undefined, T\.quote\);\n\s*clearSentText\(sentRaw\);\n\s*clearPhoto\(\);\n\s*clearQuote\(\);/);
+  assert.match(html, /await ask\(task, attached, false, undefined, T\.quote\);\n\s*clearSentText\(sentRaw\);\n\s*clearPhoto\(\);\n\s*clearQuote\(\);/);
   assert.match(html, /if \(attachedFile && T\.quote\) \{ \$\("status"\)\.textContent = "A marked part goes with a text message or a photo, not with a file/);
   assert.match(html, /if \(!a \|\| a !== b \|\| !a\.dataset\.id \|\| !\$\("messages"\)\.contains\(a\)\) return null;/); // one message of the thread only
   assert.match(html, /if \(m\.quote && m\.quote\.text\) node\.appendChild\(quoteLine\(m\)\);/);

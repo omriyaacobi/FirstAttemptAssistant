@@ -28,7 +28,7 @@ test("camera: a button opens the back camera, and its picture goes down the same
   assert.match(html, /button\.attach \{[^}]*width: 44px; height: 44px/);
   // the camera file is handed to the very same photo input, so shrinking, the chip and /api/ask are the old ones
   assert.match(html, /\$\("photoInput"\)\.files = transfer\.files;\s*\$\("photoInput"\)\.dispatchEvent\(new Event\("change"\)\)/);
-  assert.match(html, /ask\(task, attached \? attached\.dataUrl : null, false[,)]/); // (2026-11-13: a quote may follow, tests/quote.test.js)
+  assert.match(html, /ask\(task, attached, false[,)]/); // (2026-11-13: a quote may follow, tests/quote.test.js; 2026-11-22: attached is the list of photos)
   assert.match(html, /\$\("camera"\)\.addEventListener\("click"/);
 });
 

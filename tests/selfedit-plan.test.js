@@ -404,7 +404,8 @@ test("public/index.html has Planning mode controls, screenshot attach/paste UI, 
   assert.match(html, /id="improvePhotoChip"/);
   assert.match(html, /id="improveAttach"/);
   assert.match(html, /id="improvePhotoInput"/);
-  assert.match(html, /id="improvePhotoRemove"/);
+  assert.match(html, /photoTray\("improvePhotoChip", "screenshot"\)/); // one thumbnail per screenshot, each with its own remove button (2026-11-22)
+  assert.match(html, /\{ photos: attached \}/);
   assert.match(html, /setupImprovePaste\(\);/);
   assert.match(html, /Plan first/);
   assert.match(html, /Start editing with this plan/);
