@@ -3412,7 +3412,16 @@
       let text = sel.toString();
       try {
         const part = sel.getRangeAt(0).cloneContents();
+        // The page's own labels inside a message (the course chip, "Wrong? Ask again normally", "What Bot did", the "Answer · model ·
+        // seconds" line, the time, buttons, the quote chip of a reply) are not in the saved message, so a selection that ran over
+        // them was refused (2026-11-22). They are dropped here; only the message's own words are sent.
+        const labels = part.querySelectorAll(".troute, details, .step-head, .ttime, .tquote, button");
         const boxes = part.querySelectorAll("[data-tex]");
+        labels.forEach((n) => n.remove());
+        if (labels.length && !boxes.length) {
+          part.querySelectorAll("p, li, div, pre, h1, h2, h3, h4, h5, h6, tr, br").forEach((b) => b.append(document.createTextNode("\n")));
+          text = part.textContent;
+        }
         if (boxes.length) {
           // textContent has no line breaks between paragraphs ("integral!).Ready"): give each block its own line first.
           part.querySelectorAll("p, li, div, pre, h1, h2, h3, h4, h5, h6, tr, br").forEach((b) => { if (!b.matches("[data-tex]")) b.append(document.createTextNode("\n")); });

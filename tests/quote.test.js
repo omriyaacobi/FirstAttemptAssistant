@@ -171,3 +171,12 @@ test("the page: the button, the chip, Send carries the quote and clears it, a fi
   const quoteCode = html.match(/ {4}function selectedQuote\(\) \{[\s\S]*?\n {4}function quoteLine/)[0];
   assert.doesNotMatch(quoteCode, /fetch\(|XMLHttpRequest|threadSend|ask\(/); // marking and the button never send anything
 });
+
+test("a selection that runs over the page's own labels sends only the message's words (2026-11-22: it was refused)", () => {
+  // The page drops these before sending (checked in a real browser on 2026-11-22); here: the rule, and that the server would refuse them.
+  assert.match(html, /part\.querySelectorAll\("\.troute, details, \.step-head, \.ttime, \.tquote, button"\)/);
+  const message = { role: "assistant", text: "Here is the big picture of where `act()` fits:\n\n1. **The simulation loop (`Server`):** The server runs in cycles." };
+  const withLabels = "High-Performance Systems Programming S1\nWrong? Ask again normally\nWhat Bot did\nAnswer\nagy/gemini-4-neon-low\n15.3s\nHere is the big picture of where act() fits:\n\nThe simulation loop (Server): The server runs in cycles.\n15:05";
+  assert.strictEqual(isPartOf(withLabels, message), false);
+  assert.strictEqual(isPartOf("Here is the big picture of where act() fits:\nThe simulation loop (Server): The server runs in cycles.", message), true);
+});
