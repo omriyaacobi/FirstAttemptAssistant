@@ -204,9 +204,10 @@ function sendStatic(req, res, file, type, { revalidate = true } = {}) {
 // Reads a JSON request body. Sends the error response itself and returns null if the request is bad.
 // Only "Content-Type: application/json" is accepted. A web page on another site cannot send JSON
 // to us without the browser first asking our permission, and we never give it.
-// { photo: true } is only used by /api/ask: a request carrying a photo may be bigger (MAX_PHOTO_BODY).
+// { photo: true } is only used by routes that accept a photo (/api/ask, /api/selfedit/plan*):
+// a request carrying a photo in `photoField` may be bigger (MAX_PHOTO_BODY).
 // A request WITHOUT a photo still has to fit in MAX_BODY, like everywhere else.
-async function readJsonBody(req, res, { photo = false } = {}) {
+async function readJsonBody(req, res, { photo = false, photoField = "image" } = {}) {
   if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
     sendJson(res, 415, { error: "send JSON" });
     return null;
@@ -214,7 +215,7 @@ async function readJsonBody(req, res, { photo = false } = {}) {
   try {
     const raw = await readBody(req, photo ? MAX_PHOTO_BODY : MAX_BODY);
     const parsed = JSON.parse(raw);
-    if (photo && raw.length > MAX_BODY && (!parsed || typeof parsed !== "object" || parsed.image === undefined)) {
+    if (photo && raw.length > MAX_BODY && (!parsed || typeof parsed !== "object" || parsed[photoField] === undefined)) {
       throw Object.assign(new Error("request too large"), { status: 413 });
     }
     if (parsed && typeof parsed === "object") return parsed;
@@ -586,15 +587,25 @@ function createServer({
       }
     }
     // Improve Bot planning mode (selfedit-plan.js): read-only discussion of feasibility, limitations and a plan before editing.
+    const planPhotoDir = selfEditPlan && selfEditPlan.photosDir ? selfEditPlan.photosDir : path.join(__dirname, "data", "selfedit-plans", "photos");
     if (url.pathname === "/api/selfedit/plan" && req.method === "POST") {
-      const input = await readJsonBody(req, res);
+      const input = await readJsonBody(req, res, { photo: true, photoField: "photo" });
       if (!input) return;
       const model = input.model === undefined ? "neon" : input.model;
       if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
+      let savedPhoto = null;
+      if (input.photo !== undefined && input.photo !== null) {
+        try {
+          savedPhoto = savePhoto(planPhotoDir, parsePhoto(input.photo));
+        } catch (error) {
+          return sendJson(res, error.status || 400, { error: error.message });
+        }
+      }
       try {
-        const { record } = await selfEditPlan.start(input.request, { model });
+        const { record } = await selfEditPlan.start(input.request, { model, ...(savedPhoto ? { photoPath: savedPhoto.path } : {}) });
         return sendJson(res, 202, { plan: record });
       } catch (error) {
+        if (savedPhoto) fs.rmSync(savedPhoto.path, { force: true });
         return sendJson(res, selfEditStatus(error), { error: error.message });
       }
     }
@@ -606,12 +617,21 @@ function createServer({
         return plan ? sendJson(res, 200, { plan, now: Date.now() }) : sendJson(res, 404, { error: "plan not found" });
       }
       if (action === "message" && req.method === "POST") {
-        const input = await readJsonBody(req, res);
+        const input = await readJsonBody(req, res, { photo: true, photoField: "photo" });
         if (!input) return;
+        let savedPhoto = null;
+        if (input.photo !== undefined && input.photo !== null) {
+          try {
+            savedPhoto = savePhoto(planPhotoDir, parsePhoto(input.photo));
+          } catch (error) {
+            return sendJson(res, error.status || 400, { error: error.message });
+          }
+        }
         try {
-          const { record } = await selfEditPlan.message(id, input.message, { model: input.model });
+          const { record } = await selfEditPlan.message(id, input.message, { model: input.model, ...(savedPhoto ? { photoPath: savedPhoto.path } : {}) });
           return sendJson(res, 202, { plan: record });
         } catch (error) {
+          if (savedPhoto) fs.rmSync(savedPhoto.path, { force: true });
           return sendJson(res, selfEditStatus(error), { error: error.message });
         }
       }

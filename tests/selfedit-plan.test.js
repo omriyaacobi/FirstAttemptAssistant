@@ -274,9 +274,135 @@ test("server plan routes work end-to-end and enforce Host, Origin, Sec-Fetch-Sit
   }
 });
 
-test("public/index.html has Planning mode controls, uses textContent only, and keeps existing Improve Bot UI", () => {
+test("planner accepts photoPath in start and message, passes it to askOne, and stores only safe metadata", async () => {
+  const p = tempProject();
+  try {
+    const shot1 = path.join(p.root, "shot1.png");
+    const shot2 = path.join(p.root, "shot2.jpg");
+    fs.writeFileSync(shot1, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]));
+    fs.writeFileSync(shot2, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]));
+    const calls = [];
+    const planner = createPlanner({
+      repoDir: p.repoDir,
+      dataDir: p.dataDir,
+      lowPools: async () => [],
+      askOne: async (model, prompt, opts) => {
+        calls.push({ prompt, photoPath: opts && opts.photoPath });
+        return calls.length === 1 ? "I see the button in the screenshot. Plan: 1. Adjust CSS." : "Updated plan from your second screenshot.";
+      },
+    });
+
+    const first = await (await planner.start("make this button rounder", { model: "neon", photoPath: shot1 })).finished;
+    assert.strictEqual(first.status, "open");
+    assert.strictEqual(first.chat[0].hasPhoto, true);
+    assert.strictEqual(calls[0].photoPath, shot1);
+    assert.match(calls[0].prompt, /photo\.png/);
+    assert.match(calls[0].prompt, /\[screenshot attached\]/);
+
+    // Photo-only reply (empty text allowed when a screenshot is attached)
+    const second = await (await planner.message(first.id, "", { photoPath: shot2 })).finished;
+    assert.strictEqual(second.status, "open");
+    assert.strictEqual(second.chat[2].text, "(screenshot attached)");
+    assert.strictEqual(second.chat[2].hasPhoto, true);
+    assert.strictEqual(calls[1].photoPath, shot2);
+    assert.match(calls[1].prompt, /photo\.jpg/);
+
+    // Saved JSON never leaks disk paths or raw image data
+    const savedJson = fs.readFileSync(path.join(p.dataDir, "selfedit-plans", first.id + ".json"), "utf8");
+    assert.doesNotMatch(savedJson, /shot1\.png|shot2\.jpg|data:image/i);
+  } finally { p.cleanup(); }
+});
+
+test("server plan routes validate and save screenshots, pass photoPath to planner, and reject invalid photos", async () => {
+  const p = tempProject();
+  const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-plan-photo-store-"));
+  const seenPhotos = [];
+  const selfEdit = {
+    start: async () => ({ record: { id: "abcdef0123456789", status: "running" } }),
+    get: () => null, list: () => [], approve: async () => ({}), reject: async () => ({}),
+    undo: async () => ({}), rollback: () => null, followUp: async () => ({}), previewDir: () => null, isActive: () => false,
+  };
+  const selfEditPlan = createPlanner({
+    repoDir: p.repoDir,
+    dataDir: p.dataDir,
+    lowPools: async () => [],
+    askOne: async (model, prompt, opts) => {
+      seenPhotos.push(opts && opts.photoPath ? opts.photoPath : null);
+      return "Looks good based on the screenshot.";
+    },
+  });
+  const server = createServer({ store: createStore(storeDir), selfEdit, selfEditPlan });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port;
+
+  const post = (urlPath, body) => new Promise((resolve, reject) => {
+    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: urlPath, headers: { Host: `localhost:${port}`, "Content-Type": "application/json" } }, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => resolve({ status: res.statusCode, body: data }));
+    });
+    r.on("error", reject);
+    r.end(JSON.stringify(body));
+  });
+  const get = (urlPath) => new Promise((resolve, reject) => {
+    http.get({ host: "127.0.0.1", port, path: urlPath, headers: { Host: `localhost:${port}` } }, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => resolve({ status: res.statusCode, body: data }));
+    }).on("error", reject);
+  });
+
+  const validPng = "data:image/png;base64," + Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]).toString("base64");
+  const fakePng = "data:image/png;base64," + Buffer.from("not actually a png").toString("base64");
+
+  try {
+    // Reject bad photo payloads (magic bytes and format)
+    assert.strictEqual((await post("/api/selfedit/plan", { request: "hi", photo: "not-a-data-url" })).status, 400);
+    assert.strictEqual((await post("/api/selfedit/plan", { request: "hi", photo: fakePng })).status, 415);
+    // Still rejects oversized body without a photo field
+    assert.strictEqual((await post("/api/selfedit/plan", { request: "x".repeat(25000) })).status, 413);
+
+    // Accept valid PNG on plan start
+    const created = await post("/api/selfedit/plan", { request: "fix this layout", model: "neon", photo: validPng });
+    assert.strictEqual(created.status, 202);
+    const planId = JSON.parse(created.body).plan.id;
+    let plan;
+    for (let i = 0; i < 40; i++) {
+      plan = JSON.parse((await get(`/api/selfedit/plan/${planId}`)).body).plan;
+      if (plan.status !== "planning") break;
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    assert.strictEqual(plan.status, "open");
+    assert.strictEqual(plan.chat[0].hasPhoto, true);
+    assert.ok(seenPhotos[0] && seenPhotos[0].endsWith(".png") && fs.existsSync(seenPhotos[0]));
+
+    // Reject bad photo on plan message, accept valid PNG on plan message
+    assert.strictEqual((await post(`/api/selfedit/plan/${planId}/message`, { message: "also this", photo: fakePng })).status, 415);
+    const reply = await post(`/api/selfedit/plan/${planId}/message`, { message: "", photo: validPng });
+    assert.strictEqual(reply.status, 202);
+    for (let i = 0; i < 40; i++) {
+      plan = JSON.parse((await get(`/api/selfedit/plan/${planId}`)).body).plan;
+      if (plan.status !== "planning") break;
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    assert.strictEqual(plan.status, "open");
+    assert.strictEqual(plan.chat[2].hasPhoto, true);
+    assert.ok(seenPhotos[1] && seenPhotos[1].endsWith(".png") && fs.existsSync(seenPhotos[1]));
+  } finally {
+    await new Promise((r) => server.close(r));
+    p.cleanup();
+    fs.rmSync(storeDir, { recursive: true, force: true });
+  }
+});
+
+test("public/index.html has Planning mode controls, screenshot attach/paste UI, uses textContent only, and keeps existing Improve Bot UI", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
   assert.match(html, /id="improvePlanMode"/);
+  assert.match(html, /id="improvePhotoChip"/);
+  assert.match(html, /id="improveAttach"/);
+  assert.match(html, /id="improvePhotoInput"/);
+  assert.match(html, /id="improvePhotoRemove"/);
+  assert.match(html, /setupImprovePaste\(\);/);
   assert.match(html, /Plan first/);
   assert.match(html, /Start editing with this plan/);
   assert.match(html, /Discard plan/);

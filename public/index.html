@@ -712,12 +712,23 @@
         </details>
       </div></div>
       <div class="composer" id="improveComposer"><div class="inner">
+        <div class="photo-chip" id="improvePhotoChip" hidden>
+          <img id="improvePhotoThumb" alt="Attached screenshot">
+          <span id="improvePhotoInfo" dir="auto">Screenshot attached</span>
+          <button type="button" id="improvePhotoRemove" aria-label="Remove screenshot">✕</button>
+        </div>
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
         <div class="row">
           <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option><option value="argon">Argon (page only)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
           <label id="improvePlanLabel" title="Discuss feasibility, limitations and a plan before editing any files"><input type="checkbox" id="improvePlanMode" checked> Plan first</label>
           <span class="status" id="improveStatus" role="status"></span>
-          <button id="improveStart">Send</button>
+          <span class="tools">
+            <input type="file" id="improvePhotoInput" accept="image/*" hidden>
+            <button type="button" class="attach" id="improveAttach" aria-label="Attach a screenshot" title="Attach a screenshot (or paste with Ctrl+V)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l8-8"/></svg>
+            </button>
+            <button id="improveStart">Send</button>
+          </span>
         </div>
       </div></div>
     </div>
@@ -1612,8 +1623,11 @@
     const inPlan = Boolean(currentPlan && !openChange());
     const planning = Boolean(inPlan && currentPlan.status === "planning");
     const planMode = Boolean($("improvePlanMode") && $("improvePlanMode").checked);
+    const canAttachPhoto = Boolean(inPlan || (!openChange() && planMode));
     $("improveModelLabel").hidden = status === "ready" || mine;
     $("improvePlanLabel").hidden = inPlan || status === "ready" || mine;
+    if ($("improveAttach")) $("improveAttach").hidden = !canAttachPhoto;
+    if (!canAttachPhoto && improvePhoto) clearImprovePhoto();
     $("improveText").placeholder = mine
       ? "The editor is busy. Write more here: it is sent when the editor finishes."
       : status === "ready"
@@ -1897,7 +1911,7 @@
       thread.appendChild(el("p", "empty", "Tell Bot what to change about itself. With Plan first on, Bot checks what is possible, points out limitations and makes a plan before editing. When editing starts, a private copy is edited and tested before you approve it."));
     } else if (plan) {
       (plan.chat || []).forEach((m) => {
-        const node = bubble(m.role, m.text);
+        const node = bubble(m.role, m.text, m.role === "user" && m.hasPhoto ? "Screenshot attached" : "");
         if (m.role === "bot" && m.filesRead && m.filesRead.length) {
           node.firstChild.appendChild(el("p", "sub", "Checked: " + m.filesRead.join(", ")));
         }
@@ -2053,6 +2067,62 @@
   $("previewOverlay").addEventListener("click", (e) => { if (e.target === $("previewOverlay")) closePreview(); }); // a tap on the dimmed area closes it
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("previewOverlay").hidden) closePreview(); });
 
+  // Screenshot attachment for Improve Bot's Planning Mode (1 screenshot per message; shrunk like the main chat).
+  let improvePhoto = null; // { dataUrl } while a screenshot is waiting to be sent
+
+  function clearImprovePhoto() {
+    improvePhoto = null;
+    if ($("improvePhotoChip")) $("improvePhotoChip").hidden = true;
+    if ($("improvePhotoInput")) $("improvePhotoInput").value = "";
+    if ($("improvePhotoThumb")) $("improvePhotoThumb").removeAttribute("src");
+  }
+
+  async function setImprovePhoto(file) {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith("image/")) {
+      setStatus("improveStatus", "Only image screenshots can be attached in Planning Mode.", true);
+      return;
+    }
+    try {
+      const dataUrl = await shrinkPhoto(file);
+      improvePhoto = { dataUrl };
+      $("improvePhotoThumb").src = dataUrl;
+      $("improvePhotoInfo").textContent = "Screenshot attached (" + Math.round(dataUrl.length * 0.75 / 1024) + " KB)";
+      $("improvePhotoChip").hidden = false;
+      setStatus("improveStatus", "");
+    } catch (error) {
+      setStatus("improveStatus", "Could not read that screenshot.", true);
+    }
+  }
+
+  // Pasting a screenshot in Improve Bot (Planning Mode only): scoped so it never touches the main chat's photoInput.
+  function canImprovePhoto() {
+    if (!$("improveView") || $("improveView").hidden) return false;
+    const inPlan = Boolean(currentPlan && !openChange());
+    const planMode = Boolean($("improvePlanMode") && $("improvePlanMode").checked);
+    return inPlan || (!openChange() && planMode);
+  }
+  function setupImprovePaste() {
+    document.addEventListener("paste", (e) => {
+      if (!canImprovePhoto() || !e.clipboardData) return;
+      const target = e.target;
+      if (target && target !== $("improveText") && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || "")) return;
+      const files = [...(e.clipboardData.files || [])];
+      if (!files.length) return; // plain text pastes normally
+      const img = files.find((f) => f && f.type && f.type.startsWith("image/"));
+      if (!img) {
+        setStatus("improveStatus", "Only image screenshots can be pasted in Planning Mode.", true);
+        return;
+      }
+      e.preventDefault();
+      const transfer = new DataTransfer();
+      transfer.items.add(img);
+      $("improvePhotoInput").files = transfer.files;
+      $("improvePhotoInput").dispatchEvent(new Event("change"));
+      if (files.length > 1) setStatus("improveStatus", "Planning Mode takes one screenshot per message, so only the first image is attached.");
+    });
+  }
+
   // Send: a plan message, a new request, a follow-up on the open request, or (while the editor is busy) a message that waits its turn.
   let sending = false;
   async function sendImprove() {
@@ -2061,7 +2131,8 @@
     const p = openChange();
     const plan = !p ? currentPlan : null;
     if (plan) {
-      if (!typed || sending || plan.status === "planning") return;
+      const attached = improvePhoto;
+      if ((!typed && !attached) || sending || plan.status === "planning") return;
       sending = true;
       $("improveStart").disabled = true;
       setStatus("improveStatus", "Sending...");
@@ -2069,11 +2140,12 @@
         const res = await fetch(`/api/selfedit/plan/${plan.id}/message`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: typed, model: $("improveModel").value }),
+          body: JSON.stringify({ message: typed, model: $("improveModel").value, ...(attached ? { photo: attached.dataUrl } : {}) }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
         if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, "");
+        clearImprovePhoto();
         setStatus("improveStatus", "");
         currentPlan = data.plan;
         openPlanId = data.plan.id;
@@ -2095,8 +2167,9 @@
       return;
     }
     const text = queued.length && p && p.status === "ready" ? queued.concat(typed || []).join("\n\n") : typed;
-    if (!text || sending) return;
     const startPlan = !p && Boolean($("improvePlanMode") && $("improvePlanMode").checked);
+    const attached = startPlan ? improvePhoto : null;
+    if ((!text && !attached) || sending) return;
     sending = true;
     const wasQueue = text !== typed;
     $("improveStart").disabled = true;
@@ -2106,11 +2179,12 @@
         const res = await fetch("/api/selfedit/plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ request: text, model: $("improveModel").value }),
+          body: JSON.stringify({ request: text, model: $("improveModel").value, ...(attached ? { photo: attached.dataUrl } : {}) }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `server answered ${res.status}`);
         if ($("improveText").value.startsWith(sentRaw)) $("improveText").value = $("improveText").value.slice(sentRaw.length).replace(/^\s+/, "");
+        clearImprovePhoto();
         setStatus("improveStatus", "");
         currentPlan = data.plan;
         openPlanId = data.plan.id;
@@ -2152,6 +2226,7 @@
     declined = true;
     renderedKey = null;
     queued = [];
+    clearImprovePhoto();
     renderImprove();
     updateImproveComposer();
     loadProposals();
@@ -2233,6 +2308,13 @@
   $("menu2").addEventListener("click", openSide);
   $("newImprove").addEventListener("click", newImprove);
   $("improveStart").addEventListener("click", sendImprove);
+  $("improveAttach").addEventListener("click", () => $("improvePhotoInput").click());
+  $("improvePhotoInput").addEventListener("change", () => {
+    const file = $("improvePhotoInput").files[0];
+    if (file) setImprovePhoto(file);
+  });
+  $("improvePhotoRemove").addEventListener("click", clearImprovePhoto);
+  setupImprovePaste();
   // Which quota the chosen editor spends, in plain words. Argon only changes the web page (the public folder).
   const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
   $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });

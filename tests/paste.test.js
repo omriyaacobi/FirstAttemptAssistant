@@ -88,3 +88,73 @@ test("the paste code never sends or uploads by itself, and it is switched on wit
   assert.doesNotMatch(code, /fetch\(|XMLHttpRequest|upload|threadSend|send\(/);
   assert.match(html, /\$\("photoRemove"\)\.addEventListener\("click", clearFile\);\n\s*setupPasteAndDrop\(\);/);
 });
+
+// ---- Improve Bot Planning Mode paste (scoped so it never touches the main chat's photoInput) ----
+const improvePasteCode = html.match(/ {2}function canImprovePhoto\(\) \{[\s\S]*?\n {2}function setupImprovePaste\(\) \{[\s\S]*?\n {2}\}\n/)[0];
+
+function improvePage({ improveHidden = false, planMode = true, inPlan = false, running = false } = {}) {
+  const listeners = {};
+  const improveView = { hidden: improveHidden };
+  const improveText = { tagName: "TEXTAREA" };
+  const improvePlanMode = { checked: planMode };
+  const improvePhotoInput = { files: null, events: [], dispatchEvent(e) { this.events.push(e.type); } };
+  const photoInput = { files: null, events: [], dispatchEvent(e) { this.events.push(e.type); } };
+  const statuses = [];
+  class DataTransfer { constructor() { this.list = []; this.items = { add: (f) => this.list.push(f) }; } get files() { return this.list; } }
+  const sandbox = {
+    document: { addEventListener: (type, fn) => { listeners[type] = fn; } },
+    $: (id) => ({ improveView, improveText, improvePlanMode, improvePhotoInput, photoInput }[id]),
+    currentPlan: inPlan ? { id: "p1", status: "open" } : null,
+    openChange: () => (running ? { id: "c1", status: "running" } : null),
+    setStatus: (id, text, bad) => statuses.push({ id, text, bad: Boolean(bad) }),
+    DataTransfer,
+    Event: class { constructor(type) { this.type = type; } },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(improvePasteCode + "\nsetupImprovePaste();", sandbox);
+  const event = (extra) => ({ prevented: false, preventDefault() { this.prevented = true; }, ...extra });
+  return { listeners, improveText, improvePhotoInput, photoInput, statuses, event };
+}
+
+test("pasting a screenshot in Improve Bot Planning Mode attaches to improvePhotoInput and never touches main chat photoInput", () => {
+  const p = improvePage();
+  const shot = file("ui.png", "image/png");
+  const e = p.event({ target: p.improveText, clipboardData: { files: [shot] } });
+  p.listeners.paste(e);
+  assert.strictEqual(e.prevented, true);
+  assert.deepStrictEqual(p.improvePhotoInput.files, [shot]);
+  assert.deepStrictEqual(p.improvePhotoInput.events, ["change"]);
+  assert.strictEqual(p.photoInput.files, null);
+  assert.deepStrictEqual(p.photoInput.events, []);
+});
+
+test("Improve Bot paste ignores plain text, non-image files, hidden Improve view, and non-plan edit mode", () => {
+  const p = improvePage();
+  const plain = p.event({ target: p.improveText, clipboardData: { files: [] } });
+  p.listeners.paste(plain);
+  assert.strictEqual(plain.prevented, false);
+  assert.strictEqual(p.improvePhotoInput.files, null);
+
+  const pdf = p.event({ target: p.improveText, clipboardData: { files: [file("doc.pdf", "application/pdf")] } });
+  p.listeners.paste(pdf);
+  assert.strictEqual(pdf.prevented, false);
+  assert.strictEqual(p.improvePhotoInput.files, null);
+  assert.match(p.statuses[0].text, /Only image screenshots/);
+
+  // Hidden Improve view (user is in main chat): does nothing
+  const hidden = improvePage({ improveHidden: true });
+  const eHidden = hidden.event({ target: { tagName: "DIV" }, clipboardData: { files: [file("a.png", "image/png")] } });
+  hidden.listeners.paste(eHidden);
+  assert.strictEqual(eHidden.prevented, false);
+  assert.strictEqual(hidden.improvePhotoInput.files, null);
+
+  // Plan first unchecked (direct edit mode): does nothing
+  const direct = improvePage({ planMode: false });
+  const eDirect = direct.event({ target: direct.improveText, clipboardData: { files: [file("a.png", "image/png")] } });
+  direct.listeners.paste(eDirect);
+  assert.strictEqual(eDirect.prevented, false);
+  assert.strictEqual(direct.improvePhotoInput.files, null);
+
+  // Never sends by itself
+  assert.doesNotMatch(improvePasteCode, /fetch\(|XMLHttpRequest|sendImprove/);
+});

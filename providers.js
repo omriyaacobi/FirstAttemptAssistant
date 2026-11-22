@@ -312,12 +312,12 @@ function askAgyStream(question, model, onText, { signal, command = AGY_CMD, pref
 // The brain looking at a photo: the same streaming call (the long prompt goes through stdin, never the command line), run in a
 // brand-new EMPTY folder that holds only a copy of the photo under a fixed name ("photo.png"). The folder is deleted afterwards.
 // onUsage (optional): what the call cost in tokens, like every other brain call (so photo messages are in the token log too).
-async function askAgyStreamWithImage(model, question, imagePath, onText = () => {}, { stream = askAgyStream, onUsage = null } = {}) {
+async function askAgyStreamWithImage(model, question, imagePath, onText = () => {}, { stream = askAgyStream, onUsage = null, signal = undefined } = {}) {
   checkModelName(model);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-photo-"));
   try {
     fs.copyFileSync(imagePath, path.join(dir, "photo" + path.extname(imagePath)));
-    return await stream(question, model, onText, { cwd: dir, timeoutMs: imageTimeoutFor(model), onUsage });
+    return await stream(question, model, onText, { cwd: dir, timeoutMs: imageTimeoutFor(model), onUsage, ...(signal ? { signal } : {}) });
   } finally {
     cleanWorkDir(dir);
   }
