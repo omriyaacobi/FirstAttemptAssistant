@@ -1429,6 +1429,14 @@
     // Enter sends; Shift+Enter makes a new line. isComposing avoids sending while typing with an IME.
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
+  // Typing tells Bot to get the next answer's model ready (2026-11-23): after a pause agy needs about 3.4 s to start, and that now
+  // happens while Omri types. Only "someone is typing" is sent (an empty body, never the words), at most once a minute.
+  let warmedAt = 0;
+  $("task").addEventListener("input", () => {
+    if (Date.now() - warmedAt < 60000) return;
+    warmedAt = Date.now();
+    fetch("/api/brain/warm", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+  });
   $("new").addEventListener("click", goConversation);
   $("refresh").addEventListener("click", loadQuota);
   $("quotaBtn").addEventListener("click", () => { $("quotaDialog").showModal(); loadQuota(); });

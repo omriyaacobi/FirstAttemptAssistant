@@ -1,0 +1,384 @@
+{
+ "runs": [
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-short",
+   "seconds": 4.53,
+   "firstText": 4.31,
+   "chars": 127,
+   "usage": {
+    "input": 9644,
+    "output": 177,
+    "thinking": 126,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29317,
+   "round": 0,
+   "at": "2026-11-23T14:59:15.352Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-short",
+   "seconds": 4.61,
+   "firstText": 4.17,
+   "chars": 111,
+   "usage": {
+    "input": 19989,
+    "output": 157,
+    "thinking": 117,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63495,
+   "round": 0,
+   "at": "2026-11-23T14:59:23.454Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-long",
+   "seconds": 13.15,
+   "firstText": 8.83,
+   "chars": 1714,
+   "usage": {
+    "input": 9658,
+    "output": 1296,
+    "thinking": 696,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29426,
+   "round": 0,
+   "at": "2026-11-23T14:59:39.504Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-long",
+   "seconds": 9.97,
+   "firstText": 5.05,
+   "chars": 1735,
+   "usage": {
+    "input": 20007,
+    "output": 815,
+    "thinking": 189,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63604,
+   "round": 0,
+   "at": "2026-11-23T14:59:52.924Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-short",
+   "seconds": 4.73,
+   "firstText": 4.25,
+   "chars": 128,
+   "usage": {
+    "input": 19986,
+    "output": 167,
+    "thinking": 117,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63495,
+   "round": 1,
+   "at": "2026-11-23T15:00:00.903Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-long",
+   "seconds": 13.19,
+   "firstText": 8.57,
+   "chars": 1701,
+   "usage": {
+    "input": 9664,
+    "output": 1281,
+    "thinking": 708,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29426,
+   "round": 1,
+   "at": "2026-11-23T15:00:17.381Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-long",
+   "seconds": 8.61,
+   "firstText": 4.5,
+   "chars": 1476,
+   "usage": {
+    "input": 20009,
+    "output": 713,
+    "thinking": 167,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63604,
+   "round": 1,
+   "at": "2026-11-23T15:00:29.180Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-short",
+   "seconds": 3.92,
+   "firstText": 3.53,
+   "chars": 122,
+   "usage": {
+    "input": 9638,
+    "output": 166,
+    "thinking": 118,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29317,
+   "round": 1,
+   "at": "2026-11-23T15:00:36.425Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-short",
+   "seconds": 5.84,
+   "firstText": 5.38,
+   "chars": 130,
+   "usage": {
+    "input": 9637,
+    "output": 168,
+    "thinking": 118,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29317,
+   "round": 0,
+   "at": "2026-11-23T15:12:09.460Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-short",
+   "seconds": 5.07,
+   "firstText": 4.59,
+   "chars": 109,
+   "usage": {
+    "input": 19986,
+    "output": 139,
+    "thinking": 101,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63495,
+   "round": 0,
+   "at": "2026-11-23T15:12:22.544Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-long",
+   "seconds": 13.35,
+   "firstText": 9.28,
+   "chars": 1545,
+   "usage": {
+    "input": 9658,
+    "output": 1305,
+    "thinking": 770,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29426,
+   "round": 0,
+   "at": "2026-11-23T15:12:43.715Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-long",
+   "seconds": 10.7,
+   "firstText": 5.79,
+   "chars": 1699,
+   "usage": {
+    "input": 20002,
+    "output": 889,
+    "thinking": 283,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63604,
+   "round": 0,
+   "at": "2026-11-23T15:13:01.914Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-short",
+   "seconds": 5.04,
+   "firstText": 4.88,
+   "chars": 111,
+   "usage": {
+    "input": 19993,
+    "output": 143,
+    "thinking": 103,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63495,
+   "round": 1,
+   "at": "2026-11-23T15:13:14.134Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-long",
+   "seconds": 8.96,
+   "firstText": 4.68,
+   "chars": 1630,
+   "usage": {
+    "input": 9663,
+    "output": 697,
+    "thinking": 108,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29426,
+   "round": 1,
+   "at": "2026-11-23T15:13:27.267Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-long",
+   "seconds": 10.31,
+   "firstText": 4.99,
+   "chars": 1803,
+   "usage": {
+    "input": 20002,
+    "output": 797,
+    "thinking": 150,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63604,
+   "round": 1,
+   "at": "2026-11-23T15:13:41.195Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-short",
+   "seconds": 3.93,
+   "firstText": 3.82,
+   "chars": 103,
+   "usage": {
+    "input": 9641,
+    "output": 167,
+    "thinking": 123,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29317,
+   "round": 1,
+   "at": "2026-11-23T15:13:48.769Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-long",
+   "seconds": 9.19,
+   "firstText": 4.37,
+   "chars": 1745,
+   "usage": {
+    "input": 9654,
+    "output": 780,
+    "thinking": 169,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29426,
+   "round": 2,
+   "at": "2026-11-23T15:14:01.898Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-long",
+   "seconds": 11.34,
+   "firstText": 7.33,
+   "chars": 1600,
+   "usage": {
+    "input": 20007,
+    "output": 1119,
+    "thinking": 563,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63604,
+   "round": 2,
+   "at": "2026-11-23T15:14:16.755Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "small-short",
+   "seconds": 5.66,
+   "firstText": 5.34,
+   "chars": 128,
+   "usage": {
+    "input": 9643,
+    "output": 167,
+    "thinking": 116,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 29317,
+   "round": 2,
+   "at": "2026-11-23T15:14:26.589Z"
+  },
+  {
+   "model": "gemini-4-neon-low",
+   "arm": "big-short",
+   "seconds": 3.91,
+   "firstText": 3.82,
+   "chars": 111,
+   "usage": {
+    "input": 19993,
+    "output": 124,
+    "thinking": 84,
+    "cacheRead": 0,
+    "turns": 1,
+    "inner": []
+   },
+   "error": null,
+   "promptChars": 63495,
+   "round": 2,
+   "at": "2026-11-23T15:14:34.457Z"
+  }
+ ]
+}

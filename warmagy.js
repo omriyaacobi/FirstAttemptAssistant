@@ -130,7 +130,11 @@ process.once("exit", () => { for (const spares of allSpares) for (const proc of 
 // keepReady: when a spare gets too old it is replaced at once, so a message after a long pause is warm too. Waiting spares use
 // no model quota (the model is only called when a prompt arrives).
 // agent: true = every process of this pool runs under the slim agent (the brain's pool).
-function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS, keepReady = false, agent = false } = {}) {
+// early: true = the spare for the NEXT call starts when a call STARTS, not when it ends (2026-11-23, experiments/2026-11-23-speed.md).
+// A brain message with a tool round asks the model again right after the tool ran (well under a second), and agy needs about 3.4 s
+// to start, so with the old order the second call waited for it: measured 8.0 s -> 4.8 s median for that call, and the first call
+// was not slower with the extra process starting next to it (5.0 s both). Still one process per call, nothing shared.
+function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, maxSpareAgeMs = MAX_SPARE_AGE_MS, keepReady = false, agent = false, early = false } = {}) {
   const spares = new Map(); // "model|schema" -> a waiting process
   allSpares.add(spares);
 
@@ -181,6 +185,8 @@ function createWarmAgy({ command = AGY_CMD, prefixArgs = [], clock = Date.now, m
       proc = fresh(model, schema);
       warm = false;
     }
+    // The next call's spare starts now (early) or in finally below; warmUp does nothing when a good one is already waiting.
+    if (early) { try { warmUp(model, schema); } catch (error) { /* a missing spare only means the next call is cold */ } }
     let timer;
     const stop = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`${model} timed out after ${Math.round(timeoutMs / 1000)} s`)), timeoutMs);

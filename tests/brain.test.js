@@ -129,6 +129,43 @@ test("the assignment of the course in focus is attached in full", async () => {
   assert.strictEqual(r.courseId, "c1");
 });
 
+test("speed round 2: the whole file list of the course in focus rides along when it is small, so no course_files round is needed", async () => {
+  const { brain, seen } = setup(["ok"]);
+  await run(brain, "explain 3.3 in Systems Programming");
+  assert.match(seen.prompts[0], /All files of Systems Programming \(the same list course_files gives/);
+  assert.match(seen.prompts[0], /Assignment_1\.pdf \(ready, 1 page\(s\)\)\nnotes\.html \(ready, 1 page\(s\)\)/);
+  // a course with a very long list: not attached (the tool still gives it)
+  const many = Array.from({ length: 150 }, (_, i) => ({ id: "g" + i, name: `lecture_${i}_a_rather_long_file_name.pdf`, status: "ready", pages: 3 }));
+  const big = setup(["ok"], { courseRoutes: { list: () => COURSES, courseFiles: (id) => ({ files: id === "c1" ? many : [] }), linkFiles: () => [] } });
+  await run(big.brain, "explain 3.3 in Systems Programming");
+  assert.doesNotMatch(big.seen.prompts[0], /All files of Systems Programming/);
+});
+
+test("speed round 2: in one round, a download runs BEFORE the calls that may need its file (the model's order is kept in the results)", async () => {
+  const files = [{ id: "f1", name: "Assignment_1.pdf", status: "ready", pages: 1 }];
+  const courseRoutes = {
+    list: () => COURSES,
+    courseFiles: (id) => ({ files: id === "c1" ? files : [] }),
+    linkFiles: () => [],
+    addLink: async () => { await new Promise((r) => setTimeout(r, 30)); files.push({ id: "f9", name: "skeleton.zip", status: "ready", pages: 1 }); return { ok: true, text: "filed skeleton.zip" }; },
+  };
+  const { brain, seen } = setup(['CALL {"tool":"course_files","course":"Systems Programming"}\nCALL {"tool":"save_link","url":"https://github.com/bguspl/demo-skeleton","course":"Systems Programming"}', "Done."], { courseRoutes });
+  await run(brain, "save https://github.com/bguspl/demo-skeleton in systems programming and list the files");
+  const round = seen.prompts[1].split("## Tool round 1")[1];
+  assert.match(round, /"course_files"[\s\S]*skeleton\.zip[\s\S]*"save_link"[\s\S]*DOWNLOADED/); // course_files saw the new file, and stays first
+});
+
+test("speed round 2: files that share a name are labelled with their first line, reading the course's pages once", async () => {
+  const pages = [1, 2, 3].map((n) => ({ fileId: "s" + n, fileName: "README.md", page: 1, text: `# Mission ${n}` }));
+  let reads = 0;
+  const courses = { allPages: (id) => { reads++; return id === "c1" ? pages : []; } };
+  const courseRoutes = { list: () => COURSES, courseFiles: (id) => ({ files: id === "c1" ? pages.map((p) => ({ id: p.fileId, name: "README.md", status: "ready", pages: 1 })) : [] }), linkFiles: () => [] };
+  const { brain, seen } = setup(['CALL {"tool":"course_files","course":"Systems Programming"}', "Three READMEs."], { courses, courseRoutes });
+  await run(brain, "what files are there?", { route: "general" }); // general: no course pages in the prompt, so only the tool reads
+  assert.match(seen.prompts[1], /README\.md \[id s2, starts: "Mission 2"\]/);
+  assert.strictEqual(reads, 1);
+});
+
 test("a lookup tool: its result goes back to the model, which then answers", async () => {
   const { brain, seen } = setup(['CALL {"tool":"course_search","course":"Systems Programming","query":"rule of five"}', "It is on page 1."]);
   const r = await run(brain, "where is the rule of five?");
@@ -259,6 +296,15 @@ test("a photo WITH words (2026-11-16): the photo is named again right next to th
   const words = p.indexOf("לאיזה גבולות");
   const again = p.indexOf('The photo is part of THIS message: open "photo.jpg"');
   assert.ok(words > 0 && again > words, "the photo line comes right after the words");
+});
+
+test("speed round 2: the 'plan only as much as needed' line sits right after Omri's message, in every round, but never with a photo", async () => {
+  const { brain, seen } = setup(['CALL {"tool":"course_search","course":"Systems Programming","query":"rule of five"}', "It is on page 1."]);
+  await run(brain, "where is the rule of five?");
+  for (const p of seen.prompts) assert.match(p, /<\/message>\n\(This message is in English[^\n]*\n\(Answer at once\. Plan only as much as this message needs/);
+  const photo = photoSetup(["A cat."]);
+  await run(photo.brain, "what is this?", { image: { path: "x.png" } });
+  assert.doesNotMatch(photo.calls[0].prompt, /Answer at once/);
 });
 
 test("a photo message is in the token log too: the photo model's onUsage is passed on (review 1.3)", async () => {
@@ -407,6 +453,18 @@ test("a folder is linked only when its path is in Omri's own message, and then i
   assert.match(b.seen.prompts[1], /Omri's own project folder for Systems Programming/); // the file list rides along once linked
   assert.match(b.seen.prompts[1], /1: int x = 1;/); // and the file changed last, with line numbers
   assert.match(b.seen.prompts[2], /MemoryBlock\.cpp \(line numbers added by Bot\)/);
+});
+
+test("speed round 2: re-reading a linked file whose text was already in the prompt is counted in the answer's log line", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-reread-"));
+  fs.writeFileSync(path.join(dir, "main.c"), "int x = 1;\n");
+  const b = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, 'CALL {"tool":"project_read","course":"Systems Programming","file":"main.c"}', "Line 1 sets x."]);
+  await run(b.brain, `my systems programming assignment folder is ${dir}`);
+  const lines = [];
+  await run(b.brain, "what does main.c in Systems Programming do?", { log: (l) => lines.push(l) });
+  assert.match(b.seen.prompts[1], /1: int x = 1;/); // main.c was already in the prompt
+  assert.ok(lines.some((l) => /answered by .*, 1 project_read of code already in the prompt$/.test(l)), lines.join("\n"));
 });
 
 test("save_links: the links of a course file become ONE list with a Confirm card; nothing is fetched by the brain", async () => {

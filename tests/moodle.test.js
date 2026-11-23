@@ -397,6 +397,39 @@ test("brain: after a Moodle read, a reminder and a Moodle download in the same m
   assert.match(prompts[2], /DOWNLOADED/);
 });
 
+// (2026-11-23, Omri's decision) the quick finish for moodle_fetch: a download of EVERY item asked for ends the message without another
+// model round; anything less goes back to the model.
+test("quick finish: a full Moodle download ends the message with the model's own words, no second model call", async () => {
+  const { brain, prompts, filed } = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}\nLecture 1 is in your course now.']);
+  const r = await brain.handle("get lecture 1 from moodle", { history: [], courses: BOT_COURSES });
+  assert.strictEqual(r.answer, "Lecture 1 is in your course now.");
+  assert.strictEqual(prompts.length, 1);
+  assert.strictEqual(filed.length, 1);
+});
+
+test("quick finish: a full Moodle download with no words from the model ends with a line code wrote", async () => {
+  const { brain, prompts } = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}']);
+  const r = await brain.handle("get lecture 1 from moodle", { history: [], courses: BOT_COURSES });
+  assert.strictEqual(prompts.length, 1);
+  assert.match(r.answer, /^Downloaded from Moodle into "Systems Programming": .+\. Bot is reading them now\.$/);
+  const he = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}']);
+  const r2 = await he.brain.handle("תוריד את הרצאה 1 מהמודל", { history: [], courses: BOT_COURSES });
+  assert.match(r2.answer, /^הורדו מ-Moodle אל "Systems Programming"/);
+});
+
+test("quick finish: a partial download, an item not found, or a duplicate still goes back to the model", async () => {
+  const partial = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1","nothing like this"]}\nAll downloaded!', "Lecture 1 is in; the other was not found."]);
+  const r = await partial.brain.handle("get lecture 1 and the other one", { history: [], courses: BOT_COURSES });
+  assert.strictEqual(partial.prompts.length, 2, "the model's early words are not shown when not everything was found");
+  assert.strictEqual(r.answer, "Lecture 1 is in; the other was not found.");
+  assert.match(partial.prompts[1], /Not found among the course's files/);
+  const twice = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}', 'CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}\nDone.', "It was already there."]);
+  await twice.brain.handle("get lecture 1", { history: [], courses: BOT_COURSES });
+  const r3 = await twice.brain.handle("get lecture 1 again", { history: [], courses: BOT_COURSES });
+  assert.strictEqual(r3.answer, "It was already there.");
+  assert.match(twice.prompts[2], /Already in the course \(1\)/);
+});
+
 test("brain: after a Moodle read, the instant tools Omri did not open up stay refused (course_note)", async () => {
   const { brain, prompts } = brainWith([
     'CALL {"tool":"moodle_news","course":"68510"}',

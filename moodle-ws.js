@@ -23,7 +23,9 @@ const { checkArgs, MAX_FILE_BYTES } = require("./moodle-bridge");
 const REST_URL = `https://${HOST}${ROOT}/webservice/rest/server.php`;
 const FILE_PREFIX = `${ROOT}/webservice/pluginfile.php/`;
 const USER_AGENT = "node";
-const PAUSE_MS = 300;
+// The pause between two requests to BGU's Moodle. 0.1 s is Omri's choice of 2026-11-23 (speed round 2; it was 0.3 s): about 1 s
+// faster per news check. The Chrome bridge has its own timing and is not changed by this.
+const PAUSE_MS = 100;
 const TIMEOUT_MS = 45 * 1000;
 const FILE_TIMEOUT_MS = 4 * 60 * 1000;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;

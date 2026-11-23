@@ -61,6 +61,16 @@ test("workingNow: the part changed last, and a NEWER folder next to the linked o
   assert.deepStrictEqual(w.sibling.files, ["mission2/agents.c", "mission2/notes.md"]); // .env is never listed
 });
 
+test("speed round 2: workingNow uses the caller's own file list of the linked folder (one walk per message), with the same result", () => {
+  const d = disk();
+  const own = projectFolder.listFiles(d.ops).files;
+  const given = projectFolder.workingNow(d.ops, RULES, Date.now(), own);
+  assert.deepStrictEqual(given, projectFolder.workingNow(d.ops, RULES));
+  // the given list really is used: a list whose newest file sits elsewhere changes the answer
+  const fake = [{ rel: "other/x.c", bytes: 1, mtime: Date.now() + 1000 }];
+  assert.strictEqual(projectFolder.workingNow(d.ops, RULES, Date.now(), fake).inLinked.folder, "other");
+});
+
 test("workingNow: an OLDER folder next to the linked one is not reported, nor a parent that may not be linked", () => {
   const d = disk({ siblingNewer: false });
   assert.strictEqual(projectFolder.workingNow(d.m1, RULES).sibling, null);
