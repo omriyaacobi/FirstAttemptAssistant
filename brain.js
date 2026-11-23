@@ -982,7 +982,8 @@ ${text}`; } catch (error) {
       },
       // Files of Omri's own Moodle course into the matching Bot course (the upload road). Not after an internet page in the same message.
       // After a Moodle read it is allowed: the items must be real items of that course, checked by code, and the bytes are untrusted data.
-      moodle_fetch: async ({ course, items }) => {
+      moodle_fetch: async (call) => {
+        const { course, items } = call;
         afterWeb("download files", { moodleOk: true });
         if (!moodle) throw new Error("Moodle access is not set up in this Bot.");
         aboutCourse(course);
@@ -991,6 +992,7 @@ ${text}`; } catch (error) {
           if (r.card) { ctx.extras.linkBatch = r.card; return `${r.text}
 Show Omri this list (it is also on the card):
 ${r.cardText}`; }
+          if (r.full) ctx.fullFetch.set(call, r.said); // every item downloaded: this call may end the message (the quick finish)
           return r.text;
         } catch (error) {
           if (error.code && error.code !== "tool") return "NOT downloaded. " + moodle.explain(error, "en");
@@ -1125,7 +1127,7 @@ ${r.cardText}`; }
     const said = String(task).trim() ? task : lastWords(history);
     const lang = /[֐-׿]/.test(said) && (said.match(/[֐-׿]/g) || []).length >= (said.match(/[a-z]/gi) || []).length ? "he" : "en";
     const list = Array.isArray(options.courses) ? options.courses : courseList();
-    const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, sawPhoto: !!image, fromPhone: fromPhone === true, tools: [], done: [] };
+    const ctx = { task, history, list, lang, extras: {}, course: null, sawWeb: false, sawMoodle: false, sawPhoto: !!image, fromPhone: fromPhone === true, tools: [], done: [], fullFetch: new Map() };
     const tools = makeTools(ctx);
     // The course this answer is filed under; noCourse (talk_course "none") tells the next message that the talk left the courses.
     const courseOf = () => (ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : ctx.noCourse ? { noCourse: true } : {});
@@ -1338,8 +1340,12 @@ ${r.cardText}`; }
       (await Promise.all(rest.map(runCall))).forEach((r, i) => done.set(rest[i], r));
       const results = reply.calls.map((c) => done.get(c));
       // The quick finish: only "doing" tools, all of them worked, and the model already wrote what to tell Omri under its CALL lines.
+      // (2026-11-23, Omri's decision) a moodle_fetch that downloaded EVERY item asked for counts as a doing-tool here; a failed, partial
+      // or refused download, a Confirm card or "nothing to download" still goes back to the model. When the model wrote nothing and the
+      // round held only full downloads, the line code wrote (fetchFiles' "said") ends the message instead of another round (3-9 s).
       let said = fixMath(withoutCalls(reply.text));
-      if (said && results.every((x) => x.ok && DOING.has(x.call.tool))) {
+      if (!said && results.every((x) => x.ok && ctx.fullFetch.has(x.call))) said = results.map((x) => ctx.fullFetch.get(x.call)).join("\n");
+      if (said && results.every((x) => x.ok && (DOING.has(x.call.tool) || ctx.fullFetch.has(x.call)))) {
         if (fileNote) said = fileNote + "\n\n" + said;
         log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
         if (onPartial) onPartial(said);

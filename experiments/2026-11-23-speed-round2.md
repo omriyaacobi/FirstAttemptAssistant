@@ -185,23 +185,33 @@ that live in `brain.js`:
 | 6. course_files reads the pages once | `firstPageOf`: the first page of every file, read once and kept 5 s | 0.76 s -> about 0.02 s on the largest course with shared names |
 | 7. the linked folder walked once | `workingNow` takes the file list `prefetch` already made (`project-folder.js`, new optional argument) | about 0.25 s on every message in a course with a WSL folder. Nothing is kept between messages, so Omri's newest edit always shows |
 
-**Not built, for Omri:** (3) a fully successful `moodle_fetch` could finish without one more model call. 6 of 6 real
-downloads paid 3.4-9 s for that call. This changes the quick-finish rule (which today is only for "doing" tools that state
-their own outcome), so it needs Omri's yes. (5) Moodle's pause between requests, 0.3 -> 0.1 s, is a politeness choice; that
-session proposes it.
+**Decided by Omri (2026-11-23, through the manager) and then built:**
 
-Tests: `tests/brain.test.js` (download-first ordering, one page read for shared names) and `tests/better-search.test.js`
-(workingNow with a given list). Fake models and temporary folders only.
+- (3) **The `moodle_fetch` quick finish: yes.** When EVERY item asked for was found and downloaded (`full` from `fetchFiles` in
+  `moodle-tools.js`), the message ends without one more model call: with the model's own words under its CALL lines, or, when it
+  wrote none and the round held only full downloads, with a line code wrote (English or Hebrew). A failed, partial, refused or
+  duplicate download, a Confirm card (more than 10 files) or "nothing to download" still goes back to the model, as for every
+  other quick-finish tool ("shown only if every call worked"). 6 of 6 real downloads paid 3.4-9 s for that call. No refusal
+  rule changed (a refused download fails before it starts, so it never ends the message).
+- (5) **Moodle's pause between requests: 0.3 -> 0.1 s** (`PAUSE_MS` in `moodle-ws.js`, with a comment that it is Omri's choice).
+  About 1 s faster per news check. The Chrome bridge keeps its own timing.
+- **The thinking line (`QUICK_LINE`): yes, kept.**
+
+The round-1 branch (`claude/bot-speed-research-3cdad5`, with the Moodle cache 37d66d1 and its note) is merged into this branch, so
+the manager merges ONE branch.
+
+Tests: `tests/brain.test.js` (download-first ordering, one page read for shared names), `tests/better-search.test.js`
+(workingNow with a given list) and `tests/moodle.test.js` (3 for the quick finish: model's words, code's line in both languages,
+partial / not found / duplicate go back to the model). Fake models and temporary folders only.
 
 ## 8. Ranked recommendation
 
-1. **Keep the thinking line** (built). It is the only thing found that shortens the model's own part: -0.8 s on every call and
-   -1.6 s on a 2-call message, with no quota cost (it saves tokens). It changes how the model works, not what Bot says. **Omri's
-   yes is needed before merging.** If he wants a quieter start, drop that one commit.
+1. **Keep the thinking line** (built; Omri said yes on 2026-11-23). It is the only thing found that shortens the model's own part:
+   -0.8 s on every call and -1.6 s on a 2-call message, with no quota cost (it saves tokens).
 2. **Keep the file list up front** (built). It is within the agreed design ("the courses and their files" are in every context).
    Up to 10 s on the messages it helps, and about 800 tokens at most.
 3. **Keep the file/Moodle fixes** (built, section 7b): download-before-open saves about 8 s on "download and open", and two
-   small tool speed-ups. Omri decides the `moodle_fetch` quick finish (3.4-9 s per download).
+   small tool speed-ups; the `moodle_fetch` quick finish (3.4-9 s per download) and the 0.1 s Moodle pause, both Omri's yes.
 4. **Read the new re-read counter after a few days** (built). It decides whether more linked-folder code should ride along.
 5. **Not worth doing:** hedging/racing (about 0.1 s for 20-60% more calls), asking for shorter answers (no gain), prompt
    layout for caching (Neon low never caches; the order is already right), parallel tool prefetch (tools take about 0.1 s).

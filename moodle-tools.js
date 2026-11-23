@@ -360,7 +360,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     }
   }
 
-  // moodle_fetch. Returns { text, card? }.
+  // moodle_fetch. Returns { text, card?, full?, said? }.
   async function fetchFiles(name, items, { lang = "en", patternFor, questionId = null } = {}) {
     const { m, botId, bots } = await resolve(name, patternFor);
     if (!botId) throw fail(`the Moodle course "${m.name}" is not linked to a Bot course. Ask Omri which Bot course it is (then call moodle_link), or whether to make a new course on the Courses page.`);
@@ -388,7 +388,12 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     const text = [`DOWNLOADED from Moodle "${m.name}" into Bot's course "${bName}": ${good.length} of ${jobs.length}${good.length ? ` (${good.map((r) => oneLine(r.res.name || r.j.label, 80)).join(", ")})` : ""}. Bot reads them now.`,
       dup.length ? `Already in the course (${dup.length}): ${dup.map((r) => oneLine(r.res.name || r.j.label, 60)).join(", ")}.` : "",
       bad.length ? `NOT downloaded (${bad.length}): ${bad.slice(0, 5).map((r) => `${oneLine(r.j.label, 60)}: ${r.res.why}`).join("; ")}.` : "", miss].filter(Boolean).join("\n");
-    return { text, ok: good.length > 0 || (dup.length > 0 && !bad.length) };
+    // FULL (2026-11-23, Omri's decision, speed round 2): every item asked for was found and downloaded. Only then may the brain end the
+    // message without one more model round, with the model's own words or with `said`, a line written here by code.
+    const full = good.length === jobs.length && !missing.length;
+    const names = good.map((r) => oneLine(r.res.name || r.j.label, 80)).join(", ");
+    const said = full ? (lang === "he" ? `הורדו מ-Moodle אל "${bName}": ${names}. Bot קורא אותם עכשיו.` : `Downloaded from Moodle into "${bName}": ${names}. Bot is reading them now.`) : "";
+    return { text, ok: good.length > 0 || (dup.length > 0 && !bad.length), full, said };
   }
 
   // For the Confirm card (link-batch.js): label -> one download. One failure never stops the others.
