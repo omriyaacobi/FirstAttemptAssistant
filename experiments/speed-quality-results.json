@@ -1,0 +1,1099 @@
+{
+ "runs": [
+  {
+   "at": "2026-11-23T20:58:06.905Z",
+   "arm": "A",
+   "q": "ftc",
+   "rep": 0,
+   "seconds": 7.2,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 19864,
+   "output": 562,
+   "thinking": 361,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:58:15.195Z",
+   "arm": "B",
+   "q": "ftc",
+   "rep": 0,
+   "seconds": 6.8,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 20210,
+   "output": 563,
+   "thinking": 352,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:58:25.872Z",
+   "arm": "B",
+   "q": "improper",
+   "rep": 0,
+   "seconds": 9.2,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26201,
+   "output": 852,
+   "thinking": 514,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:58:38.007Z",
+   "arm": "A",
+   "q": "improper",
+   "rep": 0,
+   "seconds": 10.6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25415,
+   "output": 1015,
+   "thinking": 704,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:58:48.032Z",
+   "arm": "A",
+   "q": "critique",
+   "rep": 0,
+   "seconds": 8.5,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25325,
+   "output": 718,
+   "thinking": 541,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:58:56.139Z",
+   "arm": "B",
+   "q": "critique",
+   "rep": 0,
+   "seconds": 6.6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26035,
+   "output": 481,
+   "thinking": 286,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:59:05.426Z",
+   "arm": "B",
+   "q": "trap",
+   "rep": 0,
+   "seconds": 7.8,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26054,
+   "output": 677,
+   "thinking": 392,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:59:17.063Z",
+   "arm": "A",
+   "q": "trap",
+   "rep": 0,
+   "seconds": 10.1,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25282,
+   "output": 859,
+   "thinking": 570,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:59:33.078Z",
+   "arm": "A",
+   "q": "gamma",
+   "rep": 0,
+   "seconds": 14.5,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25872,
+   "output": 1456,
+   "thinking": 994,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T20:59:42.847Z",
+   "arm": "B",
+   "q": "gamma",
+   "rep": 0,
+   "seconds": 8.3,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26125,
+   "output": 748,
+   "thinking": 347,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:00:05.559Z",
+   "arm": "B",
+   "q": "code",
+   "rep": 0,
+   "seconds": 21.2,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 53613,
+   "output": 1796,
+   "thinking": 1414,
+   "tools": [
+    "talk_course",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:00:34.992Z",
+   "arm": "A",
+   "q": "code",
+   "rep": 0,
+   "seconds": 27.9,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 52121,
+   "output": 2200,
+   "thinking": 1793,
+   "tools": [
+    "talk_course",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:00:59.343Z",
+   "arm": "A",
+   "q": "grep",
+   "rep": 0,
+   "seconds": 22.8,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 80274,
+   "output": 971,
+   "thinking": 687,
+   "tools": [
+    "talk_course",
+    "project_grep",
+    "project_read",
+    "project_read",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:01:27.857Z",
+   "arm": "B",
+   "q": "grep",
+   "rep": 0,
+   "seconds": 27,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 83254,
+   "output": 1088,
+   "thinking": 778,
+   "tools": [
+    "talk_course",
+    "project_grep",
+    "project_read",
+    "project_read",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:01:49.815Z",
+   "arm": "B",
+   "q": "nosol",
+   "rep": 0,
+   "seconds": 20.5,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 46553,
+   "output": 1748,
+   "thinking": 1202,
+   "tools": [
+    "course_read",
+    "course_read",
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:02:17.670Z",
+   "arm": "A",
+   "q": "nosol",
+   "rep": 0,
+   "seconds": 26.3,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 64678,
+   "output": 1675,
+   "thinking": 1166,
+   "tools": [
+    "course_files",
+    "course_read",
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:02:42.027Z",
+   "arm": "A",
+   "q": "hint",
+   "rep": 0,
+   "seconds": 22.9,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 50098,
+   "output": 1489,
+   "thinking": 967,
+   "tools": [
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:03:03.254Z",
+   "arm": "B",
+   "q": "hint",
+   "rep": 0,
+   "seconds": 19.7,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 51846,
+   "output": 1348,
+   "thinking": 847,
+   "tools": [
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:03:12.956Z",
+   "arm": "B",
+   "q": "multi",
+   "rep": 0,
+   "seconds": 8.2,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 17905,
+   "output": 689,
+   "thinking": 485,
+   "tools": [
+    "set_reminder"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:03:24.395Z",
+   "arm": "A",
+   "q": "multi",
+   "rep": 0,
+   "seconds": 9.9,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 17701,
+   "output": 839,
+   "thinking": 587,
+   "tools": [
+    "set_reminder"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:03:32.784Z",
+   "arm": "A",
+   "q": "vague",
+   "rep": 0,
+   "seconds": 6.9,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25113,
+   "output": 387,
+   "thinking": 350,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:03:41.320Z",
+   "arm": "B",
+   "q": "vague",
+   "rep": 0,
+   "seconds": 7,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26134,
+   "output": 472,
+   "thinking": 438,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:03:52.271Z",
+   "arm": "B",
+   "q": "hebrew",
+   "rep": 0,
+   "seconds": 9.4,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 27073,
+   "output": 1012,
+   "thinking": 591,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:04:05.446Z",
+   "arm": "A",
+   "q": "hebrew",
+   "rep": 0,
+   "seconds": 11.7,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26241,
+   "output": 1148,
+   "thinking": 718,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:04:13.755Z",
+   "arm": "A",
+   "q": "longlist",
+   "rep": 0,
+   "seconds": 6.8,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 18574,
+   "output": 374,
+   "thinking": 321,
+   "tools": [
+    "open_on_pc"
+   ],
+   "opened": 1,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:04:21.861Z",
+   "arm": "B",
+   "q": "longlist",
+   "rep": 0,
+   "seconds": 6.6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 18587,
+   "output": 364,
+   "thinking": 312,
+   "tools": [
+    "open_on_pc"
+   ],
+   "opened": 1,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:04:30.382Z",
+   "arm": "B",
+   "q": "ftc",
+   "rep": 1,
+   "seconds": 7,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 20197,
+   "output": 499,
+   "thinking": 301,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:04:39.444Z",
+   "arm": "A",
+   "q": "ftc",
+   "rep": 1,
+   "seconds": 7.6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 19905,
+   "output": 549,
+   "thinking": 342,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:04:51.010Z",
+   "arm": "A",
+   "q": "improper",
+   "rep": 1,
+   "seconds": 10.1,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25446,
+   "output": 999,
+   "thinking": 652,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:05:02.309Z",
+   "arm": "B",
+   "q": "improper",
+   "rep": 1,
+   "seconds": 9.8,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26348,
+   "output": 945,
+   "thinking": 568,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:05:10.986Z",
+   "arm": "B",
+   "q": "critique",
+   "rep": 1,
+   "seconds": 7.2,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26099,
+   "output": 486,
+   "thinking": 368,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:05:22.761Z",
+   "arm": "A",
+   "q": "critique",
+   "rep": 1,
+   "seconds": 10.3,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25568,
+   "output": 905,
+   "thinking": 729,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:05:35.842Z",
+   "arm": "A",
+   "q": "trap",
+   "rep": 1,
+   "seconds": 11.6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25548,
+   "output": 1064,
+   "thinking": 786,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:05:46.217Z",
+   "arm": "B",
+   "q": "trap",
+   "rep": 1,
+   "seconds": 8.9,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26184,
+   "output": 750,
+   "thinking": 477,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:05:58.140Z",
+   "arm": "B",
+   "q": "gamma",
+   "rep": 1,
+   "seconds": 10.4,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26537,
+   "output": 1103,
+   "thinking": 673,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:06:10.584Z",
+   "arm": "A",
+   "q": "gamma",
+   "rep": 1,
+   "seconds": 10.9,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25359,
+   "output": 884,
+   "thinking": 706,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:06:38.454Z",
+   "arm": "A",
+   "q": "code",
+   "rep": 1,
+   "seconds": 26.4,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 55086,
+   "output": 2168,
+   "thinking": 1807,
+   "tools": [
+    "talk_course",
+    "project_read",
+    "project_files"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:07:02.015Z",
+   "arm": "B",
+   "q": "code",
+   "rep": 1,
+   "seconds": 22.1,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 53853,
+   "output": 1927,
+   "thinking": 1569,
+   "tools": [
+    "talk_course",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:07:22.547Z",
+   "arm": "B",
+   "q": "grep",
+   "rep": 1,
+   "seconds": 19,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 83408,
+   "output": 1075,
+   "thinking": 770,
+   "tools": [
+    "talk_course",
+    "project_grep",
+    "project_read",
+    "project_read",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:07:46.179Z",
+   "arm": "A",
+   "q": "grep",
+   "rep": 1,
+   "seconds": 22.1,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 80588,
+   "output": 1147,
+   "thinking": 857,
+   "tools": [
+    "talk_course",
+    "project_grep",
+    "project_read",
+    "project_read",
+    "project_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:08:07.252Z",
+   "arm": "A",
+   "q": "nosol",
+   "rep": 1,
+   "seconds": 19.6,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 43809,
+   "output": 1444,
+   "thinking": 997,
+   "tools": [
+    "course_files",
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:08:27.938Z",
+   "arm": "B",
+   "q": "nosol",
+   "rep": 1,
+   "seconds": 19.2,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 45792,
+   "output": 1821,
+   "thinking": 1286,
+   "tools": [
+    "course_read",
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:08:45.238Z",
+   "arm": "B",
+   "q": "hint",
+   "rep": 1,
+   "seconds": 15.8,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 51681,
+   "output": 1069,
+   "thinking": 583,
+   "tools": [
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:09:05.540Z",
+   "arm": "A",
+   "q": "hint",
+   "rep": 1,
+   "seconds": 18.8,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 50030,
+   "output": 1325,
+   "thinking": 872,
+   "tools": [
+    "course_read"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:09:17.566Z",
+   "arm": "A",
+   "q": "multi",
+   "rep": 1,
+   "seconds": 10.5,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 17954,
+   "output": 1035,
+   "thinking": 833,
+   "tools": [
+    "set_reminder"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:09:28.123Z",
+   "arm": "B",
+   "q": "multi",
+   "rep": 1,
+   "seconds": 9,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 18039,
+   "output": 764,
+   "thinking": 556,
+   "tools": [
+    "set_reminder"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:09:35.628Z",
+   "arm": "B",
+   "q": "vague",
+   "rep": 1,
+   "seconds": 6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26109,
+   "output": 414,
+   "thinking": 375,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:09:43.236Z",
+   "arm": "A",
+   "q": "vague",
+   "rep": 1,
+   "seconds": 6.1,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 25139,
+   "output": 402,
+   "thinking": 349,
+   "tools": [],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:09:56.556Z",
+   "arm": "A",
+   "q": "hebrew",
+   "rep": 1,
+   "seconds": 11.8,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 26231,
+   "output": 1112,
+   "thinking": 677,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:10:08.742Z",
+   "arm": "B",
+   "q": "hebrew",
+   "rep": 1,
+   "seconds": 10.7,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 27166,
+   "output": 1081,
+   "thinking": 650,
+   "tools": [
+    "talk_course"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:10:15.820Z",
+   "arm": "B",
+   "q": "longlist",
+   "rep": 1,
+   "seconds": 5.6,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 18562,
+   "output": 317,
+   "thinking": 265,
+   "tools": [
+    "open_on_pc"
+   ],
+   "opened": 1,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:10:25.167Z",
+   "arm": "A",
+   "q": "longlist",
+   "rep": 1,
+   "seconds": 7.8,
+   "calls": 1,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 18745,
+   "output": 518,
+   "thinking": 466,
+   "tools": [
+    "open_on_pc"
+   ],
+   "opened": 1,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:10:48.468Z",
+   "arm": "A",
+   "q": "moodledl",
+   "rep": 0,
+   "seconds": 15.4,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 37786,
+   "output": 802,
+   "thinking": 696,
+   "tools": [
+    "moodle_course",
+    "open_on_pc"
+   ],
+   "opened": 1,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:11:05.089Z",
+   "arm": "B",
+   "q": "moodledl",
+   "rep": 0,
+   "seconds": 15.1,
+   "calls": 2,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 38389,
+   "output": 657,
+   "thinking": 617,
+   "tools": [
+    "moodle_course",
+    "moodle_fetch"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:11:42.417Z",
+   "arm": "B",
+   "q": "moodlenew",
+   "rep": 0,
+   "seconds": 35.8,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 102400,
+   "output": 1964,
+   "thinking": 1276,
+   "tools": [
+    "moodle_courses",
+    "moodle_course",
+    "moodle_news",
+    "moodle_course",
+    "moodle_news",
+    "moodle_course",
+    "moodle_course",
+    "moodle_news",
+    "moodle_course",
+    "moodle_news"
+   ],
+   "opened": 0,
+   "failed": ""
+  },
+  {
+   "at": "2026-11-23T21:12:34.498Z",
+   "arm": "A",
+   "q": "moodlenew",
+   "rep": 0,
+   "seconds": 50.6,
+   "calls": 3,
+   "models": [
+    "gemini-4-neon-low"
+   ],
+   "tokens": 99493,
+   "output": 1896,
+   "thinking": 1218,
+   "tools": [
+    "moodle_courses",
+    "moodle_course",
+    "moodle_news",
+    "moodle_course",
+    "moodle_news",
+    "moodle_course",
+    "moodle_course",
+    "moodle_news",
+    "moodle_course",
+    "moodle_news"
+   ],
+   "opened": 0,
+   "failed": ""
+  }
+ ]
+}
