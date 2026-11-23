@@ -58,7 +58,7 @@ test("quiz through the coach uses the tutor's models only (Hydrogen, Argon) and 
   const q = await coach.answerStudy({ studyIntent: "quiz", text: "quiz me on lecture 1 of Calculus" });
   assert.match(q.answer, /Question 1 of 3: Question number 1\?/);
   assert.match(q.answer, /assumed notebook lecture k/);
-  assert.ok(calls.every((c) => c.chain.every((m) => /argon|hydrogen/.test(m))));
+  assert.ok(calls.every((c) => c.chain.every((m) => /neon|hydrogen/.test(m))));
   const asked = await coach.answerStudy({ studyIntent: "answer", text: "I understand it all" });
   assert.match(asked.answer, /does not count/);
   assert.strictEqual(coach.tracker.progress(calc).understood, 0);

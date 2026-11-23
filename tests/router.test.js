@@ -41,7 +41,7 @@ test("every model says which quota pool(s) it draws from; the Claude CLI models 
 test("poolsForModel finds a model's pools by provider and name; unknown models have none", () => {
   const { poolsForModel, CLAUDE_PLAN, CLAUDE_OPUS_WEEK } = require("../router");
   assert.deepStrictEqual(poolsForModel("claude", "opus"), [CLAUDE_PLAN, CLAUDE_OPUS_WEEK]);
-  assert.deepStrictEqual(poolsForModel("agy", "gemini-4-argon-low"), ["Gemini 4 Argon"]);
+  assert.deepStrictEqual(poolsForModel("agy", "gemini-4-argon-low"), ["Gemini Models"]);
   assert.deepStrictEqual(poolsForModel("agy", "nothing"), []);
 });
 

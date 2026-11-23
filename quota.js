@@ -200,8 +200,8 @@ function prioritize(chain, low) {
 }
 
 // Pure. Like lowPools, but some pools count as low EARLIER: reserves maps a pool name to its own threshold.
-// levels: [{ pool, remaining }] for every known pool (levels() in createQuota). Example: { "Gemini 4 Argon": 25 } lets the brain
-// step away from Argon at 25%, so the last quarter stays for the jobs Argon is kept for (tutoring, reading big PDFs), while every
+// levels: [{ pool, remaining }] for every known pool (levels() in createQuota). Example: { "Gemini Models": 25 } lets the brain
+// step away from that pool at 25%, so the last quarter stays for the jobs kept for it (tutoring, reading big PDFs), while every
 // other chain still uses the normal 15%. A reserve can only make a pool low sooner, never later.
 function lowWithReserve(levels, reserves = {}, threshold = LOW_THRESHOLD) {
   return (levels || [])

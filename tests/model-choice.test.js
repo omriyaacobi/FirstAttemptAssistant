@@ -28,10 +28,10 @@ test("a picked model lasts one hour, then the normal order is back by itself", (
 test("only the closed list can be picked; auto clears it; a broken file means the normal order", () => {
   const file = tempFile();
   const store = createModelChoice({ file });
-  for (const bad of ["opus", "gemini-4-neon-medium", "__proto__", "constructor", 5, {}]) {
+  for (const bad of ["opus", "argonLow", "argonMedium", "gemini-4-neon-medium", "__proto__", "constructor", 5, {}]) {
     assert.throws(() => store.set(bad), (e) => e.status === 400, String(bad));
   }
-  store.set("argonLow");
+  store.set("hydrogenMedium");
   store.set("auto");
   assert.strictEqual(store.get(), null);
   fs.writeFileSync(file, "{not json");

@@ -26,10 +26,10 @@ const READERS_AT_ONCE = 3;
 const MIN_SPLIT = 5; // a chunk that fails is cut in halves down to this many pages
 const MAX_PAGES = 400; // a bigger PDF is read up to this page
 const TEXT_PAGE_CHARS = 2000; // a text file is cut into pieces about this long
-const READ_CHAIN = [MODELS.hydrogenHigh, MODELS.flashMedium, MODELS.argonLow]; // a whole file: Hydrogen high first (2026-11-15, Flash's pool), Flash, Argon last
+const READ_CHAIN = [MODELS.hydrogenHigh, MODELS.neonLow, MODELS.flashMedium]; // 2026-11-23: Neon low replaced Argon (same pool now); Flash stays last (it made math errors) // a whole file: Hydrogen high first (2026-11-15, Flash's pool), Flash, Argon last
 // A cut file: the most accurate first. Neon low replaced Claude Sonnet (Omri's Pro plan) on 2026-11-20: every 140k-character read
 // was right on every Gemini model (experiments/2026-11-20-neon-deep-trial.md).
-const CUT_CHAIN = [MODELS.argonLow, MODELS.neonLow, MODELS.hydrogenHigh];
+const CUT_CHAIN = [MODELS.neonLow, MODELS.hydrogenHigh]; // 2026-11-23: Argon was first, now the same pool as Neon
 
 // How long one agy call may take for a chunk: at least 6 minutes, more for many pages and for a big file (measured, see the top).
 function chunkTimeoutMs(pages, bytes) {

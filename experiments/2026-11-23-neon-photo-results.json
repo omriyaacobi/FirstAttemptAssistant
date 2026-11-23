@@ -1,0 +1,165 @@
+{
+  "usage": {
+    "before neon-low photo": [
+      "Gemini Models / Weekly: 91%",
+      "Gemini Models / Five Hour: 62%",
+      "Claude and GPT models / Weekly: 46%",
+      "Claude and GPT models / Five Hour: 100%"
+    ],
+    "after neon-low photo": [
+      "Gemini Models / Weekly: 90%",
+      "Gemini Models / Five Hour: 60%",
+      "Claude and GPT models / Weekly: 46%",
+      "Claude and GPT models / Five Hour: 100%"
+    ]
+  },
+  "runs": [
+    {
+      "model": "gemini-4-neon-low",
+      "part": "rerun",
+      "test": "photo-moved",
+      "topic": "photo",
+      "rep": 1,
+      "text": "CALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures - Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"\",\"end\":\"\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}\n\nI prepared a calendar card with both events (one-time for now) — tap Confirm to add them. Should the Wednesday Data Structures lecture repeat weekly, and until what date?",
+      "rounds": [
+        {
+          "seconds": 14.6,
+          "usage": {
+            "input": 20341,
+            "output": 813,
+            "thinking": 631,
+            "cacheRead": 14893,
+            "turns": 2,
+            "inner": [
+              "read_file"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "add_events",
+          "events": [
+            {
+              "title": "Data Structures lecture",
+              "date": "2026-11-18",
+              "weekday": "",
+              "start": "14:00",
+              "end": "16:00",
+              "location": "Building 90, hall 123"
+            },
+            {
+              "title": "Data Structures - Quiz 2 (trees, heaps)",
+              "date": "2026-12-03",
+              "weekday": "",
+              "start": "",
+              "end": "",
+              "location": ""
+            }
+          ],
+          "repeat": "none",
+          "until": ""
+        }
+      ],
+      "ok": true
+    },
+    {
+      "model": "gemini-4-neon-low",
+      "part": "rerun",
+      "test": "photo-moved",
+      "topic": "photo",
+      "rep": 2,
+      "text": "CALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"\",\"end\":\"\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}\nI prepared a calendar card waiting for your tap with both events as one-time:\n- **Data Structures lecture** — Wed, Nov 18, 14:00–16:00, Building 90, hall 123\n- **Data Structures Quiz 2 (trees, heaps)** — Thu, Dec 3 (no time listed)\n\nShould the lecture repeat weekly, and if so, until what date?",
+      "rounds": [
+        {
+          "seconds": 16.1,
+          "usage": {
+            "input": 12715,
+            "output": 1234,
+            "thinking": 994,
+            "cacheRead": 22547,
+            "turns": 2,
+            "inner": [
+              "read_file"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "add_events",
+          "events": [
+            {
+              "title": "Data Structures lecture",
+              "date": "2026-11-18",
+              "weekday": "",
+              "start": "14:00",
+              "end": "16:00",
+              "location": "Building 90, hall 123"
+            },
+            {
+              "title": "Data Structures Quiz 2 (trees, heaps)",
+              "date": "2026-12-03",
+              "weekday": "",
+              "start": "",
+              "end": "",
+              "location": ""
+            }
+          ],
+          "repeat": "none",
+          "until": ""
+        }
+      ],
+      "ok": true
+    },
+    {
+      "model": "gemini-4-neon-low",
+      "part": "rerun",
+      "test": "photo-moved",
+      "topic": "photo",
+      "rep": 3,
+      "text": "CALL {\"tool\":\"add_events\",\"events\":[{\"title\":\"Data Structures lecture\",\"date\":\"2026-11-18\",\"weekday\":\"\",\"start\":\"14:00\",\"end\":\"16:00\",\"location\":\"Building 90, hall 123\"},{\"title\":\"Data Structures Quiz 2 (trees, heaps)\",\"date\":\"2026-12-03\",\"weekday\":\"\",\"start\":\"\",\"end\":\"\",\"location\":\"\"}],\"repeat\":\"none\",\"until\":\"\"}\n\nPrepared a calendar card waiting for your tap:\n- **Data Structures lecture** — Wed 2026-11-18, 14:00–16:00, Building 90, hall 123 (set as one-time)\n- **Data Structures Quiz 2 (trees, heaps)** — Thu 2026-12-03 (no time/room listed)\n\nShould the lecture repeat weekly, and until what date?",
+      "rounds": [
+        {
+          "seconds": 16.8,
+          "usage": {
+            "input": 12644,
+            "output": 1179,
+            "thinking": 928,
+            "cacheRead": 22546,
+            "turns": 2,
+            "inner": [
+              "read_file"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "add_events",
+          "events": [
+            {
+              "title": "Data Structures lecture",
+              "date": "2026-11-18",
+              "weekday": "",
+              "start": "14:00",
+              "end": "16:00",
+              "location": "Building 90, hall 123"
+            },
+            {
+              "title": "Data Structures Quiz 2 (trees, heaps)",
+              "date": "2026-12-03",
+              "weekday": "",
+              "start": "",
+              "end": "",
+              "location": ""
+            }
+          ],
+          "repeat": "none",
+          "until": ""
+        }
+      ],
+      "ok": true
+    }
+  ]
+}

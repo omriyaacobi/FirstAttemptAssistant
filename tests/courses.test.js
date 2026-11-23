@@ -159,7 +159,7 @@ test("ingest retries a chunk with the second model, and reports a failure in the
   const calls = [];
   const ok = await readWith(fakeReader(5, { failFirstModel: true, calls }));
   assert.strictEqual(ok.file.status, "ready");
-  assert.deepStrictEqual(calls, ["gemini-4-hydrogen-high", "gemini-3.8-flash-medium"]);
+  assert.deepStrictEqual(calls, ["gemini-4-hydrogen-high", "gemini-4-neon-low"]);
   const bad = await readWith(async () => { throw new Error("no quota"); });
   assert.strictEqual(bad.file.status, "failed");
   assert.match(bad.file.error, /no quota/);
@@ -328,7 +328,7 @@ test("ingest passes the time limit to the reader, and asks the same model again 
   const asked = [];
   const bad = await readWith(async (model) => { asked.push(model); return "I could not read that."; });
   assert.strictEqual(bad.file.status, "failed");
-  assert.deepStrictEqual(asked.slice(0, 3), ["gemini-4-hydrogen-high", "gemini-3.8-flash-medium", "gemini-4-argon-low"]); // a wrong-shaped answer is not asked again with the same model
+  assert.deepStrictEqual(asked.slice(0, 3), ["gemini-4-hydrogen-high", "gemini-4-neon-low", "gemini-3.8-flash-medium"]); // a wrong-shaped answer is not asked again with the same model
 });
 test("a long read that stops half way keeps its pages; Continue reads only the rest, Start over reads everything", async () => {
   const courses = createCourses(tmp());
@@ -506,7 +506,7 @@ test("a PDF that cannot be cut is still read whole, as before", async () => {
 });
 
 test("a cut chunk goes to the most accurate reader first, then along the chain (Neon low replaced Claude Sonnet, 2026-11-20)", async () => {
-  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-argon-low", "gemini-4-neon-low", "gemini-4-hydrogen-high"]);
+  assert.deepStrictEqual(CUT_CHAIN.map((m) => m.model), ["gemini-4-neon-low", "gemini-4-hydrogen-high"]);
   assert.ok(!CUT_CHAIN.some((m) => m.provider === "claude"), "the big-PDF reader never spends Omri's Claude plan");
   const { courses, course, file } = cutCourse(3);
   const asked = [];
@@ -517,7 +517,7 @@ test("a cut chunk goes to the most accurate reader first, then along the chain (
     return "=== PAGE 1 ===\none\n=== PAGE 2 ===\ntwo\n=== PAGE 3 ===\nthree";
   };
   await ingestFile({ courses, courseId: course.id, fileId: file.id, askFile: reader });
-  assert.deepStrictEqual(asked, [["gemini-4-argon-low", "agy"], ["gemini-4-neon-low", "agy"], ["gemini-4-hydrogen-high", "agy"]]);
+  assert.deepStrictEqual(asked, [["gemini-4-neon-low", "agy"], ["gemini-4-hydrogen-high", "agy"]]);
   assert.strictEqual(courses.getFile(course.id, file.id).pages, 3);
 });
 
