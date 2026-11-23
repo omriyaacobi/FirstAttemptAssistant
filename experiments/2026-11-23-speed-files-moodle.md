@@ -108,6 +108,21 @@ Moodle, token route (each request listed in order; the 0.3 s pause between reque
 | 7 | The linked folder: one walk for both `listFiles` and `workingNow`, kept for about 30 s | brain.js `prefetch`, project-folder.js | about 0.25-0.5 s on every message in that course | no |
 | 8 | `moodle_news` could take its posts from one request less (the forum list is also read by `moodle_course` just before) | moodle-tools.js | 0.6 s | no (same as 4) |
 
+**Built on this branch: ideas 4 and 8 (in `moodle-tools.js` only).** The reads are now kept for a short time:
+
+- the deadline list of all courses, for 3 minutes;
+- a course's contents and a forum's discussion list, for 1 minute;
+- the course list, for 5 s (so calls made together share it); it already had its own 10-minute cache.
+
+Calls running at the same time share one request, and a failed read is dropped at once. Tests:
+`tests/speed.test.js`, with a fake Moodle only.
+
+For the 4-course message this is 36 Moodle requests → 22. At the measured 0.6 s per request, that is about 21.6 s → 13.2 s.
+This is counted, not measured live, to keep traffic to Moodle low. Each new message still reads a course fresh (after 1
+minute), so "a direct question about a course reads it fresh" still holds.
+
+Ideas 1, 2, 3, 6 and 7 are in brain.js and were sent to the round-2 speed session to build.
+
 Already fine: course_read, course_search, pc_find, project_read and open_on_pc are all well under 0.2 s. The copy before
 opening (0.1 s for 46 MB) is a safety rule (never open the original) and costs almost nothing.
 

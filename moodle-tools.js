@@ -20,6 +20,11 @@ const { htmlToText } = require("./html-text");
 const MAX_DIRECT = 10;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 const COURSES_CACHE_MS = 10 * 60 * 1000;
+// (2026-11-23, experiments/2026-11-23-speed-files-moodle.md) Moodle answers one request at a time, about 0.6 s each. One message read
+// the same things again and again: ALL deadlines once per moodle_course (1 s each; 4 courses = 4 reads), and a course's contents and
+// forum list in moodle_course and again in moodle_news. Now a read is kept for a short time and shared by calls running together.
+const READ_KEEP_MS = 60 * 1000; // a course's contents and a forum's discussion list: fresh for every new message, shared inside one
+const EVENTS_KEEP_MS = 3 * 60 * 1000; // the deadline list of all courses
 const NEWS_POSTS = 3;
 const POST_CHARS = 3000;
 const ITEM_CHARS = 12000; // the text of one Moodle item given to the model (moodle_read)
@@ -62,10 +67,21 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
   // (a broken map reads as empty: the course links and the "already downloaded" list would be lost).
   const writeMap = (m) => { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(mapFile + ".tmp", JSON.stringify(m, null, 2)); fs.renameSync(mapFile + ".tmp", mapFile); };
   let coursesCache = { at: 0, list: null };
+  // A short-lived store of Moodle reads: the promise is kept, so calls running at the same time share ONE request; a failed read is
+  // dropped at once (the next call asks again).
+  const keptReads = new Map();
+  function kept(key, ms, read) {
+    const hit = keptReads.get(key);
+    if (hit && now() - hit.at < ms) return hit.promise;
+    const promise = Promise.resolve().then(read);
+    keptReads.set(key, { at: now(), promise });
+    promise.catch(() => { if (keptReads.get(key) && keptReads.get(key).promise === promise) keptReads.delete(key); });
+    return promise;
+  }
 
   async function moodleCourses() {
     if (coursesCache.list && now() - coursesCache.at < COURSES_CACHE_MS) return coursesCache.list;
-    const { data } = await bridge.ask("courses");
+    const { data } = await kept("courses", 5 * 1000, () => bridge.ask("courses")); // calls running together share one request
     const list = (Array.isArray(data) ? data : []).filter((c) => Number.isInteger(c.id)).map((c) => ({ id: c.id, name: oneLine(c.name, 200), category: oneLine(c.category, 120) }));
     coursesCache = { at: now(), list };
     return list;
@@ -137,8 +153,10 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     return list.map((m) => `- ${m.name} (Moodle id ${m.id}) -> ${map[m.id] ? `Bot course "${botName(bots, map[m.id])}"` : "not linked to a Bot course"}`).join("\n") || "Moodle shows no current courses.";
   }
 
+  const events = () => kept("events", EVENTS_KEEP_MS, () => bridge.ask("events"));
+  const forumList = (cmid) => kept("forum " + cmid, READ_KEEP_MS, () => bridge.ask("forum", { cmid }));
   async function contents(m) {
-    const { data } = await bridge.ask("course", { courseid: m.id });
+    const { data } = await kept("course " + m.id, READ_KEEP_MS, () => bridge.ask("course", { courseid: m.id }));
     return { sections: (data && data.sections) || [], items: ((data && data.items) || []).filter((i) => Number.isInteger(i.id)) };
   }
 
@@ -155,15 +173,15 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
       for (const i of its.slice(0, 60)) lines.push(`- [${i.id}] (${KIND[i.module] || i.module}) ${oneLine(i.name, 160)}${fetched[i.id] ? " [already downloaded]" : ""}`);
     }
     try {
-      const { data } = await bridge.ask("events");
+      const { data } = await events();
       const due = (Array.isArray(data) ? data : []).filter((e) => e.courseId === m.id).slice(0, 10);
       if (due.length) lines.push("## Coming deadlines", ...due.map((e) => `- ${oneLine(e.name, 160)}: ${day(e.due)}`));
     } catch (error) { lines.push(`(deadlines could not be read: ${explain(error)})`); }
     const forum = items.find((i) => i.module === "forum");
     if (forum) {
       try {
-        const { data } = await bridge.ask("forum", { cmid: forum.id });
-        const top = (Array.isArray(data) ? data : []).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, 5);
+        const { data } = await forumList(forum.id);
+        const top = (Array.isArray(data) ? data.slice() : []).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, 5);
         if (top.length) lines.push(`## Newest posts in "${oneLine(forum.name, 80)}"`, ...top.map((d) => `- ${day(d.time)}: ${oneLine(d.title, 160)}`));
       } catch (error) { lines.push(`(the announcements could not be read: ${explain(error)})`); }
     }
@@ -175,7 +193,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     const { items } = await contents(m);
     const forum = items.find((i) => i.module === "forum");
     if (!forum) return `The Moodle course "${m.name}" has no announcements forum.`;
-    const { data } = await bridge.ask("forum", { cmid: forum.id });
+    const { data } = await forumList(forum.id);
     const top = (Array.isArray(data) ? data : []).filter((d) => Number.isInteger(d.d)).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, Math.min(5, Math.max(1, Number(count) || NEWS_POSTS)));
     if (!top.length) return `No posts in "${forum.name}" of ${m.name}.`;
     const out = [`The newest posts in "${oneLine(forum.name, 80)}" of the Moodle course "${m.name}":`];
