@@ -1,0 +1,112 @@
+{
+ "runs": [
+  {
+   "arm": "after",
+   "a": 5.162,
+   "b": 7.388,
+   "total": 12.865,
+   "readyAtB": false,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:02:25.954Z"
+  },
+  {
+   "arm": "early",
+   "a": 5.241,
+   "b": 4.088,
+   "total": 9.642,
+   "readyAtB": true,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:02:39.189Z"
+  },
+  {
+   "arm": "early",
+   "a": 4.941,
+   "b": 4.966,
+   "total": 10.207,
+   "readyAtB": true,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:02:52.752Z"
+  },
+  {
+   "arm": "after",
+   "a": 6.469,
+   "b": 8.861,
+   "total": 15.638,
+   "readyAtB": false,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:03:11.651Z"
+  },
+  {
+   "arm": "after",
+   "a": 5.265,
+   "b": 7.205,
+   "total": 12.774,
+   "readyAtB": false,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:03:27.731Z"
+  },
+  {
+   "arm": "early",
+   "a": 5.453,
+   "b": 4.674,
+   "total": 10.438,
+   "readyAtB": true,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:03:41.578Z"
+  },
+  {
+   "arm": "early",
+   "a": 5.127,
+   "b": 4.221,
+   "total": 9.649,
+   "readyAtB": true,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:03:55.016Z"
+  },
+  {
+   "arm": "after",
+   "a": 4.177,
+   "b": 9.027,
+   "total": 13.506,
+   "readyAtB": false,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:04:11.691Z"
+  },
+  {
+   "arm": "after",
+   "a": 4.723,
+   "b": 7.047,
+   "total": 12.076,
+   "readyAtB": false,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:04:27.463Z"
+  },
+  {
+   "arm": "early",
+   "a": 4.594,
+   "b": 4.83,
+   "total": 9.734,
+   "readyAtB": true,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:04:40.563Z"
+  },
+  {
+   "arm": "early",
+   "a": 4.74,
+   "b": 8.161,
+   "total": 13.201,
+   "readyAtB": true,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:04:56.711Z"
+  },
+  {
+   "arm": "after",
+   "a": 4.298,
+   "b": 8.66,
+   "total": 13.261,
+   "readyAtB": false,
+   "model": "gemini-4-neon-low",
+   "at": "2026-11-23T15:05:13.649Z"
+  }
+ ]
+}
