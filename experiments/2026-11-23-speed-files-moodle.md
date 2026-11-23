@@ -129,6 +129,39 @@ opening (0.1 s for 46 MB) is a safety rule (never open the original) and costs a
 Not waste: running the Moodle requests one at a time. Parallel requests would save more time, but they look less like the
 phone app and may trip Moodle's limits. Keep them serial, and cut the repeats instead (4, 5, 8).
 
+## 4. Live end-to-end tests on the running Bot (23 Nov evening, Omri's OK through the manager)
+
+These are 8 real messages to Bot on port 3000. Each starts with "[speed test]", and they were sent one at a time.
+
+- **They measure TODAY's Bot (main).** None of this branch's fixes is merged.
+- **All 8 were answered by Claude Code Sonnet.** The "Claude first by pace" rule was on: Claude's week was +18 against its
+  pace, Gemini only +8 to +9. So these numbers are Sonnet's (about 4 s per call), not Neon's, and they cost about 407k tokens
+  of Omri's Claude plan.
+- **Before each message the script recorded the open processes and Explorer windows. Afterwards it closed only what was
+  new.** Two Explorer windows were closed. Chrome, Edge and VS Code were never touched.
+
+| test | total s | model calls (s each) | tools | other s |
+|---|---|---|---|---|
+| open exercise sheet 1 of a course on the PC | 10.9 | 4.8, 5.4 | course_files → open_on_pc | 0.7 |
+| open a course's Moodle page in Chrome | 4.6 | 3.6 | open_on_pc (quick finish) | 1.0 |
+| what is new on Moodle in one course | 18.4 | 4.3, 6.3 | moodle_course + moodle_news | 7.8 |
+| open the linked folder in Explorer | 4.6 | 4.0 | open_on_pc | 0.6 |
+| what does question 1 of sheet 1 ask | 8.5 | 4.5, 3.6 | course_read | 0.4 |
+| which project file did I change last | 4.5 | 3.7 | none (the newest file is already in the prompt) | 0.8 |
+| anything new on Moodle in all my courses | 29.4 | 4.6, 8.2 | moodle_course ×4 + moodle_news ×2 | 16.6 |
+| find a folder and open it | 6.2 | 5.8 | open_on_pc (the model used the linked folder, no pc_find) | 0.4 |
+
+What this confirms:
+
+- **Opening is fast when the model knows the target** (4.6-6.2 s, one call).
+- **"Open sheet 1" still pays a `course_files` round** (idea 2).
+- **Moodle reads are the biggest tool cost**: 7.8 s for one course, 16.6 s for all courses. The second number is 22 serial
+  requests. With this branch's cache it would be about 15 requests, about 7 s less (counted, not measured live).
+- **A question whose answer is already in the prompt is the fastest** (4.5 s). That is the same lesson as idea 2.
+
+**Left open for Omri to close:** an Edge tab with exercise sheet 1 (PDFs open in Edge, which was already running), and a
+Chrome tab with the Algorithms Moodle page. Both are new tabs in windows that were already open, so the script left them.
+
 ## Limits
 
 - The Moodle numbers come from one afternoon on the token route. On 19 Nov the same tools took 13-23 s.
