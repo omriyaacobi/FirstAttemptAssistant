@@ -168,11 +168,13 @@ function grepFiles(root, text) {
 // The parent walk is cached for a minute (it is about 0.15 s over WSL). Returns { inLinked, sibling } (each may be null).
 const SIBLING_CACHE_MS = 60 * 1000;
 const siblingCache = new Map();
-function workingNow(root, rules = {}, now = Date.now()) {
+// ownFiles (2026-11-23, speed round 2): the caller's own listFiles(root).files from this same moment, so the linked folder is walked
+// once per message instead of twice (about 0.25 s on a WSL folder). Never kept between messages: Omri's newest change must show.
+function workingNow(root, rules = {}, now = Date.now(), ownFiles = null) {
   const out = { inLinked: null, sibling: null };
   let linked;
   try { linked = fs.realpathSync(root); } catch (error) { return out; }
-  const own = listFiles(linked).files;
+  const own = Array.isArray(ownFiles) ? ownFiles : listFiles(linked).files;
   const newestOwn = own.reduce((m, f) => (f.mtime > m.mtime ? f : m), { mtime: 0 });
   if (newestOwn.rel) out.inLinked = { folder: newestOwn.rel.includes("/") ? newestOwn.rel.split("/")[0] : "", rel: newestOwn.rel, mtime: newestOwn.mtime };
   const parent = path.dirname(linked);

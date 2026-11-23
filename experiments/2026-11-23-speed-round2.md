@@ -168,6 +168,31 @@ repeated gives 9-13 s. "No first word after N s" is no signal either, because no
 
 The thinking line is its own commit, so it can be dropped alone (`git revert <that commit>`).
 
+## 7b. School files and Moodle (added at the manager's request, with the round-1 session)
+
+The round-1 session (`claude/bot-speed-research-3cdad5`) measured the file and Moodle paths; its numbers and note are in
+`experiments/2026-11-23-speed-files-moodle.md` on that branch. In short, the tools themselves are fast: course_read 8-62 ms,
+project_read 1-20 ms, open_on_pc a few ms, a Moodle download 0.6-0.9 s. The slow parts are extra model rounds (4-10 s each) and
+Moodle's requests, which run one at a time.
+
+We split the work. That session built the Moodle caching (`moodle-tools.js`, its commit 37d66d1). This branch built the parts
+that live in `brain.js`:
+
+| idea (its number in that note) | what was built here | expected effect |
+|---|---|---|
+| 1. download BEFORE open in one round | calls that add a file or folder (`moodle_fetch`, `save_link`, `link_folder`, `file_folder`: `ADDS_FIRST`) run first, then the rest; the results keep the model's order | "download sheet X and open it" no longer fails its open and needs a second round (about 8 s; that happened in 2 of 2 real messages) |
+| 2. the course's whole file list in the prompt | already built above (section 5) | "open sheet 1" saves its course_files round (live there: 4.8 + 5.4 s -> about 5 s) |
+| 6. course_files reads the pages once | `firstPageOf`: the first page of every file, read once and kept 5 s | 0.76 s -> about 0.02 s on the largest course with shared names |
+| 7. the linked folder walked once | `workingNow` takes the file list `prefetch` already made (`project-folder.js`, new optional argument) | about 0.25 s on every message in a course with a WSL folder. Nothing is kept between messages, so Omri's newest edit always shows |
+
+**Not built, for Omri:** (3) a fully successful `moodle_fetch` could finish without one more model call. 6 of 6 real
+downloads paid 3.4-9 s for that call. This changes the quick-finish rule (which today is only for "doing" tools that state
+their own outcome), so it needs Omri's yes. (5) Moodle's pause between requests, 0.3 -> 0.1 s, is a politeness choice; that
+session proposes it.
+
+Tests: `tests/brain.test.js` (download-first ordering, one page read for shared names) and `tests/better-search.test.js`
+(workingNow with a given list). Fake models and temporary folders only.
+
 ## 8. Ranked recommendation
 
 1. **Keep the thinking line** (built). It is the only thing found that shortens the model's own part: -0.8 s on every call and
@@ -175,10 +200,12 @@ The thinking line is its own commit, so it can be dropped alone (`git revert <th
    yes is needed before merging.** If he wants a quieter start, drop that one commit.
 2. **Keep the file list up front** (built). It is within the agreed design ("the courses and their files" are in every context).
    Up to 10 s on the messages it helps, and about 800 tokens at most.
-3. **Read the new re-read counter after a few days** (built). It decides whether more linked-folder code should ride along.
-4. **Not worth doing:** hedging/racing (about 0.1 s for 20-60% more calls), asking for shorter answers (no gain), prompt
+3. **Keep the file/Moodle fixes** (built, section 7b): download-before-open saves about 8 s on "download and open", and two
+   small tool speed-ups. Omri decides the `moodle_fetch` quick finish (3.4-9 s per download).
+4. **Read the new re-read counter after a few days** (built). It decides whether more linked-folder code should ride along.
+5. **Not worth doing:** hedging/racing (about 0.1 s for 20-60% more calls), asking for shorter answers (no gain), prompt
    layout for caching (Neon low never caches; the order is already right), parallel tool prefetch (tools take about 0.1 s).
-5. **Small, optional:** pushing the answer to the page instead of polling every 600 ms (about 0.3 s to the first words).
+6. **Small, optional:** pushing the answer to the page instead of polling every 600 ms (about 0.3 s to the first words).
 
 For Omri to know: the picker's **Neon medium** thinks about twice as much (782 thinking tokens per call on 22 Nov) and is about
 4.5 s slower per call. The thinking line should shorten it too, but this round did not measure that.

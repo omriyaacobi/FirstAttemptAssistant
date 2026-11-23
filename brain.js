@@ -84,6 +84,8 @@ const CALENDAR_WAIT_MS = 2500;
 const FILE_BUSY = new Set(["queued", "reading"]);
 const WAIT_POLL_MS = 2000;
 const WAIT_LIMIT_MS = 15 * 60 * 1000; // a file still being read after 15 minutes: answer anyway, and say so
+// Tools that add a file or a folder another call of the same round may need (open_on_pc, course_read, project_read): run first.
+const ADDS_FIRST = new Set(["moodle_fetch", "save_link", "link_folder", "file_folder"]);
 const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, notes: 10000, link: 14000, note: 300, notesKept: 6, fileList: 4000 };
 
 // One Argon process waits ready, so the answer does not pay agy's 2-3 s start-up (warmagy.js; a waiting process uses no quota).
@@ -326,8 +328,21 @@ function createBrain({
   const filesOf = (course) => { try { return (courseRoutes.courseFiles(course.id) || {}).files || []; } catch (error) { return []; } };
   // Files that share a name (a zip of missions, each with its own README.pdf) are told apart by their id and the first line of their
   // text (2026-11-13: the zip's folder names were not kept, so "the mission 2 readme" could not be found). The line is file text: data.
+  // The first page of every file of a course, read ONCE and kept 5 s (2026-11-23, speed round 2): a list with many files that share a
+  // name read all the course's pages again for EACH of them (0.76 s for the largest real course). Only a label, so 5 s old is fine.
+  const firstPages = new Map(); // course id -> { at, byFile: Map(fileId -> page) }
+  function firstPageOf(c, fileId) {
+    let hit = firstPages.get(c.id);
+    if (!hit || Date.now() - hit.at > 5000) {
+      const byFile = new Map();
+      for (const p of courses.allPages(c.id)) { const old = byFile.get(p.fileId); if (!old || p.page < old.page) byFile.set(p.fileId, p); }
+      hit = { at: Date.now(), byFile };
+      firstPages.set(c.id, hit);
+    }
+    return hit.byFile.get(fileId);
+  }
   function firstLine(c, fileId) {
-    const p = courses.allPages(c.id).filter((x) => x.fileId === fileId).sort((a, b) => a.page - b.page)[0];
+    const p = firstPageOf(c, fileId);
     const line = String((p && p.text) || "").replace(/<[^>]*>/g, " ").split(/\r?\n/).map((s) => s.replace(/^[#>*\s-]+|[*`]+/g, "").trim()).find(Boolean) || "";
     return line.slice(0, 70);
   }
@@ -464,8 +479,8 @@ function createBrain({
         // Where Omri works NOW, from file times only (project-folder.js workingNow): the part of the linked folder changed last, and a
         // folder NEXT TO it that changed more recently (Omri moved on from mission1 to mission2). Names only; nothing there is read.
         try {
-          const w = projectFolder.workingNow(r.projectDir, { forbidden: [__dirname], ...folderRules }, now());
-          const ago = (t) => { const h = Math.round((now() - t) / 3600000); return h < 1 ? "less than an hour ago" : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`; };
+          const w = projectFolder.workingNow(r.projectDir, { forbidden: [__dirname], ...folderRules }, now(), files);
+          const ago =(t) => { const h = Math.round((now() - t) / 3600000); return h < 1 ? "less than an hour ago" : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`; };
           if (w.inLinked && w.inLinked.folder) out.push(`Bot's code sees that Omri's newest change in the linked folder is in ${w.inLinked.folder}/ (${w.inLinked.rel}, ${ago(w.inLinked.mtime)}): most likely the part Omri works on now.`);
           if (w.sibling) out.push(`A folder NEXT TO the linked one, ${w.sibling.folder}, changed more recently (${ago(w.sibling.mtime)}) than anything in the linked folder: Omri has probably moved on to it. Its newest file names (names only, NOT readable yet): ${w.sibling.files.join(", ")}. To look at one, call project_read with its name: Bot then shows Omri a card to link the parent folder.`);
         } catch (error) { /* only a hint */ }
@@ -1298,7 +1313,10 @@ ${r.cardText}`; }
       // Anything but quick "doing" tools means another model round will follow: that is long work, so it takes a slot first.
       if (!reply.calls.every((c) => DOING.has(c.tool))) await slowSlot();
       // Run the calls. Each is checked by its own code; a refused or failed call becomes a plain line the model must report honestly.
-      const results = await Promise.all(reply.calls.map(async (call) => {
+      // FIRST the calls that ADD something the others may use (2026-11-23, speed round 2): "download sheet 3 from Moodle and open it"
+      // ran open_on_pc next to moodle_fetch, before the file was filed, so the open failed and cost one more model round (about 8 s;
+      // 2 of 2 real messages). Those run first (together), then the rest (together); the results keep the model's order.
+      const runCall = async (call) => {
         const fn = tools[call.tool];
         const label = `${call.tool}${call.course ? ` (${String(call.course).slice(0, 40)})` : ""}`;
         log(`[brain] tool ${label}`);
@@ -1312,7 +1330,13 @@ ${r.cardText}`; }
           if (DOING.has(call.tool) && !UNSAID.has(call.tool)) ctx.done.push(text.split("\n")[0].slice(0, 200)); // what really happened, for an honest reply if the model fails later
           return { call, text, ok: true };
         } catch (error) { return { call, text: `FAILED, nothing was done: ${String(error.message).slice(0, 400)}`, ok: false }; }
-      }));
+      };
+      const firsts = reply.calls.filter((c) => ADDS_FIRST.has(c.tool));
+      const done = new Map();
+      if (firsts.length && firsts.length < reply.calls.length) (await Promise.all(firsts.map(runCall))).forEach((r, i) => done.set(firsts[i], r));
+      const rest = reply.calls.filter((c) => !done.has(c));
+      (await Promise.all(rest.map(runCall))).forEach((r, i) => done.set(rest[i], r));
+      const results = reply.calls.map((c) => done.get(c));
       // The quick finish: only "doing" tools, all of them worked, and the model already wrote what to tell Omri under its CALL lines.
       let said = fixMath(withoutCalls(reply.text));
       if (said && results.every((x) => x.ok && DOING.has(x.call.tool))) {
