@@ -155,3 +155,60 @@ test("/api/brain/warm: JSON only, warms at most once every 20 s, and never needs
     assert.strictEqual(warms, 1);
   } finally { server.close(); }
 });
+
+// ---- Moodle reads kept for a short time (2026-11-23, experiments/2026-11-23-speed-files-moodle.md) ----
+function moodleWith({ failEvents = 0 } = {}) {
+  const { createMoodleTools } = require("../moodle-tools");
+  const asked = [];
+  let clock = 1_000_000;
+  let eventFails = failEvents;
+  // item ids are unique across Moodle, as in the real one
+  const items = (c) => [{ id: c * 100 + 1, name: "News", module: "forum", section: 10 }, { id: c * 100 + 2, name: "Sheet 1", module: "resource", section: 10 }];
+  const bridge = {
+    connected: () => true,
+    ask: async (kind, args = {}) => {
+      asked.push(kind);
+      await new Promise((r) => setTimeout(r, 5));
+      if (kind === "courses") return { data: [11, 12, 13, 14].map((id) => ({ id, name: "Demo course " + id, category: "x" })) };
+      if (kind === "course") return { data: { sections: [{ id: 10, number: 0, title: "Week 1", cms: items(args.courseid).map((i) => i.id) }], items: items(args.courseid) } };
+      if (kind === "events") { if (eventFails-- > 0) throw Object.assign(new Error("slow"), { code: "timeout" }); return { data: [{ name: "Sheet 1 due", courseId: 11, due: 1795000000 }] }; }
+      if (kind === "forum") return { data: [{ d: 5, title: "Room change", time: 1794000000 }, { d: 6, title: "Welcome", time: 1793000000 }] };
+      if (kind === "posts") return { data: [{ subject: "Room change", author: "TA", created: 1794000000, message: "<p>Room 34</p>", attachments: [] }] };
+      throw new Error("unknown " + kind);
+    },
+  };
+  const tools = createMoodleTools({ bridge, dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-speed-moodle-")), courseRoutes: { list: () => [] }, now: () => clock });
+  return { tools, asked, tick: (ms) => { clock += ms; } };
+}
+const count = (asked, kind) => asked.filter((k) => k === kind).length;
+
+test("Moodle: 4 courses at once share ONE course list and ONE deadline list; moodle_news after moodle_course reads nothing twice", async () => {
+  const { tools, asked } = moodleWith();
+  const texts = await Promise.all(["11", "12", "13", "14"].map((id) => tools.courseText(id)));
+  for (const t of texts) assert.match(t, /Newest posts/);
+  assert.match(texts[0], /Sheet 1 due/);
+  assert.strictEqual(count(asked, "courses"), 1);
+  assert.strictEqual(count(asked, "events"), 1, "the deadline list of all courses is read once, not once per course");
+  assert.strictEqual(count(asked, "course"), 4);
+  assert.strictEqual(count(asked, "forum"), 4);
+  await Promise.all(["11", "12", "13", "14"].map((id) => tools.newsText(id, undefined, 1)));
+  assert.strictEqual(count(asked, "course"), 4, "contents kept from moodle_course");
+  assert.strictEqual(count(asked, "forum"), 4, "forum lists kept from moodle_course");
+  assert.strictEqual(count(asked, "posts"), 4, "the posts themselves are read");
+});
+
+test("Moodle: a new message a minute later reads the course fresh; deadlines are kept 3 minutes; a failed read is never kept", async () => {
+  const { tools, asked, tick } = moodleWith({ failEvents: 1 });
+  const first = await tools.courseText("11");
+  assert.match(first, /deadlines could not be read/);
+  const second = await tools.courseText("11");
+  assert.match(second, /Sheet 1 due/, "the failed deadline read was asked again");
+  assert.strictEqual(count(asked, "events"), 2);
+  tick(61 * 1000);
+  await tools.courseText("11");
+  assert.strictEqual(count(asked, "course"), 2, "contents older than a minute are read again");
+  assert.strictEqual(count(asked, "events"), 2, "deadlines kept for 3 minutes");
+  tick(3 * 60 * 1000);
+  await tools.courseText("11");
+  assert.strictEqual(count(asked, "events"), 3);
+});
