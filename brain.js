@@ -94,11 +94,14 @@ const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, note
 // 6,000 to 9,000 tokens of agy's own overhead from EVERY call (experiments/2026-11-12-quota-max.md). BOT_BRAIN_AGENT=off in the
 // environment turns it off (only for comparing in a test run).
 const SLIM_AGENT = process.env.BOT_BRAIN_AGENT !== "off";
-const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT });
-const warmUp = () => { try { pool.warmUp(CHAIN[0].model, null); } catch (error) { /* only makes the first message slower */ } }; // the brain's first model (Hydrogen medium since 2026-11-15)
-// The warm pool keeps one waiting agy process per model (saves the 2-3 s start). Neon low joined on 2026-11-20: it had become the
-// first model but was missing here, so its spare was started and never used, and every Neon call started cold (experiments/2026-11-20-neon-speed.md).
-const WARM_MODELS = new Set([MODELS.neonLow.model, MODELS.hydrogenMedium.model, MODELS.argonLow.model]);
+// early (2026-11-23): the spare for the next tool round starts when a call starts, so round 2 does not wait for agy's 3.4 s start.
+const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT, early: true });
+// The warm pool keeps one waiting agy process per model (saves agy's start, about 3.4 s measured 2026-11-23). Neon low joined on
+// 2026-11-20: it had become the first model but was missing here, so every Neon call started cold (experiments/2026-11-20-neon-speed.md).
+// 2026-11-23: EVERY agy model the brain or Omri's picker (model-choice.js) can put first is here. Neon medium, picked for 50 answers on
+// 22-23 Nov, was missing, so each of its calls started agy cold (experiments/2026-11-23-speed.md). A waiting spare uses no quota.
+const WARM_MODELS = new Set([MODELS.neonLow, MODELS.neonMedium, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.argonMedium, MODELS.sonnetInAgy].map((m) => m.model));
+const warmModel = (model) => { try { if (WARM_MODELS.has(model)) pool.warmUp(model, null); } catch (error) { /* only makes the next message slower */ } };
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
 // THE BRAIN'S TIME LIMIT (2026-11-16). The models' general limits (providers.js: Argon 240 s) are sized for reading big files. In
 // Omri's real use the brain's 293 successful calls took 9 s in the middle and 50 s at most, and the one call that hung made Omri wait
@@ -307,6 +310,7 @@ function createBrain({
   waitPollMs = WAIT_POLL_MS, // how often a file still being read is looked at again (tests use a few ms)
   waitLimitMs = WAIT_LIMIT_MS,
   now = () => Date.now(),
+  warmAgy = warmModel, // starts the waiting agy process of one model (tests pass a fake: no real agy)
 }) {
   let paceLead = null; // which agy model went first last time (quota.js paceOrder keeps it in the lead for a stretch); memory only
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
@@ -1012,15 +1016,23 @@ ${r.cardText}`; }
   // The coming week of the calendar and the waiting reminders, as text. Read-only. The calendar answer is kept for a minute, and a slow
   // or failed Google call just leaves the block out (the model can still call calendar_read).
   let calendarCache = { at: 0, text: "" };
-  async function weekAhead(lang) {
-    const out = [];
+  let calendarReading = null; // one Google read at a time: a message and the typing warm-up share it (2026-11-23)
+  function refreshCalendar() {
+    if (now() - calendarCache.at <= CALENDAR_CACHE_MS) return Promise.resolve();
+    if (calendarReading) return calendarReading;
     const today = localIso(now(), localZone()).slice(0, 10);
-    if (now() - calendarCache.at > CALENDAR_CACHE_MS) {
+    calendarReading = (async () => {
       try {
         const got = await Promise.race([readCalendar({ from: today, days: CALENDAR_DAYS }), new Promise((resolve) => setTimeout(() => resolve(null), CALENDAR_WAIT_MS))]);
         if (got && typeof got.text === "string") calendarCache = { at: now(), text: got.text };
       } catch (error) { calendarCache = { at: now(), text: "(the calendar could not be read: " + friendlyError(error) + ")" }; }
-    }
+    })().finally(() => { calendarReading = null; });
+    return calendarReading;
+  }
+  async function weekAhead(lang) {
+    const out = [];
+    const today = localIso(now(), localZone()).slice(0, 10);
+    await refreshCalendar();
     if (calendarCache.text) out.push(`Omri's Google Calendar, ${CALENDAR_DAYS} days from today (${today}). For other days use calendar_read:\n` + block("calendar", calendarCache.text));
     try {
       const pending = reminders.list().filter((r) => r.status === "pending");
@@ -1093,16 +1105,19 @@ ${r.cardText}`; }
     const slowSlot = async () => { if (gate && !slotTaken) { slotTaken = true; await gate(focus ? { course: focus.id } : {}); } };
 
     // -- the fixed part of the prompt --
+    // The calendar is read from Google FIRST (2026-11-23) and awaited only after the rest of the prompt is built, so its 0.4 s overlap
+    // the course pages being picked (both used to run one after the other: 0.9 s before every course message reached a model).
+    const week = route === "general" ? "" : weekAhead(lang).then((t) => `## Calendar and reminders\n${t}`, () => "");
     let about = "";
     try { const facts = memory.list(); about = aboutBlock({ picked: pickFacts(facts, task) }) || ""; } catch (error) { about = ""; }
     const zone = localZone();
     const day = new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long" }).format(new Date(now()));
     const brief = readBrief();
-    const head = [
+    const head = (await Promise.all([
       brief,
       `## Right now\nIt is ${localIso(now(), zone)} (${day}), time zone ${zone}.`,
       about,
-      route === "general" ? "" : `## Calendar and reminders\n${await weekAhead(lang)}`,
+      week,
       `## Omri's courses in Bot\n${coursesText(list)}`,
       coach && coach.pendingProposal && coach.pendingProposal() ? "A study card is waiting for Omri's yes or no (card_reply)." : "",
       route === "general" ? "Omri asked for an ordinary answer this time: do not use the course files, the calendar or the study tools." : "",
@@ -1116,7 +1131,7 @@ ${r.cardText}`; }
       // marks are set only by parts_done. With it "what is left of lecture 4" has a real answer.
       focus && coach && coach.brainTools && coach.brainTools.partsContext ? (() => { let t = ""; try { t = coach.brainTools.partsContext({ courseId: focus.id }) || ""; } catch (error) { t = ""; } return t ? `## The parts of the lectures Omri is on in ${focus.name}\nCode made this list from the notes (the topics of each lecture's pages) and from the parts marked with parts_done. "Worked on" is not "understood". What is left of a lecture = its parts marked NOT YET: answer "what is left" from here, and offer as "the next part" only a part marked NOT YET.\n${block("lecture-parts", t)}` : ""; })() : "",
       historyBlock(history) ? "## " + historyBlock(history) : "## Conversation so far\n(none)",
-    ].filter(Boolean).join("\n\n");
+    ])).filter(Boolean).join("\n\n");
     // From the phone (server.js knows, never a model): a long answer is a lot of scrolling on a small screen (2026-11-13).
     const phoneLine = fromPhone === true ? "\n(Omri is writing from the phone: keep the reply to about one phone screen, a few short paragraphs, unless Omri asks for more.)" : "";
     // A photo WITH words (2026-11-16): the words were answered and the photo was never opened ("I have not read the photo you
@@ -1294,10 +1309,25 @@ ${r.cardText}`; }
 
   // After every message (answered or not), the pools are looked up again in the background for the next one. Never awaited.
   // What the message cost in tokens is added to the day's totals (tokenlog.js), answered or not: a failed call was paid for too.
+  // WARM UP (2026-11-23): Omri started typing (the page says so, at most once a minute) or Bot just started. The agy spare of the model
+  // most likely to answer next is started (Omri's picked model, else the one that answered last, else the chain's first) and the
+  // calendar is read, so a message after a pause does not pay agy's 3.4 s start and the 0.4 s Google read. No model is asked: no quota.
+  let lastAnswered = null;
+  function warmUp() {
+    let picked = null;
+    try { picked = chosenFor(modelChoice ? modelChoice.get() : null, { photo: false }); } catch (error) { picked = null; }
+    const next = picked && picked.provider === "agy" ? picked.model : lastAnswered || (chain[0] && chain[0].provider === "agy" ? chain[0].model : null);
+    if (next) warmAgy(next);
+    try { Promise.resolve(refreshCalendar()).catch(() => {}); } catch (error) { /* the message reads it itself */ }
+    return next;
+  }
+
   async function handleAndRefresh(task, options = {}) {
     const spent = [];
     try {
       const result = await handle(task, { ...options, spent });
+      const photo = options.image || (Array.isArray(options.images) && options.images.length); // a photo answer is not the usual model
+      if (!photo && result && result.used && result.used.provider === "agy" && WARM_MODELS.has(result.used.model)) lastAnswered = result.used.model;
       // Omri's picked model (model-choice.js): the answer's line says "your choice" when that model really answered.
       if (result && result.choice && result.used && typeof result.reason === "string") {
         const pickedAnswered = result.used.model === result.choice.model;

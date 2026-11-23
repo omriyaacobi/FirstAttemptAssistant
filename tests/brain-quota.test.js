@@ -111,10 +111,14 @@ test("after every message the pools are looked up again; a limit error is report
 
 test("agy prompts always go through the streaming call (stdin), even when nothing is shown while writing", async () => {
   asked.length = 0;
-  const { brain } = brainWith({ askOne: undefined, chain: [MODELS.sonnetInAgy, MODELS.claudeSonnet] });
+  // An agy model WITHOUT a warm spare takes this cold path (2026-11-23: every model the brain or the picker can put first is warm
+  // now, so the test uses agy's Claude medium; with a warm model this test would start a REAL agy, the pool is not faked here).
+  const { WARM_MODELS } = require("../brain");
+  assert.ok(!WARM_MODELS.has(MODELS.claudeInAgy.model));
+  const { brain } = brainWith({ askOne: undefined, chain: [MODELS.claudeInAgy, MODELS.claudeSonnet] });
   const r = await run(brain);
   assert.strictEqual(r.answer, "fine");
-  assert.deepStrictEqual(asked, [{ provider: "agy", model: "claude-sonnet-5-5-low", streams: true }]);
+  assert.deepStrictEqual(asked, [{ provider: "agy", model: MODELS.claudeInAgy.model, streams: true }]);
 });
 
 test("OMRI'S CHOICE (model-choice.js): the picked model is asked first, the answer says so, and if it fails the normal order answers", async () => {

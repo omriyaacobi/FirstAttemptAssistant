@@ -96,6 +96,7 @@ const HOST = "127.0.0.1"; // listen on this computer only; other devices on your
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_BODY = 20000; // bytes; a bigger request is refused
 const MAX_TASK_CHARS = 8000;
+const WARM_EVERY_MS = 20 * 1000; // the typing warm-up runs at most this often (agy's spare lives 8 minutes, so this is plenty)
 const MAX_RUNNING = 2; // at most 2 tasks at once, so a bug or a loop can't burn your whole quota
 const PAGE = path.join(__dirname, "public", "index.html");
 const AGY_CMD = process.env.AGY_CMD || "C:\\Users\\User\\AppData\\Local\\agy\\bin\\agy.exe";
@@ -264,6 +265,7 @@ function createServer({
   // When one finishes and nobody is looking at that chat, every subscribed phone gets a push.
   // Every message of the thread is answered by the brain. (Tests pass their own `handle` instead.)
   const brain = makeBrain ? makeBrain() : null;
+  let lastWarm = 0; // the last typing warm-up (/api/brain/warm)
   // Improve Bot runs in the background: one push when a change is ready or could not be finished (no change text on the lock
   // screen, none at night; finishPush in selfedit.js).
   if (selfEdit.onFinish) selfEdit.onFinish(({ id, status }) => {
@@ -724,6 +726,19 @@ function createServer({
       const input = await readJsonBody(req, res);
       if (!input) return;
       try { return sendJson(res, 200, view(modelChoice.set(input.key === undefined ? null : input.key))); } catch (error) { return sendJson(res, error.status || 400, { error: error.message }); }
+    }
+
+    // Omri started typing (2026-11-23, experiments/2026-11-23-speed.md): get the next answer's agy process and the calendar ready, so a
+    // message after a pause does not wait for agy's start (about 3.4 s). No model is asked and nothing is read from the words (the page
+    // sends an empty body). At most once every 20 s whatever the page sends; behind the same login as every other route.
+    if (req.method === "POST" && url.pathname === "/api/brain/warm") {
+      if (!(await readJsonBody(req, res))) return;
+      const at = Date.now();
+      if (!brain || typeof brain.warmUp !== "function" || at - lastWarm < WARM_EVERY_MS) return sendJson(res, 200, { warmed: false });
+      lastWarm = at;
+      let model = null;
+      try { model = brain.warmUp() || null; } catch (error) { model = null; }
+      return sendJson(res, 200, { warmed: Boolean(model) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/restart") {
