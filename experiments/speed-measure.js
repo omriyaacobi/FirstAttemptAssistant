@@ -51,6 +51,7 @@ for (const f of files) {
       queued: log.some((l) => l.startsWith("[queue] waiting")),
       choice: log.some((l) => l.startsWith("[brain] your choice")),
       web: /web search step/.test(callLine),
+      rereads: Number((callLine.match(/(\d+) project_read of code already in the prompt/) || [, 0])[1]),
     });
   }
 }
@@ -102,3 +103,7 @@ const firstTools = new Map();
 for (const r of lookup) { const k = r.toolNames.slice(0, 1).join(); firstTools.set(k, (firstTools.get(k) || 0) + 1); }
 console.log("First tool asked in those: " + [...firstTools.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(", "));
 if (process.env.DUMP) fs.writeFileSync(process.env.DUMP, JSON.stringify(rows.map(({ toolNames, ...r }) => ({ ...r, toolNames })), null, 1));
+// Round 2 (2026-11-23): a project_read of code that was ALREADY in the prompt cost a whole model round. brain.js counts it on the
+// "answered by" line from the round-2 branch on ("N project_read of code already in the prompt").
+const rereadMsgs = rows.filter((r) => r.rereads > 0);
+console.log(`Messages that re-read code already in the prompt (counted from round 2 on): ${rereadMsgs.length}; their median total ${f1(q(rereadMsgs.map((r) => r.total), 0.5))} s`);

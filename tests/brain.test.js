@@ -129,6 +129,18 @@ test("the assignment of the course in focus is attached in full", async () => {
   assert.strictEqual(r.courseId, "c1");
 });
 
+test("speed round 2: the whole file list of the course in focus rides along when it is small, so no course_files round is needed", async () => {
+  const { brain, seen } = setup(["ok"]);
+  await run(brain, "explain 3.3 in Systems Programming");
+  assert.match(seen.prompts[0], /All files of Systems Programming \(the same list course_files gives/);
+  assert.match(seen.prompts[0], /Assignment_1\.pdf \(ready, 1 page\(s\)\)\nnotes\.html \(ready, 1 page\(s\)\)/);
+  // a course with a very long list: not attached (the tool still gives it)
+  const many = Array.from({ length: 150 }, (_, i) => ({ id: "g" + i, name: `lecture_${i}_a_rather_long_file_name.pdf`, status: "ready", pages: 3 }));
+  const big = setup(["ok"], { courseRoutes: { list: () => COURSES, courseFiles: (id) => ({ files: id === "c1" ? many : [] }), linkFiles: () => [] } });
+  await run(big.brain, "explain 3.3 in Systems Programming");
+  assert.doesNotMatch(big.seen.prompts[0], /All files of Systems Programming/);
+});
+
 test("a lookup tool: its result goes back to the model, which then answers", async () => {
   const { brain, seen } = setup(['CALL {"tool":"course_search","course":"Systems Programming","query":"rule of five"}', "It is on page 1."]);
   const r = await run(brain, "where is the rule of five?");
@@ -407,6 +419,18 @@ test("a folder is linked only when its path is in Omri's own message, and then i
   assert.match(b.seen.prompts[1], /Omri's own project folder for Systems Programming/); // the file list rides along once linked
   assert.match(b.seen.prompts[1], /1: int x = 1;/); // and the file changed last, with line numbers
   assert.match(b.seen.prompts[2], /MemoryBlock\.cpp \(line numbers added by Bot\)/);
+});
+
+test("speed round 2: re-reading a linked file whose text was already in the prompt is counted in the answer's log line", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-reread-"));
+  fs.writeFileSync(path.join(dir, "main.c"), "int x = 1;\n");
+  const b = setup([`CALL {"tool":"link_folder","course":"Systems Programming","path":${JSON.stringify(dir)}}\nLinked.`, 'CALL {"tool":"project_read","course":"Systems Programming","file":"main.c"}', "Line 1 sets x."]);
+  await run(b.brain, `my systems programming assignment folder is ${dir}`);
+  const lines = [];
+  await run(b.brain, "what does main.c in Systems Programming do?", { log: (l) => lines.push(l) });
+  assert.match(b.seen.prompts[1], /1: int x = 1;/); // main.c was already in the prompt
+  assert.ok(lines.some((l) => /answered by .*, 1 project_read of code already in the prompt$/.test(l)), lines.join("\n"));
 });
 
 test("save_links: the links of a course file become ONE list with a Confirm card; nothing is fetched by the brain", async () => {
