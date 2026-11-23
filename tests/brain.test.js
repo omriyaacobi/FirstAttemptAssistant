@@ -273,6 +273,15 @@ test("a photo WITH words (2026-11-16): the photo is named again right next to th
   assert.ok(words > 0 && again > words, "the photo line comes right after the words");
 });
 
+test("speed round 2: the 'plan only as much as needed' line sits right after Omri's message, in every round, but never with a photo", async () => {
+  const { brain, seen } = setup(['CALL {"tool":"course_search","course":"Systems Programming","query":"rule of five"}', "It is on page 1."]);
+  await run(brain, "where is the rule of five?");
+  for (const p of seen.prompts) assert.match(p, /<\/message>\n\(This message is in English[^\n]*\n\(Answer at once\. Plan only as much as this message needs/);
+  const photo = photoSetup(["A cat."]);
+  await run(photo.brain, "what is this?", { image: { path: "x.png" } });
+  assert.doesNotMatch(photo.calls[0].prompt, /Answer at once/);
+});
+
 test("a photo message is in the token log too: the photo model's onUsage is passed on (review 1.3)", async () => {
   const added = [];
   const askImage = async (model, prompt, imagePath, onText, extra = {}) => { if (extra.onUsage) extra.onUsage({ input: 900, output: 20 }); return "A cat."; };

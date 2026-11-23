@@ -236,6 +236,13 @@ function lastWords(history) {
 // words for a photo sent without text got the English line and an English reply in the middle of a Hebrew lesson. So the English
 // line now needs a real sentence (4+ Latin words), or a talk that was not in Hebrew anyway; a short Latin message right after
 // Omri's Hebrew message gets a line that keeps the talk's language. Counting letters and words only: never a list of words.
+// THINK ONLY AS MUCH AS NEEDED (2026-11-23, experiments/2026-11-23-speed-round2.md). The model's hidden thinking ends before the first
+// word shows, and it is about two thirds of what Neon low writes. This line, RIGHT AFTER Omri's message, cut thinking about 30% (401 ->
+// 272 tokens, 98 lab calls) and the call about 0.8 s (6.5 -> 5.7 s median), with every answer still right (math, traps, tool calls,
+// reminders, two things in one message). The same rule placed in the briefing, far from the message, did NOT help. Not with a photo
+// (never tested there; reading a photo carefully matters more than a second).
+const QUICK_LINE = "\n(Answer at once. Plan only as much as this message needs: a clear question or a clear tool call needs almost no planning. Then write.)";
+
 function languageLine(task, history = []) {
   const prose = String(task).replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
   const count = (text) => ({ he: (String(text).match(/[֐-׿]/g) || []).length, en: (String(text).match(/[a-z]/gi) || []).length });
@@ -1159,7 +1166,7 @@ ${r.cardText}`; }
       ? `## Omri's new message\n<message>\n${noCtl(task)}\n</message>${withPhoto}`
       : shots.length > 1 ? `## Omri's new message\nOmri sent only the ${shots.length} photos (${shotList}), with no words. Look at every one. They are usually an answer to what Bot asked last, or they continue the current talk: read the conversation so far to know what Omri means, and do that. Reply in the language of that talk.`
       : "## Omri's new message\nOmri sent only the photo, with no words. It is usually an answer to what Bot asked last, or it continues the current talk: read the conversation so far to know what Omri means, and do that. Reply in the language of that talk.";
-    const tail = quoteBlock(quote, zone) + words + languageLine(said, history) + phoneLine;
+    const tail = quoteBlock(quote, zone) + words + languageLine(said, history) + (image ? "" : QUICK_LINE) + phoneLine;
 
     // Quota: getPoolLevels is async, so it MUST be awaited (before 2026-11-11 it was not, and the brain never saw a low pool).
     const levels = await (async () => { try { const l = await poolLevels(); return Array.isArray(l) ? l : []; } catch (error) { return []; } })();
