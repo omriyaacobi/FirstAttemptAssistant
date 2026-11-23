@@ -407,14 +407,16 @@ test("quick finish: a full Moodle download ends the message with the model's own
   assert.strictEqual(filed.length, 1);
 });
 
-test("quick finish: a full Moodle download with no words from the model ends with a line code wrote", async () => {
-  const { brain, prompts } = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}']);
-  const r = await brain.handle("get lecture 1 from moodle", { history: [], courses: BOT_COURSES });
-  assert.strictEqual(prompts.length, 1);
-  assert.match(r.answer, /^Downloaded from Moodle into "Systems Programming": .+\. Bot is reading them now\.$/);
-  const he = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}']);
-  const r2 = await he.brain.handle("תוריד את הרצאה 1 מהמודל", { history: [], courses: BOT_COURSES });
-  assert.match(r2.answer, /^הורדו מ-Moodle אל "Systems Programming"/);
+test("quick finish: a full Moodle download ends the message only with the model's own words; a bare CALL gets its next round", async () => {
+  const quick = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}\nLecture 1 is downloaded.']);
+  const r = await quick.brain.handle("get lecture 1 from moodle", { history: [], courses: BOT_COURSES });
+  assert.strictEqual(quick.prompts.length, 1, "full download + the model's words: no extra model call");
+  assert.strictEqual(r.answer, "Lecture 1 is downloaded.");
+  // 2026-11-23 A/B quality test: "download it and open it" ended after the download when code wrote the closing line itself.
+  const bare = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}', "Downloaded; opening it now."]);
+  const r2 = await bare.brain.handle("download lecture 1 from moodle and open it", { history: [], courses: BOT_COURSES });
+  assert.strictEqual(bare.prompts.length, 2, "a bare CALL may have a next step, so the model is asked again");
+  assert.strictEqual(r2.answer, "Downloaded; opening it now.");
 });
 
 test("quick finish: a partial download, an item not found, or a duplicate still goes back to the model", async () => {
@@ -423,7 +425,7 @@ test("quick finish: a partial download, an item not found, or a duplicate still 
   assert.strictEqual(partial.prompts.length, 2, "the model's early words are not shown when not everything was found");
   assert.strictEqual(r.answer, "Lecture 1 is in; the other was not found.");
   assert.match(partial.prompts[1], /Not found among the course's files/);
-  const twice = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}', 'CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}\nDone.', "It was already there."]);
+  const twice = brainWith(['CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}\nGot it.', 'CALL {"tool":"moodle_fetch","course":"68510","items":["Lecture 1"]}\nDone.', "It was already there."]);
   await twice.brain.handle("get lecture 1", { history: [], courses: BOT_COURSES });
   const r3 = await twice.brain.handle("get lecture 1 again", { history: [], courses: BOT_COURSES });
   assert.strictEqual(r3.answer, "It was already there.");

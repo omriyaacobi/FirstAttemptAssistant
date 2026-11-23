@@ -399,10 +399,10 @@ test("real Argon editor (fake agy): trying a shell command once is forgiven with
 
 // ---- the page and the server know about the choice ----
 
-test("the Improve Bot window offers Argon next to Sonnet and Opus, and says which quota it uses", () => {
+test("the Improve Bot window offers Neon, Sonnet and Opus (Argon option removed 2026-11-23), and says which quota it uses", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
   assert.match(html, /<option value="sonnet">/);
-  assert.match(html, /<option value="argon">Argon \(page only\)<\/option>/);
+  assert.doesNotMatch(html, /<option value="argon">/); // the page no longer offers Argon; server.js and selfedit.js still accept it until the guard file is changed
   assert.match(html, /Uses your Gemini quota, NOT Claude/);
   assert.match(html, /Uses your Claude plan\./);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");

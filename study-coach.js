@@ -201,7 +201,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     if (!topic.length) return [];
     const byWords = catchup.matchSections(v.outline, topic.join(" "), undefined, v.pages);
     if (byWords.length || !useModel) return byWords;
-    return catchup.chooseByModel({ askChain, chain: [MODELS.argonLow], outline: v.outline, pages: v.pages, text, log });
+    return catchup.chooseByModel({ askChain, chain: [MODELS.neonLow], outline: v.outline, pages: v.pages, text, log });
   }
   // The teaching turn from the notes: null when this is not a notes course (the lecture road is used), else an answer or { chunk }.
   async function notesPick(ref, text) {

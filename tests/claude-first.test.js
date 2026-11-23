@@ -16,7 +16,7 @@ function rows({ five = 80, fiveResets = at(2 * H), week = 70, argon = 30, agyCla
   const out = [
     { pool: "Claude plan", window: "Five Hour Limit Remaining", remaining: five, resets: fiveResets },
     { pool: "Claude plan", window: "Weekly Limit Remaining", remaining: week, resets: at(3.5 * D) },
-    { pool: "Gemini 4 Argon", window: "Gemini 4 Argon Weekly Limit", remaining: argon, resets: at(3.5 * D) },
+    { pool: "Gemini Models", window: "Gemini Models Weekly Limit", remaining: argon, resets: at(3.5 * D) },
     { pool: "Claude and GPT models", window: "Claude and GPT models Weekly Limit", remaining: agyClaude, resets: at(3.5 * D) },
   ];
   if (sonnetWeek !== null) out.push({ pool: "Claude plan (Sonnet)", window: "Sonnet Weekly Limit Remaining", remaining: sonnetWeek, resets: at(3.5 * D) });
@@ -25,12 +25,12 @@ function rows({ five = 80, fiveResets = at(2 * H), week = 70, argon = 30, agyCla
 
 test("Claude's week ahead of its pace and of Argon's: Claude Code moves to the front and the note says why", () => {
   const r = claudeFirst(CHAIN, rows(), { now: NOW }); // Claude +20, Argon -20
-  assert.deepStrictEqual(names(r), ["sonnet", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "gemini-4-argon-low", "claude-sonnet-5-5-low"]);
-  assert.match(r.note, /Claude Code's week is \+20 against its pace, Gemini 4 Argon only -20/);
+  assert.deepStrictEqual(names(r), ["sonnet", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "claude-sonnet-5-5-low"]);
+  assert.match(r.note, /Claude Code's week is \+20 against its pace, Gemini Models only -20/);
 });
 
 test("with Hydrogen first (2026-11-15) its Gemini Models pool counts too: while it has room, Claude Code does not jump ahead", () => {
-  const withGemini = (g) => [...rows(), { pool: "Gemini Models", window: "Gemini Models Weekly Limit", remaining: g, resets: at(3.5 * D) }];
+  const withGemini = (g) => rows({ argon: g }); // Argon's own pool is gone (2026-11-23): the one agy pool row is Gemini Models
   assert.deepStrictEqual(names(claudeFirst(CHAIN, withGemini(96), { now: NOW })), NORMAL); // Gemini +46 beats Claude +20
   assert.strictEqual(names(claudeFirst(CHAIN, withGemini(30), { now: NOW }))[0], "sonnet"); // Gemini -20: Claude helps
 });
@@ -62,7 +62,7 @@ test("real numbers of 2026-11-15: at Argon 75% both were on pace (Argon kept ans
   const real = (argon) => [
     { pool: "Claude plan", window: "Five Hour Limit Remaining", remaining: 89, resets: at(2.4 * H) },
     { pool: "Claude plan", window: "Weekly Limit Remaining", remaining: 74, resets: at(5.2 * D) },
-    { pool: "Gemini 4 Argon", window: "Gemini 4 Argon Weekly Limit", remaining: argon, resets: at(5.6 * D) },
+    { pool: "Gemini Models", window: "Gemini Models Weekly Limit", remaining: argon, resets: at(5.6 * D) },
     { pool: "Claude and GPT models", window: "Claude and GPT models Weekly Limit", remaining: 7, resets: at(5 * D) },
   ];
   assert.deepStrictEqual(names(claudeFirst(CHAIN, real(75), { now: NOW })), NORMAL);

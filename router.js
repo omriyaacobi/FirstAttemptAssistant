@@ -16,13 +16,13 @@
 // on top of the Claude plan's two limits. The Claude CLI is not in `agy /usage`; its numbers come from quota.js
 // (the "rate_limit_event" messages that `claude --output-format stream-json` prints, or a limit error when a call fails).
 const CLAUDE_PLAN = "Claude plan", CLAUDE_OPUS_WEEK = "Claude plan (Opus)";
-const GEMINI = "Gemini Models", ARGON = "Gemini 4 Argon", CLAUDE_AGY = "Claude and GPT models"; // the pool names
+const GEMINI = "Gemini Models", CLAUDE_AGY = "Claude and GPT models"; // the pool names
 const MODELS = {
   flashMedium: { provider: "agy", model: "gemini-3.8-flash-medium", pool: "Gemini Models" },
   flashLow: { provider: "agy", model: "gemini-3.8-flash-low", pool: "Gemini Models" }, // only for short helper calls (the other-language search words, crosslang.js)
   flashHigh: { provider: "agy", model: "gemini-3.8-flash-high", pool: "Gemini Models" }, // used by the planner
-  argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" },
-  argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: "Gemini 4 Argon" },
+  argonLow: { provider: "agy", model: "gemini-4-argon-low", pool: GEMINI }, // Argon: same pool as Neon since 2026-11-23, in NO chain (experiments/2026-11-23-argon-pool.md); kept so a limit error from the old page-only editor marks the right pool
+  argonMedium: { provider: "agy", model: "gemini-4-argon-medium", pool: GEMINI },
   // Gemini 4 Hydrogen (released 2026-11-12, Flash's successor). It spends the SAME "Gemini Models" pool as Flash (measured with
   // /usage: Argon's week did not move). In NO chain yet: Omri decides (experiments/2026-11-15-hydrogen.md).
   hydrogenLow: { provider: "agy", model: "gemini-4-hydrogen-low", pool: GEMINI },
@@ -43,21 +43,21 @@ const MODELS = {
   webFlash: { provider: "web", model: "gemini-3.8-flash-medium", pool: GEMINI },
   webFlashHigh: { provider: "web", model: "gemini-3.8-flash-high", pool: GEMINI },
   webClaude: { provider: "web", model: "claude-sonnet-5-5-medium", pool: CLAUDE_AGY },
-  researchArgon: { provider: "research", model: "gemini-4-argon-medium", pool: ARGON },
+  researchNeon: { provider: "research", model: "gemini-4-neon-medium", pool: GEMINI },
   researchFlash: { provider: "research", model: "gemini-3.8-flash-high", pool: GEMINI },
   researchClaude: { provider: "research", model: "claude-sonnet-5-5-medium", pool: CLAUDE_AGY },
 };
 
 // Named chains (study.js asks for one by name with chainForDestination).
 const DESTINATIONS = {
-  "gemini-flash": [MODELS.flashMedium, MODELS.argonLow, MODELS.claudeSonnet],
-  "gemini-argon-low": [MODELS.argonLow, MODELS.flashMedium, MODELS.claudeSonnet],
-  "gemini-argon-medium": [MODELS.argonMedium, MODELS.claudeOpus, MODELS.claudeInAgy, MODELS.claudeSonnet], // Claude (the plan) is the last resort
-  "claude-sonnet": [MODELS.claudeSonnet, MODELS.argonMedium, MODELS.claudeInAgy],
-  "claude-opus": [MODELS.claudeOpus, MODELS.argonMedium, MODELS.claudeSonnet],
+  "gemini-flash": [MODELS.flashMedium, MODELS.neonLow, MODELS.claudeSonnet],
+  "gemini-neon-low": [MODELS.neonLow, MODELS.flashMedium, MODELS.claudeSonnet],
+  "gemini-neon-medium": [MODELS.neonMedium, MODELS.claudeOpus, MODELS.claudeInAgy, MODELS.claudeSonnet], // Claude (the plan) is the last resort
+  "claude-sonnet": [MODELS.claudeSonnet, MODELS.neonMedium, MODELS.claudeInAgy],
+  "claude-opus": [MODELS.claudeOpus, MODELS.neonMedium, MODELS.claudeSonnet],
   // Only models that can search: a model without the web would just guess.
   "web-search": [MODELS.webFlash, MODELS.webFlashHigh, MODELS.webClaude],
-  "web-research": [MODELS.researchArgon, MODELS.researchFlash, MODELS.researchClaude],
+  "web-research": [MODELS.researchNeon, MODELS.researchFlash, MODELS.researchClaude],
 };
 
 // The pools a model draws from, as a list (a model may have one pool, several, or none).

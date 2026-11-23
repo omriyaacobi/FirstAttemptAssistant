@@ -280,7 +280,7 @@ test("createQuota.noteFailure: other errors are ignored; an Opus-only limit mark
   q.noteFailure({ provider: "claude", model: "opus" }, "You've hit your Opus limit · resets 3pm (Asia/Jerusalem)");
   assert.deepStrictEqual(await q.get(), [{ pool: "Claude plan (Opus)", remaining: 0 }]);
   q.noteFailure({ provider: "agy", model: "gemini-4-argon-low" }, "RESOURCE_EXHAUSTED");
-  assert.deepStrictEqual((await q.get()).map((p) => p.pool).sort(), ["Claude plan (Opus)", "Gemini 4 Argon"]);
+  assert.deepStrictEqual((await q.get()).map((p) => p.pool).sort(), ["Claude plan (Opus)", "Gemini Models"]);
 });
 
 test("createQuota.noteFailure: a model Bot does not know has no pool, so nothing is marked", async () => {

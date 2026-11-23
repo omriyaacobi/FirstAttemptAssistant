@@ -20,7 +20,7 @@ const { langOf, mostlyHebrew, say } = require("./lang");
 
 // Hydrogen medium first since 2026-11-15 (Omri): in round 3 it graded 9 of 9 answers right and none of its 9 hints gave the answer
 // away, like Argon medium (experiments/2026-11-15-hydrogen-round3.md). Argon medium, then low, behind it. Never Flash, never Claude.
-const TUTOR_CHAIN = [MODELS.hydrogenMedium, MODELS.argonMedium, MODELS.argonLow];
+const TUTOR_CHAIN = [MODELS.hydrogenMedium, MODELS.neonMedium, MODELS.neonLow]; // 2026-11-23: Neon replaced Argon (same pool now)
 const MAX_MATERIAL_CHARS = 60000;
 const MAX_REPLY = 2500;
 const MAX_SCREEN = 1500; // one phone screen of teaching

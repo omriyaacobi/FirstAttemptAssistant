@@ -53,21 +53,21 @@ const BRIEF_FILE = path.join(__dirname, "brain-brief.md");
 // The brain's order (2026-11-20, Omri's decision after experiments/2026-11-20-neon-deep-trial.md): Neon low first (as correct as
 // Hydrogen medium, 25-55% fewer tokens of the SAME "Gemini Models" pool), Hydrogen medium behind it, then Argon low, Sonnet in agy and
 // Claude Code last. The reserve, the 15% rule, the pacing (paceOrder) and claudeFirst work on it as before.
-const CHAIN = [MODELS.neonLow, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy, MODELS.claudeSonnet];
+const CHAIN = [MODELS.neonLow, MODELS.hydrogenMedium, MODELS.sonnetInAgy, MODELS.claudeSonnet]; // Argon left on 2026-11-23: same pool as Neon, older (experiments/2026-11-23-argon-pool.md)
 // BOT_BRAIN_FIRST=claude in .env (a restart reads it): Claude Code Sonnet (the Pro plan) is asked FIRST, for a few hours when the
 // agy pools are low (Omri, 2026-11-12). The normal 15% rule still moves it to the end when the plan's 5-hour window is nearly used.
 // Any other value, or none, = the normal order above.
 function chainFor(first) {
-  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.neonLow, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.sonnetInAgy] : CHAIN;
+  return String(first || "").trim().toLowerCase() === "claude" ? [MODELS.claudeSonnet, MODELS.neonLow, MODELS.hydrogenMedium, MODELS.sonnetInAgy] : CHAIN;
 }
 // A message with a photo: only agy can look at a picture here. Argon low first: on an unclear photo ("lecture moved", no end date)
 // it made a careful one-time card 5 of 5 times, Hydrogen guessed "weekly" 4 of 6 times (round 3). Hydrogen medium if Argon fails
 // (it replaced Flash medium, 2026-11-15).
-const PHOTO_CHAIN = [MODELS.argonLow, MODELS.hydrogenMedium];
+const PHOTO_CHAIN = [MODELS.neonLow, MODELS.hydrogenMedium]; // Neon low first since 2026-11-23: careful one-time card on the unclear photo 9 of 9 (3 today, 6 on 11-19/20); Argon is gone from the chains
 // A pool listed here counts as low for the brain EARLIER than the normal 15%. Under 25% Argon steps aside for everyday chat, so
 // its last quarter stays for tutoring and reading big PDFs (they keep using it until 15%). The switch goes by the pool's level, not
 // by the message, so the same model answers for a stretch.
-const RESERVES = { [MODELS.argonLow.pool]: 25 };
+const RESERVES = { [MODELS.neonLow.pool]: 25 }; // 2026-11-23: was Argon's own pool; Argon now draws from "Gemini Models", so the same quarter is kept there
 const MAX_TOOL_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 6;
 const MAX_PHOTO_ANSWER = 3000; // what the brain writes out of a photo answered to a quiz question (quiz_answer "photo")
@@ -101,8 +101,8 @@ const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT, early: true })
 // The warm pool keeps one waiting agy process per model (saves agy's start, about 3.4 s measured 2026-11-23). Neon low joined on
 // 2026-11-20: it had become the first model but was missing here, so every Neon call started cold (experiments/2026-11-20-neon-speed.md).
 // 2026-11-23: EVERY agy model the brain or Omri's picker (model-choice.js) can put first is here. Neon medium, picked for 50 answers on
-// 22-23 Nov, was missing, so each of its calls started agy cold (experiments/2026-11-23-speed.md). A waiting spare uses no quota.
-const WARM_MODELS = new Set([MODELS.neonLow, MODELS.neonMedium, MODELS.hydrogenMedium, MODELS.argonLow, MODELS.argonMedium, MODELS.sonnetInAgy].map((m) => m.model));
+// 22-23 Nov, was missing, so each of its calls started agy cold (experiments/2026-11-23-speed.md). A waiting spare uses no quota. Argon left on 2026-11-23.
+const WARM_MODELS = new Set([MODELS.neonLow, MODELS.neonMedium, MODELS.hydrogenMedium, MODELS.sonnetInAgy].map((m) => m.model));
 const warmModel = (model) => { try { if (WARM_MODELS.has(model)) pool.warmUp(model, null); } catch (error) { /* only makes the next message slower */ } };
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
 // THE BRAIN'S TIME LIMIT (2026-11-16). The models' general limits (providers.js: Argon 240 s) are sized for reading big files. In
@@ -1341,10 +1341,10 @@ ${r.cardText}`; }
       const results = reply.calls.map((c) => done.get(c));
       // The quick finish: only "doing" tools, all of them worked, and the model already wrote what to tell Omri under its CALL lines.
       // (2026-11-23, Omri's decision) a moodle_fetch that downloaded EVERY item asked for counts as a doing-tool here; a failed, partial
-      // or refused download, a Confirm card or "nothing to download" still goes back to the model. When the model wrote nothing and the
-      // round held only full downloads, the line code wrote (fetchFiles' "said") ends the message instead of another round (3-9 s).
-      let said = fixMath(withoutCalls(reply.text));
-      if (!said && results.every((x) => x.ok && ctx.fullFetch.has(x.call))) said = results.map((x) => ctx.fullFetch.get(x.call)).join("\n");
+      // or refused download, a Confirm card or "nothing to download" still goes back to the model. Like every doing-tool, only when the
+      // model wrote its own words: a bare CALL moodle_fetch may have a next step ("download it AND open it"), so it gets its next round
+      // (the A/B quality test of 2026-11-23 caught a code-written line ending the message before the open; experiments/2026-11-23-speed-quality.md).
+      const said = fixMath(withoutCalls(reply.text));
       if (said && results.every((x) => x.ok && (DOING.has(x.call.tool) || ctx.fullFetch.has(x.call)))) {
         if (fileNote) said = fileNote + "\n\n" + said;
         log(`[brain] answered by ${used.model} in ${seconds()} s, tools: ${ctx.tools.join(", ")}${cost()}`);
@@ -1396,4 +1396,4 @@ ${r.cardText}`; }
   return { handle: handleAndRefresh, warmUp };
 }
 
-module.exports = { WARM_MODELS, createBrain, costOf, askWarm, brainTimeout, BRAIN_TIMEOUT_MS, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };
+module.exports = { WARM_MODELS, createBrain, costOf, askWarm, brainTimeout, BRAIN_TIMEOUT_MS, parseReply, withoutCalls, languageLine, lastWords, quoteBlock, looksLikeCall, leaksPrompt, urlsIn, pathInText, usedWebSearch, CHAIN, PHOTO_CHAIN, chainFor, RESERVES, orderChain, MAX_TOOL_ROUNDS, LIMITS };

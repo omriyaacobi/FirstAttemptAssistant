@@ -15,8 +15,7 @@ const CHOICES = {
   neonMedium: "Neon medium",
   neonLow: "Neon low",
   hydrogenMedium: "Hydrogen medium",
-  argonMedium: "Argon medium",
-  argonLow: "Argon low",
+  // (Argon medium / low left on 2026-11-23: same pool as Neon, which is newer)
   sonnetInAgy: "Claude Sonnet in agy",
   claudeSonnet: "Claude Code Sonnet (your Pro plan)",
 };
