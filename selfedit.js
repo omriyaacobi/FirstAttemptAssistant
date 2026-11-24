@@ -39,7 +39,7 @@ function isProtected(file) {
 const MAX_REQUEST_CHARS = 4000;
 const MAX_FILES = 25;
 const MAX_DIFF_CHARS = 300000;
-const EDITOR_TIMEOUT_MS = 20 * 60 * 1000;
+const EDITOR_TIMEOUT_MS = 45 * 60 * 1000; // 2026-11-24: was 20 min; a big build by a slow model (Carbon high) needs longer
 // The editor cannot run the tests itself, so its first try often has a mistake. After each try
 // the code checks it and, if something is wrong, sends the problems back for another round.
 const MAX_ATTEMPTS = 3;
