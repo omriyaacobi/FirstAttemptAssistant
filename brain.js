@@ -103,7 +103,8 @@ const pool = createWarmAgy({ keepReady: false, agent: SLIM_AGENT, early: true })
 // 2026-11-20: it had become the first model but was missing here, so every Neon call started cold (experiments/2026-11-20-neon-speed.md).
 // 2026-11-23: EVERY agy model the brain or Omri's picker (model-choice.js) can put first is here. Neon medium, picked for 50 answers on
 // 22-23 Nov, was missing, so each of its calls started agy cold (experiments/2026-11-23-speed.md). A waiting spare uses no quota. Argon left on 2026-11-23.
-const WARM_MODELS = new Set([MODELS.neonLow, MODELS.neonMedium, MODELS.hydrogenMedium, MODELS.sonnetInAgy].map((m) => m.model));
+// Carbon low / medium (2026-11-24) are picker-only choices, so they are here too (a waiting spare uses no quota).
+const WARM_MODELS = new Set([MODELS.neonLow, MODELS.neonMedium, MODELS.hydrogenMedium, MODELS.sonnetInAgy, MODELS.carbonLow, MODELS.carbonMedium].map((m) => m.model));
 const warmModel = (model) => { try { if (WARM_MODELS.has(model)) pool.warmUp(model, null); } catch (error) { /* only makes the next message slower */ } };
 // extra.onUsage gets what the call cost in tokens, when the tool reports it.
 // THE BRAIN'S TIME LIMIT (2026-11-16). The models' general limits (providers.js: Argon 240 s) are sized for reading big files. In

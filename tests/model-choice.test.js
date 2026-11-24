@@ -65,3 +65,27 @@ test("the server route and the page picker exist; the page never sends a model n
   const code = html.match(/function setupModelPick\(\) \{[\s\S]*?\r?\n {4}\}\r?\n/)[0];
   assert.doesNotMatch(code, /innerHTML/);
 });
+
+test("Carbon low / medium (2026-11-24 trial) can be picked, spend Gemini Models, and are in NO automatic chain", () => {
+  for (const key of ["carbonLow", "carbonMedium"]) {
+    assert.ok(CHOICES[key], key + " is in the picker");
+    assert.strictEqual(MODELS[key].provider, "agy");
+    assert.strictEqual(MODELS[key].pool, "Gemini Models");
+    assert.match(MODELS[key].model, /^gemini-4-carbon-(low|medium)$/);
+  }
+  assert.ok(!Object.hasOwn(CHOICES, "carbonHigh"), "Carbon high is not offered");
+  const store = createModelChoice({ file: tempFile() });
+  assert.strictEqual(chosenFor(store.set("carbonMedium"), { photo: false }), MODELS.carbonMedium);
+  const { CHAIN, PHOTO_CHAIN } = require("../brain");
+  const { DESTINATIONS } = require("../router");
+  const chains = [CHAIN, PHOTO_CHAIN, ...Object.values(DESTINATIONS)];
+  for (const chain of chains) assert.ok(!chain.some((m) => /carbon/.test(m.model)), "Carbon is in no chain");
+  // No other file names Carbon: only router.js (the model), model-choice.js (the picker) and brain.js (its warm spare).
+  const root = path.join(__dirname, "..");
+  const allowed = new Set(["router.js", "model-choice.js", "brain.js"]);
+  for (const name of fs.readdirSync(root).filter((n) => n.endsWith(".js") && !allowed.has(n))) {
+    assert.doesNotMatch(fs.readFileSync(path.join(root, name), "utf8"), /carbon/i, name + " must not use Carbon");
+  }
+  const brainSrc = fs.readFileSync(path.join(root, "brain.js"), "utf8");
+  assert.strictEqual((brainSrc.match(/MODELS\.carbon/g) || []).length, 2, "brain.js names Carbon only in WARM_MODELS");
+});

@@ -35,6 +35,10 @@ const MODELS = {
   // big-PDF reader; Neon medium: Improve Bot's default editor (selfedit.js NEON_MODEL).
   neonLow: { provider: "agy", model: "gemini-4-neon-low", pool: GEMINI },
   neonMedium: { provider: "agy", model: "gemini-4-neon-medium", pool: GEMINI },
+  // Gemini 4 Carbon (new in agy on 2026-11-24; Google says Ultra-only, but it answered on Omri's Pro plan and spent the same
+  // "Gemini Models" pool: experiments/2026-11-24-carbon-check.md). ONLY a picker choice (model-choice.js) for Omri's trial: in NO chain.
+  carbonLow: { provider: "agy", model: "gemini-4-carbon-low", pool: GEMINI },
+  carbonMedium: { provider: "agy", model: "gemini-4-carbon-medium", pool: GEMINI },
   claudeSonnet: { provider: "claude", model: "sonnet", pool: CLAUDE_PLAN },
   claudeOpus: { provider: "claude", model: "opus", pool: [CLAUDE_PLAN, CLAUDE_OPUS_WEEK] },
   claudeHaiku: { provider: "claude", model: "haiku", pool: CLAUDE_PLAN }, // the tiny quota probe (quota.js)

@@ -44,9 +44,9 @@ test("poolNames and familyPool: distinct checked pool names; a model's family by
 
 test("diff: appeared and disappeared models and pools; new models are candidates, a used model that is gone is named", () => {
   const saved = { models: OURS.map((id) => ({ id })), pools: [GEMINI, "Gemini 4 Argon", AGY_CLAUDE] };
-  const now = { models: [...OURS.filter((i) => i !== "gemini-4-argon-low").map((id) => ({ id })), { id: "gemini-4-carbon-low", label: "Gemini 4 Carbon (Low)" }], pools: [GEMINI, AGY_CLAUDE] };
+  const now = { models: [...OURS.filter((i) => i !== "gemini-4-argon-low").map((id) => ({ id })), { id: "gemini-4-boron-low", label: "Gemini 4 Boron (Low)" }], pools: [GEMINI, AGY_CLAUDE] };
   const d = mw.diff(saved, now);
-  assert.deepStrictEqual(d.modelsAdded, ["gemini-4-carbon-low"]);
+  assert.deepStrictEqual(d.modelsAdded, ["gemini-4-boron-low"]);
   assert.deepStrictEqual(d.modelsRemoved, ["gemini-4-argon-low"]);
   assert.deepStrictEqual(d.poolsRemoved, ["Gemini 4 Argon"]);
   assert.deepStrictEqual(d.poolsAdded, []);
@@ -55,7 +55,7 @@ test("diff: appeared and disappeared models and pools; new models are candidates
   const text = mw.describe(d, now);
   assert.match(text, /Quota pool gone from \/usage: Gemini 4 Argon/);
   assert.match(text, /agy no longer offers: gemini-4-argon-low/);
-  assert.match(text, /New in agy: gemini-4-carbon-low \(Gemini 4 Carbon \(Low\)\)\. Candidates for a trial only\. Bot does NOT use them until you say so/);
+  assert.match(text, /New in agy: gemini-4-boron-low \(Gemini 4 Boron \(Low\)\)\. Candidates for a trial only\. Bot does NOT use them until you say so/);
   assert.strictEqual(mw.diff(saved, saved).changed, false);
 });
 
@@ -162,8 +162,8 @@ test("check: the first look only saves a baseline (no post); the same list again
 test("check: a model and a pool row that appear or disappear give ONE thread message and a counts-only push", async () => {
   const t = watch({ models: OURS });
   await t.w.check();
-  t.state.models = [...OURS.filter((m) => m !== "gemini-3.8-flash-low"), "gemini-4-carbon-low"];
-  t.state.usage = USAGE + `Gemini 4 Carbon\tWeekly Limit Remaining\t100%\t2026-11-30T20:57:07Z\n`;
+  t.state.models = [...OURS.filter((m) => m !== "gemini-3.8-flash-low"), "gemini-4-boron-low"];
+  t.state.usage = USAGE + `Gemini 4 Boron\tWeekly Limit Remaining\t100%\t2026-11-30T20:57:07Z\n`;
   const r = await t.w.check();
   assert.strictEqual(r.posted, true);
   assert.strictEqual(t.posted.length, 1);
@@ -172,17 +172,17 @@ test("check: a model and a pool row that appear or disappear give ONE thread mes
   assert.strictEqual(m.result.rule, "model watch");
   assert.strictEqual(m.result.used.provider, "code");
   assert.match(m.text, /agy no longer offers: gemini-3\.8-flash-low/);
-  assert.match(m.text, /New quota pool in \/usage: Gemini 4 Carbon/);
-  assert.match(m.text, /New in agy: gemini-4-carbon-low/);
+  assert.match(m.text, /New quota pool in \/usage: Gemini 4 Boron/);
+  assert.match(m.text, /New in agy: gemini-4-boron-low/);
   assert.match(m.text, /does NOT use them until you say so/);
   assert.strictEqual(t.pushed.length, 1);
-  assert.doesNotMatch(t.pushed[0].body, /flash|carbon/i, "the push shows counts only, never names");
+  assert.doesNotMatch(t.pushed[0].body, /flash|boron/i, "the push shows counts only, never names");
   assert.match(t.pushed[0].body, /1 new model, 1 gone, 1 quota pool change/);
   await t.w.check(); // the same state again: already saved, so nothing more is posted
   assert.strictEqual(t.posted.length, 1);
   assert.ok(!mw.offered().has("gemini-3.8-flash-low"));
-  assert.ok(mw.offered().has("gemini-4-carbon-low"), "the set only says what agy offers; no chain contains the new model");
-  assert.ok(!CHAIN.some((x) => x.model === "gemini-4-carbon-low"));
+  assert.ok(mw.offered().has("gemini-4-boron-low"), "the set only says what agy offers; no chain contains the new model");
+  assert.ok(!CHAIN.some((x) => x.model === "gemini-4-boron-low"));
   mw.setOffered(null);
 });
 

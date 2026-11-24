@@ -14,6 +14,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const CHOICES = {
   neonMedium: "Neon medium",
   neonLow: "Neon low",
+  // Carbon (2026-11-24, a trial): only here, never in a chain; same "Gemini Models" pool as Neon (experiments/2026-11-24-carbon-check.md)
+  carbonMedium: "Carbon medium (trial)",
+  carbonLow: "Carbon low (trial)",
   hydrogenMedium: "Hydrogen medium",
   // (Argon medium / low left on 2026-11-23: same pool as Neon, which is newer)
   sonnetInAgy: "Claude Sonnet in agy",
