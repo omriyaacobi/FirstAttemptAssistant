@@ -250,6 +250,21 @@ function paceOrder(chain, rows, { now = Date.now(), margin = PACE_MARGIN, lead =
   return { chain: out, lead: first.model, note };
 }
 
+// ---- Neon first while the Gemini week is full enough (Omri, 2026-11-24) ----
+// While the first agy model's pool (Gemini Models: Neon low) still has MORE than PACE_FREE_ABOVE % of its WEEK left, the brain keeps
+// its own order: no pacing against agy's Claude pool and no Claude-first. Only below that does the pacing with the Claude plan and
+// agy's Claude pool start. Anything unknown (no weekly row, or its week is over) means no: the pacing runs as before. Pure.
+// Returns { free, note }.
+const PACE_FREE_ABOVE = 75;
+function paceFree(chain, rows, { now = Date.now(), above = PACE_FREE_ABOVE } = {}) {
+  const first = (chain || []).find((m) => m && m.provider === "agy");
+  if (!first) return { free: false, note: "" };
+  const pool = poolsOf(first)[0];
+  const row = (rows || []).find((r) => r && r.pool === pool && /week/i.test(String(r.window)) && Number.isFinite(r.remaining) && Date.parse(r.resets) > now);
+  if (!row || !(row.remaining > above)) return { free: false, note: "" };
+  return { free: true, note: `${pool} has ${row.remaining}% of its week left (above ${above}%), so no pacing yet` };
+}
+
 // ---- Claude first, by pace (Omri, 2026-11-15; replaces the 2026-11-13 rule "5-hour above 60%, Argon under 50%") ----
 // Claude Code (the Pro plan, which Omri's own Claude Code work shares) is normally the brain's LAST resort. It answers FIRST when
 // ALL of these hold (all read from real rows):
@@ -405,7 +420,7 @@ const quota = createQuota();
 onClaudeRateLimit(quota.noteClaudeInfo);
 
 module.exports = {
-  paceOf, paceOrder, PACE_MARGIN, claudeFirst, getPoolRows: quota.rows,
+  paceOf, paceOrder, PACE_MARGIN, paceFree, PACE_FREE_ABOVE, claudeFirst, getPoolRows: quota.rows,
   parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, lowWithReserve, prioritize, describeLow, createQuota,
   getLowPools: quota.get, getPoolLevels: quota.levels, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
 };

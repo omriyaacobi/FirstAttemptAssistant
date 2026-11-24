@@ -35,7 +35,7 @@ const { listFound } = require("./recall");
 const { pickPages, defang } = require("./course-pages");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
 const { fixMath, openQuestion } = require("./tutor");
-const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, claudeFirst, refreshQuota, noteFailure } = require("./quota");
+const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, paceFree, claudeFirst, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
 const { wslHomes } = require("./pc-find");
@@ -1190,12 +1190,15 @@ ${r.cardText}`; }
     // PACING THE WEEK: of the two agy pools, the one with more quota left for the days left answers first (quota.js paceOrder).
     // The reserve and the 15% rule still run after it, so a pool that is really low always steps back.
     const rows = image ? [] : await (async () => { try { const r = await poolRows(); return Array.isArray(r) ? r : []; } catch (error) { return []; } })();
-    const paced = paceOrder(chain, rows, { now: now(), lead: paceLead });
+    // NEON FIRST (quota.js paceFree, Omri 2026-11-24): while the Gemini Models WEEK has more than 75% left, no pacing and no
+    // Claude-first: the chain's own order (Neon low first). The reserve and the 15% rule below still run.
+    const free = image ? { free: false, note: "" } : paceFree(chain, rows, { now: now() });
+    const paced = free.free ? { chain: chain.slice(), lead: null, note: "" } : paceOrder(chain, rows, { now: now(), lead: paceLead });
     if (!image) paceLead = paced.lead;
     const normal = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
     // CLAUDE FIRST (quota.js claudeFirst, 2026-11-15): when the Claude plan's pace is 10+ points better than the agy pools' pace, its week
     // has 20%+ left and its 5-hour window more than half, Claude Code answers first. Never with a photo (only agy can see it).
-    const early = image ? { chain: normal, note: "" } : claudeFirst(normal, rows, { now: now() });
+    const early = image || free.free ? { chain: normal, note: "" } : claudeFirst(normal, rows, { now: now() });
     let order = early.chain; // reordered below once a model has answered (sticky for the rest of this message)
     // With a photo, every model call runs in a private folder that holds only a copy of the photo.
     const askRaw = image ? (provider, model, q, onText, extra = {}) => (provider === "agy" ? askImage(model, q, images.length > 1 ? images.map((p) => p.path) : image.path, onText || (() => {}), { onUsage: extra.onUsage || null }) : Promise.reject(new Error("only agy can look at a photo"))) : askOne;
