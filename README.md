@@ -16,6 +16,7 @@ model, checks and runs the tools it asks for) -> the answer is saved in the thre
 | `brain.js`, `brain-brief.md` | THE BRAIN: the one way Bot answers. To change how Bot behaves, edit `brain-brief.md` (plain English) or add a checked tool in `brain.js` |
 | `history.js`, `thread-context.js`, `course-material.js`, `project-folder.js` | what code hands the brain with each message: the recent talk, the course's assignment and best pages, the linked code folder (read-only) |
 | `pc-find.js`, `pc-open.js` | PC hands: find folders and files by name under the search roots, and open pages (Chrome), documents, code (VS Code) and folders; never programs |
+| `pc-look.js`, `pc-windows.ps1` | PC LOOK: list the open Chrome tabs (through the extension) and app windows, look at ONE by its number (page text or a picture); two allowed lists in `data/pc-look.json`, a three-choice card for anything else; never controls anything |
 | `jobs.js`, `providers.js`, `router.js`, `quota.js`, `warmagy.js` | one job per message; running `agy` and `claude`; the models and their quota pools; the pre-warmed `agy` |
 | `todo.js` | Omri's to-do list for Bot: the file `data/todo.md` (private, outside git) that Bot (`todo_read` / `todo_update`) and every Claude Code session read and change; checked edits, undo for 2 hours |
 | `tokenlog.js` | what the answers cost in tokens, per day and per model (`data/token-log.json`, numbers only). `node tokenlog.js` prints the last 7 days |

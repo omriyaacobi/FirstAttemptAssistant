@@ -612,6 +612,11 @@
       </div>
     </section>
     <div class="sub" id="backupLine" hidden></div>
+    <section aria-label="Bot may look at" id="pcLookBox" hidden>
+      <div class="row" style="margin-top:0"><strong>Bot may look at</strong></div>
+      <div class="sub">Sites and apps Bot may look at without asking. Add one by telling Bot ("allow Bot to look at Spotify") or with "Always allow" on a card. Bot only looks, never clicks or types.</div>
+      <div id="pcLookLists" class="sub"></div>
+    </section>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -2438,7 +2443,40 @@
     fetch("/api/reminders/" + r.id + "/ack", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
   }
 
+  // PC LOOK (2026-11-24): the two allowed lists, each name with a Remove button (only Omri's tap removes; adding is by words or a card).
+  async function loadPcLists() {
+    let data;
+    try {
+      const res = await fetch("/api/pclook/lists");
+      if (!res.ok) return; // this Bot has no PC look
+      data = await res.json();
+    } catch (error) { return; }
+    $("pcLookBox").hidden = false;
+    const box = $("pcLookLists");
+    const rows = [];
+    for (const [kind, title, names] of [["site", "Sites", data.sites || []], ["app", "Apps", data.apps || []]]) {
+      rows.push(el("div", "", title + ": " + (names.length ? "" : "none")));
+      for (const name of names) {
+        const row = el("div", "reminder");
+        const what = el("div", "what", name);
+        what.dir = "ltr";
+        const remove = el("button", "", "✕");
+        remove.title = "Remove " + name;
+        remove.setAttribute("aria-label", "Remove " + name + " from what Bot may look at");
+        remove.addEventListener("click", async () => {
+          remove.disabled = true;
+          await fetch("/api/pclook/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, name }) }).catch(() => {});
+          loadPcLists();
+        });
+        row.append(what, remove);
+        rows.push(row);
+      }
+    }
+    box.replaceChildren(...rows);
+  }
+
   async function loadReminders() {
+    loadPcLists();
     try {
       const res = await fetch("/api/reminders");
       const data = await res.json();
@@ -2974,6 +3012,7 @@
       if (proposal && proposal.id) node.appendChild(proposalButtons(proposal));
       if (m.result && m.result.fileChoice && m.result.fileChoice.id) node.appendChild(fileChoiceButtons(m.result.fileChoice));
       if (m.result && m.result.linkBatch && m.result.linkBatch.id) node.appendChild(linkBatchButtons(m.result.linkBatch));
+      if (m.result && m.result.pcLookCard && m.result.pcLookCard.id) node.appendChild(pcLookButtons(m.result.pcLookCard));
       const when = timeLine(m);
       if (when) node.appendChild(when);
       node.appendChild(deleteButton(m, node));
@@ -3731,6 +3770,41 @@
       if ((batch.mode === "folder" || batch.mode === "root") && batch.folder) box.append(el("p", "sub", "Folder: " + batch.folder)); // the real path code checked, not the model's words
       box.append(go, no, note);
       if (waiting) note.textContent = "This list is no longer waiting. Ask again.";
+      return box;
+    }
+
+    // PC LOOK (2026-11-24): Bot wants to look at a tab or window that is not on the allowed lists. Three choices; nothing is looked at
+    // before a tap. The card shows the site or program code checked, and the title as plain text (a page writes its own title).
+    function pcLookButtons(card) {
+      const box = el("div", "tfilechoice");
+      const note = el("p", "sub", "");
+      const waiting = card.expiresAt && Date.now() > card.expiresAt;
+      const what = (card.kind === "tab" ? "Tab on " : "Window of ") + card.name + (card.how === "text" ? " (its page text)" : " (a picture)");
+      const head = el("p", "sub", what);
+      head.dir = "ltr";
+      const title = el("p", "sub", card.title ? "Title: " + card.title : "");
+      title.dir = "auto";
+      const once = el("button", "", "Just this once");
+      const always = el("button", "", "Always allow (add " + card.name + " to the list)");
+      const no = el("button", "ghost", "Cancel");
+      const all = [once, always, no];
+      for (const b of all) { b.type = "button"; b.disabled = !!waiting; }
+      const call = async (what, doneText) => {
+        all.forEach((b) => (b.disabled = true));
+        try {
+          await api("/api/pclook/card/" + encodeURIComponent(card.id) + "/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          box.replaceChildren(el("span", "sub", doneText));
+          if (what === "always") loadPcLists();
+        } catch (error) {
+          if (error.status === 404) box.replaceChildren(el("span", "sub", "This card is no longer waiting (15 minutes pass). Ask again."));
+          else { all.forEach((b) => (b.disabled = false)); note.textContent = "Not done: " + error.message; }
+        }
+      };
+      once.addEventListener("click", () => call("once", "Looking once. Bot answers here."));
+      always.addEventListener("click", () => call("always", card.name + " is on the list now. Looking; Bot answers here."));
+      no.addEventListener("click", () => call("cancel", "Cancelled. Bot did not look."));
+      box.append(head, title, once, always, no, note);
+      if (waiting) note.textContent = "This card is no longer waiting. Ask again.";
       return box;
     }
 
