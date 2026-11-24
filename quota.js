@@ -422,5 +422,5 @@ onClaudeRateLimit(quota.noteClaudeInfo);
 module.exports = {
   paceOf, paceOrder, PACE_MARGIN, paceFree, PACE_FREE_ABOVE, claudeFirst, getPoolRows: quota.rows,
   parseUsage, parseClaudeStream, probeClaude, rowFromRateLimitInfo, rowsFromRateLimitInfo, parseResetTime, limitError, lowPools, lowWithReserve, prioritize, describeLow, createQuota,
-  getLowPools: quota.get, getPoolLevels: quota.levels, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
+  fetchUsage, getLowPools: quota.get, getPoolLevels: quota.levels, refreshQuota: quota.refresh, noteFailure: quota.noteFailure, LOW_THRESHOLD, CLAUDE_PLAN,
 };

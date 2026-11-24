@@ -958,6 +958,18 @@ if (require.main === module) {
     news.start(); // the news check every 3 hours, only while the morning brief is on (news.js)
     summaries.start(); // the end-of-day review at 23:45, and any day the PC missed (thread-summary.js)
     moodleWatch.start(); // a read-only look at Moodle every 3 hours (moodle-watch.js); does nothing without a token or Chrome
+    // MODEL WATCH (models-watch.js, t29): at start and once a day, `agy models` and `agy -p /usage` against data/agy-models.json; ONE code-written
+    // message in the thread when a model or pool appeared or disappeared; no model call. It also tells every chain which models agy offers.
+    try {
+      const quota = require("./quota"), planLib = require("./study-plan"), AGY = require("./providers").AGY_CMD;
+      const modelsWatch = require("./models-watch").createModelsWatch({
+        file: path.join(__dirname, "data", "agy-models.json"), thread, push, log: console.log,
+        fetchModels: () => new Promise((resolve, reject) => execFile(AGY, ["models"], { windowsHide: true, timeout: 30000 }, (error, stdout) => (error ? reject(error) : resolve(stdout)))),
+        fetchRows: quota.fetchUsage,
+        quietHours: (ms) => planLib.inQuietHours(ms, require("./models-watch").PUSH_QUIET, planLib.TIMEZONE),
+      });
+      modelsWatch.start();
+    } catch (error) { console.log(`[models] could not start the model check: ${error.message}`); }
     if (brainRef) brainRef.warmUp();
     // Look the quota pools up once at start (2026-11-13): before, the first message after a restart knew nothing, treated every
     // pool as full and could use Argon at 10%. Runs in the background; a failed lookup changes nothing.

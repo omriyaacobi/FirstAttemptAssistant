@@ -509,6 +509,8 @@ function ask(provider, model, question, onText, extra = {}) {
 async function askChain(chain, question, { askOne = ask, onTry = () => {}, onFail = () => {}, onText = null, clock = Date.now } = {}) {
   const errors = [];
   const attempts = [];
+  // A model agy no longer offers is skipped (models-watch.js, t29); required here, not at the top, because models-watch needs quota.js.
+  chain = require("./models-watch").filterChain(chain, (line) => console.log(line));
   for (const { provider, model } of chain) {
     onTry({ provider, model });
     const t0 = clock();

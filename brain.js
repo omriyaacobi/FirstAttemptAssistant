@@ -35,6 +35,7 @@ const { listFound } = require("./recall");
 const { pickPages, defang } = require("./course-pages");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
 const { fixMath, openQuestion } = require("./tutor");
+const { filterChain, resolvePools } = require("./models-watch");
 const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, paceFree, claudeFirst, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
 const projectFolder = require("./project-folder");
@@ -1192,10 +1193,15 @@ ${r.cardText}`; }
     const rows = image ? [] : await (async () => { try { const r = await poolRows(); return Array.isArray(r) ? r : []; } catch (error) { return []; } })();
     // NEON FIRST (quota.js paceFree, Omri 2026-11-24): while the Gemini Models WEEK has more than 75% left, no pacing and no
     // Claude-first: the chain's own order (Neon low first). The reserve and the 15% rule below still run.
-    const free = image ? { free: false, note: "" } : paceFree(chain, rows, { now: now() });
-    const paced = free.free ? { chain: chain.slice(), lead: null, note: "" } : paceOrder(chain, rows, { now: now(), lead: paceLead });
+    // MODELS CHANGE (models-watch.js, t29): a model agy no longer offers is skipped (logged), and a model whose own pool has no row in
+    // /usage counts as part of its family's pool (Argon, 2026-11-23), so every rule below uses real numbers. A NEW model is never added here.
+    const known = [...new Set([...levels.map((l) => l && l.pool), ...rows.map((r) => r && r.pool)].filter(Boolean))];
+    const liveChain = resolvePools(filterChain(chain, log), known);
+    const livePhotoChain = resolvePools(filterChain(photoChain, log), known);
+    const free = image ? { free: false, note: "" } : paceFree(liveChain, rows, { now: now() });
+    const paced = free.free ? { chain: liveChain.slice(), lead: null, note: "" } : paceOrder(liveChain, rows, { now: now(), lead: paceLead });
     if (!image) paceLead = paced.lead;
-    const normal = image ? prioritize(photoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
+    const normal = image ? prioritize(livePhotoChain, lowWithReserve(levels, {})).chain : orderChain(paced.chain, levels, reserves);
     // CLAUDE FIRST (quota.js claudeFirst, 2026-11-15): when the Claude plan's pace is 10+ points better than the agy pools' pace, its week
     // has 20%+ left and its 5-hour window more than half, Claude Code answers first. Never with a photo (only agy can see it).
     const early = image || free.free ? { chain: normal, note: "" } : claudeFirst(normal, rows, { now: now() });
