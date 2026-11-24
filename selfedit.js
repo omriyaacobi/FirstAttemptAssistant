@@ -175,7 +175,10 @@ function claudeEditor({ worktree, request, model, feedback = "", onProgress = ()
 }
 
 // The editors the page may pick (2026-11-23: the Argon page-only editor was removed; Neon medium does page changes too).
-const EDITOR_CHOICES = ["neon", "sonnet", "opus"];
+// 2026-11-24: Carbon (Gemini 4 Carbon high) added for a trial against Opus (experiments/2026-11-24-pc-look-plan.md): the same agy
+// editor as Neon (same audit, same gate, same pool "Gemini Models"), only another model.
+const EDITOR_CHOICES = ["neon", "carbon", "sonnet", "opus"];
+const AGY_EDITORS = ["neon", "carbon"];
 
 // ---- The code editor through agy: Gemini 4 Neon medium (2026-11-20, the DEFAULT editor in the page) ----
 // Neon spends the "Gemini Models" pool, not the Claude plan, so Improve Bot also works in weeks when the Claude quota is low. In the
@@ -184,6 +187,7 @@ const EDITOR_CHOICES = ["neon", "sonnet", "opus"];
 // audited), but its audit is auditWide (selfedit-guard.js): it may write ANY file of its private copy except the guard files and
 // .git, and may not open a .env file. The usual gate runs afterwards. It never falls back to Claude by itself.
 const NEON_MODEL = "gemini-4-neon-medium";
+const CARBON_MODEL = "gemini-4-carbon-high";
 const NEON_RULES = `${EDITOR_RULES}
 
 How to work here: use ONLY the tools read_file, edit_file and write_file, with ABSOLUTE paths inside the folder named below. There is no command tool, no web search, no sub-agents and no directory listing, and you must not try them: the files you can open are listed below.
@@ -332,6 +336,8 @@ async function defaultReviewer(prompt) {
 
 const NEON_PROFILE = { name: "Neon", rules: NEON_RULES, map: wideFolderMap, audit: guard.auditWide, model: NEON_MODEL, writeWhere: "never change a guard file, never open .git or a .env file" };
 const makeNeonEditor = (options = {}) => makeAgyEditor({ ...options, profile: NEON_PROFILE });
+const CARBON_PROFILE = { ...NEON_PROFILE, name: "Carbon", model: CARBON_MODEL };
+const makeCarbonEditor = (options = {}) => makeAgyEditor({ ...options, profile: CARBON_PROFILE });
 
 // ---- The phone push when a change ends (2026-11-20) ----
 // One push when a run ends "ready", "blocked" or "failed", so Omri can leave the page. The lock screen never shows what the change is
@@ -387,6 +393,8 @@ function createSelfEdit({
   runTests = nodeTests,
   // The code editor through agy (Gemini 4 Neon medium, the page's default since 2026-11-20). Tests pass a fake one.
   neonEditor = makeNeonEditor({ noteFailure: (model, message) => { try { require("./quota").noteFailure(model, message); } catch (error) { /* quota never breaks an edit */ } } }),
+  // Carbon high through agy (2026-11-24, a trial editor). Tests pass a fake one.
+  carbonEditor = makeCarbonEditor({ noteFailure: (model, message) => { try { require("./quota").noteFailure(model, message); } catch (error) { /* quota never breaks an edit */ } } }),
   // Which quota pools are nearly empty (quota.js). Asked before a Neon edit starts.
   lowPools = () => require("./quota").getLowPools(),
   // The second review of a finished change (advice only). Tests pass a fake one, so no model is called.
@@ -549,9 +557,9 @@ function createSelfEdit({
         record.attempts = attempts;
         say(record, record.note);
       } else say(record, followUp ? "The editor is reading your message and working on it..." : "The editor is reading the code and making the change...");
-      const isAgy = record.model === "neon"; // the editors through agy: their work folder is watched from outside too
+      const isAgy = AGY_EDITORS.includes(record.model); // the editors through agy: their work folder is watched from outside too
       const before = isAgy ? await outsideSnapshot(id) : null;
-      const runEditor = isAgy ? neonEditor : editor;
+      const runEditor = record.model === "carbon" ? carbonEditor : isAgy ? neonEditor : editor;
       summary = await guarded(runEditor({ worktree: wt, request: record.request, model: isAgy ? undefined : record.model, feedback, attempt, onProgress: editorSayer(record), signal: run && run.signal }));
       checkStopped();
 
@@ -732,8 +740,8 @@ function createSelfEdit({
     if (request.length > MAX_REQUEST_CHARS) throw new Error(`the request is longer than ${MAX_REQUEST_CHARS} characters`);
     if (!/^[\w.-]+$/.test(model)) throw new Error("bad model name");
     if (active) throw new Error("another proposal is still running");
-    if (!EDITOR_CHOICES.includes(model)) throw new Error("the editor must be neon, sonnet or opus (the Argon editor was removed on 2026-11-23)");
-    if (model === "neon") {
+    if (!EDITOR_CHOICES.includes(model)) throw new Error("the editor must be neon, carbon, sonnet or opus (the Argon editor was removed on 2026-11-23)");
+    if (AGY_EDITORS.includes(model)) {
       // No quiet switch to Claude: if the editor's pool is low, say so and let the person choose Sonnet themself.
       let low = [];
       try { low = await lowPools(); } catch (error) { /* an unknown quota is treated as fine */ }
@@ -748,7 +756,7 @@ function createSelfEdit({
       request: request.trim(),
       model,
       status: "running",
-      note: model === "neon" ? "Neon (your Gemini quota, not Claude) is working in a private copy..." : "The editor is working in a private copy...",
+      note: model === "neon" ? "Neon (your Gemini quota, not Claude) is working in a private copy..." : model === "carbon" ? "Carbon high (your Gemini quota, not Claude) is working in a private copy..." : "The editor is working in a private copy...",
       baseCommit: (await git(repoDir, ["rev-parse", "HEAD"])).trim(),
       createdAt: Date.now(),
       roundStartedAt: Date.now(),
@@ -837,7 +845,7 @@ function createSelfEdit({
     if ((await git(wt, ["write-tree"])).trim() !== record.treeHash) throw new Error("the private copy changed after it was tested; reject it and start again");
 
     const title = record.request.replace(/\s+/g, " ").slice(0, 60);
-    await git(wt, ["commit", "-q", "-m", `Self-edit: ${title}\n\nProposed by Bot (${record.model === "neon" ? "Gemini 4 Neon medium" : "Claude " + record.model}), reviewed and approved by the user in the web page.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`]);
+    await git(wt, ["commit", "-q", "-m", `Self-edit: ${title}\n\nProposed by Bot (${record.model === "neon" ? "Gemini 4 Neon medium" : record.model === "carbon" ? "Gemini 4 Carbon high" : "Claude " + record.model}), reviewed and approved by the user in the web page.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`]);
     await git(repoDir, ["merge", "--ff-only", "-q", branchFor(id)]);
     const mergedCommit = (await git(repoDir, ["rev-parse", "HEAD"])).trim();
     await cleanup(id);
@@ -912,4 +920,4 @@ function createSelfEdit({
   return { start, followUp, previewDir, get, list, approve, reject, undo, stop, rollback, onFinish: (fn) => { finishListener = fn; }, isActive: () => active !== null };
 }
 
-module.exports = { createSelfEdit, finishPush, makeNeonEditor, NEON_MODEL, NEON_RULES, wideFolderMap, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, removeAgyTmp, describeAgyStep, checkProposal, EDITOR_CHOICES, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };
+module.exports = { createSelfEdit, finishPush, makeNeonEditor, makeCarbonEditor, CARBON_MODEL, NEON_MODEL, NEON_RULES, wideFolderMap, REVIEW_MODEL, nodeTests, TEST_TIMEOUT_MS, preTestProblems, removeAgyTmp, describeAgyStep, checkProposal, EDITOR_CHOICES, describeStreamLine, isProtected, parseTestSummary, buildFeedback, PROTECTED_FILES, PROTECTED_PREFIXES, MAX_REQUEST_CHARS, MAX_ATTEMPTS, EDITOR_RULES };

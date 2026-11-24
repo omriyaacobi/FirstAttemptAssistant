@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { createSelfEdit, makeNeonEditor, NEON_MODEL, NEON_RULES, wideFolderMap } = require("../selfedit");
+const { createSelfEdit, makeNeonEditor, makeCarbonEditor, CARBON_MODEL, NEON_MODEL, NEON_RULES, wideFolderMap } = require("../selfedit");
 const { MODELS } = require("../router");
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -77,6 +77,7 @@ function setup(scenario, extra = {}) {
     repoDir: p.repoDir, dataDir: path.join(p.repoDir, "data"), workRoot: path.join(p.root, "work"),
     editor: async () => { calls.claude++; return "claude"; },
     neonEditor: makeNeonEditor({ command: process.execPath, prefixArgs: [p.script], noteFailure: (m, msg) => failures.push({ m, msg }) }),
+    carbonEditor: makeCarbonEditor({ command: process.execPath, prefixArgs: [p.script], noteFailure: (m, msg) => failures.push({ m, msg }) }),
     reviewer: async () => OK_REVIEW,
     lowPools: extra.lowPools || (async () => []),
   });
@@ -110,6 +111,24 @@ test("Neon happy path: a CODE change outside public/ ends ready; safe agy flags;
     assert.match(git(s.repoDir, "log", "-1", "--format=%B"), /Gemini 4 Neon medium/);
     assert.strictEqual(approved.status, "approved");
   } finally { s.cleanup(); }
+});
+
+test("Carbon high (2026-11-24 trial editor): the same agy editor and gate as Neon, another model, its own commit line", async () => {
+  assert.strictEqual(CARBON_MODEL, "gemini-4-carbon-high");
+  const s = setup("code");
+  try {
+    const record = await (await s.manager.start("make the greeting friendlier", { model: "carbon" })).finished;
+    assert.strictEqual(record.status, "ready", record.note + " " + (record.blocked || []).join("; "));
+    assert.deepStrictEqual(s.calls, { claude: 0 });
+    const info = JSON.parse(fs.readFileSync(s.log, "utf8").split(String.fromCharCode(10))[0]);
+    assert.strictEqual(info.args[info.args.indexOf("--model") + 1], "gemini-4-carbon-high");
+    assert.strictEqual(info.args[info.args.indexOf("--mode") + 1], "accept-edits");
+    assert.ok(!info.args.includes("--dangerously-skip-permissions"));
+    await s.manager.approve(record.id);
+    assert.match(git(s.repoDir, "log", "-1", "--format=%B"), /Gemini 4 Carbon high/);
+  } finally { s.cleanup(); }
+  const low = setup("code", { lowPools: async () => [{ pool: "Gemini Models", remaining: 5 }] });
+  try { await assert.rejects(low.manager.start("x", { model: "carbon" }), /nearly used up/); assert.deepStrictEqual(low.calls, { claude: 0 }); } finally { low.cleanup(); }
 });
 
 test("Neon: changing a guard file, opening .env or a shell command stops the run with a plain message, never Claude", async () => {
@@ -169,7 +188,7 @@ test("Neon's folder map lists code, tests and page, and names the guard files as
 
 test("the page offers Neon first and as the default, says which quota each editor uses; the server's default is Neon", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
-  assert.match(html, /<select id="improveModel"><option value="neon" selected>Neon<\/option><option value="sonnet">/);
+  assert.match(html, /<select id="improveModel"><option value="neon" selected>Neon<\/option><option value="carbon">Carbon \(trial, Gemini\)<\/option><option value="sonnet">/);
   assert.match(html, /neon: "Uses your Gemini quota \(Gemini Models\), NOT Claude/);
   assert.match(html, /id="improveQuotaNote">Uses your Gemini quota \(Gemini Models\), NOT Claude/);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");

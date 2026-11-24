@@ -733,7 +733,7 @@
         <div class="photo-tray" id="improvePhotoChip" hidden aria-label="Attached screenshots"></div>
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
         <div class="row">
-          <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
+          <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="carbon">Carbon (trial, Gemini)</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
           <label id="improvePlanLabel" title="Discuss feasibility, limitations and a plan before editing any files"><input type="checkbox" id="improvePlanMode" checked> Plan first</label>
           <span class="status" id="improveStatus" role="status"></span>
           <span class="tools">
@@ -2387,7 +2387,7 @@
   });
   setupImprovePaste();
   // Which quota the chosen editor spends, in plain words.
-  const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it)." };
+  const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", carbon: "Carbon high: uses your Gemini quota (Gemini Models), NOT Claude. A trial; slower than Neon.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it)." };
   $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });
   try { $("improvePlanMode").checked = localStorage.getItem("botImprovePlan") !== "0"; } catch (error) { /* private mode */ }
   $("improvePlanMode").addEventListener("change", () => {

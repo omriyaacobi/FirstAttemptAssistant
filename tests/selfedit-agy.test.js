@@ -156,7 +156,7 @@ test("Claude editor path: does not ask the quota, does not look at the work fold
 test("the Argon editor is gone (2026-11-23): starting it is refused and nothing is made", async () => {
   const s = setup(() => assert.fail("no editor may run"));
   try {
-    await assert.rejects(s.manager.start("x", { model: "argon" }), /neon, sonnet or opus/);
+    await assert.rejects(s.manager.start("x", { model: "argon" }), /neon, carbon, sonnet or opus/);
     assert.deepStrictEqual(s.calls, { claude: 0, neon: 0 });
     assert.strictEqual(fs.existsSync(s.workRoot), false);
   } finally { s.cleanup(); }
@@ -294,7 +294,7 @@ test("the Improve Bot window offers Neon, Sonnet and Opus (the Argon editor was 
   assert.match(html, /Uses your Gemini quota \(Gemini Models\), NOT Claude/);
   assert.match(html, /Uses your Claude plan\./);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.ok(server.includes('["neon", "sonnet", "opus"].includes(model)')); assert.doesNotMatch(server, /"argon"]/);
+  assert.ok(server.includes('["neon", "carbon", "sonnet", "opus"].includes(model)')); assert.doesNotMatch(server, /"argon"]/);
 });
 
 test("a retry keeps its own TEMP until it has finished (the first run's cleanup must not delete it)", async () => {

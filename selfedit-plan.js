@@ -23,12 +23,13 @@ const MAX_FILES_PER_ROUND = 4;
 const MAX_FILE_LINES = 250;
 const MAX_FILE_CHARS = 16000;
 const PLAN_TIMEOUT_MS = 2 * 60 * 1000;
-const ALLOWED_MODELS = ["neon", "sonnet", "opus"]; // 2026-11-23: the Argon page-only editor was removed
+const ALLOWED_MODELS = ["neon", "carbon", "sonnet", "opus"]; // 2026-11-23: the Argon page-only editor was removed
 const PLANNER_CHAIN = [MODELS.neonLow, MODELS.hydrogenMedium];
 const READABLE_EXT = /\.(js|md|html|css|json|webmanifest)$/i;
 
 const EDITOR_NOTES = {
   neon: "Neon (Gemini 4 Neon medium, Gemini Models pool — NOT Claude). Can edit any file in Bot except guard files.",
+  carbon: "Carbon (Gemini 4 Carbon high, Gemini Models pool — NOT Claude; a trial editor, slower). Can edit any file in Bot except guard files.",
   sonnet: "Claude Sonnet (Claude plan). Can edit any file in Bot except guard files; good for complex or delicate changes.",
   opus: "Claude Opus (Claude plan, higher quota cost). Can edit any file in Bot except guard files; best for the hardest changes.",
 };
@@ -405,7 +406,7 @@ function createPlanner({
     const trimmed = raw.trim();
     if (!trimmed && !cleanPhoto) throw new Error("describe what you want to plan");
     if (raw.length > MAX_MESSAGE_CHARS) throw new Error(`the request is longer than ${MAX_MESSAGE_CHARS} characters`);
-    if (!ALLOWED_MODELS.includes(model)) throw new Error("model must be neon, sonnet or opus");
+    if (!ALLOWED_MODELS.includes(model)) throw new Error("model must be neon, carbon, sonnet or opus");
     if (active) throw new Error("another plan is still planning");
     await checkGeminiQuota();
 
@@ -437,7 +438,7 @@ function createPlanner({
     const trimmed = raw.trim();
     if (!trimmed && !cleanPhoto) throw new Error("write your reply to the plan");
     if (raw.length > MAX_MESSAGE_CHARS) throw new Error(`the message is longer than ${MAX_MESSAGE_CHARS} characters`);
-    if (model !== undefined && !ALLOWED_MODELS.includes(model)) throw new Error("model must be neon, sonnet or opus");
+    if (model !== undefined && !ALLOWED_MODELS.includes(model)) throw new Error("model must be neon, carbon, sonnet or opus");
     const record = get(id);
     if (!record) throw new Error("plan not found");
     if (active) throw new Error("another plan is still planning");
@@ -467,7 +468,7 @@ function createPlanner({
     if (active) throw new Error("another plan is still planning");
     if (record.status !== "open") throw new Error(`this plan is "${record.status}", only an open plan can start editing`);
     const chosenModel = model === undefined ? record.model : model;
-    if (!ALLOWED_MODELS.includes(chosenModel)) throw new Error("model must be neon, sonnet or opus");
+    if (!ALLOWED_MODELS.includes(chosenModel)) throw new Error("model must be neon, carbon, sonnet or opus");
     if (!(record.chat || []).some((m) => m.role === "bot")) throw new Error("wait for the planner's reply before starting");
     return { record, model: chosenModel, request: buildImplementationRequest(record, note) };
   }

@@ -80,9 +80,10 @@ test("Carbon low / medium (2026-11-24 trial) can be picked, spend Gemini Models,
   const { DESTINATIONS } = require("../router");
   const chains = [CHAIN, PHOTO_CHAIN, ...Object.values(DESTINATIONS)];
   for (const chain of chains) assert.ok(!chain.some((m) => /carbon/.test(m.model)), "Carbon is in no chain");
-  // No other file names Carbon: only router.js (the model), model-choice.js (the picker) and brain.js (its warm spare).
+  // No other file names Carbon: only router.js (the model), model-choice.js (the picker), brain.js (its warm spare), and since
+  // 2026-11-24 the Improve Bot editor choice (selfedit.js, selfedit-plan.js, server.js), which only Omri picks on the page.
   const root = path.join(__dirname, "..");
-  const allowed = new Set(["router.js", "model-choice.js", "brain.js"]);
+  const allowed = new Set(["router.js", "model-choice.js", "brain.js", "selfedit.js", "selfedit-plan.js", "server.js"]);
   for (const name of fs.readdirSync(root).filter((n) => n.endsWith(".js") && !allowed.has(n))) {
     assert.doesNotMatch(fs.readFileSync(path.join(root, name), "utf8"), /carbon/i, name + " must not use Carbon");
   }
