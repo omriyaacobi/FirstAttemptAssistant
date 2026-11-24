@@ -5,7 +5,7 @@ Spec: `experiments/2026-11-24-pc-look-plan.md`. Contest with Gemini 4 Carbon hig
 restarted or messaged.
 
 **Time:** started 13:59:58 (restarted at high effort; the first turn had only read the spec), code and tests done 14:13, full suite
-14:13:48-14:14:54 (66 s on this PC), note and commit about 14:17. About 17 minutes of work.
+14:13:48-14:14:54 (66 s on this PC), note and commit 14:15:18. About 15 minutes of work.
 
 **Tests:** full suite `node --test`: 1541 tests, 1540 pass, 0 fail, 1 skipped (the old Windows file-link test in pc-open, skipped
 before too). Baseline at e9ffcea: 1412. New: 129 (`tests/pc-look.test.js` 23, `tests/brain-pclook.test.js` 10, 96 more rows in
