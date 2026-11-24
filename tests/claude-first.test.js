@@ -25,7 +25,7 @@ function rows({ five = 80, fiveResets = at(2 * H), week = 70, argon = 30, agyCla
 
 test("Claude's week ahead of its pace and of Argon's: Claude Code moves to the front and the note says why", () => {
   const r = claudeFirst(CHAIN, rows(), { now: NOW }); // Claude +20, Argon -20
-  assert.deepStrictEqual(names(r), ["sonnet", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "claude-sonnet-5-5-low"]);
+  assert.deepStrictEqual(names(r), ["sonnet", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "claude-sonnet-5-5-medium"]);
   assert.match(r.note, /Claude Code's week is \+20 against its pace, Gemini Models only -20/);
 });
 

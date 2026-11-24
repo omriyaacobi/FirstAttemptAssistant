@@ -28,6 +28,8 @@ test("claudeCommand: no tools, no saved session, and a bad model name is refused
   assert.ok(cmd.includes('--tools ""'));
   assert.ok(cmd.includes("--no-session-persistence"));
   assert.ok(cmd.includes("--model sonnet"));
+  assert.ok(cmd.includes("--effort medium"), "Sonnet thinks at medium (2026-11-24)");
+  assert.ok(!claudeCommand("opus").includes("--effort"), "other models keep the CLI default");
   assert.throws(() => claudeCommand("sonnet; del *"), /Suspicious model name/);
 });
 

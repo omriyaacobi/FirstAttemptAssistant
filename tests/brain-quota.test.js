@@ -23,7 +23,7 @@ const names = (chain) => chain.map((m) => m.model);
 const levels = (o) => Object.entries(o).map(([pool, remaining]) => ({ pool, remaining }));
 
 test("the brain chain: Neon low, Hydrogen medium, agy Claude Sonnet low, then Claude Code Sonnet; no Flash, no Argon (2026-11-23)", () => {
-  assert.deepStrictEqual(names(CHAIN), ["gemini-4-neon-low", "gemini-4-hydrogen-medium", "claude-sonnet-5-5-low", "sonnet"]);
+  assert.deepStrictEqual(names(CHAIN), ["gemini-4-neon-low", "gemini-4-hydrogen-medium", "claude-sonnet-5-5-medium", "sonnet"]);
   assert.strictEqual(CHAIN[0].pool, "Gemini Models");
   assert.strictEqual(CHAIN[1].pool, "Gemini Models"); // Neon and Hydrogen share one pool
   assert.strictEqual(CHAIN[2].provider, "agy");
@@ -46,7 +46,7 @@ test("lowWithReserve: a reserve makes a pool low sooner, never later", () => {
 
 test("orderChain: Neon, then Hydrogen, while their pool has room; the 25% reserve and the 15% rule still work; Claude Code Sonnet kept last", () => {
   const order = (o) => names(orderChain(CHAIN, levels(o)));
-  const NH = ["gemini-4-neon-low", "gemini-4-hydrogen-medium"], GEM = GEMINI_POOL, SA = "claude-sonnet-5-5-low";
+  const NH = ["gemini-4-neon-low", "gemini-4-hydrogen-medium"], GEM = GEMINI_POOL, SA = "claude-sonnet-5-5-medium";
   assert.deepStrictEqual(order({}), [...NH, SA, "sonnet"]); // nothing known (e.g. no Argon row any more): as written
   assert.deepStrictEqual(order({ [GEM]: 30 }), [...NH, SA, "sonnet"]);
   assert.deepStrictEqual(order({ [GEM]: 22 }), [SA, ...NH, "sonnet"]); // the reserve: everyday chat goes to agy Sonnet first
@@ -84,9 +84,9 @@ test("the brain reads the pool levels (awaited) and asks agy Sonnet first when t
   const { brain, seen } = brainWith({ poolLevels: async () => levels({ [GEMINI_POOL]: 22 }) });
   const lines = [];
   const r = await run(brain, "hi", { log: (s) => lines.push(s) });
-  assert.deepStrictEqual(seen.models, ["claude-sonnet-5-5-low"]);
-  assert.strictEqual(r.used.model, "claude-sonnet-5-5-low");
-  assert.ok(lines.some((l) => /Gemini Models 22% left.*: asking claude-sonnet-5-5-low first/.test(l)), lines.join("\n"));
+  assert.deepStrictEqual(seen.models, ["claude-sonnet-5-5-medium"]);
+  assert.strictEqual(r.used.model, "claude-sonnet-5-5-medium");
+  assert.ok(lines.some((l) => /Gemini Models 22% left.*: asking claude-sonnet-5-5-medium first/.test(l)), lines.join("\n"));
 });
 
 test("with room in Gemini Models the brain asks Neon low first; a broken quota lookup changes nothing", async () => {
@@ -112,13 +112,15 @@ test("after every message the pools are looked up again; a limit error is report
 test("agy prompts always go through the streaming call (stdin), even when nothing is shown while writing", async () => {
   asked.length = 0;
   // An agy model WITHOUT a warm spare takes this cold path (2026-11-23: every model the brain or the picker can put first is warm
-  // now, so the test uses agy's Claude medium; with a warm model this test would start a REAL agy, the pool is not faked here).
+  // now, so the test uses agy's Claude HIGH, which Bot never uses (2026-11-24: the brain's Sonnet became medium and is warm);
+  // with a warm model this test would start a REAL agy, the pool is not faked here).
   const { WARM_MODELS } = require("../brain");
-  assert.ok(!WARM_MODELS.has(MODELS.claudeInAgy.model));
-  const { brain } = brainWith({ askOne: undefined, chain: [MODELS.claudeInAgy, MODELS.claudeSonnet] });
+  const cold = { provider: "agy", model: "claude-sonnet-5-5-high", pool: MODELS.sonnetInAgy.pool };
+  assert.ok(!WARM_MODELS.has(cold.model));
+  const { brain } = brainWith({ askOne: undefined, chain: [cold, MODELS.claudeSonnet] });
   const r = await run(brain);
   assert.strictEqual(r.answer, "fine");
-  assert.deepStrictEqual(asked, [{ provider: "agy", model: MODELS.claudeInAgy.model, streams: true }]);
+  assert.deepStrictEqual(asked, [{ provider: "agy", model: cold.model, streams: true }]);
 });
 
 test("OMRI'S CHOICE (model-choice.js): the picked model is asked first, the answer says so, and if it fails the normal order answers", async () => {

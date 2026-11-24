@@ -50,7 +50,7 @@ test("Gemini week at 75% or below: the pacing with agy's Claude pool and the Cla
   const send = brainWith([week(GEMINI, 70, 6.5), ...ahead]); // Gemini behind its week (pace -23)
   assert.notStrictEqual(await send(), "gemini-4-neon-low");
   const paced = brainWith([week(GEMINI, 70, 6.5), week(AGY_CLAUDE, 100, 6.9)]); // no Claude plan rows: agy's Claude pool by pace
-  assert.strictEqual(await paced(), "claude-sonnet-5-5-low");
+  assert.strictEqual(await paced(), "claude-sonnet-5-5-medium");
 });
 
 test("the safety rules still win above 75%: a Gemini pool nearly empty in its five-hour window steps back", async () => {

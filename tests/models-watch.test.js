@@ -25,8 +25,8 @@ const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bot-mw-")), "
 const USAGE = `${GEMINI}\tWeekly Limit Remaining\t89%\t2026-11-30T20:57:07Z\n${GEMINI}\tFive Hour Limit Remaining\t99%\t2026-11-24T14:05:45Z\n${AGY_CLAUDE}\tWeekly Limit Remaining\t46%\t2026-11-27T14:08:47Z\n`;
 
 test("parseModels: reads agy's list, drops the header, odd lines and duplicates", () => {
-  const m = mw.parseModels("Fetching available models...\ngemini-4-neon-low\tGemini 4 Neon (Low)\n\nBAD LINE with spaces\ngemini-4-neon-low\tagain\n../evil\tx\nclaude-sonnet-5-5-low\tClaude Sonnet 5.5 (Low)\n");
-  assert.deepStrictEqual(m.map((x) => x.id), ["gemini-4-neon-low", "claude-sonnet-5-5-low"]);
+  const m = mw.parseModels("Fetching available models...\ngemini-4-neon-low\tGemini 4 Neon (Low)\n\nBAD LINE with spaces\ngemini-4-neon-low\tagain\n../evil\tx\nclaude-sonnet-5-5-medium\tClaude Sonnet 5.5 (Low)\n");
+  assert.deepStrictEqual(m.map((x) => x.id), ["gemini-4-neon-low", "claude-sonnet-5-5-medium"]);
   assert.strictEqual(m[0].label, "Gemini 4 Neon (Low)");
   assert.deepStrictEqual(mw.parseModels(""), []);
   assert.deepStrictEqual(mw.parseModels(null), []);
@@ -60,10 +60,10 @@ test("diff: appeared and disappeared models and pools; new models are candidates
 });
 
 test("filterChain: skips a model agy no longer offers (with the reason logged), keeps the Claude CLI, never empties a chain", () => {
-  const offered = new Set(["gemini-4-hydrogen-medium", "claude-sonnet-5-5-low"]);
+  const offered = new Set(["gemini-4-hydrogen-medium", "claude-sonnet-5-5-medium"]);
   const logs = [];
   const out = mw.filterChain(CHAIN, (l) => logs.push(l), offered);
-  assert.deepStrictEqual(out.map((m) => m.model), ["gemini-4-hydrogen-medium", "claude-sonnet-5-5-low", "sonnet"]);
+  assert.deepStrictEqual(out.map((m) => m.model), ["gemini-4-hydrogen-medium", "claude-sonnet-5-5-medium", "sonnet"]);
   assert.strictEqual(logs.length, 1);
   assert.match(logs[0], /skipping gemini-4-neon-low: agy does not offer it any more/);
   assert.strictEqual(mw.filterChain(CHAIN, () => {}, null), CHAIN, "nothing known = the chain as it is");
@@ -109,12 +109,12 @@ function brainWith({ chain, rows = [], levels = [] }) {
 test("brain: a chain model with no pool row steps back when the shared Gemini pool is low (before: it never looked low)", async () => {
   const argon = { provider: "agy", model: "gemini-4-argon-low", pool: "Gemini 4 Argon" };
   const send = brainWith({ chain: [argon, MODELS.sonnetInAgy], rows: [week(GEMINI, 10, 6), week(AGY_CLAUDE, 90, 6)], levels: [{ pool: GEMINI, remaining: 10 }, { pool: AGY_CLAUDE, remaining: 90 }] });
-  assert.strictEqual((await send()).first, "claude-sonnet-5-5-low");
+  assert.strictEqual((await send()).first, "claude-sonnet-5-5-medium");
 });
 
 test("brain: a model agy no longer offers is skipped and the skip is logged; unknown means nothing is skipped", async () => {
   try {
-    mw.setOffered(["gemini-4-hydrogen-medium", "claude-sonnet-5-5-low"]);
+    mw.setOffered(["gemini-4-hydrogen-medium", "claude-sonnet-5-5-medium"]);
     const send = brainWith({ chain: CHAIN });
     const r = await send();
     assert.strictEqual(r.first, "gemini-4-hydrogen-medium");

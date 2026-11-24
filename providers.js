@@ -95,9 +95,12 @@ function checkModelName(model) {
 
 // The shell command for one Claude question. --tools "" gives it no tools (it only answers text, so
 // it cannot wander around the disk), --no-session-persistence stops it saving a session file per call.
+// Sonnet thinks at MEDIUM effort (Omri, 2026-11-24). Before, no --effort was passed, so the CLI used its own default.
+const CLI_EFFORT = { sonnet: "medium" };
 function claudeCommand(model) {
   checkModelName(model);
-  return `${CLAUDE_CMD} -p --model ${model} --tools "" --no-session-persistence`;
+  const effort = CLI_EFFORT[model] ? ` --effort ${CLI_EFFORT[model]}` : "";
+  return `${CLAUDE_CMD} -p --model ${model}${effort} --tools "" --no-session-persistence`;
 }
 
 // Claude's rate limits come for free with every answer: in stream-json mode the CLI prints "rate_limit_event" messages next

@@ -106,13 +106,13 @@ test("tokenlog: adds up per day and per model, keeps numbers only, drops old day
   let now = new Date(2026, 10, 12, 10).getTime();
   const log = createTokenLog({ file, now: () => now, keepDays: 2 });
   log.add([{ model: "gemini-4-neon-low", input: 16000, output: 60, thinking: 0, cacheRead: 0 }, { model: "gemini-4-neon-low", input: 18000, output: 300, thinking: 10, cacheRead: 0 }]);
-  log.add([{ model: "claude-sonnet-5-5-low", input: 9000, output: 100, cacheRead: 3400 }, { model: "bad name!", input: 5 }, null]);
+  log.add([{ model: "claude-sonnet-5-5-medium", input: 9000, output: 100, cacheRead: 3400 }, { model: "bad name!", input: 5 }, null]);
   log.add([]); // a message without a model call is not counted
   const day = log.read().days[dayOf(now)];
   assert.strictEqual(day.messages, 2);
   assert.deepStrictEqual(day.models["gemini-4-neon-low"], { calls: 2, input: 34000, output: 360, thinking: 10, cacheRead: 0 });
-  assert.deepStrictEqual(day.models["claude-sonnet-5-5-low"], { calls: 1, input: 9000, output: 100, thinking: 0, cacheRead: 3400 });
-  assert.deepStrictEqual(Object.keys(day.models).sort(), ["claude-sonnet-5-5-low", "gemini-4-neon-low"]);
+  assert.deepStrictEqual(day.models["claude-sonnet-5-5-medium"], { calls: 1, input: 9000, output: 100, thinking: 0, cacheRead: 3400 });
+  assert.deepStrictEqual(Object.keys(day.models).sort(), ["claude-sonnet-5-5-medium", "gemini-4-neon-low"]);
   assert.match(log.report().join("\n"), /2 message\(s\), 3 model call\(s\), 46,870 tokens \(23,435 per message\)/);
   for (let i = 0; i < 3; i++) { now += 24 * 3600 * 1000; log.add([{ model: "m", input: 1 }]); }
   assert.strictEqual(Object.keys(log.read().days).length, 2); // only the newest 2 days are kept
@@ -215,25 +215,25 @@ test("paceOf: quota left minus week left; unknown, five-hour and out-of-date row
 
 test("paceOrder: the pool that is clearly ahead of its week answers first; Claude Code stays last", () => {
   const order = (argon, sonnet, lead = null) => paceOrder(CHAIN, [week(ARGON_POOL, ...argon), week(SONNET_POOL, ...sonnet)], { now: NOW, lead });
-  assert.deepStrictEqual(firstOf(order([100, 7], [100, 7])), ["gemini-4-neon-low", "claude-sonnet-5-5-low", "sonnet"]); // equal: the chain's own order
-  assert.deepStrictEqual(firstOf(order([60, 5.6], [100, 7])), ["claude-sonnet-5-5-low", "gemini-4-neon-low", "sonnet"]); // Argon 20 behind
+  assert.deepStrictEqual(firstOf(order([100, 7], [100, 7])), ["gemini-4-neon-low", "claude-sonnet-5-5-medium", "sonnet"]); // equal: the chain's own order
+  assert.deepStrictEqual(firstOf(order([60, 5.6], [100, 7])), ["claude-sonnet-5-5-medium", "gemini-4-neon-low", "sonnet"]); // Argon 20 behind
   assert.match(order([60, 5.6], [100, 7]).note, /^pacing the week: Claude and GPT models is 20 points ahead of Gemini Models/);
   assert.strictEqual(order([100, 7], [100, 7]).note, "");
   // a small gap changes nothing
   assert.deepStrictEqual(firstOf(order([75, 5.6], [100, 7]))[0], "gemini-4-neon-low");
   // exactly the margin switches
   assert.strictEqual(PACE_MARGIN, 10);
-  assert.strictEqual(firstOf(order([70, 5.6], [100, 7]))[0], "claude-sonnet-5-5-low");
+  assert.strictEqual(firstOf(order([70, 5.6], [100, 7]))[0], "claude-sonnet-5-5-medium");
 });
 
 test("paceOrder: the model in the lead keeps it until the other is the margin ahead (no flipping per message)", () => {
   const rows = (argon, sonnet) => [week(ARGON_POOL, argon, 3.5), week(SONNET_POOL, sonnet, 3.5)];
   let r = paceOrder(CHAIN, rows(50, 60), { now: NOW }); // Sonnet 10 ahead: it takes the lead
-  assert.strictEqual(r.lead, "claude-sonnet-5-5-low");
+  assert.strictEqual(r.lead, "claude-sonnet-5-5-medium");
   r = paceOrder(CHAIN, rows(50, 52), { now: NOW, lead: r.lead }); // Sonnet spent some: still in the lead
-  assert.strictEqual(firstOf(r)[0], "claude-sonnet-5-5-low");
+  assert.strictEqual(firstOf(r)[0], "claude-sonnet-5-5-medium");
   r = paceOrder(CHAIN, rows(50, 45), { now: NOW, lead: r.lead }); // Argon 5 ahead: not enough
-  assert.strictEqual(firstOf(r)[0], "claude-sonnet-5-5-low");
+  assert.strictEqual(firstOf(r)[0], "claude-sonnet-5-5-medium");
   r = paceOrder(CHAIN, rows(50, 40), { now: NOW, lead: r.lead }); // Argon 10 ahead: back to Argon
   assert.strictEqual(firstOf(r)[0], "gemini-4-neon-low");
   assert.strictEqual(r.lead, "gemini-4-neon-low");
@@ -245,7 +245,7 @@ test("paceOrder: nothing known, or one pool unknown, leaves the chain alone; BOT
   assert.deepStrictEqual(firstOf(paceOrder(CHAIN, [week(SONNET_POOL, 100, 7)], { now: NOW })), firstOf({ chain: CHAIN }));
   const claudeFirst = [MODELS.claudeSonnet, MODELS.neonLow, MODELS.sonnetInAgy];
   const r = paceOrder(claudeFirst, [week(ARGON_POOL, 30, 5.6), week(SONNET_POOL, 100, 7)], { now: NOW });
-  assert.deepStrictEqual(firstOf(r), ["sonnet", "claude-sonnet-5-5-low", "gemini-4-neon-low"]); // only the two agy models change places
+  assert.deepStrictEqual(firstOf(r), ["sonnet", "claude-sonnet-5-5-medium", "gemini-4-neon-low"]); // only the two agy models change places
   assert.deepStrictEqual(firstOf(paceOrder([MODELS.neonLow, MODELS.claudeSonnet], [week(ARGON_POOL, 1, 7)], { now: NOW })), ["gemini-4-neon-low", "sonnet"]);
   assert.strictEqual(CHAIN[0].model, "gemini-4-neon-low"); // the input chain is never changed
 });
@@ -273,10 +273,10 @@ test("the brain paces the week: the agy pool that is ahead answers first, says w
   const { state, send } = pacedBrain();
   assert.strictEqual(await send(), "gemini-4-neon-low"); // nothing known: the chain as written
   state.rows = [week(ARGON_POOL, 60, 5.6), week(SONNET_POOL, 100, 7)]; // Argon is 20 points behind its week
-  assert.strictEqual(await send(), "claude-sonnet-5-5-low");
-  assert.ok(state.logs.some((l) => /^\[brain\] pacing the week: Claude and GPT models is 20 points ahead of Gemini Models .*: asking claude-sonnet-5-5-low first$/.test(l)), state.logs.join("\n"));
+  assert.strictEqual(await send(), "claude-sonnet-5-5-medium");
+  assert.ok(state.logs.some((l) => /^\[brain\] pacing the week: Claude and GPT models is 20 points ahead of Gemini Models .*: asking claude-sonnet-5-5-medium first$/.test(l)), state.logs.join("\n"));
   state.rows = [week(ARGON_POOL, 60, 5.6), week(SONNET_POOL, 85, 7)]; // the gap shrank to 5: Sonnet keeps the lead
-  assert.strictEqual(await send(), "claude-sonnet-5-5-low");
+  assert.strictEqual(await send(), "claude-sonnet-5-5-medium");
   state.rows = [week(ARGON_POOL, 60, 5.6), week(SONNET_POOL, 70, 7)]; // Argon is now 10 ahead: back to Argon, and nothing to explain
   assert.strictEqual(await send(), "gemini-4-neon-low");
   assert.ok(!state.logs.some((l) => /pacing the week/.test(l)));
@@ -286,8 +286,8 @@ test("pacing never beats the safety rules: Argon in its reserve steps back even 
   const { state, send } = pacedBrain();
   state.rows = [week(ARGON_POOL, 20, 1.2), week(SONNET_POOL, 29, 5.7)]; // the real numbers of 2026-11-12: Argon +3, Sonnet -52
   state.levels = [{ pool: ARGON_POOL, remaining: 20 }, { pool: SONNET_POOL, remaining: 29 }];
-  assert.strictEqual(await send(), "claude-sonnet-5-5-low"); // Argon is under its 25% reserve
-  assert.ok(state.logs.some((l) => /Gemini Models 20% left: asking claude-sonnet-5-5-low first/.test(l)), state.logs.join("\n"));
+  assert.strictEqual(await send(), "claude-sonnet-5-5-medium"); // Argon is under its 25% reserve
+  assert.ok(state.logs.some((l) => /Gemini Models 20% left: asking claude-sonnet-5-5-medium first/.test(l)), state.logs.join("\n"));
   state.levels = [{ pool: ARGON_POOL, remaining: 60 }, { pool: SONNET_POOL, remaining: 10 }]; // agy's Claude pool under 15%
   state.rows = [week(ARGON_POOL, 60, 6.5), week(SONNET_POOL, 10, 0.2)]; // ...although its week is nearly over (pace +7 against -33)
   assert.strictEqual(await send(), "gemini-4-neon-low");
@@ -301,14 +301,14 @@ test("the real brain chain (2026-11-20): Neon low first; when the Gemini Models 
   state.rows = [week("Gemini Models", 96, 6.5), week(SONNET_POOL, 54, 5.5)]; // the real start: the Gemini pool far ahead
   assert.strictEqual(await send(), "gemini-4-neon-low");
   state.rows = [week("Gemini Models", 40, 5.6), week(SONNET_POOL, 90, 5.6)]; // Gemini 40 behind its week, agy Claude +10
-  assert.strictEqual(await send(), "claude-sonnet-5-5-low");
+  assert.strictEqual(await send(), "claude-sonnet-5-5-medium");
 });
 
 test("paceOrder paces the first two agy POOLS, not the first two models: Neon and Hydrogen share one pool (2026-11-20)", () => {
   const rows = [week("Gemini Models", 40, 5.6), week(SONNET_POOL, 90, 5.6)]; // Gemini behind its week, agy Claude pool ahead
   const r = paceOrder(BRAIN_CHAIN, rows, { now: NOW });
-  assert.deepStrictEqual(r.chain.map((m) => m.model), ["claude-sonnet-5-5-low", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "sonnet"]);
-  assert.strictEqual(r.lead, "claude-sonnet-5-5-low");
+  assert.deepStrictEqual(r.chain.map((m) => m.model), ["claude-sonnet-5-5-medium", "gemini-4-neon-low", "gemini-4-hydrogen-medium", "sonnet"]);
+  assert.strictEqual(r.lead, "claude-sonnet-5-5-medium");
   // the Gemini pool ahead: the chain stays as written
   assert.deepStrictEqual(paceOrder(BRAIN_CHAIN, [week("Gemini Models", 96, 6.5), week(SONNET_POOL, 54, 5.5)], { now: NOW }).chain, BRAIN_CHAIN);
   // only one pool among the agy models: nothing to pace
