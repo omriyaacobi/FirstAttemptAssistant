@@ -1,0 +1,12 @@
+diff --git a/preview.js b/preview.js
+index 39266fb..9fc133b 100644
+--- a/preview.js
++++ b/preview.js
+@@ -50,6 +50,7 @@ function fakeApi() {
+     if (url.pathname === "/api/usage") return json({ rows: [{ pool: "Gemini Models", window: "Five Hour Limit Remaining", remaining: 72, resets: new Date(now + 3600000).toISOString() }, { pool: "Claude Models", window: "Weekly Limit Remaining", remaining: 41, resets: new Date(now + 86400000).toISOString() }] });
+     if (url.pathname === "/api/reminders") return json({ reminders: [], due: [] });
+     if (url.pathname === "/api/memory") return json({ facts: [], profile: { loaded: false } });
++    if (url.pathname === "/api/pc-look") return json({ sites: [], apps: [] });
+     return json({ error: "Preview only" }, 404);
+   };
+ }

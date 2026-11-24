@@ -1,0 +1,29 @@
+diff --git a/moodle-bridge.js b/moodle-bridge.js
+index c125451..2eb93ce 100644
+--- a/moodle-bridge.js
++++ b/moodle-bridge.js
+@@ -28,6 +28,9 @@ const KINDS = {
+   folder: { cmid: "id" }, // the file list of a "folder" item (names + numbers only)
+   folderfile: { cmid: "id", index: "small" }, // one file of a folder, by its place in that list
+   item: { cmid: "id" }, // the TEXT of one item: token route only (moodle-ws.js); never handed to the extension
++  tabs: {}, // PC look: open Chrome tabs (id, title, url, active, minimized)
++  tab_text: { tabId: "id" }, // PC look: plain text of one open tab (checked by pc-look.js first)
++  tab_shot: { tabId: "id" }, // PC look: screenshot of one active, non-minimized tab
+ };
+ const TOKEN_ONLY = new Set(["item"]);
+ const MAX_FILE_BYTES = 50 * 1024 * 1024;
+@@ -98,12 +101,12 @@ function createBridge({ now = () => Date.now(), jobTimeoutMs = JOB_TIMEOUT_MS, f
+     out.delete(id);
+     clearTimeout(job.timer);
+     if (!body.ok) {
+-      const code = ["loggedout", "moodle", "toobig", "notfile", "refused"].includes(body.code) ? body.code : "moodle";
++      const code = ["loggedout", "moodle", "toobig", "notfile", "refused", "minimized", "notfront", "notfound"].includes(body.code) ? body.code : "moodle";
+       if (code === "loggedout") lastState = { loggedIn: false };
+       job.reject(fail(code, String(body.error || "Moodle refused").slice(0, 300)));
+       return { ok: true };
+     }
+-    lastState = { loggedIn: true };
++    if (!/^tab/.test(job.kind)) lastState = { loggedIn: true };
+     let file = null;
+     if (body.file) {
+       const f = body.file;
