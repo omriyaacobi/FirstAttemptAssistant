@@ -709,7 +709,7 @@ ${text}`; } catch (error) {
       remember: async ({ fact }) => {
         const clean = checkFact(fact);
         // After a PC list or look a fact is saved only by a tap on its card, never at once: titles and page text are written by others
-        // (idea from the Carbon build, 2026-11-25).
+        // (idea from the other contest build, 2026-11-25).
         if (!ctx.sawPc && explicitRemember(task, clean)) { // Omri's own short message says "remember that ...": saved at once, the page offers Undo
           const { fact: f, already } = memory.add(clean);
           if (!already) ctx.extras.remembered = { id: f.id, text: f.text };
@@ -1515,7 +1515,7 @@ ${r.cardText}`; }
       // PC LOOK: every look is said in the reply, by code (what was looked at, never what it showed).
       if (result && lookSaid.length && typeof result.answer === "string" && result.answer.trim()) {
         const what = lookSaid.join(", ");
-        const pc = options.fromPhone === true; // asked from the phone: the look happened on the PC (spec point 6; idea from the Carbon build)
+        const pc = options.fromPhone === true; // asked from the phone: the look happened on the PC (spec point 6; idea from the other contest build)
         result.answer += "\n\n" + say(lookSaid.lang || "en", `_(Bot looked at: ${what}${pc ? ", on your PC" : ""}.)_`, `_(Bot הסתכל על: ${what}${pc ? ", במחשב" : ""}.)_`);
         result.pcLooks = lookSaid.slice();
       }

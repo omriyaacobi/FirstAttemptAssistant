@@ -35,8 +35,8 @@ const MAX_ITEMS = 120; // tabs or windows listed
 const MAX_LIST_ENTRIES = 100; // names on one allowed list
 const SCRIPT = path.join(__dirname, "pc-windows.ps1");
 const SCRIPT_TIMEOUT_MS = 20 * 1000;
-const STALE_MS = 3600 * 1000; // a picture folder older than this was left by a crash: deleted at the next look (idea from the Carbon build)
-// The extension in Chrome is still the old one (before PC LOOK): it refuses the new jobs as "unknown job" (idea from the Carbon build).
+const STALE_MS = 3600 * 1000; // a picture folder older than this was left by a crash: deleted at the next look (idea from the other contest build)
+// The extension in Chrome is still the old one (before PC LOOK): it refuses the new jobs as "unknown job" (idea from the other contest build).
 const RELOAD_HINT = 'the Bot extension in Chrome is the old version: Omri must reload it once (chrome://extensions, "Bot Moodle reader", the reload arrow) before Bot can see his tabs';
 
 // ---- never allowed ----
@@ -50,7 +50,7 @@ const NEVER_HOSTS = ["passwords.google.com", "vault.bitwarden.com", "my.1passwor
 const OMRI_BANK = "fibi.co.il";
 const NEVER_BANK_HOSTS = [OMRI_BANK, "leumi.co.il", "mizrahi-tefahot.co.il", "mercantile.co.il", "pepper.co.il", "paypal.com", "bitpay.co.il", "max.co.il", "cal-online.co.il", "isracard.co.il"];
 // A password manager judged by a WINDOW's title (a portable KeePass under another name, the Windows credential window), in English
-// or Hebrew (the Hebrew names: idea from the Carbon build). Not used for tabs: a page title naming one ("How to use Bitwarden") is no vault.
+// or Hebrew (the Hebrew names: idea from the other contest build). Not used for tabs: a page title naming one ("How to use Bitwarden") is no vault.
 const PASSWORD_TITLE = /\b(1password|bitwarden|vaultwarden|keepass(xc)?|lastpass|dashlane|nordpass|enpass|roboform|proton pass|password manager|credential manager)\b|מנהל הסיסמאות|מנהל האישורים/i;
 const NEVER_APPS = ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe", "lastpass.exe", "dashlane.exe", "nordpass.exe", "enpass.exe", "roboform.exe", "protonpass.exe", "keeper.exe", "credentialuibroker.exe"];
 // A window picture of a browser would show whatever tab is in front (maybe a bank): browsers are looked at only tab by tab.
