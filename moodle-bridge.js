@@ -28,7 +28,12 @@ const KINDS = {
   folder: { cmid: "id" }, // the file list of a "folder" item (names + numbers only)
   folderfile: { cmid: "id", index: "small" }, // one file of a folder, by its place in that list
   item: { cmid: "id" }, // the TEXT of one item: token route only (moodle-ws.js); never handed to the extension
+  // PC LOOK (2026-11-24, pc-look.js): Omri's open Chrome tabs. Numbers only here too: the extension finds the tab by its id.
+  tabs: {}, // id, title, address of every tab
+  tab_text: { tabId: "id" }, // the page text of one tab
+  tab_shot: { tabId: "id" }, // a picture of one tab, only when it is the tab in front of a visible window
 };
+const PC_KINDS = new Set(["tabs", "tab_text", "tab_shot"]); // not Moodle: their answers say nothing about the Moodle login
 const TOKEN_ONLY = new Set(["item"]);
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_RESULT_CHARS = 70 * 1024 * 1024; // a 50 MB file is about 67 MB as base64
@@ -98,12 +103,12 @@ function createBridge({ now = () => Date.now(), jobTimeoutMs = JOB_TIMEOUT_MS, f
     out.delete(id);
     clearTimeout(job.timer);
     if (!body.ok) {
-      const code = ["loggedout", "moodle", "toobig", "notfile", "refused"].includes(body.code) ? body.code : "moodle";
-      if (code === "loggedout") lastState = { loggedIn: false };
+      const code = ["loggedout", "moodle", "toobig", "notfile", "refused", "unavailable"].includes(body.code) ? body.code : "moodle";
+      if (code === "loggedout" && !PC_KINDS.has(job.kind)) lastState = { loggedIn: false };
       job.reject(fail(code, String(body.error || "Moodle refused").slice(0, 300)));
       return { ok: true };
     }
-    lastState = { loggedIn: true };
+    if (!PC_KINDS.has(job.kind)) lastState = { loggedIn: true };
     let file = null;
     if (body.file) {
       const f = body.file;
@@ -143,4 +148,4 @@ function fromExtension(req) {
   return req.headers["x-bot-bridge"] === "1" && (origin === undefined || /^chrome-extension:\/\/[a-p]{32}$/.test(String(origin)));
 }
 
-module.exports = { createBridge, checkArgs, fromExtension, KINDS, MAX_FILE_BYTES, JOB_TIMEOUT_MS, SEEN_MS };
+module.exports = { createBridge, checkArgs, fromExtension, KINDS, PC_KINDS, MAX_FILE_BYTES, JOB_TIMEOUT_MS, SEEN_MS };

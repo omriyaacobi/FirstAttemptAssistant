@@ -249,6 +249,7 @@ function createServer({
   coach = null, // the study coach (study-coach.js), only with the thread
   summaries = null, // the daily summaries (thread-summary.js), only with the thread
   moodleBridge = null, // the waiting list the Bot Moodle extension (moodle-extension/) takes read jobs from (moodle-bridge.js)
+  pcLook = null, // PC LOOK (pc-look.js): the look cards and the two allowed lists; off unless given, so tests never touch data/
   makeBrain = null, // builds the brain (brain.js): one model with a toolbox reads every message of the thread
   linkBatches = null, // many links from a file of addresses, shown first and fetched after one Confirm (link-batch.js), only with the thread
   threadFiles = null, // files that arrive with a message (thread-files.js), only with the thread
@@ -538,6 +539,27 @@ function createServer({
         const { started, count } = linkBatches.confirm(batchRoute[1]);
         return sendJson(res, 202, { started, count });
       } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
+    }
+    // PC LOOK (2026-11-24, pc-look.js). The card's three choices: "once" and "always" look ONCE at exactly the card's tab or window and
+    // answer Omri's message in the thread (a follow-up job); "always" also puts its site or app on the list. "cancel" looks at nothing.
+    const lookRoute = url.pathname.match(/^\/api\/pclook\/card\/([a-f0-9]{16})\/(once|always|cancel)$/);
+    if (thread && pcLook && lookRoute && req.method === "POST") {
+      try {
+        const d = pcLook.decide(lookRoute[1], lookRoute[2]);
+        if (d.cancelled) return sendJson(res, 200, { cancelled: true });
+        jobs.startThread({ task: d.task, questionId: d.questionId || null, pcGrant: d.grantId, fromPhone: remote });
+        return sendJson(res, 202, { started: true, added: d.added || null });
+      } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
+    }
+    // The two allowed lists, shown on the page with a Remove button each (Omri's tap). Adding is only by his words or a card.
+    if (pcLook && url.pathname === "/api/pclook/lists" && req.method === "GET") return sendJson(res, 200, pcLook.readLists());
+    if (pcLook && url.pathname === "/api/pclook/remove" && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      try {
+        const r = pcLook.change(input.kind === "site" ? { site: String(input.name || ""), remove: true } : input.kind === "app" ? { app: String(input.name || ""), remove: true } : (() => { throw Object.assign(new Error("kind must be site or app"), { status: 400 }); })());
+        return sendJson(res, 200, r.lists);
+      } catch (error) { return sendJson(res, error.status || 400, { error: error.message }); }
     }
     const assignRoute = url.pathname.match(/^\/api\/thread\/file\/([a-f0-9]{16})\/assign$/);
     if (thread && threadFiles && assignRoute && req.method === "POST") {
@@ -915,7 +937,10 @@ if (require.main === module) {
   });
   // The model Omri picks next to Send (model-choice.js): ONE store, read by the brain and set by /api/model-choice.
   const modelChoice = require("./model-choice").createModelChoice({ file: path.join(__dirname, "data", "model-choice.json") });
+  // PC LOOK (pc-look.js): Omri's open Chrome tabs (through the same extension) and app windows (pc-windows.ps1); looks only, never control.
+  const pcLook = require("./pc-look").createPcLook({ dataDir: path.join(__dirname, "data"), bridge: moodleBridge, log: console.log });
   const makeBrain = () => (brainRef = require("./brain").createBrain({
+    pcLook,
     courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), todo: require("./todo").createTodo({ file: path.join(__dirname, "data", "todo.md") }), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
     courseWork: (courseId) => require("./course-work").workDone(thread.page({ limit: 400 }).messages, courseId),
@@ -926,7 +951,7 @@ if (require.main === module) {
     // BOT_BRAIN_FIRST=claude in .env: Claude Code Sonnet first for a while. Bot does not load .env into process.env, so read the file.
     chain: require("./brain").chainFor((() => { try { return require("./auth").parseEnv(fs.readFileSync(path.join(__dirname, ".env"), "utf8")).BOT_BRAIN_FIRST; } catch (error) { return ""; } })()),
   }));
-  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, coach, summaries, threadFiles, linkBatches, makeBrain, modelChoice, moodleBridge });
+  const server = createServer({ push, auth, courseRoutes, store, morning, backup, thread, coach, summaries, threadFiles, linkBatches, makeBrain, modelChoice, moodleBridge, pcLook });
   // When a reminder is due, send it to every phone that turned notifications on.
   getReminders().onFire((r) => push.notifyAll({ title: r.late ? "Bot reminder (late)" : "Bot reminder", body: r.text, tag: `reminder-${r.id}` }));
   let tries = 0;

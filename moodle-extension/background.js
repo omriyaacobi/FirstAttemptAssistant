@@ -168,6 +168,39 @@ const JOBS = {
   },
 };
 
+// ---- PC LOOK (2026-11-24, Bot's pc-look.js): READ the open tabs. Bot sends only a tab NUMBER (its id from the "tabs" list). ----------
+// Nothing here switches, focuses, reloads, closes or types into a tab. Only http(s) pages are read; Bot checks its allowed sites and the
+// never-allowed list (banking, password managers) again on the address that comes back.
+const webPage = (url) => /^https?:\/\//i.test(String(url || ""));
+async function tabOf(tabId) {
+  let t;
+  try { t = await chrome.tabs.get(tabId); } catch (error) { throw fail("unavailable", "that tab is closed now"); }
+  if (t.incognito) throw fail("refused", "a private window is never read");
+  if (!webPage(t.url)) throw fail("refused", "only web pages (http or https) are read");
+  return t;
+}
+Object.assign(JOBS, {
+  async tabs() {
+    const wins = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+    const out = [];
+    for (const w of wins) for (const t of w.tabs || []) if (!w.incognito) out.push({ id: t.id, title: String(t.title || "").slice(0, 300), url: String(t.url || t.pendingUrl || "").slice(0, 2000), active: !!t.active, windowState: w.state });
+    return { data: out.slice(0, 300) };
+  },
+  async tab_text({ tabId }) {
+    const t = await tabOf(tabId);
+    if (t.discarded) throw fail("unavailable", "that tab is asleep (Chrome unloaded it), so its text cannot be read");
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => (document.body ? document.body.innerText : "").slice(0, 200000) });
+    return { data: { url: t.url, title: t.title, text: String((r && r.result) || "").slice(0, 200000) } };
+  },
+  async tab_shot({ tabId }) {
+    const t = await tabOf(tabId);
+    const w = await chrome.windows.get(t.windowId);
+    if (!t.active || w.state === "minimized") throw fail("unavailable", "that tab is not the one in front of a visible window");
+    const shot = await chrome.tabs.captureVisibleTab(t.windowId, { format: "jpeg", quality: 80 });
+    return { data: { url: t.url }, file: { name: "tab.jpg", type: "image/jpeg", base64: String(shot).replace(/^data:image\/jpeg;base64,/, "") } };
+  },
+});
+
 async function run(job) {
   const fn = Object.prototype.hasOwnProperty.call(JOBS, job.kind) ? JOBS[job.kind] : null;
   if (!fn) throw fail("refused", "unknown job");
