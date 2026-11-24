@@ -1,4 +1,5 @@
 // experiments/argon-run.js
+// (2026-11-23) NO LONGER RUNS: the Argon editor (makeArgonEditor) was removed from selfedit.js. Kept as a record of the 2026-11-06 trial.
 // Runs ONE Improve Bot request through the real selfedit.js flow, but on a THROWAWAY clone of the project, never the real one.
 // Usage: node experiments/argon-run.js <name> "<request>" [follow-up message] [--model argon|sonnet]
 // Env: ARGON_MODEL=gemini-4-argon-medium to try another effort. Prints a JSON summary line at the end.

@@ -76,7 +76,7 @@ test("parseReadCall ignores stray text after the JSON (seen live: ...]}modern)",
   assert.strictEqual(parseReadCall('Sure. READ {"files":[{"path":"a.js"}]}'), null, "READ must still open the reply");
 });
 
-test("buildProjectContext lists real files, guard files, sensitive files, and Argon's page-only limit", () => {
+test("buildProjectContext lists real files, guard files and sensitive files; Argon is no longer an editor", () => {
   const p = tempProject();
   try {
     const ctxNeon = buildProjectContext(p.repoDir, "neon");
@@ -87,8 +87,7 @@ test("buildProjectContext lists real files, guard files, sensitive files, and Ar
     assert.match(ctxNeon, /Sensitive files[^\n]*server\.js/);
     assert.match(ctxNeon, /A small personal assistant/);
 
-    const ctxArgon = buildProjectContext(p.repoDir, "argon");
-    assert.match(ctxArgon, /CAN ONLY edit files inside public\//);
+    assert.doesNotMatch(ctxNeon, /Argon/); // 2026-11-23: the Argon page-only editor was removed
   } finally { p.cleanup(); }
 });
 
@@ -157,7 +156,7 @@ test("planner happy path: reads requested files safely, replies with plan, suppo
     assert.strictEqual(planner.latestOpen(), null);
 
     // Discard on a second plan
-    const second = await (await planner.start("another idea", { model: "argon" })).finished;
+    const second = await (await planner.start("another idea", { model: "opus" })).finished;
     assert.strictEqual(planner.latestOpen().id, second.id);
     const discarded = planner.discard(second.id);
     assert.strictEqual(discarded.status, "discarded");
@@ -258,13 +257,13 @@ test("server plan routes work end-to-end and enforce Host, Origin, Sec-Fetch-Sit
     assert.strictEqual(JSON.parse((await req("GET", "/api/selfedit")).body).activePlan.id, planId);
 
     // Start editing from the plan
-    const started = await post(`/api/selfedit/plan/${planId}/start`, { model: "argon" });
+    const started = await post(`/api/selfedit/plan/${planId}/start`, { model: "sonnet" });
     assert.strictEqual(started.status, 202);
     const startedBody = JSON.parse(started.body);
     assert.strictEqual(startedBody.proposal.id, "abcdef0123456789");
     assert.strictEqual(startedBody.plan.status, "started");
     assert.strictEqual(editCalls.length, 1);
-    assert.strictEqual(editCalls[0].model, "argon");
+    assert.strictEqual(editCalls[0].model, "sonnet");
     assert.match(editCalls[0].request, /make button rounder/);
     assert.match(editCalls[0].request, /Edit public\/index\.html/);
   } finally {

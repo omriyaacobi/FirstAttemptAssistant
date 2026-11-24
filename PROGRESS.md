@@ -9,6 +9,16 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
+## 2026-11-23/24: speed, Argon out, Argon editor deleted
+
+- **Speed rounds 1 and 2** (merged, pushed 2ec2a92): warm agy early and while I type, a "plan only as much as needed" line, the course
+  file list in the prompt, download before open, a short Moodle cache with a 0.1 s pause. Quality A/B: no worse on 14 of 15 hard
+  questions, about 15% faster. Notes: `experiments/2026-11-23-speed*.md`.
+- **Argon out of every chain:** agy dropped Argon's own pool (it spends Gemini Models now, measured in
+  `experiments/2026-11-23-argon-pool.md`), so Neon took its places; the 25% reserve is on the Gemini Models pool.
+- **The Argon page-only editor is deleted** from `selfedit.js`, the planner, the server and the page (my decision). The tests for
+  the shared agy editor parts now run through Neon (`tests/selfedit-agy.test.js`); `experiments/argon-run.js` no longer runs.
+
 ## Night of 2026-11-17: study improver and my decisions (merged and pushed)
 
 - **Study improver (Fable):** lecture outlines found again (Calculus 2's 26 lectures, chapter 4 of Meni's notes), the parts of

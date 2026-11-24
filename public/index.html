@@ -2386,8 +2386,8 @@
     setImprovePhoto(files);
   });
   setupImprovePaste();
-  // Which quota the chosen editor spends, in plain words. Argon only changes the web page (the public folder).
-  const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it).", argon: "Uses your Gemini quota, NOT Claude. Changes the web page only." };
+  // Which quota the chosen editor spends, in plain words.
+  const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it)." };
   $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });
   try { $("improvePlanMode").checked = localStorage.getItem("botImprovePlan") !== "0"; } catch (error) { /* private mode */ }
   $("improvePlanMode").addEventListener("change", () => {

@@ -71,12 +71,11 @@ function setup(scenario, extra = {}) {
   const p = project();
   process.env.FAKE_NEON_SCENARIO = scenario;
   process.env.FAKE_NEON_LOG = p.log;
-  const calls = { claude: 0, argon: 0 };
+  const calls = { claude: 0 };
   const failures = [];
   const manager = createSelfEdit({
     repoDir: p.repoDir, dataDir: path.join(p.repoDir, "data"), workRoot: path.join(p.root, "work"),
     editor: async () => { calls.claude++; return "claude"; },
-    argonEditor: async () => { calls.argon++; return "argon"; },
     neonEditor: makeNeonEditor({ command: process.execPath, prefixArgs: [p.script], noteFailure: (m, msg) => failures.push({ m, msg }) }),
     reviewer: async () => OK_REVIEW,
     lowPools: extra.lowPools || (async () => []),
@@ -90,14 +89,14 @@ test("Neon's ids are in router.js and the editor uses Neon medium", () => {
   assert.strictEqual(NEON_MODEL, MODELS.neonMedium.model);
 });
 
-test("Neon happy path: a CODE change outside public/ ends ready; safe agy flags; Claude and Argon are never called", async () => {
+test("Neon happy path: a CODE change outside public/ ends ready; safe agy flags; Claude is never called", async () => {
   const s = setup("code");
   try {
     const record = await (await s.manager.start("make the greeting friendlier", { model: "neon" })).finished;
     assert.strictEqual(record.status, "ready", record.note + " " + (record.blocked || []).join("; "));
     assert.deepStrictEqual(record.files.map((f) => f.path).sort(), ["greet.js", "greet.test.js"]);
     assert.strictEqual(record.tests.ok, true);
-    assert.deepStrictEqual(s.calls, { claude: 0, argon: 0 });
+    assert.deepStrictEqual(s.calls, { claude: 0 });
     const log = fs.readFileSync(s.log, "utf8");
     const info = JSON.parse(log.split("\n")[0]);
     assert.strictEqual(info.args[info.args.indexOf("--model") + 1], "gemini-4-neon-medium");
@@ -148,8 +147,8 @@ test("Neon: when the Gemini Models pool is low nothing starts and nothing goes t
   try {
     await assert.rejects(s.manager.start("do it", { model: "neon" }), /Neon's pool \(Gemini Models\) is nearly used up \(9% left\).*Nothing was sent to Claude/);
     assert.strictEqual(s.calls.claude, 0);
-    // Argon's own pool being low does not stop Neon
-    const t = setup("code", { lowPools: async () => [{ pool: "Gemini 4 Argon", remaining: 5 }] });
+    // another pool being low (agy's Claude pool) does not stop Neon
+    const t = setup("code", { lowPools: async () => [{ pool: "Claude and GPT models", remaining: 5 }] });
     try { assert.strictEqual((await (await t.manager.start("friendlier", { model: "neon" })).finished).status, "ready"); } finally { t.cleanup(); }
   } finally { s.cleanup(); }
 });

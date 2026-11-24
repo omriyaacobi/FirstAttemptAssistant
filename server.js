@@ -582,7 +582,7 @@ function createServer({
       if (!input) return;
       // Neon (Gemini 4 Neon medium through agy, the Gemini quota) is the default editor since 2026-11-20; Sonnet/Opus use the Claude plan.
       const model = input.model === undefined ? "neon" : input.model;
-      if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
+      if (!["neon", "sonnet", "opus"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet or opus" });
       try {
         const { record } = await selfEdit.start(input.request, { model });
         return sendJson(res, 202, { proposal: record });
@@ -596,7 +596,7 @@ function createServer({
       const input = await readJsonBody(req, res, { photo: true, photoField: "photo", photosField: "photos" });
       if (!input) return;
       const model = input.model === undefined ? "neon" : input.model;
-      if (!["neon", "sonnet", "opus", "argon"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet, opus or argon" });
+      if (!["neon", "sonnet", "opus"].includes(model)) return sendJson(res, 400, { error: "model must be neon, sonnet or opus" });
       let saved = [];
       try {
         saved = savePhotos(planPhotoDir, parsePhotos(input, { one: "photo", many: "photos" }));
