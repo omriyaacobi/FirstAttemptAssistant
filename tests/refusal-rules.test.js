@@ -35,6 +35,7 @@ const ROWS = [
   { tool: "pc_roots", args: { remove: "C:\\x" }, label: "pc_roots remove" },
   { tool: "moodle_watch", args: { course: "Calculus 2", files: "off" } },
   { tool: "parts_done", args: { course: "Calculus 2", lecture: 1, parts: ["p1"] }, photoOk: true },
+  { tool: "plan_done", args: { course: "Calculus 2", items: ["P1"] }, photoOk: true }, // 2026-11-24: ticks an exam plan item, like parts_done
   { tool: "open_on_pc", args: { url: URL }, label: "open_on_pc url" },
   { tool: "open_on_pc", args: { found: 1 }, label: "open_on_pc found" },
   { tool: "open_on_pc", args: { course: "Calculus 2", file: "x" }, label: "open_on_pc course file", moodleOk: true },

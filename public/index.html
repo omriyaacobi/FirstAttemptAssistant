@@ -2970,6 +2970,7 @@
       else if (m.result && m.result.rule === "asked you a question") node.appendChild(questionCard(m));
       else node.appendChild(m.result ? renderResult(m.result) : botCard([["Answer"]], renderText(m.text)));
       const proposal = m.result && (m.result.proposal || (m.result.study && m.result.study.proposal));
+      if (proposal && proposal.id && proposal.kind === "examPlan") node.appendChild(examPlanView(proposal));
       if (proposal && proposal.id) node.appendChild(proposalButtons(proposal));
       if (m.result && m.result.fileChoice && m.result.fileChoice.id) node.appendChild(fileChoiceButtons(m.result.fileChoice));
       if (m.result && m.result.linkBatch && m.result.linkBatch.id) node.appendChild(linkBatchButtons(m.result.linkBatch));
@@ -3015,6 +3016,19 @@
     // A proposal from Bot (an assignment to save, a lecture to attach). Nothing is saved before a tap. The tap calls the study card routes
     // (POST /api/study/confirm or /cancel with the card's id): the same single-use card the typed words "yes" / "no" would answer. The
     // server writes Bot's reply into the conversation; the page then reloads the newest messages.
+    // An exam plan card (exam-plan.js, 2026-11-24): the plan exactly as code checked it, day by day, drawn from the card's fields
+    // (text only, never as HTML), so what Omri confirms is what is stored.
+    function examPlanView(proposal) {
+      const box = el("div", "sub");
+      box.appendChild(el("div", "", "Plan for " + String(proposal.course || "") + ", exam " + String(proposal.date || "") + (proposal.title ? " (" + String(proposal.title) + ")" : "") + ":"));
+      let day = null;
+      for (const it of (Array.isArray(proposal.items) ? proposal.items : []).slice(0, 80)) {
+        if (it.date !== day) { day = it.date; box.appendChild(el("div", "", String(day))); }
+        box.appendChild(el("div", "", "  • " + String(it.text || "")));
+      }
+      if (Array.isArray(proposal.leaveOut) && proposal.leaveOut.length) box.appendChild(el("div", "", "Not in the exam: " + proposal.leaveOut.map(String).join("; ")));
+      return box;
+    }
     function proposalButtons(proposal) {
       const actions = el("div", "actions tproposal");
       const yes = el("button", "", "Yes, save it");

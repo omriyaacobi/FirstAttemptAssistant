@@ -37,6 +37,7 @@ const outlineLib = require("./outline");
 const { buildOutline } = outlineLib;
 const catchup = require("./catchup");
 const { MODELS } = require("./router");
+const examPlan = require("./exam-plan");
 
 const INTENTS = ["progress", "quiz", "answer", "confirm", "cancel"]; // what the brain hands in (see answerStudy)
 const PROPOSAL_MS = 12 * 3600 * 1000; // proposals live in memory for 12 hours
@@ -48,6 +49,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   const progressLog = createProgressLog({ dir: path.join(dir, "progress"), now, timezone });
   const tracker = createTracker({ dir, now, timezone, progressLog });
   const nudges = createNudges({ tracker, courseList: () => courses.list(), now, timezone });
+  // The study plans toward an exam (exam-plan.js, 2026-11-24): proposed by the brain, confirmed by Omri on a card, shown to the brain every message until the exam.
+  const examPlans = examPlan.createExamPlans({ file: path.join(dir, "exam-plans.json"), now, timezone });
   const proposals = new Map();
   let proposalCounter = 0;
   const today = () => plan.parts(now(), timezone).date;
@@ -474,6 +477,12 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
         tracker.setExamDate(p.ref, p.date);
         return { ok: true, answer: T(`Saved the ${p.ref.name} exam on ${niceDate(p.date)}. I only use it in the morning brief, when it is within a week (one note a day at most). It says nothing about what you understood.`, `שמרתי את המבחן ${bet(p.ref.name)} ב${niceDate(p.date)}. אני משתמש בו רק בסיכום הבוקר, כשהוא בתוך שבוע (הערה אחת ביום לכל היותר). זה לא אומר כלום על מה שהובן.`) };
       }
+      if (p.kind === "examPlan") {
+        const stored = examPlans.set(p.ref, p.plan);
+        try { if ((tracker.course(p.ref).position || {}).examDate !== p.plan.examDate) tracker.setExamDate(p.ref, p.plan.examDate); } catch (error) { log(`[exam plan] exam date not stored: ${error.message}`); }
+        const days = new Set(stored.items.map((i) => i.date)).size;
+        return { ok: true, answer: T(`Saved the ${p.ref.name} plan for the exam on ${niceDate(stored.examDate)}: ${stored.items.length} items over ${days} days. I see it with every message until the exam, and tick an item when you tell me you did it.`, `שמרתי את התוכנית ${bet(p.ref.name)} לקראת המבחן ב${niceDate(stored.examDate)}: ${stored.items.length} משימות ב-${days} ימים. אני רואה אותה בכל הודעה עד המבחן, ומסמן משימה כשמספרים לי שהיא נעשתה.`) };
+      }
       if (p.kind === "material") {
         tracker.attachMaterial(p.ref, p.date, p.refs, { topic: p.topic || "" });
         return { ok: true, answer: T(`Attached it to the ${p.ref.name} lecture of ${niceDate(p.date)}. Say "teach me" or "quiz me" when you are ready.`, `צירפתי את זה להרצאה ${bet(p.ref.name)} מ${niceDate(p.date)}. כשיהיה נוח אפשר לכתוב "תלמד אותי" או "תבחן אותי".`) };
@@ -482,7 +491,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { ok: false, answer: T("Unknown proposal.", "הצעה לא מוכרת.") };
   }
   function cancelProposal(id) { const p = proposals.get(id); if (p) curLang = p.lang || "en"; return { ok: proposals.delete(id), answer: T("Dropped. Nothing was saved.", "בוטל. שום דבר לא נשמר.") }; }
-  const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : p.kind === "exam" ? { date: p.date } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
+  const card = (p) => ({ id: p.id, kind: p.kind, course: p.ref.name, expiresAt: p.expiresAt, ...(p.kind === "assignment" ? { title: p.fields.title, due: p.fields.due, needs: p.fields.needs } : p.kind === "exam" ? { date: p.date } : p.kind === "examPlan" ? { date: p.plan.examDate, title: p.plan.title, items: p.plan.items.map((i) => ({ id: i.id, date: i.date, text: i.text })), leaveOut: p.plan.leaveOut } : { date: p.date, files: p.refs.map((r) => r.fileName || r.fileId), question: p.question }) });
 
   // A file arrived. files: [{ fileId, fileName, pages }]; text: the file text or message (for assignments); dateText: what the student wrote about the date.
   async function onUpload({ courseId, files = [], text = "", dateText = "", kind = "auto", dueHint = null }) {
@@ -643,6 +652,24 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       if (!plan.isIsoDate(date) || date <= today() || plan.daysBetween(today(), date) > standing.EXAM_MAX_DAYS) throw new Error("the exam date must be a real date (YYYY-MM-DD) after today and within a year");
       return { proposal: card(addProposal({ kind: "exam", ref, date })), date: niceDate(date) };
     },
+    // A STUDY PLAN TOWARD AN EXAM (exam-plan.js): the model hands in days and short items; code checks them and makes a Confirm card.
+    // Nothing is stored before Omri's tap.
+    examPlan({ courseId, examDate, title = "", days, leaveOut = [], lang = "en" } = {}) {
+      curLang = lang;
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      const checked = examPlan.checkPlan({ examDate: String(examDate || "").trim(), title, days, leaveOut, today: today() });
+      const p = addProposal({ kind: "examPlan", ref, plan: checked });
+      return { proposal: card(p), text: examPlan.planLines(checked), count: checked.items.length, examDate: checked.examDate };
+    },
+    // Ticks items of a confirmed plan (ids checked), or unticks them with undo. "Done" = Omri says he did it, never "understood".
+    planDone({ courseId, ids = [], undo = false } = {}) {
+      const ref = refOfCourse(courseId);
+      if (!ref) throw new Error("that course is not in the study tracker");
+      return examPlans.mark(ref, ids, { undo: undo === true });
+    },
+    // For the brain's context: every plan whose exam is today or later ("" when none).
+    planContext() { return examPlans.contextText(); },
     // Where Omri stands in a course, as closed fields the model proposes; code keeps only what fits the timetable and the notes.
     position({ courseId, fields, said = "", lang = "en" } = {}) {
       curLang = lang;
@@ -769,7 +796,20 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     return { lines, text };
   }
 
-  return { brainTools, reviewPositions, answerStudy, morningBlock: () => nudges.morningBlock(), progressLog, onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, tracker, nudges, INTENTS };
+  // The morning brief's study part: the nudge (one a day at most) and, while an exam plan is active, one line per plan about today.
+  // Paused (study_pause) or quiet hours: no plan line, like the nudges. The lock screen still shows counts only.
+  function morningWithPlan(block) {
+    let line = "";
+    try {
+      const s = tracker.state();
+      if (!nudges.isPaused() && !plan.inQuietHours(now(), s.settings.quiet, timezone)) line = examPlans.morningLine();
+    } catch (error) { line = ""; }
+    if (!line) return block;
+    const planText = `Exam plan\n  ${line.split("\n").join("\n  ")}`;
+    return block ? { ...block, text: `${block.text}\n${planText}`, count: block.count + 1 } : { text: planText, count: 1, kind: "examPlan" };
+  }
+
+  return { brainTools, reviewPositions, answerStudy, morningBlock: () => morningWithPlan(nudges.morningBlock()), examPlans, progressLog, onUpload, confirmProposal, cancelProposal, pendingProposal: () => { const p = latestProposal(); return p ? card(p) : null; }, tracker, nudges, INTENTS };
 }
 
 module.exports = { createStudyCoach, INTENTS };
