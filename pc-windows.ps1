@@ -31,6 +31,7 @@ public static class BotWin {
   [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int size);
   public static string Title(IntPtr h) { var s = new StringBuilder(512); GetWindowText(h, s, 512); return s.ToString(); }
   public static uint Pid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
@@ -83,6 +84,7 @@ $h = [IntPtr]$Handle
 if (-not [BotWin]::IsWindow($h) -or -not [BotWin]::Listed($h)) { Write-Result @{ ok = $false; code = "gone" } }
 if ((Get-ExeName $h) -ine $Expect) { Write-Result @{ ok = $false; code = "changed" } }
 if ([BotWin]::IsIconic($h)) { Write-Result @{ ok = $false; code = "minimized" } }
+[void][BotWin]::SetProcessDPIAware() # real pixel sizes on a scaled screen (125%, 150%), so the picture is not cut off (idea from the Carbon build)
 $r = New-Object BotWin+RECT
 [void][BotWin]::GetWindowRect($h, [ref]$r)
 $w = [Math]::Min($r.R - $r.L, 7680); $hh = [Math]::Min($r.B - $r.T, 4320)

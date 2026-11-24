@@ -35,6 +35,9 @@ const MAX_ITEMS = 120; // tabs or windows listed
 const MAX_LIST_ENTRIES = 100; // names on one allowed list
 const SCRIPT = path.join(__dirname, "pc-windows.ps1");
 const SCRIPT_TIMEOUT_MS = 20 * 1000;
+const STALE_MS = 3600 * 1000; // a picture folder older than this was left by a crash: deleted at the next look (idea from the Carbon build)
+// The extension in Chrome is still the old one (before PC LOOK): it refuses the new jobs as "unknown job" (idea from the Carbon build).
+const RELOAD_HINT = 'the Bot extension in Chrome is the old version: Omri must reload it once (chrome://extensions, "Bot Moodle reader", the reload arrow) before Bot can see his tabs';
 
 // ---- never allowed ----
 // Schemes: the browser's own pages and local files. Only http(s) tabs can be looked at at all.
@@ -42,7 +45,13 @@ const NEVER_SCHEMES = ["chrome:", "edge:", "about:", "file:", "chrome-extension:
 // Password managers and the browsers' password pages.
 const NEVER_HOSTS = ["passwords.google.com", "vault.bitwarden.com", "my.1password.com", "lastpass.com", "app.keeper.io", "nordpass.com", "dashlane.com"];
 // Banking: any host with "bank" in a label, plus Israeli banks and payment sites whose names do not say "bank".
-const NEVER_BANK_HOSTS = ["leumi.co.il", "mizrahi-tefahot.co.il", "fibi.co.il", "mercantile.co.il", "pepper.co.il", "paypal.com", "bitpay.co.il", "max.co.il", "cal-online.co.il", "isracard.co.il"];
+// OMRI_BANK (2026-11-25, Omri's word): his own bank, the First International Bank of Israel (הבינלאומי), and every address under it
+// (www.fibi.co.il, online.fibi.co.il, ...). A host is refused when it IS one of these names or ends with "." + one of them.
+const OMRI_BANK = "fibi.co.il";
+const NEVER_BANK_HOSTS = [OMRI_BANK, "leumi.co.il", "mizrahi-tefahot.co.il", "mercantile.co.il", "pepper.co.il", "paypal.com", "bitpay.co.il", "max.co.il", "cal-online.co.il", "isracard.co.il"];
+// A password manager judged by a WINDOW's title (a portable KeePass under another name, the Windows credential window), in English
+// or Hebrew (the Hebrew names: idea from the Carbon build). Not used for tabs: a page title naming one ("How to use Bitwarden") is no vault.
+const PASSWORD_TITLE = /\b(1password|bitwarden|vaultwarden|keepass(xc)?|lastpass|dashlane|nordpass|enpass|roboform|proton pass|password manager|credential manager)\b|מנהל הסיסמאות|מנהל האישורים/i;
 const NEVER_APPS = ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe", "lastpass.exe", "dashlane.exe", "nordpass.exe", "enpass.exe", "roboform.exe", "protonpass.exe", "keeper.exe", "credentialuibroker.exe"];
 // A window picture of a browser would show whatever tab is in front (maybe a bank): browsers are looked at only tab by tab.
 const BROWSER_APPS = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe", "iexplore.exe"];
@@ -92,7 +101,7 @@ function neverApp(exe, title = "") {
   const e = String(exe || "").toLowerCase();
   if (NEVER_APPS.includes(e)) return `${exe} is a password manager, never looked at`;
   // A password manager inside another program (KeePass portable under another name, the Windows password window): judged by its title too.
-  if (/\b(1password|bitwarden|keepass(xc)?|lastpass|dashlane|nordpass|enpass|roboform|proton pass|password manager|credential manager)\b/i.test(String(title))) return "a password manager window is never looked at";
+  if (PASSWORD_TITLE.test(String(title))) return "a password manager window is never looked at";
   return null;
 }
 
@@ -242,9 +251,16 @@ function createPcLook({
 
   // ---- the numbered lists ----
   function keep(kind, items) { last[kind] = { at: now(), items }; return items; }
+  // One job for the extension. An old extension answers the new jobs with "unknown job": said as the one step Omri must take.
+  async function ask(kind, args) {
+    try { return await bridge.ask(kind, args); } catch (error) {
+      if (error && error.code === "refused" && /unknown job/i.test(String(error.message))) throw fail(RELOAD_HINT, "offline");
+      throw error;
+    }
+  }
   async function tabs() {
     if (!bridge) throw fail("the Chrome extension is not set up in this Bot", "offline");
-    const r = await bridge.ask("tabs", {});
+    const r = await ask("tabs", {});
     return keep("tab", parseTabs(r && r.data));
   }
   async function windows() {
@@ -288,6 +304,16 @@ function createPcLook({
     looks = looks.filter((t) => now() - t < 3600 * 1000);
     if (looks.length >= MAX_PER_HOUR) throw fail(`Bot already looked ${MAX_PER_HOUR} times in the last hour (the limit); try again later`, "limit");
   }
+  // Picture folders a crash left behind (Bot deletes each one after its answer; a restart in the middle skips that). Only Bot's own
+  // "bot-look-" folders, only older than an hour, so a look still being answered is never touched.
+  function sweepStale() {
+    let names = [];
+    try { names = fs.readdirSync(tmpDir).filter((n) => n.startsWith("bot-look-")); } catch (error) { return; }
+    for (const n of names) {
+      const p = path.join(tmpDir, n);
+      try { if (now() - fs.statSync(p).mtimeMs > STALE_MS) fs.rmSync(p, { recursive: true, force: true }); } catch (error) { /* in use or gone */ }
+    }
+  }
   // A picture's bytes -> a private folder with a fixed name. Real JPEG/PNG first bytes and 8 MB at most.
   function keepPicture(bytes) {
     if (!Buffer.isBuffer(bytes) || !bytes.length) throw fail("the picture came back empty", "broken");
@@ -313,6 +339,7 @@ function createPcLook({
     if (t.kind === "tab" && !bridge) throw fail("the Chrome extension is not set up in this Bot", "offline");
     hourCheck();
     looks.push(now());
+    if (h === "picture") sweepStale();
     log(`[pc-look] looking at ${label(t)} (${h})`); // what was looked at, never what it showed
     if (t.kind === "window") {
       const dir = fs.mkdtempSync(path.join(tmpDir, "bot-look-"));
@@ -331,7 +358,7 @@ function createPcLook({
       } catch (error) { fs.rmSync(dir, { recursive: true, force: true }); throw error; }
     }
     let r;
-    try { r = await bridge.ask(h === "text" ? "tab_text" : "tab_shot", { tabId: t.id }); } catch (error) {
+    try { r = await ask(h === "text" ? "tab_text" : "tab_shot", { tabId: t.id }); } catch (error) {
       if (error.code === "unavailable" || error.code === "notfile") return { kind: "unavailable", reason: `${label(t)}: ${oneLine(error.message, 160)}` };
       throw error;
     }
@@ -393,4 +420,4 @@ function createPcLook({
   return { readLists, change, allowFromWords, tabs, windows, pick, listText, look, drop, propose, decide, takeGrant, isAllowed, neverReason, label, nameOf };
 }
 
-module.exports = { createPcLook, parseTabs, parseWindows, neverSite, neverHost, neverApp, cleanSite, cleanApp, hostOf, scriptArgs, NEVER_SCHEMES, NEVER_HOSTS, NEVER_BANK_HOSTS, NEVER_APPS, BROWSER_APPS, MAX_PER_HOUR, MAX_PICTURE_BYTES, LIST_MS, CARD_MS };
+module.exports = { createPcLook, parseTabs, parseWindows, neverSite, neverHost, neverApp, cleanSite, cleanApp, hostOf, scriptArgs, NEVER_SCHEMES, NEVER_HOSTS, NEVER_BANK_HOSTS, OMRI_BANK, RELOAD_HINT, STALE_MS, NEVER_APPS, BROWSER_APPS, MAX_PER_HOUR, MAX_PICTURE_BYTES, LIST_MS, CARD_MS };

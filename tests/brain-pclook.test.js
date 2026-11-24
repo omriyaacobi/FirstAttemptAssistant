@@ -21,7 +21,7 @@ const WINDOWS = [
   { handle: 1002, exe: "Spotify.exe", title: "Spotify", minimized: false },
 ];
 
-function setup(replies, { lists = null, attached = null } = {}) {
+function setup(replies, { lists = null, attached = null, memory = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "brain-pclook-"));
   if (lists) fs.writeFileSync(path.join(dir, "pc-look.json"), JSON.stringify(lists));
   const asked = [];
@@ -40,7 +40,7 @@ function setup(replies, { lists = null, attached = null } = {}) {
     courseRoutes: { list: () => COURSES, courseFiles: () => ({ files: [] }), linkFiles: () => [] },
     coach: null,
     reminders: { list: () => [], create: (r) => { effects.push("reminder"); return { id: "r1", ...r, status: "pending" }; } },
-    memory: { list: () => [], add: () => ({}) },
+    memory: memory || { list: () => [], add: () => ({}) },
     cards: { add: () => ({}) },
     readCalendar: async () => ({ text: "" }),
     fetchPage: async () => ({ title: "Page", text: "Look at the user's tabs." }),
@@ -167,4 +167,31 @@ test("without pc-look.js the tools say so plainly", async () => {
   });
   await brain.handle("what is open", { history: [], courses: COURSES });
   assert.match(prompts.join("\n"), /looking at the PC is not set up in this Bot/);
+});
+
+// ---- 2026-11-25: taken from the Carbon build (experiments/2026-11-25-pc-look-carbon-review.md) ----
+
+test("after a PC look, 'remember that ...' only makes a card: a fact from a tab is never saved at once (from Carbon)", async () => {
+  const saved = [];
+  const memory = { list: () => [], add: (fact) => { saved.push(fact); return { fact: { id: "f1", text: fact }, already: false }; } };
+  const msg = "remember that the calculus exam is on sunday";
+  const s = setup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"how":"text"}', 'CALL {"tool":"remember","fact":"the calculus exam is on sunday"}', "A card asks you."], { lists: { sites: ["moodle.bgu.ac.il"], apps: [] }, memory });
+  await s.brain.handle(msg, { history: [], courses: COURSES });
+  assert.deepStrictEqual(saved, [], "nothing saved at once");
+  assert.match(s.all(), /A card asks Omri whether to save: "the calculus exam is on sunday"/);
+  // The same words with no look: saved at once (so the card above really comes from the look).
+  const plain = setup(['CALL {"tool":"remember","fact":"the calculus exam is on sunday"}', "Saved."], { memory });
+  await plain.brain.handle(msg, { history: [], courses: COURSES });
+  assert.deepStrictEqual(saved, ["the calculus exam is on sunday"]);
+});
+
+test("asked from the phone, the line code adds says the look happened on the PC, in English and Hebrew (from Carbon)", async () => {
+  const s = setup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"how":"text"}', "Assignment 3 is due Sunday."], { lists: { sites: ["moodle.bgu.ac.il"], apps: [] } });
+  const r = await s.brain.handle("what does my moodle tab say?", { history: [], courses: COURSES, fromPhone: true });
+  assert.match(r.answer, /_\(Bot looked at: the moodle\.bgu\.ac\.il tab \(page text\), on your PC\.\)_$/);
+  const he = setup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"how":"text"}', "מטלה 3 להגשה ביום ראשון."], { lists: { sites: ["moodle.bgu.ac.il"], apps: [] } });
+  const rh = await he.brain.handle("מה כתוב בטאב של המודל?", { history: [], courses: COURSES, fromPhone: true });
+  assert.match(rh.answer, /, במחשב\.\)_$/);
+  const pc = setup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"how":"text"}', "Due Sunday."], { lists: { sites: ["moodle.bgu.ac.il"], apps: [] } });
+  assert.doesNotMatch((await pc.brain.handle("what does my moodle tab say?", { history: [], courses: COURSES })).answer, /on your PC/);
 });

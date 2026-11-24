@@ -451,3 +451,73 @@ test("server: 'Just this once' answers the SAME question with the card's grant; 
     assert.strictEqual((await request("POST", "/api/pclook/add", JSON.stringify({ kind: "app", name: "Spotify.exe" }))).status, 404, "the page cannot ADD to a list (only words or a card)");
   } finally { await new Promise((r) => server.close(r)); }
 });
+
+// ---- 2026-11-25: Omri's own bank, and what was taken from the Carbon build (experiments/2026-11-25-pc-look-carbon-review.md) ----
+
+test("Omri's bank (FIBI, fibi.co.il) and every address under it are never looked at, listed as never, and never added", async () => {
+  assert.strictEqual(look.OMRI_BANK, "fibi.co.il");
+  for (const url of ["https://fibi.co.il/", "https://www.fibi.co.il/private", "https://online.fibi.co.il/wps/portal/", "https://ONLINE.FIBI.CO.IL./x",
+    "http://online.fibi.co.il:443/x", "https://moodle.bgu.ac.il@online.fibi.co.il/", "https://a.b.online.fibi.co.il/"]) {
+    assert.match(String(neverSite(url)), /banking, never looked at/, url);
+  }
+  assert.strictEqual(neverSite("https://notfibi.co.il/"), null, "a different site that only ends in the same letters is not the bank");
+  const tabs = [{ id: 21, title: "הבינלאומי - כניסה לחשבון", url: "https://online.fibi.co.il/wps/portal/", active: true, windowState: "normal" }];
+  const w = world({ tabs });
+  for (const site of ["fibi.co.il", "online.fibi.co.il", "https://www.fibi.co.il/"]) assert.throws(() => w.pc.change({ site }), /not added: .*banking/, site);
+  // Even written by hand into the lists file, and even with Omri's own words, a card or a grant: never looked at.
+  fs.writeFileSync(path.join(w.dir, "pc-look.json"), JSON.stringify({ sites: ["fibi.co.il", "online.fibi.co.il"], apps: [] }));
+  const list = await w.pc.tabs();
+  assert.match(w.pc.listText("tab", list), /^1\. .*\[in front; never looked at\]$/);
+  assert.throws(() => w.pc.allowFromWords({ site: "online.fibi.co.il" }, "allow Bot to look at online.fibi.co.il"), /banking/);
+  const t = w.pc.pick("tab", 1);
+  await assert.rejects(w.pc.look(t, "text"), /banking/);
+  await assert.rejects(w.pc.look(t, "picture"), /banking/);
+  assert.throws(() => w.pc.propose(t, "text", { task: "what does it say" }), /banking/);
+  assert.deepStrictEqual(w.calls.map((c) => c.kind).filter(Boolean), ["tabs"], "nothing of the bank tab was asked of the extension");
+  // A tab that was elsewhere when listed and is on the bank when read: refused on the address that came back.
+  const moved = world({ tabBack: "https://online.fibi.co.il/wps/portal/" });
+  moved.pc.change({ site: "moodle.bgu.ac.il" });
+  await moved.pc.tabs();
+  await assert.rejects(moved.pc.look(moved.pc.pick("tab", 1), "text"), /banking/);
+});
+
+test("a password manager window is caught by its title in Hebrew too; a page title naming one is still a normal tab (from Carbon)", () => {
+  assert.match(String(neverApp("explorer.exe", "מנהל האישורים")), /password manager/);
+  assert.match(String(neverApp("App.exe", "מנהל הסיסמאות")), /password manager/);
+  assert.match(String(neverApp("App.exe", "Vaultwarden")), /password manager/);
+  assert.strictEqual(neverApp("Code.exe", "מטלה 3 - חדו\"א 2 - Visual Studio Code"), null, "a normal Hebrew title is fine");
+  assert.strictEqual(neverSite("https://www.youtube.com/watch?v=1"), null, "a tab is judged by its address only, never its title");
+});
+
+test("an old extension (before PC LOOK) is said as the one step Omri must take: reload it (from Carbon)", async () => {
+  const old = { ask: async () => { throw Object.assign(new Error("unknown job"), { code: "refused" }); } };
+  const pc = createPcLook({ dataDir: tmp(), bridge: old, run: async () => "[]" });
+  await assert.rejects(pc.tabs(), (e) => e.code === "offline" && /reload it once \(chrome:\/\/extensions/.test(e.message));
+  const other = { ask: async () => { throw Object.assign(new Error("Moodle refused"), { code: "refused" }); } };
+  await assert.rejects(createPcLook({ dataDir: tmp(), bridge: other, run: async () => "[]" }).tabs(), /Moodle refused/, "other refusals pass through as they are");
+});
+
+test("picture folders a crash left behind are deleted at the next picture look; newer ones are kept (from Carbon)", async () => {
+  const w = world();
+  const clock = Date.parse("2026-11-24T12:00:00Z");
+  const old = path.join(w.dir, "bot-look-crashed");
+  const fresh = path.join(w.dir, "bot-look-answering");
+  const other = path.join(w.dir, "someone-else");
+  for (const d of [old, fresh, other]) { fs.mkdirSync(d); fs.writeFileSync(path.join(d, "look.jpg"), JPEG); }
+  fs.utimesSync(old, new Date(clock - 2 * 3600 * 1000), new Date(clock - 2 * 3600 * 1000));
+  fs.utimesSync(fresh, new Date(clock - 10 * 60 * 1000), new Date(clock - 10 * 60 * 1000));
+  fs.utimesSync(other, new Date(clock - 5 * 3600 * 1000), new Date(clock - 5 * 3600 * 1000));
+  w.pc.change({ app: "Code.exe" });
+  await w.pc.windows();
+  const r = await w.pc.look(w.pc.pick("window", 1), "picture");
+  assert.ok(!fs.existsSync(old), "the crash leftover is gone");
+  assert.ok(fs.existsSync(fresh), "a look still being answered is never touched");
+  assert.ok(fs.existsSync(other), "only Bot's own bot-look- folders");
+  w.pc.drop(r);
+});
+
+test("the window picture asks for real pixel sizes first, so a scaled screen is not cut off (from Carbon)", () => {
+  const ps = fs.readFileSync(path.join(__dirname, "..", "pc-windows.ps1"), "utf8");
+  const shot = ps.slice(ps.indexOf("# shot:"));
+  assert.ok(shot.indexOf("SetProcessDPIAware()") > 0 && shot.indexOf("SetProcessDPIAware()") < shot.indexOf("GetWindowRect"), "DPI aware before the size is read");
+});
