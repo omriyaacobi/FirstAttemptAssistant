@@ -360,7 +360,8 @@ async function notePages(tabId, from, to) {
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
-      const sy = (s.canvas.top + (sl.from - sl.scroll)) * scale, h = (sl.to - sl.from) * scale;
+      // From where the note REALLY is (`at`: a whole pixel, up to 2 px from the plan), so the strips join without a seam or a repeat.
+      const sy = (s.canvas.top + (sl.from - at)) * scale, h = (sl.to - sl.from) * scale;
       ctx.drawImage(bmp, s.pageLeft * scale, sy, width * scale, h, 0, (sl.from - top) * scale, width * scale, h);
     }
     if (!canvas) throw fail("unavailable", "that page could not be shown");
