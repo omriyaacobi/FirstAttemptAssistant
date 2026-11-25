@@ -50,6 +50,8 @@ const ROWS = [
   { tool: "pc_allow", args: { site: "moodle.bgu.ac.il", remove: true }, label: "pc_allow remove" },
   // A look itself: refused after a web page, Moodle or with a photo; after a PC list it is the next step (pcOk).
   { tool: "pc_look", args: { kind: "window", number: 1 }, pcOk: true },
+  // NOTABILITY PAGES (2026-11-25, t40): a page series (the extension scrolls the note) is a look like any other: the same refusals.
+  { tool: "pc_look", args: { kind: "tab", number: 1, pages: "last" }, pcOk: true, label: "pc_look pages (Notability)" },
 ];
 
 // What starts the message: a web page read, a Moodle read, or a photo.

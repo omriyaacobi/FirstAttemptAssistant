@@ -3779,7 +3779,7 @@
       const box = el("div", "tfilechoice");
       const note = el("p", "sub", "");
       const waiting = card.expiresAt && Date.now() > card.expiresAt;
-      const what = (card.kind === "tab" ? "Tab on " : "Window of ") + card.name + (card.how === "text" ? " (its page text)" : " (a picture)");
+      const what = (card.kind === "tab" ? "Tab on " : "Window of ") + card.name + (card.how === "text" ? " (its page text)" : card.how === "pages" ? " (scroll the note for " + (card.pages || "its pages") + ", one picture per page, then scroll back)" : " (a picture)");
       const head = el("p", "sub", what);
       head.dir = "ltr";
       const title = el("p", "sub", card.title ? "Title: " + card.title : "");
