@@ -51,7 +51,10 @@ const ROWS = [
   // A look itself: refused after a web page, Moodle or with a photo; after a PC list it is the next step (pcOk).
   { tool: "pc_look", args: { kind: "window", number: 1 }, pcOk: true },
   // NOTABILITY PAGES (2026-11-25, t40): a page series (the extension scrolls the note) is a look like any other: the same refusals.
-  { tool: "pc_look", args: { kind: "tab", number: 1, pages: "last" }, pcOk: true, label: "pc_look pages (Notability)" },
+  // With a photo, pages are allowed ONLY on a Notability note tab already on the allowed list (2026-11-25, Omri's OK; tested in
+  // tests/pc-look-pages.test.js). Here the photo rows list the tabs first (prePhoto) and tab 1 is an allowed Moodle tab: still refused.
+  { tool: "pc_look", args: { kind: "tab", number: 1, pages: "last" }, pcOk: true, label: "pc_look pages (Notability)", prePhoto: ['CALL {"tool":"chrome_tabs"}'] },
+  { tool: "pc_look", args: { kind: "tab", number: 1, how: "text" }, pcOk: true, label: "pc_look tab text", prePhoto: ['CALL {"tool":"chrome_tabs"}'] },
 ];
 
 // What starts the message: a web page read, a Moodle read, or a photo.
@@ -69,7 +72,7 @@ const SOURCES = {
 
 async function runRow(row, source) {
   const s = SOURCES[source];
-  const replies = [...s.first, `CALL ${JSON.stringify({ tool: row.tool, ...row.args })}`, "Done."];
+  const replies = [...s.first, ...((s.photo || s.photos) && row.prePhoto ? row.prePhoto : []), `CALL ${JSON.stringify({ tool: row.tool, ...row.args })}`, "Done."];
   const prompts = [];
   let i = 0;
   const next = async (prompt) => { prompts.push(prompt); const r = replies[i++]; if (r === undefined) throw new Error("no more scripted replies"); return r; };

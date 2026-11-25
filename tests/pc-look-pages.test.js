@@ -371,3 +371,99 @@ test("extension: a page Chrome reports as hidden is refused before anything is s
     assert.deepStrictEqual(f.done.filter(([k]) => k === "scroll" || k === "shot"), []);
   } finally { restore(); }
 });
+
+// ---- a message WITH Omri's photo (2026-11-25, Omri's OK: "check my proof, it's the whole last page") ----
+// Only chrome_tabs and pc_look "pages" on a Notability note tab ALREADY allowed work; his photos and the pages share the 4 pictures.
+function photoFiles(n) {
+  const dir = tmp();
+  return Array.from({ length: n }, (_, k) => { const p = path.join(dir, `upload${k}.jpg`); fs.writeFileSync(p, JPEG); return { path: p }; });
+}
+const PHOTO_NO = /FAILED, nothing was done: Bot does not [^\n]*with a photo/;
+
+test("photo: the last page of an allowed note is read together with Omri's photo, in ONE model call, names counted over both", async () => {
+  const s = brainSetup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"pages":"last"}', "Your proof is right."]);
+  const images = photoFiles(1);
+  await s.brain.handle("check my proof, it's the whole last page", { history: [], courses: [], images });
+  assert.deepStrictEqual(s.asked.filter((a) => a.kind === "tab_pages").map((a) => a.args), [{ tabId: 21, from: 0, to: 0 }]);
+  const lastCall = s.imageCalls[s.imageCalls.length - 1];
+  assert.strictEqual(lastCall.pics.length, 2, "his photo and the page picture go to the same call");
+  assert.strictEqual(lastCall.pics[0], images[0].path, "his photo first");
+  assert.deepStrictEqual(lastCall.exist, [true, true]);
+  assert.match(s.prompts[2], /Omri's own photo is now "photo1\.jpg"/);
+  assert.match(s.prompts[2], /"photo2\.jpg" = the notability\.com tab, page 9 of 11/);
+  assert.doesNotMatch(s.all(), PHOTO_NO);
+  assert.ok(fs.existsSync(images[0].path), "Omri's upload is not deleted by the look");
+});
+
+test("photo: his photos count toward the 4 pictures (1 photo + 4 pages refused; 2 photos + 2 pages fit)", async () => {
+  const s = brainSetup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"pages":"1-4"}', "Done."]);
+  await s.brain.handle("check pages 1-4", { history: [], courses: [], images: photoFiles(1) });
+  assert.match(s.all(), /one message holds at most 4 pictures \(1 taken already, Omri's photos included\)/);
+  assert.ok(!s.asked.some((a) => a.kind === "tab_pages"), "nothing scrolled");
+  const t = brainSetup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"pages":"1-2"}', "Done."]);
+  await t.brain.handle("check pages 1-2", { history: [], courses: [], images: photoFiles(2) });
+  const lastCall = t.imageCalls[t.imageCalls.length - 1];
+  assert.strictEqual(lastCall.pics.length, 4);
+  assert.match(t.prompts[2], /Omri's own photos are now "photo1\.jpg", "photo2\.jpg"/);
+  assert.match(t.prompts[2], /"photo3\.jpg" = the notability\.com tab, page 1 of 11; "photo4\.jpg" = the notability\.com tab, page 2 of 11/);
+});
+
+test("photo: everything else on the PC stays refused, and there is never a card", async () => {
+  const refused = async (replies, lists) => {
+    const s = brainSetup(replies, lists ? { lists } : {});
+    const r = await s.brain.handle("look at it", { history: [], courses: [], images: photoFiles(1), messageId: "q1" });
+    assert.match(s.all(), PHOTO_NO, replies.join(" | "));
+    assert.ok(!s.asked.some((a) => a.kind === "tab_pages" || a.kind === "tab_text" || a.kind === "tab_shot"), "nothing looked at");
+    assert.strictEqual(r.pcLookCard, undefined, "no card with a photo");
+  };
+  await refused(['CALL {"tool":"pc_windows"}', "Done."]);
+  await refused(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"how":"picture"}', "Done."]);
+  await refused(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"how":"text"}', "Done."]);
+  await refused(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1}', "Done."]);
+  await refused(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":2,"pages":"last"}', "Done."], { sites: ["notability.com", "moodle.bgu.ac.il"], apps: [] });
+  await refused(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"pages":"last"}', "Done."], { sites: [], apps: [] });
+  await refused(['CALL {"tool":"pc_allow","site":"notability.com"}', "Done."], { sites: [], apps: [] });
+  // chrome_tabs itself runs with a photo (the list is the first step), and doing-tools stay refused after it.
+  const s = brainSetup(['CALL {"tool":"chrome_tabs"}', "Done."]);
+  await s.brain.handle("which tabs", { history: [], courses: [], images: photoFiles(1) });
+  assert.match(s.all(), /Omri's open Chrome tabs/);
+});
+
+// ---- joining: every row of a page comes from the right place on the screen, once (the "page 14 looked duplicated" check) ----
+test("extension: the joined picture of every page, the last one too (scroll clamped), copies each note row exactly once", async () => {
+  for (const view of [{}, { canvasTop: 88, toolbarTop: 500, viewH: 420 }, { canvasTop: 120, toolbarTop: 860, viewH: 767 }]) {
+    const f = fakeNote({ inkPages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] });
+    if (view.canvasTop) { f.s.canvas.top = view.canvasTop; f.s.toolbarTop = view.toolbarTop; f.s.view = view.viewH; f.s.canvas.bottom = view.canvasTop + view.viewH + 8; }
+    const draws = [];
+    class Rec {
+      constructor(w, h) { this.width = w; this.height = h; this.page = w < 1000; }
+      getContext() {
+        return { fillRect: () => {}, set fillStyle(v) {},
+          drawImage: (bmp, sx, sy, sw, sh, dx, dy, dw, dh) => { if (this.page) draws.push({ shotTop: bmp.top, sy, sh, dy, dh }); },
+          getImageData: () => ({ data: INK }) };
+      }
+      async convertToBlob() { return new Blob([JPEG]); }
+    }
+    const { ext, restore } = loadExtension(f.chrome, { ...f.globals, OffscreenCanvas: Rec });
+    try {
+      for (const n of [1, 6, 10, 11]) {
+        draws.length = 0;
+        await ext.JOBS.tab_pages({ tabId: 7, from: n, to: n });
+        const top = (n - 1) * f.pitch, bottom = n * f.pitch;
+        const maxScroll = f.s.height - f.s.view;
+        const usable = Math.min(f.s.toolbarTop - 6, f.s.canvas.bottom) - f.s.canvas.top;
+        let covered = top;
+        for (const d of draws) {
+          assert.ok(Math.abs(d.sh - d.dh) < 1e-6, "no stretching");
+          const noteRow = d.shotTop + (d.sy - f.s.canvas.top); // the note row at the top of the copied strip, from where the shot was taken
+          assert.ok(Math.abs(noteRow - (top + d.dy)) < 1e-6, `page ${n}: the strip lands where its note rows belong`);
+          assert.ok(Math.abs(top + d.dy - covered) < 1e-6, `page ${n}: strips follow each other with no overlap and no gap`);
+          assert.ok(d.sy >= f.s.canvas.top - 2.5 && d.sy + d.sh <= f.s.canvas.top + usable + 2.5, `page ${n}: copied only from the visible note area`);
+          covered += d.dh;
+        }
+        const reach = Math.min(bottom, maxScroll + usable);
+        assert.ok(Math.abs(covered - reach) < 1e-6, `page ${n}: covered up to ${reach}, got ${covered}`);
+      }
+    } finally { restore(); }
+  }
+});
