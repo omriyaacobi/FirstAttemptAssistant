@@ -70,3 +70,28 @@ photo uploads too and needs a new real check with agy, so it stays 4. "Read page
 - The bottom ~85 px of the LAST page can be under the toolbar (the note cannot scroll further). That page is normally the empty one.
 - Live check with the real extension: not done in this session (Bot was not restarted and the extension not reloaded). The scroll and
   the page math were checked by hand in Omri's Chrome. The joining and the ink check run only in fakes so far.
+
+## A note window behind Bot's window (measured 2026-11-25, after the merge)
+
+Omri studies with Bot's page on screen, so he wanted the note in its own Chrome window, BEHIND Bot's. The extension's check was
+already "the active tab of its own window, not minimized" (not window focus), so the open question was whether Chrome still draws a
+covered window. Measured with the real extension (1.2) and a temporary stand-in server on port 3100 (not kept), pages asked per run:
+
+| Run | The note's window | Result |
+|---|---|---|
+| A | in front, visible | correct pages, 3.6 s |
+| B | fully covered by another maximized Chrome window | WRONG: every picture the same frame (from when it was covered) |
+| C | partly covered (a strip visible) | correct pages, 3.5 s |
+| D | fully covered by another app | WRONG: the same stale frame as B, byte for byte |
+
+Chrome on Windows stops painting a fully covered window (native window occlusion). The wheel scroll still moves the note (the DOM),
+but the canvas is not drawn again, and `captureVisibleTab` returns the last painted frame. Before the fix, `tab_pages` reported
+success and handed over that frame labelled as the pages asked for.
+
+THE FIX (the stale-frame guard): `tab_pages` first takes one picture where the note is now. Then every capture is compared by its
+exact bytes with the earlier ones. The same picture at ANOTHER scroll position, with ink on it, means Chrome is not drawing:
+the job stops with "the note's window is fully covered, so Chrome isn't drawing it; leave a strip of it visible, or put it beside Bot",
+and scrolls back. Empty grid screens can really look alike, so they are not taken for a stale frame. A page that reports
+`document.visibilityState` "hidden" is refused before anything is scrolled. Not measured: whether Chrome sets "hidden" for an
+occluded window; the byte comparison is the measured guard. Left open: a stale frame that is itself EMPTY cannot be told from an
+empty page. The fallback (Bot briefly bringing the note's window to the front) is NOT built: it needs Omri's own OK.
