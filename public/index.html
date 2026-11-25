@@ -802,8 +802,10 @@
     table("varepsilon vartheta varphi varrho varsigma Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega", "ε ϑ ϕ ϱ ς Γ Δ Θ Λ Ξ Π Σ Υ Φ Ψ Ω"),
     table("infty partial nabla ell hbar emptyset varnothing", "∞ ∂ ∇ ℓ ℏ ∅ ∅")));
   const TEX_MO = table(
-    "to rightarrow leftarrow Rightarrow Leftarrow leftrightarrow Leftrightarrow implies iff mapsto uparrow downarrow leq le geq ge neq ne approx equiv sim simeq cong propto ll gg pm mp times cdot div ast star circ bullet oplus otimes in notin ni subset subseteq supset supseteq cup cap setminus forall exists neg land lor wedge vee ldots dots cdots vdots ddots angle perp parallel mid vert Vert prime degree langle rangle lfloor rfloor lceil rceil lbrace rbrace lbrack rbrack lvert rvert lVert rVert backslash dagger therefore because",
-    "→ → ← ⇒ ⇐ ↔ ⇔ ⟹ ⟺ ↦ ↑ ↓ ≤ ≤ ≥ ≥ ≠ ≠ ≈ ≡ ∼ ≃ ≅ ∝ ≪ ≫ ± ∓ × ⋅ ÷ ∗ ⋆ ∘ ∙ ⊕ ⊗ ∈ ∉ ∋ ⊂ ⊆ ⊃ ⊇ ∪ ∩ ∖ ∀ ∃ ¬ ∧ ∨ ∧ ∨ … … ⋯ ⋮ ⋱ ∠ ⊥ ∥ ∣ | ‖ ′ ° ⟨ ⟩ ⌊ ⌋ ⌈ ⌉ { } [ ] | | ‖ ‖ \\ † ∴ ∵");
+    "to rightarrow leftarrow Rightarrow Leftarrow leftrightarrow Leftrightarrow implies iff mapsto uparrow downarrow leq le geq ge neq ne approx equiv sim simeq cong propto ll gg pm mp times cdot div ast star circ bullet oplus otimes in notin ni subset subseteq supset supseteq cup cap setminus forall exists neg land lor wedge vee ldots dots cdots vdots ddots angle perp parallel mid vert Vert prime degree langle rangle lfloor rfloor lceil rceil lbrace rbrace lbrack rbrack lvert rvert lVert rVert backslash dagger therefore because blacksquare square Box qed nexists nmid nsubseteq",
+    "→ → ← ⇒ ⇐ ↔ ⇔ ⟹ ⟺ ↦ ↑ ↓ ≤ ≤ ≥ ≥ ≠ ≠ ≈ ≡ ∼ ≃ ≅ ∝ ≪ ≫ ± ∓ × ⋅ ÷ ∗ ⋆ ∘ ∙ ⊕ ⊗ ∈ ∉ ∋ ⊂ ⊆ ⊃ ⊇ ∪ ∩ ∖ ∀ ∃ ¬ ∧ ∨ ∧ ∨ … … ⋯ ⋮ ⋱ ∠ ⊥ ∥ ∣ | ‖ ′ ° ⟨ ⟩ ⌊ ⌋ ⌈ ⌉ { } [ ] | | ‖ ‖ \\ † ∴ ∵ ■ □ □ ∎ ∄ ∤ ⊈");
+  // \not before a sign: the crossed-out sign (2026-11-25: "f \not\equiv 0" and "\blacksquare" were shown as raw TeX)
+  const TEX_NOT = dict({ "≡": "≢", "=": "≠", "∈": "∉", "∋": "∌", "⊂": "⊄", "⊃": "⊅", "⊆": "⊈", "⊇": "⊉", "∼": "≁", "≃": "≄", "≅": "≇", "≈": "≉", "≤": "≰", "≥": "≱", "<": "≮", ">": "≯", "∣": "∤", "|": "∤", "∃": "∄", "∥": "∦" });
   const TEX_FENCE = new Set("( ) [ ] { } | ‖ ⟨ ⟩ ⌊ ⌋ ⌈ ⌉".split(" ")); // drawn at normal size unless they come after \left / \right
   const TEX_BIG = table("sum prod coprod bigcup bigcap int iint iiint oint", "∑ ∏ ∐ ⋃ ⋂ ∫ ∬ ∭ ∮"); // sum..bigcap put their bounds above and below
   const TEX_STACKED = new Set(["sum", "prod", "coprod", "bigcup", "bigcap"]);
@@ -892,6 +894,12 @@
       if (name in TEX_SPACE) return mel("mspace", "", { width: TEX_SPACE[name] });
       if (TEX_BIG[name]) { const n = mel("mo", TEX_BIG[name]); if (TEX_STACKED.has(name)) limits.add(n); return n; }
       if (TEX_NAMES.has(name)) { const n = mel("mi", name); if (TEX_LIMITS.has(name)) limits.add(n); return n; }
+      if (name === "not") { // one sign after it, drawn crossed out (a sign with no ready-made crossed form gets a slash on top)
+        space();
+        const sign = atom(depth).textContent;
+        if ([...sign].length !== 1) fail();
+        return mo(TEX_NOT[sign] || sign + "̸");
+      }
       if (TEX_ACCENT[name]) return mel("mover", "", { accent: "true" }, [arg(depth), mel("mo", TEX_ACCENT[name])]);
       switch (name) {
         case "{": case "}": case "%": case "&": case "#": case "_": case "$": return mel("mo", name);

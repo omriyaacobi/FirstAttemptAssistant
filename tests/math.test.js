@@ -138,3 +138,13 @@ test("the page styles math: formulas scroll inside their own box", () => {
   assert.match(html, /\.math \{[^}]*max-width: 100%[^}]*overflow-x: auto/);
   assert.match(script, /createElementNS\(MATHNS/);
 });
+
+test("math: \\not crosses out the next sign, and the end-of-proof squares are drawn (2026-11-25)", () => {
+  assert.strictEqual(math("f \\not\\equiv 0"), "<math><mi>f</mi><mo>≢</mo><mn>0</mn></math>");
+  assert.strictEqual(math("x \\not\\in A"), "<math><mi>x</mi><mo>∉</mo><mi>A</mi></math>");
+  assert.strictEqual(math("a \\not= b"), "<math><mi>a</mi><mo>≠</mo><mi>b</mi></math>");
+  assert.strictEqual(math("a \\not\\perp b"), "<math><mi>a</mi><mo>⊥̸</mo><mi>b</mi></math>"); // no ready-made sign: a slash on top
+  assert.strictEqual(math("\\blacksquare"), "<math><mo>■</mo></math>");
+  assert.strictEqual(math("\\qed"), "<math><mo>∎</mo></math>");
+  for (const bad of ["\\not", "\\not{ab}", "x \\not"]) assert.strictEqual(sandbox.texToMath(bad, false), null, bad);
+});
