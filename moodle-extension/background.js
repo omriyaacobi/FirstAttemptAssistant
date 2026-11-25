@@ -236,6 +236,7 @@ function noteProbe(target) {
   const below = Array.from(document.querySelectorAll("button")).map((b) => b.getBoundingClientRect()).filter((r) => r.height > 0 && r.top > box.bottom - 140 && r.top < box.bottom && r.left >= box.left);
   return {
     top: bar.scrollTop, height: bar.scrollHeight, view: bar.clientHeight, pages: Number(nav.max), page: Number(nav.value), vw: window.innerWidth,
+    hidden: document.visibilityState === "hidden",
     canvas: { top: box.top, bottom: box.bottom, left: box.left, right: box.right },
     pageLeft: gl ? gl.getBoundingClientRect().right : box.left, pageRight: gr ? gr.getBoundingClientRect().left : box.right,
     toolbarTop: below.length ? Math.min(...below.map((r) => r.top)) : box.bottom,
@@ -272,6 +273,19 @@ function inkShare(rgba) {
 }
 const INK_MIN = 0.0005; // a page with less than 0.05% ink pixels is empty
 
+// A FULLY COVERED note window (measured 2026-11-25, t40): Chrome on Windows stops painting it, and captureVisibleTab returns the last
+// frame it painted, the same picture at every scroll position (the scroll itself still happens). Never hand that over as a page.
+const COVERED = "the note's window is fully covered, so Chrome isn't drawing it; leave a strip of it visible, or put it beside Bot";
+// The ink share of one screen, from a small copy (a stale frame is caught only when it has ink: two EMPTY screens of the grid at
+// different places can really look the same).
+async function screenInk(bmp) {
+  const w = Math.max(1, Math.round(bmp.width / 4)), h = Math.max(1, Math.round(bmp.height / 4));
+  const c = new OffscreenCanvas(w, h);
+  const x = c.getContext("2d");
+  x.drawImage(bmp, 0, 0, bmp.width, bmp.height, 0, 0, w, h);
+  return inkShare(x.getImageData(0, 0, w, h).data);
+}
+
 async function probe(tabId, target) {
   const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: noteProbe, args: [typeof target === "number" ? Math.round(target) : null] });
   return r && r.result;
@@ -293,6 +307,7 @@ async function notePages(tabId, from, to) {
   if (!t.active || w.state === "minimized") throw fail("unavailable", "that tab is not the one in front of a visible window");
   const s = await probe(tabId, null);
   if (!s || !(s.pages >= 1) || !(s.height > 0)) throw fail("unavailable", "the note has not finished loading (no pages found)");
+  if (s.hidden) throw fail("unavailable", COVERED); // Chrome says the page is not visible: nothing is scrolled
   const pages = Math.min(Math.floor(s.pages), 1000);
   const last = from === 0;
   if (!last && from > pages) throw fail("unavailable", `the note has only ${pages} page${pages === 1 ? "" : "s"}`);
@@ -303,6 +318,19 @@ async function notePages(tabId, from, to) {
   const width = Math.max(50, s.pageRight - s.pageLeft);
   const back = s.top;
   let shots = 0, lastShot = 0;
+  // Every capture of this job, by its exact bytes -> the scroll position it was taken at. The same bytes at ANOTHER position, with ink
+  // on them, mean Chrome is not drawing the note (a stale frame): stop, never label it as a page.
+  const frames = new Map();
+  const capture = async (at) => {
+    await sleep(lastShot + PACE.gap - Date.now());
+    const shot = await chrome.tabs.captureVisibleTab(t.windowId, { format: "png" });
+    lastShot = Date.now();
+    const bmp = await createImageBitmap(await (await fetch(shot)).blob());
+    const before = frames.get(shot);
+    if (before !== undefined && Math.abs(before - at) > 2 && (await screenInk(bmp)) >= INK_MIN) throw fail("unavailable", COVERED);
+    if (before === undefined) frames.set(shot, at);
+    return bmp;
+  };
   const scrollTo = async (target) => {
     await probe(tabId, target);
     let seen = null;
@@ -324,10 +352,7 @@ async function notePages(tabId, from, to) {
       const at = await scrollTo(sl.scroll);
       if (typeof at !== "number" || Math.abs(at - sl.scroll) > 2) throw fail("unavailable", "the note did not scroll as expected");
       await stillNote(tabId, t.url);
-      await sleep(lastShot + PACE.gap - Date.now());
-      const shot = await chrome.tabs.captureVisibleTab(t.windowId, { format: "png" });
-      lastShot = Date.now();
-      const bmp = await createImageBitmap(await (await fetch(shot)).blob());
+      const bmp = await capture(sl.scroll);
       if (!canvas) {
         scale = bmp.width / s.vw;
         canvas = new OffscreenCanvas(Math.round(width * scale), Math.round((bottom - top) * scale));
@@ -348,6 +373,10 @@ async function notePages(tabId, from, to) {
   };
   const got = [];
   try {
+    // A first picture where the note is now (nothing scrolled yet): the frame every later screen is compared with, so even a page
+    // that fits on one screen cannot pass a stale frame.
+    if (++shots > NOTE_SHOTS_MAX) throw fail("unavailable", "too many screens for one request");
+    await capture(back);
     if (last) {
       for (let n = pages; n >= 1 && n > pages - NOTE_LAST_BACK; n--) {
         const p = await page(n);

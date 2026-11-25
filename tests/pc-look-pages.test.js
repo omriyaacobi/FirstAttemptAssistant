@@ -168,8 +168,10 @@ const WHITE = new Uint8ClampedArray(4 * 1000).fill(255);
 const GRID = (() => { const a = new Uint8ClampedArray(WHITE); for (let i = 0; i < a.length; i += 64) a.set([195, 210, 240, 255], i); return a; })();
 const INK = (() => { const a = new Uint8ClampedArray(GRID); for (let i = 0; i < a.length; i += 160) a.set([30, 70, 200, 255], i); return a; })();
 
-function fakeNote({ inkPages = [10], url = NOTE, active = true, failCapture = false, moveAfter = 0 } = {}) {
-  const s = { top: 4300, height: 10882, view: 759, pages: 11, page: 5, vw: 1920, canvas: { top: 88, bottom: 855, left: 320, right: 1920 }, pageLeft: 738, pageRight: 1503, toolbarTop: 770 };
+// stale: Chrome stopped painting (a fully covered window): every capture is the frame from where the note was (page 5).
+// blankSame: empty screens look exactly alike wherever they are. hidden: the page reports visibilityState "hidden".
+function fakeNote({ inkPages = [10], url = NOTE, active = true, failCapture = false, moveAfter = 0, stale = false, blankSame = false, hidden = false } = {}) {
+  const s = { hidden, top: 4300, height: 10882, view: 759, pages: 11, page: 5, vw: 1920, canvas: { top: 88, bottom: 855, left: 320, right: 1920 }, pageLeft: 738, pageRight: 1503, toolbarTop: 770 };
   const pitch = s.height / s.pages;
   const done = [];
   let tabUrl = url;
@@ -183,7 +185,8 @@ function fakeNote({ inkPages = [10], url = NOTE, active = true, failCapture = fa
         if (failCapture) throw new Error("capture failed");
         if (moveAfter && captures >= moveAfter) tabUrl = "https://notability.com/app/note/other";
         done.push(["shot", s.top]);
-        return "data:text/plain;base64," + Buffer.from(String(s.top)).toString("base64");
+        const frame = stale ? "4300" : blankSame && !inkPages.includes(Math.floor((s.top + 1) / pitch) + 1) ? "blank" : String(s.top);
+        return "data:text/plain;base64," + Buffer.from(frame).toString("base64");
       },
       update: async () => done.push(["update"]), create: async () => done.push(["create"]),
     },
@@ -232,7 +235,7 @@ test("extension: pages 2-3 are scrolled to, one joined picture each, and the not
     assert.deepStrictEqual(r.data, { url: NOTE, pages: 11, shown: [2, 3] });
     assert.deepStrictEqual(r.files.map((x) => x.name), ["page2.jpg", "page3.jpg"]);
     assert.strictEqual(Buffer.from(r.files[0].base64, "base64").subarray(0, 3).toString("hex"), "ffd8ff");
-    assert.deepStrictEqual(f.done.filter(([k]) => k === "shot").length, 4, "two screens per page");
+    assert.deepStrictEqual(f.done.filter(([k]) => k === "shot").length, 5, "one first picture where the note is, then two screens per page");
     assert.strictEqual(f.s.top, 4300, "scrolled back where it was");
     assert.deepStrictEqual(f.done.filter(([k]) => k === "update" || k === "create"), [], "no tab was changed, switched or opened");
   } finally { restore(); }
@@ -337,4 +340,34 @@ test("brain: a message holds at most 4 pictures; pages need a note tab; a card c
   const bad = brainSetup(['CALL {"tool":"chrome_tabs"}', 'CALL {"tool":"pc_look","kind":"tab","number":1,"pages":"the end"}', "Done."]);
   await bad.brain.handle("read the end of my note", { history: [], courses: [] });
   assert.match(bad.all(), /"pages" must be "last", a page number, or a range/);
+});
+
+// ---- a fully covered note window (measured 2026-11-25: Chrome stops painting it and returns the old frame) ----
+test("extension: a stale frame (the same picture at another scroll position) is refused, never labelled as a page; scrolled back", async () => {
+  for (const args of [{ tabId: 7, from: 3, to: 4 }, { tabId: 7, from: 0, to: 0 }, { tabId: 7, from: 5, to: 5 }]) {
+    const f = fakeNote({ stale: true, inkPages: [5, 10] });
+    const { ext, restore } = loadExtension(f.chrome, f.globals);
+    try {
+      await assert.rejects(ext.JOBS.tab_pages(args), (e) => e.code === "unavailable" && e.message === "the note's window is fully covered, so Chrome isn't drawing it; leave a strip of it visible, or put it beside Bot", JSON.stringify(args));
+      assert.strictEqual(f.s.top, 4300, "scrolled back");
+    } finally { restore(); }
+  }
+});
+
+test("extension: empty grid screens that look alike are NOT taken for a stale frame ('last' still skips empty pages)", async () => {
+  const f = fakeNote({ blankSame: true, inkPages: [9] });
+  const { ext, restore } = loadExtension(f.chrome, f.globals);
+  try {
+    const r = await ext.JOBS.tab_pages({ tabId: 7, from: 0, to: 0 });
+    assert.deepStrictEqual(r.data.shown, [9]);
+  } finally { restore(); }
+});
+
+test("extension: a page Chrome reports as hidden is refused before anything is scrolled or captured", async () => {
+  const f = fakeNote({ hidden: true });
+  const { ext, restore } = loadExtension(f.chrome, f.globals);
+  try {
+    await assert.rejects(ext.JOBS.tab_pages({ tabId: 7, from: 1, to: 1 }), /fully covered, so Chrome isn't drawing it/);
+    assert.deepStrictEqual(f.done.filter(([k]) => k === "scroll" || k === "shot"), []);
+  } finally { restore(); }
 });
