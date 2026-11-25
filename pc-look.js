@@ -56,7 +56,37 @@ const NEVER_APPS = ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.
 // A window picture of a browser would show whatever tab is in front (maybe a bank): browsers are looked at only tab by tab.
 const BROWSER_APPS = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe", "iexplore.exe"];
 
+// NOTABILITY PAGES (2026-11-25, t40; experiments/2026-11-25-notability-pages.md): the extension may SCROLL a Notability note (only that
+// site, only the tab in front, then back where it was) and take ONE picture per page. Handwriting is drawn, not page text.
+const NOTE_HOST = "notability.com";
+const MAX_PAGES = 4; // pictures per request: one model call takes at most 4 pictures (photo.js MAX_PHOTOS)
+const MAX_PAGE_NO = 300;
+
 const fail = (message, code = "refused") => Object.assign(new Error(message), { code });
+// A Notability note's address (https, notability.com, /app/note/...).
+function isNoteUrl(url) {
+  try { const u = new URL(String(url || "")); return u.protocol === "https:" && u.hostname.toLowerCase().replace(/^www\./, "") === NOTE_HOST && u.pathname.startsWith("/app/note/"); } catch (error) { return false; }
+}
+// The model's `pages` argument -> { last: true } or { from, to } (whole numbers 1-300, at most MAX_PAGES pages), or a plain reason.
+// Accepted: "last"; a page number (3 or "3"); a range "3-5" or "3 to 5"; [3, 5]; { from: 3, to: 5 }. This parses the model's
+// argument, never Omri's words: the brain decides what Omri meant.
+function checkPages(p) {
+  const bad = () => fail('"pages" must be "last", a page number, or a range like "3-5" (at most ' + MAX_PAGES + " pages)");
+  if (typeof p === "string" && p.trim().toLowerCase() === "last") return { last: true };
+  let from, to;
+  if (typeof p === "number") from = to = p;
+  else if (typeof p === "string") {
+    const m = /^\s*(\d{1,3})\s*(?:(?:-|–|to)\s*(\d{1,3})\s*)?$/i.exec(p);
+    if (!m) throw bad();
+    from = Number(m[1]); to = m[2] === undefined ? from : Number(m[2]);
+  } else if (Array.isArray(p) && p.length >= 1 && p.length <= 2) { from = Number(p[0]); to = Number(p[p.length - 1]); }
+  else if (p && typeof p === "object") { from = Number(p.from); to = p.to === undefined ? from : Number(p.to); }
+  else throw bad();
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > MAX_PAGE_NO || from > to) throw bad();
+  if (to - from + 1 > MAX_PAGES) throw fail(`at most ${MAX_PAGES} pages at a time (asked ${from}-${to}); ask for the first ${MAX_PAGES} and then the rest`);
+  return { from, to };
+}
+const pagesText = (pg) => (!pg ? "" : pg.last ? "the last page with writing" : pg.from === pg.to ? `page ${pg.from}` : `pages ${pg.from}-${pg.to}`);
 const oneLine = (t, n) => String(t == null ? "" : t).replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
 
 // The host of an address ("https://www.Moodle.bgu.ac.il/x" -> "moodle.bgu.ac.il"), or null when it is not an http(s) page.
@@ -300,9 +330,11 @@ function createPcLook({
     return neverApp(t.exe, t.title);
   }
   const isAllowed = (t) => (t.kind === "tab" ? siteAllowed(t.host) : appAllowed(t.exe));
-  function hourCheck() {
+  // n: how many pictures this look will take (a page series counts every page; "last" counts 1).
+  function hourCheck(n = 1) {
     looks = looks.filter((t) => now() - t < 3600 * 1000);
     if (looks.length >= MAX_PER_HOUR) throw fail(`Bot already looked ${MAX_PER_HOUR} times in the last hour (the limit); try again later`, "limit");
+    if (looks.length + n > MAX_PER_HOUR) throw fail(`${n} pages would pass the limit of ${MAX_PER_HOUR} looks an hour (${MAX_PER_HOUR - looks.length} left); ask for fewer pages`, "limit");
   }
   // Picture folders a crash left behind (Bot deletes each one after its answer; a restart in the middle skips that). Only Bot's own
   // "bot-look-" folders, only older than an hour, so a look still being answered is never touched.
@@ -327,9 +359,10 @@ function createPcLook({
   }
   // Runs ONE look. how: "text" (a tab only) or "picture". Returns { kind: "text", text } | { kind: "picture", path, dir, ext } |
   // { kind: "unavailable", reason } (minimized, not in front, gone: said plainly, never worked around).
-  async function look(t, how) {
+  async function look(t, how, pages) {
     const never = neverReason(t);
     if (never) throw fail(never);
+    if (how === "pages") return lookPages(t, checkPages(pages && pages.last ? "last" : pages));
     const h = how === "text" || how === "picture" ? how : null;
     if (!h) throw fail('"how" must be "text" or "picture"');
     if (t.kind === "window" && h === "text") throw fail("a window can only be looked at as a picture");
@@ -372,6 +405,36 @@ function createPcLook({
     if (!r.file || !r.file.bytes) throw fail("the extension sent no picture", "broken");
     return { kind: "picture", ...keepPicture(r.file.bytes) };
   }
+  // A page series of a Notability note: the extension scrolls the note (the tab in front only), one picture per page, and scrolls back.
+  // Returns { kind: "pictures", pictures: [{ path, dir, ext, page }], of } | { kind: "unavailable", reason }.
+  async function lookPages(t, pg) {
+    if (t.kind !== "tab") throw fail("pages work only on a Chrome tab with a Notability note");
+    if (!endsWithHost(String(t.host || ""), NOTE_HOST) || !isNoteUrl(t.url)) throw fail(`pages work only on a Notability note (${NOTE_HOST}/app/note/...); for another tab use how "text" or "picture"`);
+    if (!t.active || t.minimized) return { kind: "unavailable", reason: `the ${t.host} tab is not the one in front of a visible Chrome window, so Bot cannot scroll and picture it (Bot never switches tabs)` };
+    if (!bridge) throw fail("the Chrome extension is not set up in this Bot", "offline");
+    const n = pg.last ? 1 : pg.to - pg.from + 1;
+    hourCheck(n);
+    for (let i = 0; i < n; i++) looks.push(now());
+    sweepStale();
+    log(`[pc-look] scrolling ${label(t)} for ${pagesText(pg)}`); // what was looked at, never what it showed
+    let r;
+    try { r = await ask("tab_pages", pg.last ? { tabId: t.id, from: 0, to: 0 } : { tabId: t.id, from: pg.from, to: pg.to }); } catch (error) {
+      if (error.code === "unavailable" || error.code === "notfile") return { kind: "unavailable", reason: `${label(t)}: ${oneLine(error.message, 160)}` };
+      throw error;
+    }
+    const d = r && r.data && typeof r.data === "object" ? r.data : {};
+    const again = neverSite(d.url);
+    if (again) throw fail(again);
+    if (!isNoteUrl(d.url) || hostOf(d.url) !== t.host) return { kind: "unavailable", reason: "that tab shows something else now (list again with chrome_tabs); nothing of it was kept" };
+    const files = Array.isArray(r.files) ? r.files : [];
+    const shown = Array.isArray(d.shown) ? d.shown.map(Number) : [];
+    const of = Number.isInteger(Number(d.pages)) && Number(d.pages) > 0 ? Number(d.pages) : null;
+    if (!files.length || files.length > n || shown.length !== files.length || shown.some((p) => !Number.isInteger(p) || p < 1 || (of && p > of))) throw fail("the extension sent the pages in a broken shape", "broken");
+    if (!pg.last && shown.some((p) => p < pg.from || p > pg.to)) throw fail("the extension sent other pages than were asked", "broken");
+    const pictures = [];
+    try { files.forEach((f, i) => pictures.push({ ...keepPicture(f && f.bytes), page: shown[i] })); } catch (error) { pictures.forEach(drop); throw error; }
+    return { kind: "pictures", pictures, of };
+  }
   const drop = (pic) => { if (pic && pic.dir) { try { fs.rmSync(pic.dir, { recursive: true, force: true }); } catch (error) { /* already gone */ } } };
 
   // ---- the Confirm card (three choices) ----
@@ -380,15 +443,16 @@ function createPcLook({
     for (const [id, g] of grants) if (now() - g.at > GRANT_MS) grants.delete(id);
   }
   // target: an item of a list (pick). task/questionId: Omri's message, so the look after the tap answers it. Returns the card the page draws.
-  function propose(target, how, { task = "", questionId = null, lang = "en" } = {}) {
+  function propose(target, how, { task = "", questionId = null, lang = "en", pages = null } = {}) {
     sweep();
     const never = neverReason(target);
     if (never) throw fail(never);
     const id = crypto.randomBytes(8).toString("hex");
-    pending.set(id, { target: { ...target }, how, task: String(task).slice(0, 4000), questionId, lang, at: now() });
+    const pg = how === "pages" ? checkPages(pages && pages.last ? "last" : pages) : null;
+    pending.set(id, { target: { ...target }, how, pages: pg, task: String(task).slice(0, 4000), questionId, lang, at: now() });
     while (pending.size > MAX_PENDING) pending.delete(pending.keys().next().value);
     // Shown on the page as code made it: the site or program (checked), the title as data, cut.
-    return { id, kind: target.kind, name: nameOf(target), title: oneLine(target.title, 120), how, expiresAt: now() + CARD_MS };
+    return { id, kind: target.kind, name: nameOf(target), title: oneLine(target.title, 120), how, ...(pg ? { pages: pagesText(pg) } : {}), expiresAt: now() + CARD_MS };
   }
   // Omri's tap: "once" | "always" | "cancel". once/always return a grant for ONE look plus the message to answer.
   function decide(id, choice) {
@@ -405,7 +469,7 @@ function createPcLook({
       log(`[pc-look] Omri added ${r.name} to the allowed ${r.kind}s`);
     }
     const grantId = crypto.randomBytes(8).toString("hex");
-    grants.set(grantId, { target: p.target, how: p.how, at: now() });
+    grants.set(grantId, { target: p.target, how: p.how, pages: p.pages || null, at: now() });
     return { grantId, task: p.task, questionId: p.questionId, lang: p.lang, added, label: label(p.target) };
   }
   // The brain takes a grant once (a follow-up job for the tapped card).
@@ -414,10 +478,10 @@ function createPcLook({
     const g = grants.get(String(grantId || ""));
     if (!g) return null;
     grants.delete(String(grantId));
-    return { target: g.target, how: g.how, label: label(g.target) };
+    return { target: g.target, how: g.how, pages: g.pages || null, label: label(g.target) };
   }
 
-  return { readLists, change, allowFromWords, tabs, windows, pick, listText, look, drop, propose, decide, takeGrant, isAllowed, neverReason, label, nameOf };
+  return { readLists, change, allowFromWords, tabs, windows, pick, listText, look, drop, propose, decide, takeGrant, isAllowed, neverReason, label, nameOf, checkPages, isNoteUrl };
 }
 
-module.exports = { createPcLook, parseTabs, parseWindows, neverSite, neverHost, neverApp, cleanSite, cleanApp, hostOf, scriptArgs, NEVER_SCHEMES, NEVER_HOSTS, NEVER_BANK_HOSTS, OMRI_BANK, RELOAD_HINT, STALE_MS, NEVER_APPS, BROWSER_APPS, MAX_PER_HOUR, MAX_PICTURE_BYTES, LIST_MS, CARD_MS };
+module.exports = { createPcLook, checkPages, isNoteUrl, pagesText, NOTE_HOST, MAX_PAGES, parseTabs, parseWindows, neverSite, neverHost, neverApp, cleanSite, cleanApp, hostOf, scriptArgs, NEVER_SCHEMES, NEVER_HOSTS, NEVER_BANK_HOSTS, OMRI_BANK, RELOAD_HINT, STALE_MS, NEVER_APPS, BROWSER_APPS, MAX_PER_HOUR, MAX_PICTURE_BYTES, LIST_MS, CARD_MS };
