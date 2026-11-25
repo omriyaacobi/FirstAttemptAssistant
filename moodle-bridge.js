@@ -32,8 +32,13 @@ const KINDS = {
   tabs: {}, // id, title, address of every tab
   tab_text: { tabId: "id" }, // the page text of one tab
   tab_shot: { tabId: "id" }, // a picture of one tab, only when it is the tab in front of a visible window
+  // NOTABILITY PAGES (2026-11-25, t40): the extension scrolls a Notability note in the tab in front, one picture per page, then back.
+  // from = 0: the last page with writing; otherwise pages from..to (pc-look.js checkPages keeps it to 4 pages).
+  tab_pages: { tabId: "id", from: "small", to: "small" },
 };
-const PC_KINDS = new Set(["tabs", "tab_text", "tab_shot"]); // not Moodle: their answers say nothing about the Moodle login
+const MAX_FILES = 4; // pictures in one answer (tab_pages)
+const PAGES_TIMEOUT_MS = 90 * 1000; // scrolling and up to 14 captures, 2 a second
+const PC_KINDS = new Set(["tabs", "tab_text", "tab_shot", "tab_pages"]); // not Moodle: their answers say nothing about the Moodle login
 const TOKEN_ONLY = new Set(["item"]);
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_RESULT_CHARS = 70 * 1024 * 1024; // a 50 MB file is about 67 MB as base64
@@ -71,7 +76,7 @@ function createBridge({ now = () => Date.now(), jobTimeoutMs = JOB_TIMEOUT_MS, f
     if (!connected()) return Promise.reject(fail("offline", "Chrome with the Bot Moodle extension is not connected"));
     const id = crypto.randomBytes(8).toString("hex");
     return new Promise((resolve, reject) => {
-      const limit = kind === "file" || kind === "folderfile" ? fileTimeoutMs : jobTimeoutMs;
+      const limit = kind === "file" || kind === "folderfile" ? fileTimeoutMs : kind === "tab_pages" ? Math.max(jobTimeoutMs, PAGES_TIMEOUT_MS) : jobTimeoutMs;
       const job = { id, kind, args: clean, resolve, reject };
       job.timer = setTimeout(() => {
         const i = waiting.indexOf(job);
@@ -109,16 +114,24 @@ function createBridge({ now = () => Date.now(), jobTimeoutMs = JOB_TIMEOUT_MS, f
       return { ok: true };
     }
     if (!PC_KINDS.has(job.kind)) lastState = { loggedIn: true };
-    let file = null;
-    if (body.file) {
-      const f = body.file;
-      const b64 = String(f.base64 || "");
-      if (!/^[A-Za-z0-9+/=]*$/.test(b64)) { job.reject(fail("moodle", "the file came back broken")); return { ok: true }; }
+    // A file (or, for tab_pages only, a list of at most MAX_FILES): base64 checked, decoded and size-capped here.
+    const decode = (f) => {
+      const b64 = String((f && f.base64) || "");
+      if (!/^[A-Za-z0-9+/=]*$/.test(b64)) throw fail("moodle", "the file came back broken");
       const bytes = Buffer.from(b64, "base64");
-      if (bytes.length > MAX_FILE_BYTES) { job.reject(fail("toobig", "the file is bigger than 50 MB")); return { ok: true }; }
-      file = { bytes, name: String(f.name || "file").slice(0, 200), type: String(f.type || "").slice(0, 100) };
-    }
-    job.resolve({ data: body.data === undefined ? null : body.data, file });
+      if (bytes.length > MAX_FILE_BYTES) throw fail("toobig", "the file is bigger than 50 MB");
+      return { bytes, name: String(f.name || "file").slice(0, 200), type: String(f.type || "").slice(0, 100) };
+    };
+    let file = null, files = null;
+    try {
+      if (body.file) file = decode(body.file);
+      if (body.files !== undefined) {
+        if (job.kind !== "tab_pages" || !Array.isArray(body.files) || body.files.length > MAX_FILES) throw fail("moodle", `at most ${MAX_FILES} pictures come back, and only for tab_pages`);
+        files = body.files.map(decode);
+        if (files.reduce((n, f) => n + f.bytes.length, 0) > MAX_FILE_BYTES) throw fail("toobig", "the pictures are bigger than 50 MB together");
+      }
+    } catch (error) { job.reject(error); return { ok: true }; }
+    job.resolve({ data: body.data === undefined ? null : body.data, file, ...(files ? { files } : {}) });
     return { ok: true };
   }
 
@@ -148,4 +161,4 @@ function fromExtension(req) {
   return req.headers["x-bot-bridge"] === "1" && (origin === undefined || /^chrome-extension:\/\/[a-p]{32}$/.test(String(origin)));
 }
 
-module.exports = { createBridge, checkArgs, fromExtension, KINDS, PC_KINDS, MAX_FILE_BYTES, JOB_TIMEOUT_MS, SEEN_MS };
+module.exports = { createBridge, checkArgs, fromExtension, KINDS, PC_KINDS, MAX_FILES, MAX_FILE_BYTES, JOB_TIMEOUT_MS, SEEN_MS };

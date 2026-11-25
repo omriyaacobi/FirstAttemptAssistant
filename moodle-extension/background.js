@@ -199,7 +199,169 @@ Object.assign(JOBS, {
     const shot = await chrome.tabs.captureVisibleTab(t.windowId, { format: "jpeg", quality: 80 });
     return { data: { url: t.url }, file: { name: "tab.jpg", type: "image/jpeg", base64: String(shot).replace(/^data:image\/jpeg;base64,/, "") } };
   },
+  // NOTABILITY PAGES (2026-11-25, t40; experiments/2026-11-25-notability-pages.md). The ONE kind of control Omri allowed: SCROLLING
+  // a Notability note (notability.com/app/note/...) in the tab in front, to take one picture per page, then scrolling back.
+  // Bot sends only numbers: the tab id and a page range (from = 0 means "the last page with writing"). No click, no typing.
+  async tab_pages({ tabId, from, to }) { return notePages(tabId, from, to); },
 });
+
+// ---- NOTABILITY PAGES ---------------------------------------------------------------------------------------------------------------
+// What the page showed (measured 2026-11-25): the ink is drawn on ONE canvas the size of the view; the page box
+// ([data-testid=page-navigator] input) has max = the number of pages; a thin custom scrollbar div shows the true position (scrollTop,
+// scrollHeight = pages x page height) but setting it does not move the note, while a wheel event on the canvas does, exactly.
+const NOTE_PAGES_MAX = 4; // pages per request (one model call takes at most 4 pictures: photo.js MAX_PHOTOS)
+const NOTE_LAST_BACK = 4; // "last": the last page and at most 3 before it are checked for writing
+const NOTE_SHOTS_MAX = 14; // screen captures per job
+const PACE = { gap: 550, settle: 350, poll: 100, wait: 2500 }; // Chrome allows 2 captures a second; the canvas needs a moment to draw
+const isNote = (url) => {
+  try { const u = new URL(url); return u.protocol === "https:" && u.hostname.replace(/^www\./, "") === "notability.com" && u.pathname.startsWith("/app/note/"); } catch (error) { return false; }
+};
+const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
+// Runs INSIDE the note's page (chrome.scripting, this fixed function; only a number goes in). Reads where the note is; when `target`
+// is a number, first scrolls the note there with ONE wheel event at the canvas center. Returns null when this is not a note page.
+function noteProbe(target) {
+  const nav = document.querySelector('[data-testid="page-navigator"] input');
+  const bar = Array.from(document.querySelectorAll("div")).find((e) => /overflowY_scroll/.test(String(e.className)) && e.scrollHeight > e.clientHeight + 50);
+  const cv = Array.from(document.querySelectorAll("canvas")).find((c) => c.getBoundingClientRect().width > 300);
+  if (!nav || !bar || !cv) return null;
+  const box = cv.getBoundingClientRect();
+  if (typeof target === "number" && target >= 0) {
+    const x = box.left + box.width / 2, y = box.top + box.height / 2;
+    (document.elementFromPoint(x, y) || cv).dispatchEvent(new WheelEvent("wheel", { deltaY: target - bar.scrollTop, deltaMode: 0, bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    return { top: bar.scrollTop };
+  }
+  const gl = document.querySelector('[data-testid="page-bounds-gutter-left"]');
+  const gr = document.querySelector('[data-testid="page-bounds-gutter-right"]');
+  const below = Array.from(document.querySelectorAll("button")).map((b) => b.getBoundingClientRect()).filter((r) => r.height > 0 && r.top > box.bottom - 140 && r.top < box.bottom && r.left >= box.left);
+  return {
+    top: bar.scrollTop, height: bar.scrollHeight, view: bar.clientHeight, pages: Number(nav.max), page: Number(nav.value), vw: window.innerWidth,
+    canvas: { top: box.top, bottom: box.bottom, left: box.left, right: box.right },
+    pageLeft: gl ? gl.getBoundingClientRect().right : box.left, pageRight: gr ? gr.getBoundingClientRect().left : box.right,
+    toolbarTop: below.length ? Math.min(...below.map((r) => r.top)) : box.bottom,
+  };
+}
+
+// Pure (tested): the scroll positions that show content rows [pageTop, pageBottom), each screen showing `usable` rows, never past maxScroll.
+// Each slice: scroll there, then copy content rows [from, to) of that screen.
+function slices(pageTop, pageBottom, usable, maxScroll) {
+  const out = [];
+  let y = pageTop;
+  while (y < pageBottom && out.length < 8) {
+    const scroll = Math.max(0, Math.min(y, maxScroll));
+    const to = Math.min(pageBottom, scroll + usable);
+    if (to <= y) break; // the note cannot scroll further: the rest is out of reach
+    out.push({ scroll, from: y, to });
+    y = to;
+  }
+  return out;
+}
+
+// Pure (tested): the share of "ink" pixels in RGBA bytes (every 4th pixel). Ink = dark, or clearly colored and not light; the paper and
+// the light grid lines are not ink. A dark paper counts as all ink, so then nothing is skipped as empty (the safe side).
+function inkShare(rgba) {
+  let ink = 0, n = 0;
+  for (let i = 0; i + 3 < rgba.length; i += 16) {
+    const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    if (lum < 140 || (chroma > 90 && lum < 200)) ink++;
+    n++;
+  }
+  return n ? ink / n : 0;
+}
+const INK_MIN = 0.0005; // a page with less than 0.05% ink pixels is empty
+
+async function probe(tabId, target) {
+  const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: noteProbe, args: [typeof target === "number" ? Math.round(target) : null] });
+  return r && r.result;
+}
+
+// The tab must still be this note, in front of a visible window, at every step (Omri may move on in the middle: then Bot stops).
+async function stillNote(tabId, url) {
+  const t = await tabOf(tabId);
+  const w = await chrome.windows.get(t.windowId);
+  if (!t.active || w.state === "minimized") throw fail("unavailable", "the note's tab is no longer the one in front of a visible window");
+  if (t.url !== url) throw fail("unavailable", "the tab left the note in the middle, so Bot stopped");
+  return t;
+}
+
+async function notePages(tabId, from, to) {
+  const t = await tabOf(tabId);
+  if (!isNote(t.url)) throw fail("refused", "only a Notability note (notability.com/app/note/...) is scrolled");
+  const w = await chrome.windows.get(t.windowId);
+  if (!t.active || w.state === "minimized") throw fail("unavailable", "that tab is not the one in front of a visible window");
+  const s = await probe(tabId, null);
+  if (!s || !(s.pages >= 1) || !(s.height > 0)) throw fail("unavailable", "the note has not finished loading (no pages found)");
+  const pages = Math.min(Math.floor(s.pages), 1000);
+  const last = from === 0;
+  if (!last && from > pages) throw fail("unavailable", `the note has only ${pages} page${pages === 1 ? "" : "s"}`);
+  const want = last ? [] : Array.from({ length: Math.min(to, pages) - from + 1 }, (_, i) => from + i).slice(0, NOTE_PAGES_MAX);
+  const pitch = s.height / pages;
+  const maxScroll = Math.max(0, s.height - s.view);
+  const usable = Math.max(100, Math.min(s.toolbarTop - 6, s.canvas.bottom) - s.canvas.top);
+  const width = Math.max(50, s.pageRight - s.pageLeft);
+  const back = s.top;
+  let shots = 0, lastShot = 0;
+  const scrollTo = async (target) => {
+    await probe(tabId, target);
+    let seen = null;
+    for (let waited = 0; waited < PACE.wait; waited += PACE.poll) {
+      await sleep(PACE.poll);
+      const now = (await probe(tabId, null) || {}).top;
+      if (now === seen && Math.abs(now - target) <= 2) break;
+      seen = now;
+    }
+    await sleep(PACE.settle);
+    return (await probe(tabId, null) || {}).top;
+  };
+  // ONE picture of page n: its screens joined, cut to the page's edges.
+  const page = async (n) => {
+    const top = (n - 1) * pitch, bottom = n * pitch;
+    let canvas = null, ctx = null, scale = 1;
+    for (const sl of slices(top, bottom, usable, maxScroll)) {
+      if (++shots > NOTE_SHOTS_MAX) throw fail("unavailable", "too many screens for one request");
+      const at = await scrollTo(sl.scroll);
+      if (typeof at !== "number" || Math.abs(at - sl.scroll) > 2) throw fail("unavailable", "the note did not scroll as expected");
+      await stillNote(tabId, t.url);
+      await sleep(lastShot + PACE.gap - Date.now());
+      const shot = await chrome.tabs.captureVisibleTab(t.windowId, { format: "png" });
+      lastShot = Date.now();
+      const bmp = await createImageBitmap(await (await fetch(shot)).blob());
+      if (!canvas) {
+        scale = bmp.width / s.vw;
+        canvas = new OffscreenCanvas(Math.round(width * scale), Math.round((bottom - top) * scale));
+        ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      const sy = (s.canvas.top + (sl.from - sl.scroll)) * scale, h = (sl.to - sl.from) * scale;
+      ctx.drawImage(bmp, s.pageLeft * scale, sy, width * scale, h, 0, (sl.from - top) * scale, width * scale, h);
+    }
+    if (!canvas) throw fail("unavailable", "that page could not be shown");
+    const ink = inkShare(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return { n, ink, file: { name: `page${n}.jpg`, type: "image/jpeg", base64: btoa(bin) } };
+  };
+  const got = [];
+  try {
+    if (last) {
+      for (let n = pages; n >= 1 && n > pages - NOTE_LAST_BACK; n--) {
+        const p = await page(n);
+        if (p.ink >= INK_MIN) { got.push(p); break; }
+      }
+      if (!got.length) throw fail("unavailable", `the last ${Math.min(NOTE_LAST_BACK, pages)} pages of the note look empty`);
+    } else {
+      for (const n of want) got.push(await page(n));
+    }
+  } finally {
+    try { await scrollTo(back); } catch (error) { /* the tab went away: nothing to put back */ }
+  }
+  return { data: { url: t.url, pages, shown: got.map((p) => p.n) }, files: got.map((p) => p.file) };
+}
 
 async function run(job) {
   const fn = Object.prototype.hasOwnProperty.call(JOBS, job.kind) ? JOBS[job.kind] : null;
@@ -243,4 +405,4 @@ if (typeof chrome !== "undefined" && chrome.alarms) {
   chrome.runtime.onInstalled.addListener(() => loop());
   loop();
 }
-if (typeof module !== "undefined") module.exports = { run, JOBS, READ_METHODS, folderFiles, isFileUrl, pollOnce, _reset: () => { sesskey = null; loggedIn = null; } };
+if (typeof module !== "undefined") module.exports = { run, JOBS, READ_METHODS, folderFiles, isFileUrl, pollOnce, slices, inkShare, isNote, noteProbe, PACE, NOTE_PAGES_MAX, _reset: () => { sesskey = null; loggedIn = null; } };
