@@ -95,3 +95,21 @@ and scrolls back. Empty grid screens can really look alike, so they are not take
 `document.visibilityState` "hidden" is refused before anything is scrolled. Not measured: whether Chrome sets "hidden" for an
 occluded window; the byte comparison is the measured guard. Left open: a stale frame that is itself EMPTY cannot be told from an
 empty page. The fallback (Bot briefly bringing the note's window to the front) is NOT built: it needs Omri's own OK.
+
+## With Omri's photo (2026-11-25, Omri's OK: "Yes, allow it")
+
+Live: Omri sent a photo of a question with "check my proof, it's the whole last page". chrome_tabs ran, but pc_look was refused
+because the message carried a photo, so Bot asked him to send a second message. Now, in a message with a photo, exactly two PC tools
+work: chrome_tabs, and pc_look with "pages" on a Notability note tab that is ALREADY on the allowed list. With a photo there is never a
+card, and pc_windows, a window look, a text or picture look of any tab, a page look of a tab that is not allowed, pc_allow and every
+doing-tool stay refused (tests/refusal-rules.test.js, tests/pc-look-pages.test.js). Omri's photos hold picture slots from the start,
+so his photos and the pages together are at most 4 (one agy call). They go to the SAME model call, his first: his single "photo.jpg"
+becomes "photo1.jpg" once page pictures join it, and the prompt now says so (before, the file names were counted separately, so the
+model would have been told the wrong names).
+
+"Page 14 looked duplicated": a test now checks that every row of a joined page (the last one too, where the scroll is clamped, and
+with short and tall windows) is copied once, from the right place, with no gap. The joining logic was right, except that a strip was
+cut from the PLANNED scroll position, not the real one (up to 2 px off, rounding plus the allowed slack); it now uses the real
+position. That cannot repeat a whole exercise. The likelier cause is a frame Chrome had not redrawn (a fully covered window, or an
+extension not yet reloaded after the stale-frame guard). The guard only catches a frame that is byte-for-byte the same as an earlier
+one. Not checked live.
