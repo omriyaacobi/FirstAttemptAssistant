@@ -56,3 +56,45 @@ called.
   - the Add card under a Main answer.
 - **Not checked:** the real Bot. It needs a merge, a restart through the scheduled task, and a few real messages (the quota
   guard first).
+
+## Answer time with and without the tabs (live, 2026-11-27)
+
+Omri asked for this, as its own step after the build passed its tests. Script: `experiments/2026-11-27-tabs-timing.js`. Raw
+results: `experiments/2026-11-27-tabs-timing-results.json`.
+
+**What was compared**
+- **Before:** main's code (11ca643), the one conversation. It differs from this branch's start only in Moodle files and two
+  lines of the brief.
+- **After:** this branch's code.
+- **The road:** the real one, `jobs.startThread` → `buildHistory` → `brain.handle` → agy. The model is Neon low, the brain's
+  first model, started fresh for every message (no warm spare) in both arms.
+- **The data:** an invented thread in a temp folder. A Databases study talk, then a pasta question, then an Algorithms side
+  talk most recently. All within the last 40 minutes.
+- **The two questions:**
+  - "course": "Which normal form does the assignment ask me to reach?" It does not name the course.
+  - "chat": "Explain in two sentences what a hash table is."
+- **How it ran:** each arm 3 times, one call at a time, with the order flipped every round. The quota guard was checked
+  before every call; the run spent 3 of its 7.2 points.
+
+| question | arm | runs | median s | min-max s | model calls | first prompt (chars) | median tokens | right | filed under |
+|---|---|---|---|---|---|---|---|---|---|
+| course | before (one thread) | 3 | 12.8 | 11.9-14.0 | 2 | 37,995 | 24,600 | 3/3 | Databases |
+| course | after, in the course TAB | 3 | **6.6** | 5.9-6.6 | **1** | 37,578 | **12,009** | 3/3 | Databases |
+| course | after, in MAIN | 3 | 13.1 | 12.8-13.3 | 2 | 34,342 | 23,007 | 3/3 | Databases |
+| chat | before (one thread) | 3 | 6.1 | 5.5-6.7 | 1 | 38,346 | 12,065 | 3/3 | Algorithms (wrong) |
+| chat | after, in MAIN | 3 | 6.1 | 5.4-6.1 | 1 | 34,334 | 11,112 | 3/3 | no course |
+
+**What it shows**
+- **A course question in its tab is about twice as fast and costs half the tokens: 6.6 s instead of 12.8 s.**
+  - Before, Bot's guess put the most recent course (Algorithms) in focus, so the first prompt carried the wrong material. The
+    model needed a second round to look up the Databases assignment.
+  - In the tab, the right course's assignment is already in the first prompt, so one call answers.
+- **The same question in Main takes as long as before (13.1 s).**
+  - Main no longer sees the tab talk, so no course is in focus. The model looks the assignment up itself (2 calls).
+  - It still finds the right course and answers right.
+  - So course questions are fastest in their tab. In Main they cost what they cost before.
+- **An everyday question in Main is as fast as before (6.1 s), with about 8% fewer tokens.**
+  - The prompt is 4,000 characters smaller: no Algorithms material and no study talk.
+  - It is no longer filed under Algorithms.
+- **Every answer was right (15/15).** Timing jumps by about ±1 s between runs, so only the 2x for the tab is a clear
+  difference.
