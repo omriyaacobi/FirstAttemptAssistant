@@ -287,7 +287,8 @@ function createServer({
     onFinish: ({ job, title, watched }) => {
       if (watched) return;
       const ok = job.status === "done";
-      push.notifyAll({ title: ok ? "Bot finished" : "Bot could not finish", body: title, tag: `job-${job.id}` }).catch(() => {});
+      // place: the tab of the answer, so a tap on the push opens that tab (sw.js). Never text: only "main" or "course:<id>".
+      push.notifyAll({ title: ok ? "Bot finished" : "Bot could not finish", body: title, tag: `job-${job.id}`, place: job.place || "main" }).catch(() => {});
     },
   });
 

@@ -149,3 +149,82 @@ test("SERVER: /api/ask refuses a place that is not a real course", async () => {
     await tick(60);
   } finally { s.close(); }
 });
+
+// ---- step 2: jobs and brain ----
+const { createJobs } = require("../jobs");
+async function finished(jobs, id) { for (let i = 0; i < 300; i++) { const j = jobs.get(id); if (j && j.status !== "running") return j; await tick(5); } throw new Error("job did not finish"); }
+
+test("JOBS: a tab's question, answer and history stay in the tab; Main's history has no tab talk", async () => {
+  const thread = createThreadStore(tmp());
+  thread.append({ role: "user", text: "main talk", at: Date.now() - 5000 });
+  thread.append({ role: "user", text: "calc talk", at: Date.now() - 4000, place: `course:${CALC}` });
+  const seen = [];
+  const handle = async (task, options) => { seen.push({ task, place: options.place, history: options.history.map((h) => h.text) }); return { mode: "single", answer: "ok " + task, used: { provider: "p", model: "m" } }; };
+  const jobs = createJobs({ handle, thread, store: createStore(tmp()), courses: () => COURSES, courseName: () => "", maxRunning: 2, onFinish: () => {} });
+  const a = jobs.startThread({ task: "in the tab", place: `course:${CALC}` });
+  assert.strictEqual(a.place, `course:${CALC}`);
+  await finished(jobs, a.id);
+  const b = jobs.startThread({ task: "in main" });
+  assert.strictEqual(b.place, "main");
+  await finished(jobs, b.id);
+  assert.strictEqual(seen[0].place, `course:${CALC}`);
+  assert.deepStrictEqual(seen[0].history, ["calc talk"]);
+  assert.ok(seen[1].history.includes("main talk") && !seen[1].history.some((t) => /calc|tab/.test(t)), seen[1].history.join("|"));
+  const tab = thread.page({ place: `course:${CALC}` }).messages.map((m) => m.text);
+  assert.deepStrictEqual(tab, ["calc talk", "in the tab", "ok in the tab"]);
+  // a made-up place is ignored by jobs too (server.js refuses it first)
+  const c = jobs.startThread({ task: "x", place: "course:../../" });
+  assert.strictEqual(c.place, "main");
+  await finished(jobs, c.id);
+});
+
+function tabBrain({ replies, prompts }) {
+  const { createStudyCoach } = require("../study-coach");
+  const { createBrain } = require("../brain");
+  const NOW = new Date("2026-11-27T12:00:00+02:00").getTime();
+  const courses = { list: () => COURSES, allPages: () => [] };
+  const coach = createStudyCoach({ dir: tmp(), courses, askChain: async () => ({ answer: "x", used: { model: "f" } }), now: () => NOW });
+  let n = 0;
+  const askOne = async (provider, model, prompt) => { prompts.push(String(prompt)); return replies[Math.min(n++, replies.length - 1)]; };
+  return createBrain({
+    courses, coach,
+    courseRoutes: { list: () => COURSES, courseFiles: () => ({ files: [] }), linkFiles: () => [] },
+    reminders: { list: () => [] }, memory: { list: () => [] }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
+    fetchPage: async () => ({}), askOne,
+    chain: [{ provider: "agy", model: "one" }], poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {},
+    now: () => NOW,
+  });
+}
+
+test("BRAIN: in a course tab the course is the tab's, even when the message names another course", async () => {
+  const prompts = [];
+  const brain = tabBrain({ replies: ["An answer."], prompts });
+  const r = await brain.handle("a quick Systems Programming question", { history: [], courses: COURSES, place: `course:${CALC}` });
+  assert.strictEqual(r.courseId, CALC);
+  assert.match(prompts[0], /## Omri is writing in the Calculus 2 tab/);
+  assert.match(prompts[0], /## The course this talk is in: Calculus 2/);
+  // in Main the same words name SP (the guess is unchanged there), and no tab line is shown
+  const main = [];
+  const r2 = await tabBrain({ replies: ["An answer."], prompts: main }).handle("a quick Systems Programming question", { history: [], courses: COURSES });
+  assert.strictEqual(r2.courseId, SP);
+  assert.doesNotMatch(main[0], /Omri is writing in the/);
+});
+
+test("BRAIN: talk_course changes nothing in a tab; a tool on another course sets workCourseId", async () => {
+  const prompts = [];
+  const brain = tabBrain({ replies: ['CALL {"tool":"talk_course","course":"none"}\nOK.'], prompts });
+  const r = await brain.handle("thanks", { history: [], courses: COURSES, place: `course:${CALC}` });
+  assert.strictEqual(r.courseId, CALC);
+  assert.ok(!r.noCourse);
+  const side = tabBrain({ replies: ['CALL {"tool":"course_files","course":"Systems Programming"}', "SP has no files yet."], prompts: [] });
+  const r2 = await side.handle("which files does SP have?", { history: [], courses: COURSES, place: `course:${CALC}` });
+  assert.strictEqual(r2.courseId, CALC);
+  assert.strictEqual(r2.workCourseId, SP);
+});
+
+test("course-work.js lists a side question's formulas under the course it really was about", () => {
+  const now = Date.now();
+  const msgs = [{ role: "assistant", at: now - 1000, text: "$$\int_0^1 x\,dx$$", result: { courseId: CALC, workCourseId: SP } }];
+  assert.strictEqual(workDone(msgs, CALC, { now, timeZone: "Asia/Jerusalem" }), "");
+  assert.match(workDone(msgs, SP, { now, timeZone: "Asia/Jerusalem" }), /int_0\^1/);
+});

@@ -24,7 +24,8 @@ function workDone(messages, courseId, { now = Date.now(), timeZone } = {}) {
   const items = [];
   for (const m of messages) {
     if (!m || m.role !== "assistant" || m.error || typeof m.text !== "string" || m.copyOf) continue; // a copy was already counted as its original
-    if (!m.result || m.result.courseId !== courseId || !Number.isFinite(m.at) || now - m.at > WINDOW_MS || m.at > now) continue;
+    // workCourseId (2026-11-27): a side question in another course's tab is that other course's work
+    if (!m.result || (m.result.workCourseId || m.result.courseId) !== courseId || !Number.isFinite(m.at) || now - m.at > WINDOW_MS || m.at > now) continue;
     // display formulas ($$...$$), and an exercise given inside a sentence: an inline formula that holds an integral, a sum or a
     // limit ("what would you choose in $\int \ln(x)\,dx$?" on 2026-11-16 was an exercise and was not in the list)
     for (const match of m.text.matchAll(/\$\$([\s\S]*?)\$\$|(?<![\\$])\$([^$\n]{3,200}?)\$(?!\$)/g)) {

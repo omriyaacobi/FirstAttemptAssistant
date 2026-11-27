@@ -75,10 +75,13 @@ function labelOf(message, courseName) {
 
 // store: the thread store. entryOf(message): how jobs.js turns a message into a history entry (adds the calendar card note).
 // busy: ids of the user messages that are still being answered (they are shown as pending lines, not as turns).
-function buildHistory(store, { entryOf, courseName = null, busy = [], pending = [], notes = "", maxChars = RECENT_CHARS } = {}) {
+// place (2026-11-27, the course tabs): "main" or "course:<id>": the recent turns come from THAT tab only, so a Calculus session is not
+// pushed out of sight by talk in Main or in another tab (and Main is not filled with course-tab talk). Left out: every tab (old callers).
+// The newest calendar card, the daily notes and the "still working on" lines stay global.
+function buildHistory(store, { entryOf, courseName = null, busy = [], pending = [], notes = "", maxChars = RECENT_CHARS, place = null } = {}) {
   const hide = new Set(busy);
   const usable = (m) => !m.error && !m.ack &&typeof m.text === "string" && m.text.trim() && !hide.has(m.id);
-  const recent = store.page({ limit: SCAN_MESSAGES }).messages.filter(usable);
+  const recent = store.page({ limit: SCAN_MESSAGES, ...(place ? { place } : {}) }).messages.filter(usable);
 
   const entries = [];
   const limits = new Map(); // message -> how many of its characters are kept
