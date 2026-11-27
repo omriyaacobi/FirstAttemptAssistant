@@ -21,8 +21,8 @@ const { dueFromWords } = require("./due-date");
 const PENDING_MS = 30 * 60 * 1000;
 // Why a course was chosen, in Hebrew (the English reason is the `how` text itself). Before, the Hebrew reply always said "by the
 // file name or the message", also when the course came from the class on right now or from Omri's own tap.
-const HOW_CLASS = "a lecture of this course is on right now or just ended", HOW_CHOICE = "your choice";
-const HOW_HE = { name: "לפי שם הקובץ או ההודעה", [HOW_CLASS]: "כי הרצאה של הקורס הזה מתקיימת עכשיו או הסתיימה לא מזמן", [HOW_CHOICE]: "לפי הבחירה שלך" };
+const HOW_CLASS = "a lecture of this course is on right now or just ended", HOW_CHOICE = "your choice", HOW_TAB = "the course tab you sent it from";
+const HOW_HE = { name: "לפי שם הקובץ או ההודעה", [HOW_CLASS]: "כי הרצאה של הקורס הזה מתקיימת עכשיו או הסתיימה לא מזמן", [HOW_CHOICE]: "לפי הבחירה שלך", [HOW_TAB]: "כי הוא נשלח מהלשונית של הקורס" };
 const MAX_PENDING = 5;
 const MAX_PENDING_BYTES = 400 * 1024 * 1024; // all waiting files together (a waiting zip is held unpacked, in memory)
 const AFTER_CLASS_MS = 3 * 3600 * 1000;
@@ -81,8 +81,14 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
 
   const sweep = () => { for (const [id, p] of pending) if (now() - p.at > PENDING_MS) pending.delete(id); };
 
+  // The course TAB of the question (2026-11-27): every reply to it goes in the same tab. Main has no place.
+  const placeFor = (questionId) => { try { const q = thread.find(questionId); return q && q.place ? { place: q.place } : {}; } catch (error) { return {}; } };
+  // A file sent from a course's tab goes to that course (the place was checked by server.js; a course removed since is ignored).
+  const tabChoice = (place, list) => { const c = place ? list.find((x) => `course:${x.id}` === place) : null; return c ? { ref: { courseId: c.id, name: c.name }, how: HOW_TAB } : null; };
+  const at = (place) => (place ? { place } : {});
+
   function say(text, questionId, extra = {}) {
-    return thread.append({ role: "assistant", text, replyTo: questionId, topic: extra.topic || "general", result: { mode: "study", answer: text, ...extra.result }, at: now() });
+    return thread.append({ role: "assistant", text, replyTo: questionId, topic: extra.topic || "general", result: { mode: "study", answer: text, ...extra.result }, ...placeFor(questionId), at: now() });
   }
 
   function file(courseId, ref, how, { bytes, name, text, questionId }) {
@@ -102,14 +108,14 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
 
   const fileMany = (...args) => fileManyWith(courseRoutes.addUpload, ...args);
 
-  function receiveZip({ bytes, name, text = "" }) {
+  function receiveZip({ bytes, name, text = "", place = null }) {
     sweep();
     const clean = cleanName(name, "archive.zip");
     const lang = langOf(text);
-    const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", at: now() });
+    const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", ...at(place), at: now() });
     let opened;
     try { opened = unzip(bytes); } catch (error) { // the whole zip is refused: the message is already in the thread, so it gets its answer
-      thread.append({ role: "assistant", text: words(lang, `I did not open "${clean}": ${String(error.message).slice(0, 200)}`, `לא פתחתי את "${clean}": ${String(error.message).slice(0, 200)}`), replyTo: question.id, topic: "general", error: true, at: now() });
+      thread.append({ role: "assistant", text: words(lang, `I did not open "${clean}": ${String(error.message).slice(0, 200)}`, `לא פתחתי את "${clean}": ${String(error.message).slice(0, 200)}`), replyTo: question.id, topic: "general", error: true, ...at(place), at: now() });
       throw error;
     }
     const skipped = [...opened.skipped];
@@ -122,8 +128,9 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
     const filed = [];
     const undecided = [];
     const groups = new Map(); // courseId -> { ref, items }
+    const fromTab = tabChoice(place, list);
     for (const item of opened.files) {
-      const choice = pickCourse({ fileName: `${clean} ${showName(item.name)}`, text, coach, courseList: list, now: now() });
+      const choice = fromTab || pickCourse({ fileName: `${clean} ${showName(item.name)}`, text, coach, courseList: list, now: now() });
       const filing = zipItems([item])[0]; // its filed name and folder LABEL (zip-filing.js; the label is never a path)
       if (!choice) { undecided.push(filing); continue; }
       const g = groups.get(choice.ref.courseId) || { ref: choice.ref, items: [] };
@@ -155,24 +162,24 @@ function createThreadFiles({ thread, courseRoutes, coach, now = Date.now, log = 
   }
 
   // The file with its message. Everything is checked here BEFORE anything is written. Returns { status: "filed" | "asking", ... }.
-  function receive({ bytes, name, text = "" }) {
-    if (looksLikeZip(bytes) && !sniffOffice(bytes)) return receiveZip({ bytes, name, text }); // a folder of files; a Word or PowerPoint file is ONE file
+  function receive({ bytes, name, text = "", place = null }) {
+    if (looksLikeZip(bytes) && !sniffOffice(bytes)) return receiveZip({ bytes, name, text, place }); // a folder of files; a Word or PowerPoint file is ONE file
     const sniffed = sniffFile(bytes); // the real type; throws a 400 / 415
     // A name that promises a PDF / Word / PowerPoint / image but the bytes are plain text: refuse, do not file it as notes.
     const said = /\.(pdf|docx|pptx|png|jpe?g|webp)$/i.exec(String(name || ""));
     if (said && sniffed.kind === "text") throw Object.assign(new Error(`"${cleanName(name)}" is named like a ${said[1].toUpperCase()} file but it is only plain text, so it may be damaged or renamed. Send the real file, or rename it .txt if it is plain text.`), { status: 415 });
     sweep();
     const clean = cleanName(name);
-    const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", at: now() });
+    const question = thread.append({ role: "user", text: `(file attached: ${clean}) ${text}`.trim(), topic: "general", ...at(place), at: now() });
     const lang = langOf(text);
     const list = courseRoutes.list();
     if (!list.length) { say(words(lang, "There are no courses yet, so I have nowhere to file this. Add a course first.", "עדיין אין קורסים, אז אין לי איפה לתייק את זה. צריך קודם להוסיף קורס."), question.id); return { status: "no-course", questionId: question.id }; }
-    const choice = pickCourse({ fileName: clean, text, coach, courseList: list, now: now() });
+    const choice = tabChoice(place, list) || pickCourse({ fileName: clean, text, coach, courseList: list, now: now() });
     if (choice) {
       try {
         return { ...file(choice.ref.courseId, choice.ref, choice.how, { bytes, name: clean, text, questionId: question.id }), questionId: question.id };
       } catch (error) { // a duplicate or a too big file: the message is already in the thread, so it gets its answer (else the next restart says "Bot was stopped")
-        thread.append({ role: "assistant", text: words(lang, `I could not file "${clean}": ${String(error.message).slice(0, 200)}`, `לא הצלחתי לתייק את "${clean}": ${String(error.message).slice(0, 200)}`), replyTo: question.id, topic: "general", error: true, at: now() });
+        thread.append({ role: "assistant", text: words(lang, `I could not file "${clean}": ${String(error.message).slice(0, 200)}`, `לא הצלחתי לתייק את "${clean}": ${String(error.message).slice(0, 200)}`), replyTo: question.id, topic: "general", error: true, ...at(place), at: now() });
         throw error;
       }
     }

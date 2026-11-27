@@ -145,6 +145,7 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
       const bots = courseRoutes.list();
       const map = tools.autoMap(list.map((c) => ({ id: c.id, name: safe(c.name, 200) })), bots, patternFor);
       const blocks = [];
+      const copies = []; // the course tabs (2026-11-27): each LINKED course's block is also copied into its tab (no push)
       const counts = { files: 0, items: 0, talks: 0, deadlines: 0 };
       let postsRead = 0;
       const pending = []; // per course: { c, lines, talks: [{ t, first }] }; the messages are sorted once for the whole look
@@ -197,6 +198,7 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
           continue;
         }
         const lines = [];
+        const filesAt = counts.files; // how many new files THIS course brought (its tab copy offers "download them" only then)
         const filesOff = !!(map[c.id] && quiet[map[c.id]]);
         for (const i of d.news.items) {
           const can = DOWNLOADABLE.has(i.module);
@@ -215,14 +217,14 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
           }
           talks.push({ t, first });
         }
-        pending.push({ c, lines, talks });
+        pending.push({ c, lines, talks, files: counts.files - filesAt });
       }
       // Sort every new lecturer message of this look in one call (no sorter: all are shown).
       const all = pending.flatMap((p) => p.talks.map((x) => ({ course: p.c.name, title: (x.first && x.first.subject) || x.t.title, body: x.first ? x.first.message : "" })));
       let labels = all.map(() => null);
       if (sort && all.length) { try { const got = await sort(all); if (Array.isArray(got)) labels = all.map((m, i) => got[i] || null); } catch (error) { log(`[moodle watch] sorter failed: ${error.message}`); } }
       let k = 0;
-      for (const { c, lines, talks } of pending) {
+      for (const { c, lines, talks, files } of pending) {
         for (const { t, first } of talks) {
           if (labels[k++] === "routine") { routine++; continue; }
           counts.talks++;
@@ -238,7 +240,9 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
         const bot = map[c.id] ? (bots.find((b) => b.id === map[c.id]) || {}).name : null;
         const more = lines.length > MAX_LINES_PER_COURSE ? [`- and ${lines.length - MAX_LINES_PER_COURSE} more (ask me for the Moodle course to see all)`] : [];
         // The heading: my own name for the course when it is linked (short, the one Omri uses), else Moodle's name.
-        blocks.push([bot ? safe(bot, 120) : `${safe(c.name, 120)} (not linked to one of my courses yet)`, ...lines.slice(0, MAX_LINES_PER_COURSE), ...more].join("\n"));
+        const text = [bot ? safe(bot, 120) : `${safe(c.name, 120)} (not linked to one of my courses yet)`, ...lines.slice(0, MAX_LINES_PER_COURSE), ...more].join("\n");
+        blocks.push(text);
+        if (bot && map[c.id]) copies.push({ botId: map[c.id], bot, text, files });
       }
       const total = counts.files + counts.items + counts.talks + counts.deadlines;
       const wasBroken = state.broken;
@@ -251,7 +255,13 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
       const parts = [counts.files ? plural(counts.files, "new file") : "", counts.talks ? plural(counts.talks, "new message") + " from lecturers" : "", counts.deadlines ? plural(counts.deadlines, "new or changed deadline") : "", counts.items ? plural(counts.items, "other new item") : ""].filter(Boolean);
       const head = `Moodle check: ${parts.join(", ")}.`;
       const tail = counts.files ? "\n\nTo put the new files into the course, tell me \"download them\"." : "";
-      post(`${head}\n\n${blocks.join("\n\n")}${tail}`, "the Moodle watch found something new");
+      const main = post(`${head}\n\n${blocks.join("\n\n")}${tail}`, "the Moodle watch found something new");
+      // THE COURSE TABS (2026-11-27): the same block in the course's own tab, so "download them" typed there has it in its recent talk.
+      // Its first line is code's own words; the rest is the same Moodle text (marked as data the same way: thread-context.js markNews).
+      for (const cp of main ? copies : []) {
+        const own = `Moodle check for ${safe(cp.bot, 120)}: new things in this course.\n\n${cp.text}${cp.files ? "\n\nTo put the new files into the course, tell me \"download them\"." : ""}`;
+        post(own, "the Moodle watch found something new (this course's part)", { place: `course:${cp.botId}`, copyOf: main.id, copyKind: "moodle" });
+      }
       log(`[moodle watch] ${head}`);
       if (push && !plan.inQuietHours(now(), PUSH_QUIET, timezone)) {
         try { await push.notifyAll({ title: "Bot", body: `Moodle: ${parts.join(", ")}. Open Bot to read.`, tag: `moodle-${now()}` }); } catch (error) { log(`[moodle watch] push failed: ${error.message}`); }
@@ -268,10 +278,10 @@ function createMoodleWatch({ source, tools, courseRoutes, patternFor = () => nul
     } finally { running = false; }
   }
 
-  function post(text, reason) {
+  function post(text, reason, extra = {}) {
     if (!thread) return;
     const result = { mode: "single", rule: RULE, reason, chain: [], used: { provider: "code", model: "written by code, no model" }, answer: text, seconds: 0 };
-    thread.append({ role: "assistant", text, result, topic: "general", at: now() });
+    return thread.append({ role: "assistant", text, result, topic: "general", ...extra, at: now() });
   }
 
   // Is a look due? Every everyMs after the last good one; RETRY_MS after a failed try; never in the first minutes after a start.

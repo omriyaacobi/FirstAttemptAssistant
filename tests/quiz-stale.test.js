@@ -26,7 +26,8 @@ test("a full quiz stays open; nothing open gives null", () => {
 
 test("the brain's context names the open question and says when not to call quiz_answer", () => {
   const brain = fs.readFileSync(path.join(__dirname, "..", "brain.js"), "utf8");
-  assert.match(brain, /openQuestion\(coach\.tracker\.getSession/);
+  // 2026-11-27 (course tabs): the session is read first; only the course in focus shows its question word for word
+  assert.match(brain, /const s = coach\.tracker\.getSession\(refOf\(c\)\);\s+const q = openQuestion\(s, now\(\)\);/);
   assert.match(brain, /Call quiz_answer ONLY if Omri's message answers THIS question/);
   const brief = fs.readFileSync(path.join(__dirname, "..", "brain-brief.md"), "utf8");
   assert.match(brief, /do not call quiz_answer/);

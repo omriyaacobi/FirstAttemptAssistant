@@ -142,3 +142,22 @@ test("e) a due date worked out by code is kept even when the model says null", a
   assert.ok(card, "a proposal card was made");
   assert.strictEqual(card.due, "2026-11-08");
 });
+
+test("course tabs (2026-11-27): a file sent from a course tab is filed in that course, and every reply stays in the tab", async () => {
+  const coach = makeCoach();
+  const routes = fakeRoutes(COURSES, "Week 2 slides");
+  const thread = createThreadStore(tmp());
+  const files = createThreadFiles({ thread, courseRoutes: routes, coach, now: () => NOW });
+  const place = `course:${IDS.alg}`;
+  const r = files.receive({ bytes: pdf(7), name: "slides.pdf", text: "for the programming course", place }); // the TAB wins over the words
+  assert.strictEqual(r.status, "filed");
+  assert.strictEqual(routes.added[0].courseId, IDS.alg);
+  await files.onFileReady({ courseId: r.courseId, fileId: r.fileId });
+  const all = [...thread.all()];
+  assert.ok(all.length >= 2);
+  for (const m of all) assert.strictEqual(m.place, place, `${m.role}: ${m.text}`);
+  // a file sent from Main still asks when nothing names a course, and stays in Main
+  const asked = files.receive({ bytes: pdf(8), name: "other.pdf", text: "" });
+  assert.strictEqual(asked.status, "asking");
+  assert.strictEqual(thread.find(asked.questionId).place, undefined);
+});

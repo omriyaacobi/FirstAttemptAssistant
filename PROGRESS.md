@@ -9,6 +9,7 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
+<<<<<<< HEAD
 ## 2026-11-27: Moodle assignment files (t41, branch claude/moodle-assign-files-663571)
 
 - "Download Assignment 2" now works: an assignment item in `moodle_fetch` is opened like a folder. Two new token-route jobs in
@@ -16,6 +17,15 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
   Moodle listed, checked by `checkFileUrl`, 50 MB). Token only: the Chrome extension cannot open assignment pages, and Bot says
   so. Files take the normal upload road (a zip is unpacked), labelled section/assignment name; more than 10 -> the Confirm card.
 - Option NOT built (needs my OK): let the extension also open `mod/assign/view.php?id=N` and take `pluginfile.php` links found there.
+=======
+## 2026-11-27: course tabs (branch claude/study-research-51056e, NOT merged, Bot not restarted)
+
+- Research `experiments/2026-11-27-study-conversations-research.md`; the approved plan and what was built:
+  `experiments/2026-11-27-study-conversations-build.md`. Main plus one tab per course, one store, 8 steps, one commit each.
+  All tests pass (1,699; 1,585 before). Checked in a browser with the preview's sample data (PC and phone width).
+- Next: I look at it, then merge to main (check Improve Bot is idle first), restart Bot through the scheduled task, and try a
+  few messages in a course tab and in Main.
+>>>>>>> claude/study-research-51056e
 
 ## 2026-11-23/24: speed, Argon out, Argon editor deleted
 

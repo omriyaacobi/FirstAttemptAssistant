@@ -91,15 +91,18 @@ self.addEventListener("push", (event) => {
   try { data = event.data ? event.data.json() : {}; } catch (error) { data = { body: event.data ? event.data.text() : "" }; }
   const title = typeof data.title === "string" ? data.title.slice(0, 100) : "Bot";
   const body = typeof data.body === "string" ? data.body.slice(0, 500) : "";
-  event.waitUntil(self.registration.showNotification(title, { body, tag: typeof data.tag === "string" ? data.tag : undefined, icon: "/icon-192.png", badge: "/icon-192.png", vibrate: [200, 100, 200] }));
+  // place (the course tabs, 2026-11-27): which tab the answer is in, so the tap opens it. Only "main" or "course:<id>" is kept.
+  const place = typeof data.place === "string" && /^(main|course:[A-Za-z0-9_-]{1,64})$/.test(data.place) ? data.place : "main";
+  event.waitUntil(self.registration.showNotification(title, { body, tag: typeof data.tag === "string" ? data.tag : undefined, icon: "/icon-192.png", badge: "/icon-192.png", vibrate: [200, 100, 200], data: { place } }));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      if (windows.length) return windows[0].focus();
-      return self.clients.openWindow("/");
+      const place = event.notification.data && typeof event.notification.data.place === "string" ? event.notification.data.place : "main";
+      if (windows.length) { try { windows[0].postMessage({ type: "open-place", place }); } catch (error) { /* only a convenience */ } return windows[0].focus(); }
+      return self.clients.openWindow(place === "main" ? "/" : "/#place=" + encodeURIComponent(place));
     })
   );
 });

@@ -70,7 +70,7 @@ const SOURCES = {
   look: { first: ['CALL {"tool":"pc_windows"}', 'CALL {"tool":"pc_look","kind":"window","number":1,"how":"picture"}'], said: "after looking at what is open on the PC", pc: true, label: "after looking at a window" },
 };
 
-async function runRow(row, source) {
+async function runRow(row, source, place = null) {
   const s = SOURCES[source];
   const replies = [...s.first, ...((s.photo || s.photos) && row.prePhoto ? row.prePhoto : []), `CALL ${JSON.stringify({ tool: row.tool, ...row.args })}`, "Done."];
   const prompts = [];
@@ -104,10 +104,26 @@ async function runRow(row, source) {
     now: () => Date.parse("2026-11-20T10:00:00Z"),
     folderRules: { system: [] },
   });
-  await brain.handle(`please do it: ${URL} C:\\x`, { history: [], courses: COURSES, ...(s.photo ? { image: { path: path.join(os.tmpdir(), "photo.png") } } : {}), ...(s.photos ? { images: Array.from({ length: s.photos }, (_, k) => ({ path: path.join(os.tmpdir(), `shot${k}.jpg`) })) } : {}) });
+  await brain.handle(`please do it: ${URL} C:\\x`, { history: [], courses: COURSES, ...(s.photo ? { image: { path: path.join(os.tmpdir(), "photo.png") } } : {}), ...(s.photos ? { images: Array.from({ length: s.photos }, (_, k) => ({ path: path.join(os.tmpdir(), `shot${k}.jpg`) })) } : {}), ...(place ? { place } : {}) });
   const all = prompts.join("\n");
   const refused = new RegExp(`FAILED, nothing was done: Bot does not [^\\n]*${s.said}`).test(all);
   return { refused, effects, all };
+}
+
+// THE COURSE TABS (2026-11-27): a message typed in a course's tab follows exactly the same rules (the tab only sets the course).
+for (const source of ["web", "moodle", "photo"]) {
+  for (const row of ROWS) {
+    const allowed = (source === "moodle" && row.moodleOk) || (source === "photo" && row.photoOk);
+    test(`IN A COURSE TAB: ${row.label || row.tool} ${allowed ? "is ALLOWED" : "is refused"} ${SOURCES[source].said}`, async () => {
+      const r = await runRow(row, source, "course:calc");
+      if (allowed) assert.strictEqual(r.refused, false);
+      else {
+        assert.strictEqual(r.refused, true, `${row.tool} must be refused ${SOURCES[source].said} in a tab; the model saw:\n${r.all.slice(-800)}`);
+        assert.deepStrictEqual(r.effects, [], "nothing was done");
+      }
+      assert.match(r.all, /Omri is writing in the Calculus 2 tab/);
+    });
+  }
 }
 
 for (const source of Object.keys(SOURCES)) {

@@ -206,7 +206,7 @@ test("moodle watch: with a course's files turned off, its new files are not post
     throw new Error("not asked in this test: " + kind);
   } };
   const posted = [], logs = [];
-  const watch = createMoodleWatch({ source, tools: { autoMap: () => ({ 5: "c1", 6: "c2" }), quietFiles: tools.quietFiles }, courseRoutes: { list: () => BOTS }, file: path.join(dir, "watch.json"), thread: { append: (m) => { posted.push(m); return { id: "x" }; } }, now: () => Date.parse("2026-11-16T10:00:00Z"), log: (l) => logs.push(l) });
+  const watch = createMoodleWatch({ source, tools: { autoMap: () => ({ 5: "c1", 6: "c2" }), quietFiles: tools.quietFiles }, courseRoutes: { list: () => BOTS }, file: path.join(dir, "watch.json"), thread: { append: (m) => { if (!m.place) posted.push(m); return { id: "m_0000000000000001" }; } }, now: () => Date.parse("2026-11-16T10:00:00Z"), log: (l) => logs.push(l) });
   await watch.check(); // the first look is silent
   assert.match(tools.watchFiles("c1", false), /no longer post new files of "Linear Algebra"/);
   assert.throws(() => tools.watchFiles("zz", false), /not one of Bot's courses/);
@@ -315,7 +315,7 @@ test("moodle watch: a whole Moodle course can be turned off, also one with no Bo
   const tools = createMoodleTools({ bridge: source, courseRoutes: { list: () => BOTS }, dataDir: dir });
   const posted = [], logs = [];
   const nowMs = Date.parse("2026-11-16T10:00:00Z");
-  const watch = createMoodleWatch({ source, tools, courseRoutes: { list: () => BOTS }, file: path.join(dir, "watch.json"), thread: { append: (m) => { posted.push(m); return { id: "x" }; } }, now: () => nowMs, log: (l) => logs.push(l) });
+  const watch = createMoodleWatch({ source, tools, courseRoutes: { list: () => BOTS }, file: path.join(dir, "watch.json"), thread: { append: (m) => { if (!m.place) posted.push(m); return { id: "m_0000000000000001" }; } }, now: () => nowMs, log: (l) => logs.push(l) });
   await watch.check(); // the first look is silent
   // checked: only a real Moodle course of the list
   await assert.rejects(() => tools.watchCourse("Basket Weaving", false), /no Moodle course like/);

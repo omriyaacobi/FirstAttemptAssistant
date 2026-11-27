@@ -11,6 +11,11 @@
 //   replyTo   an assistant message points at the question it answers (a fast answer can arrive before a slow one)
 //   topic     "general" | "calendar" | "study" | "course:<courseId>", written by CODE from the front desk's decision
 //   imported  { conversationId, title, index } only for messages copied from the old chats (see thread.js)
+//   place     "course:<courseId>" for a message written in (or copied into) a course's TAB (2026-11-27, the course tabs). No
+//             place = Main. Every message before the tabs has none, so the old talk is all Main and no line is ever rewritten.
+//   copyOf    the id of the message this one is a COPY of (copyKind "asked": Omri tapped "Add to <course>" on a Main answer;
+//             "moodle": the Moodle watch's block for one course, copied into its tab). A copy is shown in its tab and is part of
+//             that tab's recent talk, but the daily summary, the memory search and every count skip it, so nothing counts twice.
 //
 // A line that is NOT a message is a "tombstone": {type:"trash", id, at} hides a message, {type:"restore", id} brings it
 // back. So deleting never rewrites a day, and the only time a day file is rewritten is when the 30-day trash is emptied.
@@ -23,6 +28,14 @@ const crypto = require("node:crypto");
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ID_PATTERN = /^m_[a-f0-9]{12,32}$/;
 const TOPIC_PATTERN = /^(general|calendar|study|course:[A-Za-z0-9_-]{1,64})$/;
+const PLACE_PATTERN = /^course:[A-Za-z0-9_-]{1,64}$/; // a course tab; Main has no place
+const COPY_KINDS = new Set(["asked", "moodle"]);
+const PLACE_DAYS = 60; // a course tab's page looks back at most this many days (one call never reads the whole thread)
+const PLACES_DAYS = 14; // places(): the newest message per tab over this many days (the unread dots)
+// Which tab a message is in: "main" or "course:<id>". A copy counts as its own tab's message.
+const placeOf = (m) => (m && typeof m.place === "string" && PLACE_PATTERN.test(m.place) ? m.place : "main");
+// "main", a course place, or null for "every tab" (the internal readers: the calendar card, the summary, the search...).
+const placeFilter = (place) => (place === "main" || (typeof place === "string" && PLACE_PATTERN.test(place)) ? place : null);
 const TRASH_KEEP_MS = 30 * 24 * 3600 * 1000;
 const DEFAULT_PAGE = 50;
 const MAX_PAGE = 200;
@@ -54,6 +67,11 @@ function clean(raw, { now }) {
   }
   if (raw.ack === true) message.ack = true; // "I got it, the answer comes later" (not an answer: see markUnanswered)
   if (raw.imported && typeof raw.imported === "object") message.imported = raw.imported;
+  if (typeof raw.place === "string" && PLACE_PATTERN.test(raw.place)) message.place = raw.place;
+  if (typeof raw.copyOf === "string" && ID_PATTERN.test(raw.copyOf)) {
+    message.copyOf = raw.copyOf;
+    message.copyKind = COPY_KINDS.has(raw.copyKind) ? raw.copyKind : "asked";
+  }
   return message;
 }
 
@@ -196,10 +214,24 @@ function createThreadStore(dir, { now = Date.now } = {}) {
 
   // The newest `limit` messages older than `before` (a time in ms), returned oldest first, plus whether more exist.
   // This is the paging behind GET /api/thread?before=<time>: the page loads the newest 50, then "load older".
-  function page({ before = null, limit = DEFAULT_PAGE } = {}) {
+  // place (the course tabs, 2026-11-27): "main" or "course:<id>" gives only that tab's messages; left out, every tab (the internal
+  // readers). A course tab looks back at most PLACE_DAYS days before `before`, so a quiet tab never reads the whole thread.
+  function page({ before = null, limit = DEFAULT_PAGE, place = null } = {}) {
     const n = Math.min(Math.max(1, Math.floor(Number(limit)) || DEFAULT_PAGE), MAX_PAGE);
     const limitAt = Number.isFinite(before) && before > 0 ? before : Infinity;
     const index = readIndex().days;
+    const only = placeFilter(place);
+    if (only) {
+      const from = dayOf((limitAt === Infinity ? now() : limitAt) - PLACE_DAYS * 24 * 3600 * 1000);
+      let picked = [];
+      for (let k = index.length - 1; k >= 0 && picked.length <= n; k--) { // one more than asked: that tells whether more exist
+        if (index[k].messages === 0) continue;
+        if (only !== "main" && index[k].day < from) break;
+        picked = [...readDay(index[k].day).filter((m) => m.at < limitAt && placeOf(m) === only), ...picked];
+      }
+      const shown = picked.slice(-n);
+      return { messages: shown, hasMore: picked.length > n, oldest: shown.length ? shown[0].at : null };
+    }
     let got = [];
     let i = index.length - 1;
     for (; i >= 0 && got.length < n; i--) {
@@ -220,6 +252,17 @@ function createThreadStore(dir, { now = Date.now } = {}) {
   // The newest messages (for building the context of a new message).
   const recent = (limit = 30) => page({ limit }).messages;
 
+  // The newest message time of each tab over the last PLACES_DAYS days: { main: at, "course:<id>": at } (the page's unread dots).
+  function places() {
+    const from = dayOf(now() - PLACES_DAYS * 24 * 3600 * 1000);
+    const out = {};
+    for (const { day, messages } of readIndex().days) {
+      if (day < from || !messages) continue;
+      for (const m of readDay(day)) { const p = placeOf(m); if (!out[p] || m.at > out[p]) out[p] = m.at; }
+    }
+    return out;
+  }
+
   // After a restart no job is running any more. A question of the last 24 hours that has no answer was cut off by that restart (or a crash):
   // it gets one plain reply saying so, so nothing is lost silently and the page shows an answer under it. Imported messages are never touched.
   function markUnanswered({ since = 24 * 3600 * 1000, text = "Bot was restarted (or stopped) before it finished this message, so there is no answer. Please send it again." } = {}) {
@@ -228,8 +271,8 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     for (const t of trashList()) if (t.message && t.message.replyTo) answered.add(t.message.replyTo); // an answer you deleted was still an answer
     const marked = [];
     for (const m of recentMessages) {
-      if (m.role !== "user" || m.imported || answered.has(m.id) || now() - m.at > since) continue;
-      marked.push(append({ role: "assistant", text, replyTo: m.id, topic: "general", error: true, at: Math.max(now(), m.at + 1) }));
+      if (m.role !== "user" || m.imported || m.copyOf || answered.has(m.id) || now() - m.at > since) continue;
+      marked.push(append({ role: "assistant", text, replyTo: m.id, topic: "general", error: true, at: Math.max(now(), m.at + 1), ...(m.place ? { place: m.place } : {}) }));
     }
     return marked.length;
   }
@@ -288,7 +331,7 @@ function createThreadStore(dir, { now = Date.now } = {}) {
     return removed;
   }
 
-  return { markUnanswered, append, appendMany, days, find, page, all, recent, trash, trashList, restore, purgeTrash, importedFrom, setImportedFrom, rebuildIndex: () => rebuildIndex(), readDay };
+  return { markUnanswered, append, appendMany, days, find, page, places, all, recent, trash, trashList, restore, purgeTrash, importedFrom, setImportedFrom, rebuildIndex: () => rebuildIndex(), readDay };
 }
 
-module.exports = { createThreadStore, dayOf, newId, ID_PATTERN, DAY_PATTERN, TOPIC_PATTERN, TRASH_KEEP_MS, DEFAULT_PAGE };
+module.exports = { createThreadStore, dayOf, newId, placeOf, ID_PATTERN, DAY_PATTERN, TOPIC_PATTERN, PLACE_PATTERN, TRASH_KEEP_MS, DEFAULT_PAGE };

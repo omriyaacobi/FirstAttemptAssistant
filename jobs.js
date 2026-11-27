@@ -19,6 +19,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { resultText } = require("./history");
 const { buildHistory } = require("./thread-context");
+const { PLACE_PATTERN } = require("./thread-store");
 
 // Job ids are random and checked everywhere. 32 hex characters = 128 random bits, so they
 // cannot be guessed.
@@ -111,6 +112,7 @@ function createJobs({ handle, cardNote = null, thread = null, summaries = null, 
       now: now(),
       step: job.status === "running" ? describeProgress(job.log) : job.status === "done" ? "Done" : "Failed",
     };
+    out.place = job.place || "main"; // the tab this job's message is in (the page shows its working card only there)
     if (job.messageId) { out.messageId = job.messageId; out.waiting = job.waiting === true; if (job.acked) out.acked = true; } // acked: a line was saved under the question, so the page fetches it now // the thread: which question this job answers
     if (job.status === "running" && job.partial) out.partial = job.partial; // the answer so far (streaming); gone once the job ends
     if (job.status === "error") out.error = job.error;
@@ -188,12 +190,18 @@ function createJobs({ handle, cardNote = null, thread = null, summaries = null, 
   // fromPhone: the message came from the phone (server.js knows); open_on_pc then says the thing opened on the PC.
   // quote: { id, text, role, at } that quote.js (checkQuote) already checked against the thread; the brain gets it as a marked data block.
   // pcGrant (2026-11-24, pc-look.js): Omri tapped "Just this once" / "Always allow" on a look card; this follow-up answers the same question.
-  function startThread({ task, noPlan = false, image = null, images = null, deeper = false, route = null, questionId = null, attached = null, fromPhone = false, quote = null, pcGrant = null }) {
+  // place (2026-11-27, the course tabs): "course:<id>" when Omri typed in a course's tab (server.js checked it is a real course); none =
+  // Main. A follow-up on a saved question (a file's words, a look card) takes the place of that question. The question, its answer and
+  // any line under it go in the same tab, and the recent talk the brain gets is that tab's only.
+  function startThread({ task, noPlan = false, image = null, images = null, deeper = false, route = null, questionId = null, attached = null, fromPhone = false, quote = null, pcGrant = null, place = null }) {
     if (!thread) throw Object.assign(new Error("the thread is off"), { status: 404 });
     if (threadJobs().filter((j) => j.status === "running").length >= MAX_THREAD_JOBS) {
       throw Object.assign(new Error("too many messages are being worked on at once, wait a little"), { status: 429 });
     }
     const running = threadJobs().filter((j) => j.status === "running");
+    const asked = questionId && typeof thread.find === "function" ? thread.find(questionId) : null;
+    const tab = asked ? (asked.place || null) : (typeof place === "string" && PLACE_PATTERN.test(place) ? place : null);
+    const inTab = tab ? { place: tab } : {};
     // The first message of a new day starts the daily summaries in the background (thread-summary.js); it never delays this message.
     if (summaries) { try { Promise.resolve(summaries.catchUp()).catch(() => {}); } catch (error) { /* a summary problem never blocks a message */ } }
     // onMessage (server.js: morning.early): Omri's first message before the brief time starts the morning brief; never waited for.
@@ -206,13 +214,14 @@ function createJobs({ handle, cardNote = null, thread = null, summaries = null, 
       busy: running.map((j) => j.messageId),
       pending: running.map((j) => j.task),
       notes: summaries ? (() => { try { return summaries.notesBlock(); } catch (error) { return ""; } })() : "",
+      place: tab || "main",
     });
     // photos: the checked pictures of this message (server.js), one or several; the old single `image` still works. Only this note is
     // saved in the thread, never the pictures.
     const photos = Array.isArray(images) && images.length ? images : image ? [image] : [];
     const photoNote = photos.length > 1 ? `(${photos.length} photos attached)` : "(photo attached)";
     const startedAt = now();
-    const question = questionId ? { id: questionId } : thread.append({ role: "user", text: photos.length ? (task ? photoNote + " " + task : photoNote) : task, at: startedAt, topic: "general", ...(quote ? { quote } : {}) });
+    const question = questionId ? { id: questionId } : thread.append({ role: "user", text: photos.length ? (task ? photoNote + " " + task : photoNote) : task, at: startedAt, topic: "general", ...inTab, ...(quote ? { quote } : {}) });
 
     const job = {
       id: crypto.randomBytes(16).toString("hex"),
@@ -227,6 +236,7 @@ function createJobs({ handle, cardNote = null, thread = null, summaries = null, 
       lastWatched: 0,
       seq: ++sequence,
       course: null,
+      place: tab,
       waiting: false,
       holding: false,
     };
@@ -244,20 +254,20 @@ function createJobs({ handle, cardNote = null, thread = null, summaries = null, 
         const list = courses();
         // notify: one short line written by code (brain.js), saved under the question as a message marked `ack`. It is not the answer: the
         // restart check does not count it as one, the model's memory skips it, and no push is sent for it (onFinish runs only for the answer).
-        const notify = (text) => { try { job.acked = true; thread.append({ role: "assistant", text: String(text).slice(0, 500), replyTo: question.id, topic: "general", ack: true, at: now() }); } catch (error) { /* the line is a courtesy; the answer still comes */ } };
-        const result = await handle(task, { ...common, noPlan: noPlan === true, image: photos[0] || null, images: photos, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify: attached ? null : notify, fromPhone: fromPhone === true, ...(attached ? { attached } : {}), ...(quote ? { quote } : {}), messageId: question.id, ...(typeof pcGrant === "string" ? { pcGrant } : {}) });
+        const notify = (text) => { try { job.acked = true; thread.append({ role: "assistant", text: String(text).slice(0, 500), replyTo: question.id, topic: "general", ack: true, ...inTab, at: now() }); } catch (error) { /* the line is a courtesy; the answer still comes */ } };
+        const result = await handle(task, { ...common, noPlan: noPlan === true, image: photos[0] || null, images: photos, deeper: deeper === true, route: route === "general" ? "general" : null, courses: list, studyState: list.length ? studyState() : "", gate: makeGate(job), notify: attached ? null : notify, fromPhone: fromPhone === true, ...(attached ? { attached } : {}), ...(quote ? { quote } : {}), messageId: question.id, ...(typeof pcGrant === "string" ? { pcGrant } : {}), ...(tab ? { place: tab } : {}) });
         if (attached && result && result.silent) { job.silent = true; job.status = "done"; }
         if (!job.silent) {
           const text = result.mode === "course" || result.mode === "study" ? result.answer : resultText(result);
           // An empty answer is a failure, not a reply: the page must never show a blank bubble.
           if (typeof text !== "string" || !text.trim()) throw new Error("the model sent back an empty answer");
           topic = topicOf(result);
-          message = { role: "assistant", text, replyTo: question.id, topic, result, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
+          message = { role: "assistant", text, replyTo: question.id, topic, result, log: job.log.slice(-SAVED_LOG_LINES), ...inTab, at: now() };
           job.status = "done";
         }
       } catch (error) {
         const text = String(error && error.message).slice(0, 500);
-        message = { role: "assistant", text: "Something went wrong: " + text, replyTo: question.id, topic: "general", error: true, log: job.log.slice(-SAVED_LOG_LINES), at: now() };
+        message = { role: "assistant", text: "Something went wrong: " + text, replyTo: question.id, topic: "general", error: true, log: job.log.slice(-SAVED_LOG_LINES), ...inTab, at: now() };
         job.status = "error";
         job.error = text;
       }

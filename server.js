@@ -287,12 +287,23 @@ function createServer({
     onFinish: ({ job, title, watched }) => {
       if (watched) return;
       const ok = job.status === "done";
-      push.notifyAll({ title: ok ? "Bot finished" : "Bot could not finish", body: title, tag: `job-${job.id}` }).catch(() => {});
+      // place: the tab of the answer, so a tap on the push opens that tab (sw.js). Never text: only "main" or "course:<id>".
+      push.notifyAll({ title: ok ? "Bot finished" : "Bot could not finish", body: title, tag: `job-${job.id}`, place: job.place || "main" }).catch(() => {});
     },
   });
 
   // The words sent WITH a file (thread-files.js files it by code): the brain reads them as a follow-up on the same question.
   if (brain && threadFiles && threadFiles.onWords) threadFiles.onWords(({ text, questionId, courseId, courseName, fileName }) => jobs.startThread({ task: text, questionId, attached: { courseId, courseName, fileName } }));
+
+  // THE COURSE TABS (2026-11-27): a tab is "course:<id>" of a REAL course; nothing, "" or "main" is Main (returns null). Anything
+  // else is refused with a 400, so a message can never be filed in a made-up tab.
+  function tabPlace(value) {
+    if (value === undefined || value === null || value === "" || value === "main") return null;
+    const m = typeof value === "string" ? /^course:([A-Za-z0-9_-]{1,64})$/.exec(value) : null;
+    const list = courseRoutes ? courseRoutes.list() : [];
+    if (!m || !list.some((c) => c.id === m[1])) throw Object.assign(new Error("place must be main or course:<id> of a real course"), { status: 400 });
+    return value;
+  }
 
   // Every route runs inside this function. If one throws (a locked or damaged file, a bug), the page gets a plain 500 and Bot keeps running:
   // an async handler that throws would otherwise be an unhandled rejection, and Node ends the whole program on those.
@@ -526,7 +537,8 @@ function createServer({
         // A zip may be bigger than one file (its files are unpacked and checked one by one in unzip.js); anything else keeps the 50 MB limit.
         const bytes = await readRawBody(req, /\.zip$/i.test(String(url.searchParams.get("name") || "")) ? MAX_ZIP_BYTES : undefined);
         const text = String(url.searchParams.get("text") || "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 500);
-        return sendJson(res, 201, threadFiles.receive({ bytes, name: url.searchParams.get("name"), text }));
+        const place = tabPlace(url.searchParams.get("place")); // a file sent from a course tab is filed in that course (throws 400)
+        return sendJson(res, 201, threadFiles.receive({ bytes, name: url.searchParams.get("name"), text, place }));
       } catch (error) {
         return sendJson(res, error.status || 500, { error: error.message });
       }
@@ -568,6 +580,32 @@ function createServer({
       try { return sendJson(res, 201, threadFiles.assign(assignRoute[1], String(input.courseId || ""))); } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
     }
 
+    // "ADD TO <course>" on a Main answer (the course tabs, 2026-11-27): Omri's tap COPIES the question and the answer into that
+    // course's tab (copyOf; the store is append-only, nothing is rewritten). Only a Main answer of the last 7 days with its question,
+    // only a real course, and only once per course.
+    const toCourse = url.pathname.match(/^\/api\/thread\/(m_[a-f0-9]{12,32})\/to-course$/);
+    if (thread && toCourse && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      let place;
+      try { place = tabPlace(typeof input.courseId === "string" ? "course:" + input.courseId : ""); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!place) return sendJson(res, 400, { error: "courseId is needed" });
+      const answer = thread.find(toCourse[1]);
+      if (!answer || answer.role !== "assistant" || answer.error || answer.ack || answer.place || answer.copyOf) return sendJson(res, 404, { error: "only an answer in Main can be added to a course" });
+      if (Date.now() - answer.at > 7 * 24 * 3600 * 1000) return sendJson(res, 410, { error: "this answer is older than 7 days" });
+      const question = answer.replyTo ? thread.find(answer.replyTo) : null;
+      if (!question || question.role !== "user") return sendJson(res, 404, { error: "the question of this answer was not found" });
+      const courseId = place.slice(7);
+      const courseName = (courseRoutes.list().find((c) => c.id === courseId) || {}).name || "";
+      if (thread.page({ place, limit: 200 }).messages.some((m) => m.copyOf === answer.id)) return sendJson(res, 409, { error: `already added to ${courseName}`, courseName });
+      const at = Date.now();
+      const q = thread.append({ role: "user", text: question.text, at, topic: "general", place, copyOf: question.id, copyKind: "asked" });
+      const r = answer.result || {};
+      const result = { mode: r.mode || "single", ...(r.brain ? { brain: true } : {}), answer: typeof r.answer === "string" ? r.answer : answer.text, ...(r.used ? { used: r.used } : {}), courseId, courseName };
+      thread.append({ role: "assistant", text: answer.text, replyTo: q.id, at: at + 1, topic: `course:${courseId}`, place, copyOf: answer.id, copyKind: "asked", result });
+      return sendJson(res, 201, { ok: true, courseId, courseName });
+    }
+
     // The ONE conversation.
     const threadRoute = url.pathname.match(/^\/api\/thread(?:\/([^/]+?)(\/restore)?)?$/);
     if (threadRoute) {
@@ -580,8 +618,13 @@ function createServer({
         const before = beforeText === null ? null : /^\d{1,15}$/.test(beforeText) ? Number(beforeText) : NaN;
         const limit = limitText === null ? 50 : /^\d{1,4}$/.test(limitText) ? Number(limitText) : NaN;
         if (Number.isNaN(before) || Number.isNaN(limit)) return sendJson(res, 400, { error: "before and limit must be numbers" });
-        return sendJson(res, 200, { ...thread.page({ before, limit }), courses: courseRoutes ? courseRoutes.list() : [] });
+        // place: which TAB (2026-11-27): left out = Main; "course:<id>" = that course's tab (a real course, checked).
+        let place;
+        try { place = tabPlace(url.searchParams.get("place")); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+        return sendJson(res, 200, { ...thread.page({ before, limit, place: place || "main" }), place: place || "main", courses: courseRoutes ? courseRoutes.list() : [] });
       }
+      // The newest message time of each tab (the page's unread dots). Times only, no text.
+      if (id === "places" && !restore && req.method === "GET") return sendJson(res, 200, { places: thread.places() });
       // The 30-day trash, newest first: so Restore works after a reload too (not only right after deleting). Text is cut; the page draws it with textContent.
       if (id === "trash" && !restore && req.method === "GET") {
         const nowMs = Date.now();
@@ -825,7 +868,9 @@ function createServer({
       if (!thread) { removePhotos(images); return sendJson(res, 503, { error: "the conversation is not set up on this server" }); }
       try {
         if (input.route !== undefined && input.route !== "general") { removePhotos(images); return sendJson(res, 400, { error: 'route can only be "general"' }); }
-        const job = jobs.startThread({ task, noPlan: input.noPlan === true, images, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote });
+        let place = null; // the course TAB the message was typed in (2026-11-27); none = Main
+        try { place = tabPlace(input.place); } catch (error) { removePhotos(images); return sendJson(res, 400, { error: error.message }); }
+        const job = jobs.startThread({ task, noPlan: input.noPlan === true, images, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote, place });
         return sendJson(res, 202, { job });
       } catch (error) {
         removePhotos(images); // the job never started, so nothing else will delete the photos
@@ -889,6 +934,7 @@ if (require.main === module) {
   const summaries = createSummaries({
     thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log,
     courseNames: () => coach.tracker.refsFor(coursesStore.list()).map((r) => r.name),
+    placeName: (id) => (coursesStore.list().find((c) => c.id === id) || {}).name || null, // the course tabs: "[Calculus 2 tab]" labels
     onStudy: (day, items) => {
       const r = coach.reviewPositions(items, { lang: require("./lang").langOf(items.map((i) => i.quote).join(" ")), day });
       if (r.text) thread.append({ role: "assistant", text: r.text, topic: "general", at: Date.now(), result: { mode: "single", rule: "study review", reason: "the end-of-day review updated where Omri stands", chain: [], used: { provider: "code", model: "Gemini Flash proposed it, code checked and wrote it" }, answer: r.text, seconds: 0 } });
@@ -944,6 +990,13 @@ if (require.main === module) {
     courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), todo: require("./todo").createTodo({ file: path.join(__dirname, "data", "todo.md") }), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
     courseWork: (courseId) => require("./course-work").workDone(thread.page({ limit: 400 }).messages, courseId),
+    // Main's "today in the course tabs" line (tab-today.js, 2026-11-27): today's messages and the course records, code only.
+    tabsToday: () => require("./tab-today").todayText({
+      messages: thread.readDay(require("./thread-store").dayOf(Date.now())),
+      courses: courseRoutes ? courseRoutes.list() : [],
+      recordOf: (id) => (coach && coach.brainTools && coach.brainTools.todayRecord ? coach.brainTools.todayRecord(id) : null),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
     tokenLog: require("./tokenlog").createTokenLog({ file: path.join(__dirname, "data", "token-log.json") }), // what the answers cost, numbers only
     modelChoice, // the model Omri picked on the page goes first for an hour (model-choice.js)
     // Omri's PC: find folders and files by name under the search roots (data/pc-roots.json), never in Bot's own folder (pc-find.js).
