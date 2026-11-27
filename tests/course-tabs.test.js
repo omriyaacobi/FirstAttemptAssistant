@@ -243,3 +243,53 @@ test("PAGE: the tab row exists, every read and send carries the open tab, and a 
   assert.match(sw, /open-place/);
   assert.match(sw, /\^\(main\|course:\[A-Za-z0-9_-\]\{1,64\}\)\$/);
 });
+
+// ---- step 5: the "add to course?" card ----
+test("BRAIN: Main's card is offered only with evidence from the message, never from the carry-over or in a tab", async () => {
+  // named in the message
+  const r1 = await tabBrain({ replies: ["An answer."], prompts: [] }).handle("a Calculus 2 question", { history: [], courses: COURSES });
+  assert.deepStrictEqual(r1.courseCard, { courseId: CALC, courseName: "Calculus 2" });
+  // carried over from an earlier answer only: filed under the course, but no card
+  const history = [{ role: "assistant", text: "earlier", courseId: CALC, at: new Date("2026-11-27T11:50:00+02:00").getTime() }];
+  const r2 = await tabBrain({ replies: ["An answer."], prompts: [] }).handle("and what about that?", { history, courses: COURSES });
+  assert.strictEqual(r2.courseId, CALC);
+  assert.strictEqual(r2.courseCard, undefined);
+  // a course tool really ran
+  const r3 = await tabBrain({ replies: ['CALL {"tool":"course_files","course":"Systems Programming"}', "Here."], prompts: [] }).handle("which files are there?", { history: [], courses: COURSES });
+  assert.strictEqual(r3.courseCard.courseId, SP);
+  // never in a course tab
+  const r4 = await tabBrain({ replies: ["An answer."], prompts: [] }).handle("a Calculus 2 question", { history: [], courses: COURSES, place: `course:${CALC}` });
+  assert.strictEqual(r4.courseCard, undefined);
+  // the carry-over ends after 90 minutes in Main
+  const old = [{ role: "assistant", text: "earlier", courseId: CALC, at: new Date("2026-11-27T10:00:00+02:00").getTime() }];
+  const r5 = await tabBrain({ replies: ["An answer."], prompts: [] }).handle("and what about that?", { history: old, courses: COURSES });
+  assert.strictEqual(r5.courseId, undefined);
+});
+
+test("SERVER: Add to course copies the question and the answer once, only for a recent Main answer and a real course", async () => {
+  const thread = createThreadStore(tmp());
+  const q = thread.append({ role: "user", text: "what is a series?" });
+  const a = thread.append({ role: "assistant", text: "A sum of terms.", replyTo: q.id, result: { mode: "single", brain: true, answer: "A sum of terms.", courseId: CALC, courseCard: { courseId: CALC } } });
+  const inTab = thread.append({ role: "assistant", text: "tab answer", replyTo: q.id, place: `course:${SP}` });
+  const old = thread.append({ role: "assistant", text: "old", replyTo: q.id, at: Date.now() - 8 * DAY });
+  const s = await startServer({ thread });
+  try {
+    const post = (id, courseId) => s.request("POST", `/api/thread/${id}/to-course`, { body: { courseId } });
+    const foundBefore = findInThread(thread, "series").length;
+    assert.strictEqual((await post(a.id, "nothere")).status, 400);
+    assert.strictEqual((await post(q.id, CALC)).status, 404, "a question is not an answer");
+    assert.strictEqual((await post(inTab.id, CALC)).status, 404, "only Main answers");
+    assert.strictEqual((await post(old.id, CALC)).status, 410);
+    const ok = await post(a.id, CALC);
+    assert.strictEqual(ok.status, 201);
+    assert.strictEqual(ok.json.courseName, "Calculus 2");
+    assert.strictEqual((await post(a.id, CALC)).status, 409, "only once per course");
+    const tab = thread.page({ place: `course:${CALC}` }).messages;
+    assert.deepStrictEqual(tab.map((m) => [m.role, m.text, m.copyOf, m.copyKind]), [["user", "what is a series?", q.id, "asked"], ["assistant", "A sum of terms.", a.id, "asked"]]);
+    assert.strictEqual(tab[1].replyTo, tab[0].id);
+    assert.strictEqual(tab[1].result.courseCard, undefined, "the copy carries no card of its own");
+    assert.strictEqual(thread.page({ place: "main" }).messages.length, 3, "Main is unchanged");
+    assert.strictEqual(findInThread(thread, "series").length, foundBefore, "the copies add nothing to the search");
+    assert.strictEqual((await post(a.id, SP)).status, 201, "another course is allowed");
+  } finally { s.close(); }
+});

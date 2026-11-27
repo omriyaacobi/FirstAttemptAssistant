@@ -77,6 +77,8 @@ const RECENT_CODE_BYTES = 8000; // ...and together those files may take this muc
 // A course talked about in MAIN in the last 90 minutes is still "the course we are in" (6 hours until 2026-11-27: with the course tabs,
 // real study happens in a tab, where the course is never guessed; in Main a long carry-over filed 96% of all answers under a course).
 const FOCUS_MS = 90 * 60 * 1000;
+// The tools that show a Main answer really worked on a course (the "add to course?" card's evidence; course tabs, 2026-11-27).
+const CARD_TOOLS = new Set(["course_search", "course_read", "course_files", "lecture_parts", "study_status", "teach_next", "quiz", "quiz_answer", "parts_done", "study_position", "course_note", "project_files", "project_read", "project_grep", "working_on", "exam_plan", "plan_done"]);
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
 const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch", "parts_done", "todo_update", "exam_plan", "plan_done", "pc_allow"]);
@@ -418,7 +420,22 @@ function createBrain({
     }).join("\n");
   }
 
-  // Which course is the talk in? The newest answer about a course in the last 6 hours, or a course whose name is in the message.
+  // The ONE course named in the message (its name, or the timetable's pattern for it), or null (none, or more than one). Used by
+  // focusCourse, and by Main's "add to course?" card as evidence that the message itself was about that course (2026-11-27).
+  function namedCourse(task, list) {
+    const low = String(task).toLowerCase();
+    let patterns = [];
+    try { patterns = coach ? coach.tracker.timetable().courses || [] : []; } catch (error) { patterns = []; }
+    const hits = list.filter((c) => {
+      if (low.includes(String(c.name).toLowerCase())) return true;
+      try { const ref = refOf(c); const p = ref && patterns.find((x) => x.key === ref.key); return !!p && new RegExp(p.match, "i").test(task); } catch (error) { return false; }
+    });
+    const inner = (a, b) => a !== b && String(b.name).toLowerCase().includes(String(a.name).toLowerCase());
+    const named = hits.filter((a) => !hits.some((b) => inner(a, b)));
+    return named.length === 1 ? named[0] : null;
+  }
+
+  // Which course is the talk in? The newest answer about a course in the last 90 minutes, or a course whose name is in the message.
   function focusCourse(task, history, list, quote = null) {
     const low = String(task).toLowerCase();
     // A course is "named" when its name is in the message, or the timetable's own pattern for it matches (that is where the Hebrew names
@@ -1275,8 +1292,14 @@ ${r.cardText}`; }
     // Calculus tab), workCourseId says which, so course-work.js does not list SP formulas as Calculus work.
     const courseOf = () => {
       if (ctx.tab) return { courseId: ctx.tab.id, courseName: ctx.tab.name, ...(ctx.course && ctx.course.id !== ctx.tab.id ? { workCourseId: ctx.course.id } : {}) };
-      return ctx.course ? { courseId: ctx.course.id, courseName: ctx.course.name } : ctx.noCourse ? { noCourse: true } : {};
+      if (!ctx.course) return ctx.noCourse ? { noCourse: true } : {};
+      // MAIN's "add to course?" card (2026-11-27): offered only with evidence from THIS message (the course is named in it, Omri
+      // replied to a marked answer of that course, or a course tool really ran), never from the carry-over of earlier answers alone.
+      // Code decides it; the page draws a small card and Omri taps (the copy is made by server.js, POST /api/thread/:id/to-course).
+      const evidence = route !== "general" && (named === ctx.course || (quote && quote.courseId === ctx.course.id) || ctx.tools.some((t) => CARD_TOOLS.has(t)));
+      return { courseId: ctx.course.id, courseName: ctx.course.name, ...(evidence ? { courseCard: { courseId: ctx.course.id, courseName: ctx.course.name } } : {}) };
     };
+    const named = ctx.tab ? null : namedCourse(task, list);
     // attached: these words came WITH a file that code already filed (thread-files.js); the talk is in that file's course.
     const filedIn = attached && attached.courseId ? list.find((c) => c.id === attached.courseId) || null : null;
     const tabCourse = ctx.tab;

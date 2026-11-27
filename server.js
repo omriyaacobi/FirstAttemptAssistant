@@ -580,6 +580,32 @@ function createServer({
       try { return sendJson(res, 201, threadFiles.assign(assignRoute[1], String(input.courseId || ""))); } catch (error) { return sendJson(res, error.status || 500, { error: error.message }); }
     }
 
+    // "ADD TO <course>" on a Main answer (the course tabs, 2026-11-27): Omri's tap COPIES the question and the answer into that
+    // course's tab (copyOf; the store is append-only, nothing is rewritten). Only a Main answer of the last 7 days with its question,
+    // only a real course, and only once per course.
+    const toCourse = url.pathname.match(/^\/api\/thread\/(m_[a-f0-9]{12,32})\/to-course$/);
+    if (thread && toCourse && req.method === "POST") {
+      const input = await readJsonBody(req, res);
+      if (!input) return;
+      let place;
+      try { place = tabPlace(typeof input.courseId === "string" ? "course:" + input.courseId : ""); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!place) return sendJson(res, 400, { error: "courseId is needed" });
+      const answer = thread.find(toCourse[1]);
+      if (!answer || answer.role !== "assistant" || answer.error || answer.ack || answer.place || answer.copyOf) return sendJson(res, 404, { error: "only an answer in Main can be added to a course" });
+      if (Date.now() - answer.at > 7 * 24 * 3600 * 1000) return sendJson(res, 410, { error: "this answer is older than 7 days" });
+      const question = answer.replyTo ? thread.find(answer.replyTo) : null;
+      if (!question || question.role !== "user") return sendJson(res, 404, { error: "the question of this answer was not found" });
+      const courseId = place.slice(7);
+      const courseName = (courseRoutes.list().find((c) => c.id === courseId) || {}).name || "";
+      if (thread.page({ place, limit: 200 }).messages.some((m) => m.copyOf === answer.id)) return sendJson(res, 409, { error: `already added to ${courseName}`, courseName });
+      const at = Date.now();
+      const q = thread.append({ role: "user", text: question.text, at, topic: "general", place, copyOf: question.id, copyKind: "asked" });
+      const r = answer.result || {};
+      const result = { mode: r.mode || "single", ...(r.brain ? { brain: true } : {}), answer: typeof r.answer === "string" ? r.answer : answer.text, ...(r.used ? { used: r.used } : {}), courseId, courseName };
+      thread.append({ role: "assistant", text: answer.text, replyTo: q.id, at: at + 1, topic: `course:${courseId}`, place, copyOf: answer.id, copyKind: "asked", result });
+      return sendJson(res, 201, { ok: true, courseId, courseName });
+    }
+
     // The ONE conversation.
     const threadRoute = url.pathname.match(/^\/api\/thread(?:\/([^/]+?)(\/restore)?)?$/);
     if (threadRoute) {

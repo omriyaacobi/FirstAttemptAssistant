@@ -3015,6 +3015,68 @@
       revealOnTap(node);
       return node;
     }
+    // "ADD TO <course>?" (the course tabs, 2026-11-27): under a Main answer that code marked as about a course (result.courseCard,
+    // set only with evidence from that message), a small card: the question shortened, "Add to X", another course from the real list,
+    // or "No". Add copies the question and the answer into that course's tab (server.js). "No" and "added" are remembered per device.
+    function courseCardFor(m) {
+      const c = m.result && m.result.courseCard;
+      if (!c || typeof c.courseId !== "string" || m.place || m.copyOf || T.place !== "main") return null;
+      if (Date.now() + T.offset - m.at > 7 * 24 * 3600 * 1000) return null;
+      const states = tabStore.get("courseCards", {});
+      if (states[m.id] === "no") return null;
+      const keys = Object.keys(states);
+      if (keys.length > 300) keys.slice(0, keys.length - 300).forEach((k) => delete states[k]); // only the newest few hundred are kept
+      const question = m.replyTo && T.msgs.get(m.replyTo);
+      const short = question && question.text ? (question.text.length > 80 ? question.text.slice(0, 80) + "…" : question.text) : "";
+      const box = el("div", "tcard-course");
+      box.dir = "auto";
+      const done = (name, id) => {
+        box.replaceChildren(el("span", "sub", "Added to " + name + "."));
+        const open = el("button", "ghost", "Open the tab");
+        open.type = "button";
+        open.addEventListener("click", () => switchTab("course:" + id));
+        box.appendChild(open);
+      };
+      if (typeof states[m.id] === "string" && states[m.id].startsWith("added:")) { const id = states[m.id].slice(6); done(T.courses.get(id) || "the course", id); return box; }
+      const name = T.courses.get(c.courseId) || c.courseName || "this course";
+      box.appendChild(el("div", "", `Looks like ${name}${short ? `: "${short}"` : ""}`));
+      const row = el("div", "row");
+      const add = async (id) => {
+        row.querySelectorAll("button, select").forEach((b) => { b.disabled = true; });
+        try {
+          const res = await fetch("/api/thread/" + encodeURIComponent(m.id) + "/to-course", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId: id }) });
+          if (!res.ok && res.status !== 409) { let msg = "error " + res.status; try { msg = (await res.json()).error || msg; } catch (e) { /* not json */ } throw new Error(msg); }
+          states[m.id] = "added:" + id;
+          tabStore.set("courseCards", states);
+          done(T.courses.get(id) || "the course", id);
+          loadPlaces(true);
+        } catch (error) {
+          row.querySelectorAll("button, select").forEach((b) => { b.disabled = false; });
+          toast("Not added: " + error.message);
+        }
+      };
+      const yes = el("button", "", "Add to " + name);
+      yes.type = "button";
+      yes.addEventListener("click", () => add(c.courseId));
+      row.appendChild(yes);
+      const others = [...T.courses].filter(([id]) => id !== c.courseId);
+      if (others.length) {
+        const pick = el("select", "");
+        pick.setAttribute("aria-label", "Another course");
+        const first = el("option", "", "Another course…");
+        first.value = "";
+        pick.appendChild(first);
+        for (const [id, n] of others) { const o = el("option", "", n); o.value = id; pick.appendChild(o); }
+        pick.addEventListener("change", () => { if (pick.value) add(pick.value); });
+        row.appendChild(pick);
+      }
+      const no = el("button", "ghost", "No");
+      no.type = "button";
+      no.addEventListener("click", () => { states[m.id] = "no"; tabStore.set("courseCards", states); box.remove(); });
+      row.appendChild(no);
+      box.appendChild(row);
+      return box;
+    }
     function answerNode(m) {
       const node = el("div", "msg tmsg ta");
       node.dataset.id = m.id;
@@ -3046,6 +3108,8 @@
       if (m.result && m.result.fileChoice && m.result.fileChoice.id) node.appendChild(fileChoiceButtons(m.result.fileChoice));
       if (m.result && m.result.linkBatch && m.result.linkBatch.id) node.appendChild(linkBatchButtons(m.result.linkBatch));
       if (m.result && m.result.pcLookCard && m.result.pcLookCard.id) node.appendChild(pcLookButtons(m.result.pcLookCard));
+      const courseCard = courseCardFor(m);
+      if (courseCard) node.appendChild(courseCard);
       const when = timeLine(m);
       if (when) node.appendChild(when);
       node.appendChild(deleteButton(m, node));

@@ -53,7 +53,7 @@ function fakeApi() {
       const place = url.searchParams.get("place") || "main";
       const sample = [
         { id: "m_000000000001", role: "user", text: "Remind me to buy milk at 6", at: now - 60000 },
-        { id: "m_000000000002", role: "assistant", replyTo: "m_000000000001", text: "Done: a reminder at 18:00. (sample text)", at: now - 50000, result: { mode: "single", brain: true, answer: "Done: a reminder at 18:00. (sample text)", used: { provider: "agy", model: "sample" } } },
+        { id: "m_000000000002", role: "assistant", replyTo: "m_000000000001", text: "Done: a reminder at 18:00. (sample text)", at: now - 50000, result: { mode: "single", brain: true, answer: "Done: a reminder at 18:00. (sample text)", used: { provider: "agy", model: "sample" }, courseId: "demo1", courseCard: { courseId: "demo1", courseName: "Sample Course A" } } },
         { id: "m_000000000003", role: "user", text: "Explain the ratio test", at: now - 30000, place: "course:demo1" },
         { id: "m_000000000004", role: "assistant", replyTo: "m_000000000003", text: "Compare $|a_{n+1}/a_n|$ with 1. (sample text)", at: now - 20000, place: "course:demo1", result: { mode: "single", brain: true, answer: "Compare $|a_{n+1}/a_n|$ with 1. (sample text)", used: { provider: "agy", model: "sample" }, courseId: "demo1", courseName: "Sample Course A" } },
       ];
