@@ -239,3 +239,61 @@ test("item text: token route only; the Chrome extension is never asked for it", 
   const refused = createMoodleSource({ ws: make({ ...ITEM_ANSWERS, core_course_get_course_module: { exception: "x", errorcode: "invalidtoken" } }).ws, bridge: chrome });
   await assert.rejects(refused.ask("item", { cmid: 301 }), (e) => e.code === "token");
 });
+
+// ---- the files attached to an ASSIGNMENT (2026-11-27, t41). Made-up data only. ----
+const ASSIGN_ANSWERS = {
+  ...ITEM_ANSWERS,
+  core_course_get_course_module: { cm: { id: 303, course: 5, instance: 43, modname: "assign" } },
+  mod_assign_get_assignments: { courses: [{ id: 5, assignments: [
+    { cmid: 999, introattachments: [{ filename: "other.pdf", fileurl: `${FILES}/7/mod_assign/introattachment/0/other.pdf` }] },
+    { cmid: 303, intro: "<p>Write a shell</p>",
+      introattachments: [
+        { filename: "Assignment2.pdf", filesize: 10, fileurl: `${FILES}/8/mod_assign/introattachment/0/Assignment2.pdf?forcedownload=1` },
+        { filename: "Assignment2.zip", filesize: 10, fileurl: `${FILES}/8/mod_assign/introattachment/0/Assignment2.zip?forcedownload=1` },
+        { filename: "evil.pdf", filesize: 10, fileurl: "https://evil.example/moodle/webservice/pluginfile.php/8/mod_assign/introattachment/0/evil.pdf" },
+        { filename: "page.pdf", filesize: 10, fileurl: "https://moodle.bgu.ac.il/moodle/mod/assign/view.php?id=303" },
+        { filename: "huge.pdf", filesize: 60 * 1024 * 1024, fileurl: `${FILES}/8/mod_assign/introattachment/0/huge.pdf` },
+      ],
+      // the description's own files: listed too, each address once
+      introfiles: [{ filename: "Assignment2.pdf", fileurl: `${FILES}/8/mod_assign/introattachment/0/Assignment2.pdf?forcedownload=1` }, { filename: "diagram.png", fileurl: `${FILES}/8/mod_assign/intro/diagram.png` }, { filename: ".", fileurl: `${FILES}/8/mod_assign/intro/` }] },
+  ] }] },
+};
+
+test("assignment files: listed by number, downloaded from Moodle's own address with the token in the body only", async () => {
+  const { ws, seen } = make(ASSIGN_ANSWERS);
+  const list = (await ws.ask("assignfiles", { cmid: 303 })).data;
+  assert.deepStrictEqual(list, [{ index: 0, name: "Assignment2.pdf" }, { index: 1, name: "Assignment2.zip" }, { index: 2, name: "evil.pdf" }, { index: 3, name: "page.pdf" }, { index: 4, name: "huge.pdf" }, { index: 5, name: "diagram.png" }]);
+  assert.strictEqual(new URLSearchParams(seen.find((r) => new URLSearchParams(r.body).get("wsfunction") === "mod_assign_get_assignments").body).get("courseids[0]"), "5");
+  const a = await ws.ask("assignfile", { cmid: 303, index: 0 });
+  assert.strictEqual(a.file.name, "Assignment2.pdf");
+  assert.strictEqual(seen[seen.length - 1].url, `${FILES}/8/mod_assign/introattachment/0/Assignment2.pdf`); // query removed
+  assert.strictEqual(new URLSearchParams(seen[seen.length - 1].body).get("token"), TOKEN);
+  assert.strictEqual(seen[seen.length - 1].headers["User-Agent"], "node");
+  assert.strictEqual((await ws.ask("assignfile", { cmid: 303, index: 1 })).file.name, "Assignment2.zip");
+  assert.ok(!seen.some((r) => r.url.includes(TOKEN)));
+});
+
+test("assignment files: another host, another path, a file over 50 MB, a missing number and a bad number are refused", async () => {
+  const { ws, seen } = make(ASSIGN_ANSWERS);
+  await assert.rejects(ws.ask("assignfile", { cmid: 303, index: 2 }), (e) => e.code === "refused"); // evil.example
+  await assert.rejects(ws.ask("assignfile", { cmid: 303, index: 3 }), (e) => e.code === "refused"); // not /webservice/pluginfile.php/
+  await assert.rejects(ws.ask("assignfile", { cmid: 303, index: 4 }), (e) => e.code === "toobig");
+  await assert.rejects(ws.ask("assignfile", { cmid: 303, index: 9 }), (e) => e.code === "notfile");
+  for (const bad of [{ cmid: 303 }, { cmid: 303, index: -1 }, { cmid: 303, index: 1.5 }, { cmid: 303, index: "0; x" }, { cmid: 303, index: 1000 }]) {
+    await assert.rejects(ws.ask("assignfile", bad), (e) => e.code === "refused");
+  }
+  assert.ok(!seen.some((r) => r.url !== REST_URL), "nothing refused was downloaded");
+  // a file item is not an assignment
+  await assert.rejects(make({ ...ASSIGN_ANSWERS, core_course_get_course_module: { cm: { id: 301, course: 5, instance: 41, modname: "page" } } }).ws.ask("assignfiles", { cmid: 301 }), (e) => e.code === "notfile");
+});
+
+test("assignment files: token route only; the Chrome extension is never asked and the error says so", async () => {
+  const bridge = createBridge();
+  await assert.rejects(bridge.ask("assignfiles", { cmid: 303 }), (e) => e.code === "tokenonly" && e.what === "assign");
+  await assert.rejects(bridge.ask("assignfile", { cmid: 303, index: 0 }), (e) => e.code === "tokenonly" && e.what === "assign");
+  assert.strictEqual(bridge.next({}), null);
+  const chrome = { connected: () => true, ask: async () => { throw new Error("Chrome must not be asked"); } };
+  const noToken = createMoodleSource({ ws: make(ASSIGN_ANSWERS, "").ws, bridge: chrome });
+  await assert.rejects(noToken.ask("assignfile", { cmid: 303, index: 0 }), (e) => e.code === "tokenonly" && e.what === "assign");
+  assert.match(require("../moodle-tools").explain({ code: "tokenonly", what: "assign" }), /assignment.*node moodle-token\.js/s);
+});

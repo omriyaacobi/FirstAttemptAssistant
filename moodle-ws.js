@@ -4,7 +4,7 @@
 // himself; it is kept in .env as MOODLE_TOKEN and lasts for weeks. Research: experiments/2026-11-14-moodle-token.md.)
 //
 // This file gives the SAME jobs as the Chrome extension (moodle-bridge.js KINDS: courses, course, forum, posts, events, file, folder,
-// folderfile) and answers in the same shapes, so moodle-tools.js works with either. Node built-ins only.
+// folderfile; item, assignfiles and assignfile are token-only) and answers in the same shapes, so moodle-tools.js works with either. Node built-ins only.
 //
 // Rules in code (tests/moodle-ws.test.js):
 //   - ONE address for calls: POST https://moodle.bgu.ac.il/moodle/webservice/rest/server.php, with a function from READ_FUNCTIONS
@@ -18,7 +18,7 @@
 
 const fs = require("node:fs");
 const { httpsSend, HOST, ROOT } = require("./moodle");
-const { checkArgs, MAX_FILE_BYTES } = require("./moodle-bridge");
+const { checkArgs, tokenOnly, TOKEN_ONLY, MAX_FILE_BYTES } = require("./moodle-bridge");
 
 const REST_URL = `https://${HOST}${ROOT}/webservice/rest/server.php`;
 const FILE_PREFIX = `${ROOT}/webservice/pluginfile.php/`;
@@ -250,7 +250,37 @@ function createMoodleWs({ getToken, send = httpsSend, pauseMs = PAUSE_MS, now = 
       if (!f) throw fail("notfile", "that file is not in the folder");
       return { file: await download(f) };
     },
+    // ASSIGNMENT FILES (2026-11-27, t41): the files attached to an assignment (introattachments, and introfiles when Moodle lists
+    // them). Names and numbers only; the download takes the same checked road as every other file (checkFileUrl, 50 MB).
+    async assignfiles({ cmid }) {
+      return { data: (await assignFilesOf(cmid)).slice(0, 300).map((f, index) => ({ index, name: String(f.filename) })) };
+    },
+    async assignfile({ cmid, index }) {
+      const f = (await assignFilesOf(cmid))[index];
+      if (!f) throw fail("notfile", "that file is not attached to the assignment");
+      return { file: await download(f) };
+    },
   };
+
+  // The files Moodle itself lists for one assignment, in a fixed order (attachments first, then files of the description), each
+  // address once. Only the item's own course is asked; the assignment is found by its number in Moodle's answer.
+  async function assignFilesOf(cmid) {
+    const m = await moduleOf(cmid);
+    if (m.modname !== "assign") throw fail("notfile", "that item is not an assignment");
+    const course = (cms.get(cmid) || {}).course;
+    if (!Number.isInteger(course)) throw fail("moodle", "Moodle does not show that item");
+    const r = await call("mod_assign_get_assignments", { courseids: [course] });
+    const mine = ((r && r.courses) || []).flatMap((c) => (c && c.assignments) || []).find((x) => x && x.cmid === cmid);
+    if (!mine) throw fail("moodle", "Moodle does not show that assignment");
+    const seen = new Set();
+    const out = [];
+    for (const f of [...(Array.isArray(mine.introattachments) ? mine.introattachments : []), ...(Array.isArray(mine.introfiles) ? mine.introfiles : [])]) {
+      if (!f || typeof f.fileurl !== "string" || typeof f.filename !== "string" || !f.filename || f.filename === "." || seen.has(f.fileurl)) continue;
+      seen.add(f.fileurl);
+      out.push(f);
+    }
+    return out;
+  }
 
   // The same call as bridge.ask: resolves { data, file } or rejects with a code (token | blocked | timeout | network | moodle | toobig | notfile | refused).
   async function ask(kind, args = {}) {
@@ -266,8 +296,7 @@ function createMoodleWs({ getToken, send = httpsSend, pauseMs = PAUSE_MS, now = 
 // Bot, the Chrome extension when it is connected. Nothing else is ever tried.
 function createMoodleSource({ ws, bridge, log = () => {} }) {
   const FALL = new Set(["token", "blocked", "network", "timeout"]);
-  // Kinds the Chrome extension cannot do inside its allowlist (it would need a new page address): token route only.
-  const TOKEN_ONLY = new Set(["item"]);
+  // Kinds the Chrome extension cannot do inside its allowlist (it would need a new page address): token route only (moodle-bridge TOKEN_ONLY).
   let said = "";
   async function ask(kind, args = {}) {
     if (ws && ws.enabled()) {
@@ -277,7 +306,7 @@ function createMoodleSource({ ws, bridge, log = () => {} }) {
         if (!bridge || !bridge.connected() || TOKEN_ONLY.has(kind)) throw error;
       }
     }
-    if (TOKEN_ONLY.has(kind)) throw fail("tokenonly", "the text of a Moodle item can only be read with the Moodle token, and there is none in .env");
+    if (TOKEN_ONLY.has(kind)) throw tokenOnly(kind);
     if (!bridge) throw fail("token", "no Moodle token in .env");
     try { return await bridge.ask(kind, args); } catch (error) {
       // Neither route: with no token and no Chrome, the token is the thing to set up once.

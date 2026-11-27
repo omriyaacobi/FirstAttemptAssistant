@@ -28,6 +28,10 @@ const KINDS = {
   folder: { cmid: "id" }, // the file list of a "folder" item (names + numbers only)
   folderfile: { cmid: "id", index: "small" }, // one file of a folder, by its place in that list
   item: { cmid: "id" }, // the TEXT of one item: token route only (moodle-ws.js); never handed to the extension
+  // ASSIGNMENT FILES (2026-11-27, t41): the files a lecturer attached to an assignment (Moodle lists them in mod_assign_get_assignments).
+  // Token route only, like item: the extension has no assignment page on its allowlist.
+  assignfiles: { cmid: "id" }, // the attached files of an "assign" item (names + numbers only)
+  assignfile: { cmid: "id", index: "small" }, // one of them, by its place in that list
   // PC LOOK (2026-11-24, pc-look.js): Omri's open Chrome tabs. Numbers only here too: the extension finds the tab by its id.
   tabs: {}, // id, title, address of every tab
   tab_text: { tabId: "id" }, // the page text of one tab
@@ -39,7 +43,13 @@ const KINDS = {
 const MAX_FILES = 4; // pictures in one answer (tab_pages)
 const PAGES_TIMEOUT_MS = 90 * 1000; // scrolling and up to 14 captures, 2 a second
 const PC_KINDS = new Set(["tabs", "tab_text", "tab_shot", "tab_pages"]); // not Moodle: their answers say nothing about the Moodle login
-const TOKEN_ONLY = new Set(["item"]);
+const TOKEN_ONLY = new Set(["item", "assignfiles", "assignfile"]);
+const ASSIGN_KINDS = new Set(["assignfiles", "assignfile"]);
+// The plain "token only" error. what: "assign" (an assignment's attached files) or "item" (an item's text), for moodle-tools explain().
+function tokenOnly(kind) {
+  const assign = ASSIGN_KINDS.has(kind);
+  return Object.assign(fail("tokenonly", assign ? "the files attached to a Moodle assignment can only be downloaded with the Moodle token" : "the text of a Moodle item can only be read with the Moodle token"), { what: assign ? "assign" : "item" });
+}
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_RESULT_CHARS = 70 * 1024 * 1024; // a 50 MB file is about 67 MB as base64
 const JOB_TIMEOUT_MS = 45 * 1000; // a page or a JSON call
@@ -72,7 +82,7 @@ function createBridge({ now = () => Date.now(), jobTimeoutMs = JOB_TIMEOUT_MS, f
   // Ask for one read. Resolves with { data, file? } or rejects with code "offline" | "loggedout" | "timeout" | "moodle" | "refused".
   function ask(kind, args = {}) {
     const clean = checkArgs(kind, args);
-    if (TOKEN_ONLY.has(kind)) return Promise.reject(fail("tokenonly", "the Chrome extension cannot read the text of a Moodle item"));
+    if (TOKEN_ONLY.has(kind)) return Promise.reject(tokenOnly(kind));
     if (!connected()) return Promise.reject(fail("offline", "Chrome with the Bot Moodle extension is not connected"));
     const id = crypto.randomBytes(8).toString("hex");
     return new Promise((resolve, reject) => {
@@ -161,4 +171,4 @@ function fromExtension(req) {
   return req.headers["x-bot-bridge"] === "1" && (origin === undefined || /^chrome-extension:\/\/[a-p]{32}$/.test(String(origin)));
 }
 
-module.exports = { createBridge, checkArgs, fromExtension, KINDS, PC_KINDS, MAX_FILES, MAX_FILE_BYTES, JOB_TIMEOUT_MS, SEEN_MS };
+module.exports = { createBridge, checkArgs, fromExtension, tokenOnly, KINDS, PC_KINDS, TOKEN_ONLY, MAX_FILES, MAX_FILE_BYTES, JOB_TIMEOUT_MS, SEEN_MS };
