@@ -934,6 +934,7 @@ if (require.main === module) {
   const summaries = createSummaries({
     thread, dir: path.join(__dirname, "data", "thread", "summaries"), askChain: require("./providers").askChain, askOne: (...a) => flashAsk(...a), log: console.log,
     courseNames: () => coach.tracker.refsFor(coursesStore.list()).map((r) => r.name),
+    placeName: (id) => (coursesStore.list().find((c) => c.id === id) || {}).name || null, // the course tabs: "[Calculus 2 tab]" labels
     onStudy: (day, items) => {
       const r = coach.reviewPositions(items, { lang: require("./lang").langOf(items.map((i) => i.quote).join(" ")), day });
       if (r.text) thread.append({ role: "assistant", text: r.text, topic: "general", at: Date.now(), result: { mode: "single", rule: "study review", reason: "the end-of-day review updated where Omri stands", chain: [], used: { provider: "code", model: "Gemini Flash proposed it, code checked and wrote it" }, answer: r.text, seconds: 0 } });

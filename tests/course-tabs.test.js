@@ -351,3 +351,27 @@ test("BRAIN: the today line is in Main's prompt only", async () => {
   await make(tab).handle("hi", { history: [], courses: COURSES, place: `course:${CALC}` });
   assert.doesNotMatch(tab[0], /## Today in the course tabs/);
 });
+
+// ---- step 7: the daily summary with tabs ----
+test("SUMMARY: tab messages are labelled, copies skipped, and a busy day keeps every user message whole", () => {
+  const { transcriptOf, promptFor } = require("../thread-summary");
+  const placeName = (id) => (COURSES.find((c) => c.id === id) || {}).name;
+  const msgs = [
+    { id: "m_a000000000000001", role: "user", text: "main question", at: 1 },
+    { id: "m_a000000000000002", role: "user", text: "calc question", at: 2, place: `course:${CALC}` },
+    { id: "m_a000000000000003", role: "assistant", text: "calc answer", at: 3, place: `course:${CALC}` },
+    { id: "m_a000000000000004", role: "user", text: "copied", at: 4, place: `course:${SP}`, copyOf: "m_a000000000000001" },
+  ];
+  const t = transcriptOf(msgs, { placeName });
+  assert.deepStrictEqual(t.text.split("\n"), ["[1] USER: main question", "[2] USER [Calculus 2 tab]: calc question", "[3] BOT [Calculus 2 tab]: calc answer"]);
+  assert.match(promptFor("2026-11-27", t.text), /\[Calculus 2 tab\] after USER or BOT/);
+  // a 40,000-character day: under the cap, every user message whole (1,200 each), the answers share the rest
+  const big = [];
+  for (let i = 0; i < 20; i++) {
+    big.push({ id: "m_b" + String(i).padStart(15, "0"), role: "user", text: "u".repeat(1200), at: i * 2 });
+    big.push({ id: "m_c" + String(i).padStart(15, "0"), role: "assistant", text: "b".repeat(5000), at: i * 2 + 1 });
+  }
+  const b = transcriptOf(big);
+  assert.ok(b.text.length <= 36000 + 40 * 20, `length ${b.text.length}`);
+  for (const line of b.text.split("\n").filter((l) => / USER: /.test(l))) assert.strictEqual(line.split(": ")[1].length, 1200);
+});
