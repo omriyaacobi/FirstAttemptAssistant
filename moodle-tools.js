@@ -6,7 +6,7 @@
 // Rules in code:
 //   - a Moodle course is matched to a Bot course by CODE: the saved map, then the same name, then the timetable's own name pattern
 //     (that is where the Hebrew names live). Two candidates = not clear: Bot asks Omri and remembers his answer (link()).
-//   - items to download must be real items of that Moodle course (by number or by name), of kind file or folder. Nothing a model
+//   - items to download must be real items of that Moodle course (by number or by name), of kind file, folder or assignment. Nothing a model
 //     writes becomes an address.
 //   - more than MAX_DIRECT files at once -> a Confirm card first (link-batch.js), nothing downloaded before the tap.
 //   - a running total of MAX_TOTAL_BYTES per request; past it the rest is skipped and said.
@@ -55,6 +55,7 @@ function explain(error, lang = "en") {
   if (c === "offline") return say(lang, "Moodle cannot be reached: there is no Moodle token (node moodle-token.js sets one up, once) and Chrome with the Bot Moodle extension is not open on the PC. Do one of the two and ask again.", "אין גישה למודל: כרום עם התוסף של Bot לא פתוח במחשב. צריך לפתוח את כרום ולשאול שוב.");
   if (c === "loggedout") return say(lang, "Moodle logged you out. Log in to Moodle in Chrome on the PC, then ask again.", "המודל ניתק את החיבור. צריך להתחבר למודל בכרום במחשב ולשאול שוב.");
   if (c === "timeout") return say(lang, "Moodle did not answer in time. Try again in a minute.", "המודל לא ענה בזמן. אפשר לנסות שוב בעוד דקה.");
+  if (c === "tokenonly" && error.what === "assign") return say(lang, "The files attached to a Moodle assignment can only be downloaded with the Moodle token, and the token is missing or stopped working (the Chrome extension cannot open assignment pages). On the PC, run once in the project folder: node moodle-token.js. Until then Bot can open the assignment in Chrome.", "את הקבצים שמצורפים למטלה במודל אפשר להוריד רק עם הטוקן של מודל, והוא חסר או הפסיק לעבוד (התוסף של כרום לא פותח עמודי מטלות). במחשב צריך להריץ פעם אחת בתיקיית הפרויקט: node moodle-token.js. עד אז Bot יכול לפתוח את המטלה בכרום.");
   if (c === "tokenonly") return say(lang, "The text of a Moodle page can only be read with the Moodle token, and the token is missing or stopped working. On the PC, run once in the project folder: node moodle-token.js. Until then Bot can open the page in Chrome.", "את הטקסט של עמוד במודל אפשר לקרוא רק עם הטוקן של מודל, והוא חסר או הפסיק לעבוד. במחשב צריך להריץ פעם אחת בתיקיית הפרויקט: node moodle-token.js. עד אז Bot יכול לפתוח את העמוד בכרום.");
   if (c === "toobig") return say(lang, "That file is bigger than 50 MB, so Bot did not download it.", "הקובץ גדול מ-50 מגה-בייט ולכן לא הורד.");
   return say(lang, `Moodle did not give it: ${oneLine(error && error.message, 200)}`, `המודל לא החזיר את זה: ${oneLine(error && error.message, 200)}`);
@@ -311,10 +312,11 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     return b ? `Linked: Moodle "${m.name}" is Bot's course "${b.name}" (remembered).` : `Remembered: Moodle "${m.name}" has no Bot course.`;
   }
 
-  // The download list: real items of the course (files, folders), by number or name, or "new" (not downloaded before).
+  // The download list: real items of the course (files, folders, assignments with attached files), by number or name, or "new"
+  // (not downloaded before). An assignment is opened like a folder (2026-11-27, t41; token route only).
   async function plan(m, items) {
     const { sections, items: all } = await contents(m);
-    const kinds = all.filter((i) => i.module === "resource" || i.module === "folder");
+    const kinds = all.filter((i) => i.module === "resource" || i.module === "folder" || i.module === "assign");
     // The Moodle section each item sits in, as a folder LABEL for the filed file ("Week 3"; a folder item adds its own name below it).
     // Moodle text is data: cleaned by code (courses.js cleanFolder), only shown, never a path.
     const part = (t) => oneLine(t, 60).replace(/[\/]+/g, "-"); // one folder level: a "/" in a Moodle title must not make a deeper folder
@@ -331,15 +333,23 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
       const hit = /^\d+$/.test(s) ? kinds.find((i) => i.id === Number(s)) : (kinds.find((i) => norm(i.name) === norm(s)) || kinds.filter((i) => norm(i.name).includes(norm(s)) && norm(s)).slice(0, 1)[0]);
       if (hit && !chosen.includes(hit)) chosen.push(hit); else if (!hit) missing.push(s.slice(0, 60));
     }
-    // a folder is opened to count (and later fetch) its files
+    // a folder (or an assignment) is opened to count (and later fetch) its files
     const jobs = [];
+    const asked = want.length > 0 && !/^(new|all new|חדש|חדשים|all|הכל|הכול)$/i.test(String(want[0]).trim());
     for (const i of chosen) {
       const section = sectionOf.get(i.id) || "";
       if (i.module === "resource") { jobs.push({ cm: i.id, kind: "file", label: oneLine(i.name, 120), folder: section }); continue; }
+      const assign = i.module === "assign";
       try {
-        const { data } = await bridge.ask("folder", { cmid: i.id });
-        for (const f of (Array.isArray(data) ? data : []).filter((x) => Number.isInteger(x.index))) jobs.push({ cm: i.id, kind: "folderfile", index: f.index, label: `${oneLine(i.name, 60)}/${oneLine(f.name, 100)}`, folder: [section, part(i.name)].filter(Boolean).join("/") });
-      } catch (error) { missing.push(`${oneLine(i.name, 60)} (${explain(error)})`); }
+        const { data } = await bridge.ask(assign ? "assignfiles" : "folder", { cmid: i.id });
+        const files = (Array.isArray(data) ? data : []).filter((x) => Number.isInteger(x.index));
+        for (const f of files) jobs.push({ cm: i.id, kind: assign ? "assignfile" : "folderfile", index: f.index, label: `${oneLine(i.name, 60)}/${oneLine(f.name, 100)}`, folder: [section, part(i.name)].filter(Boolean).join("/") });
+        if (assign && !files.length && asked) missing.push(`${oneLine(i.name, 60)} (no files are attached to this assignment)`);
+      } catch (error) {
+        // "new" / "all" pass over an assignment that cannot be opened here (no token) instead of filling the answer with it
+        if (assign && !asked && error.code === "tokenonly") continue;
+        missing.push(`${oneLine(i.name, 60)} (${explain(error)})`);
+      }
     }
     return { jobs, missing };
   }
@@ -366,7 +376,7 @@ function createMoodleTools({ bridge, courseRoutes, dataDir, linkBatches = null, 
     if (!botId) throw fail(`the Moodle course "${m.name}" is not linked to a Bot course. Ask Omri which Bot course it is (then call moodle_link), or whether to make a new course on the Courses page.`);
     const bName = botName(bots, botId);
     const { jobs, missing } = await plan(m, items);
-    const miss = missing.length ? ` Not found among the course's files and folders: ${missing.slice(0, 8).join("; ")}.` : "";
+    const miss = missing.length ? ` Not found among the course's files, folders and assignments: ${missing.slice(0, 8).join("; ")}.` : "";
     if (!jobs.length) return { text: `Nothing to download from "${m.name}".${miss}` };
     if (jobs.length > MAX_DIRECT) {
       if (!linkBatches) throw fail(`that is ${jobs.length} files; ask Omri to pick at most ${MAX_DIRECT}.`);
