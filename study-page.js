@@ -15,6 +15,7 @@
 const plan = require("./study-plan");
 const standing = require("./standing");
 const { GRACE_DAYS } = require("./study-tracker");
+const tutor = require("./tutor");
 
 const nice = (date) => plan.niceDate(date, "he" === curLang ? "he" : "en");
 let curLang = "en";
@@ -50,10 +51,13 @@ function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
   for (const ref of tracker.refsFor(courseList)) {
     const slots = tracker.slots(ref.key);
     const p = tracker.progress(ref);
+    // the quiz of this course for the course tab's header (2026-11-27): "open", "paused" (24 h with no answer) or none
+    let quiz = null;
+    try { const s = tracker.getSession(ref); quiz = tutor.pausedQuiz(s, now) ? { state: "paused" } : tutor.openQuestion(s, now) ? { state: "open" } : null; } catch (error) { quiz = null; }
     if (!slots.length) { // no timetable: no counts, but a saved position and saved assignments still show
       const open = p.assignments.map((a) => ({ title: a.title, due: a.due || null, status: a.status }));
       const due = p.assignments.filter((a) => a.due).map((a) => ({ title: a.title, due: a.due, status: a.status, daysLeft: plan.daysBetween(today, a.due) }));
-      out.push({ id: ref.courseId, name: ref.name, tracked: false, shouldBe: null, you: p.positionKnown ? { positionKnown: true, position: { seenThrough: null, note: p.position.note || "", said: p.position.said || "" }, withMaterial: 0, understood: 0 } : null, behind: [], due, assignments: open, questions: [], ...youAreOf(p, he) });
+      out.push({ id: ref.courseId, name: ref.name, tracked: false, shouldBe: null, you: p.positionKnown ? { positionKnown: true, position: { seenThrough: null, note: p.position.note || "", said: p.position.said || "" }, withMaterial: 0, understood: 0 } : null, behind: [], due, assignments: open, questions: [], ...youAreOf(p, he), ...(quiz ? { quiz } : {}) });
       continue;
     }
     const held = slots.filter((s) => plan.isHeld(s, now));
@@ -69,7 +73,7 @@ function studyOverview({ coach, courseList, now = Date.now(), lang = "en" }) {
       shouldBe: { held: p.held, lastLecture: last ? { n: last.n, date: last.date } : null, nextLecture: next ? { n: next.n, date: next.date } : null },
       you: { positionKnown: p.positionKnown, position: p.positionKnown ? { seenThrough: p.position.seenThrough || null, note: p.position.note || "" } : null, withMaterial: p.withMaterial, understood: p.understood },
       keepingUp: keepingUp({ slots, positionKnown: p.positionKnown, seenThrough: p.positionKnown ? p.position.seenThrough || null : null, today, now }),
-      behind: p.behind.slice(0, 8), due, assignments: open, questions, ...youAreOf(p, he),
+      behind: p.behind.slice(0, 8), due, assignments: open, questions, ...youAreOf(p, he), ...(quiz ? { quiz } : {}),
     });
   }
   return { today, courses: out, proposal: coach.pendingProposal() };

@@ -34,7 +34,7 @@ const { matchCourse } = require("./courses");
 const { listFound } = require("./recall");
 const { pickPages, defang } = require("./course-pages");
 const { pickAssignment, fitAssignment, notesFor } = require("./course-material");
-const { fixMath, openQuestion } = require("./tutor");
+const { fixMath, openQuestion, pausedQuiz } = require("./tutor");
 const { filterChain, resolvePools } = require("./models-watch");
 const { prioritize, lowWithReserve, describeLow, getPoolLevels, getPoolRows, paceOrder, paceFree, claudeFirst, refreshQuota, noteFailure } = require("./quota");
 const linkfetch = require("./linkfetch");
@@ -395,7 +395,9 @@ function createBrain({
   const isAssignmentName = (n) => /assign|exercis|homework|\bhw\b|(^|[^a-z])ex[ _-]?\d|תרגיל|מטלה|עבודה/i.test(String(n));
 
   // ---- the context code gives the model with every message ----
-  function coursesText(list) {
+  // focus (2026-11-27): the course of this message (the tab's, or Main's guess). Only ITS open quiz question is shown word for word;
+  // another course's open or paused quiz is one short line, so an old quiz does not catch a reply about something else.
+  function coursesText(list, focus = null) {
     if (!list.length) return "Omri has no courses in Bot yet.";
     return list.map((c) => {
       const files = filesOf(c);
@@ -415,7 +417,14 @@ function createBrain({
         if (r.work && (r.work.now || r.work.next)) lines.push(`  Omri works on now: ${r.work.now || "(not said)"}; next: ${r.work.next || "(not said)"} (working_on, set ${new Date(r.work.at || 0).toISOString().slice(0, 10)})`);
         // The question itself is shown, so the brain calls quiz_answer only for a reply to THAT question (2026-11-14: a reply to a
         // question the brain asked in the talk went to an old quiz question instead).
-        try { const q = openQuestion(coach.tracker.getSession(refOf(c))); if (q) lines.push(`  A QUIZ QUESTION IS OPEN in this course: "${clip(noCtl(q), 300)}". Call quiz_answer ONLY if Omri's message answers THIS question; a reply to something asked in the recent talk is not a quiz answer.`); } catch (error) { /* no session */ }
+        try {
+          const s = coach.tracker.getSession(refOf(c));
+          const q = openQuestion(s, now());
+          const mine = focus && focus.id === c.id;
+          if (q && mine) lines.push(`  A QUIZ QUESTION IS OPEN in this course: "${clip(noCtl(q), 300)}". Call quiz_answer ONLY if Omri's message answers THIS question; a reply to something asked in the recent talk is not a quiz answer.`);
+          else if (q) lines.push("  A quiz of this course is open (not the course of this message).");
+          else if (pausedQuiz(s, now())) lines.push("  The quiz of this course is paused (no answer for a day). The quiz tool on this course picks it up again.");
+        } catch (error) { /* no session */ }
       }
       return lines.join("\n");
     }).join("\n");
@@ -1329,7 +1338,7 @@ ${r.cardText}`; }
       `## Right now\nIt is ${localIso(now(), zone)} (${day}), time zone ${zone}.`,
       about,
       week,
-      `## Omri's courses in Bot\n${coursesText(list)}`,
+      `## Omri's courses in Bot\n${coursesText(list, focus)}`,
       coach && coach.pendingProposal && coach.pendingProposal() ? "A study card is waiting for Omri's yes or no (card_reply)." : "",
       // 2026-11-24: the exam plans Omri confirmed (exam-plan.js), with EVERY message until the exam day, so Bot can keep Omri on track.
       route !== "general" && coach && coach.brainTools && coach.brainTools.planContext ? (() => { let t = ""; try { t = coach.brainTools.planContext() || ""; } catch (error) { t = ""; } return t ? `## Omri's exam plans (confirmed by Omri)\nCode keeps these plans; [x] = Omri said it is done (not "understood"). When Omri says he did an item, tick it with plan_done. When it fits the talk, point Omri to today's items or to an earlier item not done, in one short line; do not repeat the whole plan unless asked.\n${block("exam-plan", t)}` : ""; })() : "",

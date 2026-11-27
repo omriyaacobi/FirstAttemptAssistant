@@ -375,3 +375,54 @@ test("SUMMARY: tab messages are labelled, copies skipped, and a busy day keeps e
   assert.ok(b.text.length <= 36000 + 40 * 20, `length ${b.text.length}`);
   for (const line of b.text.split("\n").filter((l) => / USER: /.test(l))) assert.strictEqual(line.split(": ")[1].length, 1200);
 });
+
+// ---- step 8: the quiz pause ----
+test("QUIZ: a full quiz with no answer for 24 h is paused (not open, not graded); a lesson's check keeps its 6 h rule", () => {
+  const { pausedQuiz, openQuestion } = require("../tutor");
+  const t0 = Date.parse("2026-11-20T10:00:00Z");
+  const quiz = { mode: "quiz", startedAt: t0, questions: [{ q: "Q1?", state: "done", verdict: "right" }, { q: "Q2?", state: "open", verdict: null }] };
+  assert.strictEqual(openQuestion(quiz, t0 + 23 * 3600e3), "Q2?");
+  assert.strictEqual(pausedQuiz(quiz, t0 + 25 * 3600e3), true);
+  assert.strictEqual(openQuestion(quiz, t0 + 25 * 3600e3), null);
+  assert.strictEqual(quiz.questions[1].verdict, null, "the pause grades nothing");
+  assert.strictEqual(pausedQuiz({ ...quiz, lastAt: t0 + 20 * 3600e3 }, t0 + 25 * 3600e3), false, "counted from the last answer");
+  const check = { mode: "quiz", fromTeach: true, startedAt: t0, questions: [{ q: "C?", state: "open" }] };
+  assert.strictEqual(pausedQuiz(check, t0 + 25 * 3600e3), false);
+  assert.strictEqual(openQuestion(check, t0 + 5 * 3600e3), "C?");
+  assert.strictEqual(openQuestion(check, t0 + 7 * 3600e3), null);
+});
+
+test("QUIZ: asking for a quiz again picks the paused one up with the same questions", async () => {
+  const { turn } = require("../tutor");
+  const t0 = Date.parse("2026-11-20T10:00:00Z");
+  let saved = { mode: "quiz", lang: "en", target: { type: "lecture", date: null, n: 4 }, startedAt: t0, questions: [{ id: "q1", q: "Q1?", state: "done", verdict: "right" }, { id: "q2", q: "Q2?", state: "open", verdict: null }] };
+  const tracker = { getSession: () => saved, setSession: (ref, s) => { saved = s; }, course: () => ({ lectures: {}, assignments: [] }), slots: () => [] };
+  const r = await turn({ tracker, ref: { key: "k" }, intent: "quiz", message: "let's continue that quiz", courseName: "Calculus 2", askChain: async () => { throw new Error("no model is needed"); }, now: t0 + 30 * 3600e3 });
+  assert.match(r.answer, /Back to the quiz that was paused/);
+  assert.match(r.answer, /Q2\?/);
+  assert.strictEqual(saved.questions[0].verdict, "right", "the grades are kept");
+  assert.strictEqual(saved.lastAt, t0 + 30 * 3600e3);
+});
+
+test("BRAIN: only the course in focus shows its open quiz question word for word", async () => {
+  const { createBrain } = require("../brain");
+  const NOW = Date.parse("2026-11-27T10:00:00Z");
+  const sessions = { [CALC]: { mode: "quiz", startedAt: NOW - 3600e3, questions: [{ q: "What is the ratio test?", state: "open" }] }, [SP]: { mode: "quiz", startedAt: NOW - 3 * 24 * 3600e3, questions: [{ q: "What is a pointer?", state: "open" }] } };
+  const coach = { tracker: { refsFor: (l) => l.map((c) => ({ key: c.id, courseId: c.id, name: c.name })), course: () => ({ assignments: [], position: {} }), getSession: (ref) => sessions[ref.key] || null, timetable: () => ({ courses: [] }) }, pendingProposal: () => null };
+  const make = (prompts) => createBrain({
+    courses: { list: () => COURSES, allPages: () => [] }, coach,
+    courseRoutes: { list: () => COURSES, courseFiles: () => ({ files: [] }), linkFiles: () => [] },
+    reminders: { list: () => [] }, memory: { list: () => [] }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
+    fetchPage: async () => ({}), askOne: async (p, m, prompt) => { prompts.push(String(prompt)); return "Ok."; },
+    chain: [{ provider: "agy", model: "one" }], poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {}, now: () => NOW,
+  });
+  const inSp = [];
+  await make(inSp).handle("hello", { history: [], courses: COURSES, place: `course:${SP}` });
+  assert.doesNotMatch(inSp[0], /What is the ratio test\?/, "Calculus's question does not follow Omri into the SP tab");
+  assert.match(inSp[0], /A quiz of this course is open \(not the course of this message\)/);
+  assert.match(inSp[0], /The quiz of this course is paused/, "SP's 3-day-old quiz is paused");
+  assert.doesNotMatch(inSp[0], /What is a pointer\?/);
+  const inCalc = [];
+  await make(inCalc).handle("hello", { history: [], courses: COURSES, place: `course:${CALC}` });
+  assert.match(inCalc[0], /A QUIZ QUESTION IS OPEN in this course: "What is the ratio test\?"/);
+});

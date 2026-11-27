@@ -303,6 +303,10 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   }
 
   // ---- progress ----
+  // A quiz with no answer for 24 h is paused (2026-11-27): said plainly, with no saved phrase (the brain understands "continue" in any words).
+  function quizLine(ref, lines) {
+    try { if (tutor.pausedQuiz(tracker.getSession(ref), now())) lines.push(T("  The quiz is paused.", "  הבוחן מושהה.")); } catch (error) { /* no session */ }
+  }
   function courseLines(ref) {
     const p = tracker.progress(ref);
     const removed = tracker.state().skips.some((s) => s.course === ref.key || s.course === "*");
@@ -315,6 +319,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const n = notesOf(ref);
       if (n.files) lines.push(T(`  Notes in Bot: ${n.files} file${n.files === 1 ? "" : "s"}, ${n.sections} section${n.sections === 1 ? "" : "s"}.`, `  סיכומים ב-Bot: ${n.files === 1 ? "קובץ אחד" : `${n.files} קבצים`}, ${n.sections === 1 ? "סעיף אחד" : `${n.sections} סעיפים`}.`));
       for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
+      quizLine(ref, lines);
       return lines.join("\n");
     }
     const lines = [T(`${ref.name}: ${p.held} lecture${p.held === 1 ? "" : "s"} held so far by the timetable${removed ? " (cancelled ones removed)" : ""}.`, `${ref.name}: ${p.held === 1 ? "הרצאה אחת" : `${p.held} הרצאות`} עד עכשיו לפי המערכת${removed ? " (בלי אלה שבוטלו)" : ""}.`)];
@@ -332,6 +337,7 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     else lines.push(`  ${T("You told me you are up to", "עדכנת אותי שהמיקום הוא עד")} ${p.position.seenThrough ? niceDate(p.position.seenThrough) : p.position.note ? clean(noteText(p.position.note), 60) : T("a topic", "נושא מסוים")}${p.position.seenThrough && p.position.note ? ` (${clean(noteText(p.position.note), 60)})` : ""}.`);
     if (asRead(p)) lines.push(asRead(p));
     for (const a of p.assignments.slice(0, 3)) lines.push(T(`  Assignment "${clean(a.title, 60)}": ${a.status}${a.due ? `, due ${niceDate(a.due)}` : ", no due date saved"}.`, `  מטלה "${clean(a.title, 60)}": ${STATUS_HE[a.status] || a.status}${a.due ? `, להגשה עד ${niceDate(a.due)}` : ", בלי תאריך הגשה שמור"}.`));
+    quizLine(ref, lines);
     return lines.join("\n");
   }
   function positionQuestion(list) {
@@ -677,7 +683,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const rec = tracker.course(ref);
       let planItems = [];
       try { const p = examPlans.get(ref.key); planItems = p && Array.isArray(p.items) ? p.items : []; } catch (error) { planItems = []; }
-      return { worked: lectureParts.worked(rec), session: rec.session || null, planItems };
+      const session = rec.session ? { ...rec.session, paused: tutor.pausedQuiz(rec.session, now()) } : null;
+      return { worked: lectureParts.worked(rec), session, planItems };
     },
     // Where Omri stands in a course, as closed fields the model proposes; code keeps only what fits the timetable and the notes.
     position({ courseId, fields, said = "", lang = "en" } = {}) {

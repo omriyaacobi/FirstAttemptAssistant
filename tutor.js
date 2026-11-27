@@ -269,10 +269,15 @@ async function workText({ askChain, assignment, message, lang = "en", log, onTex
 // ---- the session ----
 const newSession = (mode, target, extra = {}) => ({ lang: extra.lang || "en", id: crypto.randomBytes(4).toString("hex"), mode, target, questions: [], current: 0, startedAt: Date.now(), ...extra });
 // A one-question check after a lesson stays open 6 hours at most: one from 2026-11-08 was still open on 2026-11-14 and took Omri's
-// reply to a different question (the upper Darboux sum) as a wrong answer to it. A full quiz (3 questions) stays open until it ends.
+// reply to a different question (the upper Darboux sum) as a wrong answer to it.
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 const stale = (s, now = Date.now()) => Boolean(s && s.fromTeach && now - (s.startedAt || 0) > CHECK_TTL_MS);
-const open = (s, now) => Boolean(s && s.questions.length && s.questions.some((q) => q.state === "open") && !stale(s, now));
+// A full quiz with no answer for 24 hours is PAUSED (2026-11-27, the course tabs): it is kept as it is (questions, grades) but it
+// is no longer "open", so it stops catching replies about other things. Nothing is graded by the pause and nothing is "understood".
+// The brain's quiz tool on that course picks it up again (any words: no saved phrase). lastAt = the last answer (or the start).
+const PAUSE_MS = 24 * 60 * 60 * 1000;
+const pausedQuiz = (s, now = Date.now()) => Boolean(s && !s.fromTeach && s.mode === "quiz" && Array.isArray(s.questions) && s.questions.some((q) => q.state === "open") && now - (s.lastAt || s.startedAt || 0) > PAUSE_MS);
+const open = (s, now) => Boolean(s && s.questions.length && s.questions.some((q) => q.state === "open") && !stale(s, now) && !pausedQuiz(s, now));
 // The open question's text (for the brain's context), or null when nothing is open.
 const openQuestion = (s, now = Date.now()) => (open(s, now) ? s.questions.find((q) => q.state === "open").q : null);
 // Words the CODE writes (the model answers in the student's language by itself). Hebrew when the student wrote Hebrew.
@@ -321,6 +326,13 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   const t0 = Date.now();
   const finish = (r) => ({ sources: [], outside: false, model: null, mode: null, done: false, needs: null, seconds: Number(((Date.now() - t0) / 1000).toFixed(1)), ...r, answer: fixMath(r.mode === "teach" ? labelOutside(r.answer, message) : String(r.answer).replace(/\[OUT\][ \t]*/g, "")) }); // a stray [OUT] tag never reaches the page; the "Outside your files" label is for lessons only (noise in a quiz or guided work)
   const session = tracker.getSession(ref);
+  // A PAUSED quiz (24 h with no answer) is picked up again when a quiz is asked for in that course with no other lecture named: the
+  // same questions and grades, the open question shown again.
+  if (intent === "quiz" && pausedQuiz(session, now) && !askedLectures(message).length) {
+    session.lastAt = now;
+    tracker.setSession(ref, session);
+    return finish({ answer: `${say(session.lang, "Back to the quiz that was paused.", "חוזרים לבוחן שהושהה.")}\n\n${showQuestion(session)}`, mode: "quiz" });
+  }
   const continuing = session && (intent === "answer" || !intent) && (open(session, now) || session.mode === "work");
 
   if (continuing && session.mode === "work") {
@@ -330,6 +342,7 @@ async function turn({ tracker, ref, intent, message, pages = [], courseName, ask
   }
   if (continuing) {
     const q = currentQuestion(session);
+    session.lastAt = now; // an answer (or a hint, a skip): the quiz is alive (pausedQuiz counts from here)
     const lecture = session.target.type === "lecture" ? tracker.course(ref).lectures[session.target.date] : null;
     const refs = lecture ? lecture.material : [];
     const material = materialFor(pages, refs);
@@ -449,4 +462,4 @@ async function teachTopic({ askChain, courseName, message, pages, log, onText = 
   return { answer: t.text, model: t.model, mode: "teach", sources: sourcesFor(t.text, mat.picked), outside: !mat.picked.length || /\[OUT\]/.test(t.text) };
 }
 
-module.exports = { ASK_KINDS, teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS, openQuestion, CHECK_TTL_MS };
+module.exports = { pausedQuiz, PAUSE_MS, ASK_KINDS, teachTopic, STYLES, visibleTeaching, fixMath, turn, proposeAssignment, checkAssignment, makeQuestions, gradeAnswer, makeHint, pickLecture, pickAssignment, isClaim, parseJson, TUTOR_CHAIN, MAX_ATTEMPTS, openQuestion, CHECK_TTL_MS };
