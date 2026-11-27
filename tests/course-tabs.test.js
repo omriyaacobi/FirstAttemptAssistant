@@ -293,3 +293,61 @@ test("SERVER: Add to course copies the question and the answer once, only for a 
     assert.strictEqual((await post(a.id, SP)).status, 201, "another course is allowed");
   } finally { s.close(); }
 });
+
+// ---- step 4: "today in the course tabs" for Main ----
+const { todayText, activeMinutes } = require("../tab-today");
+test("TODAY: one code-made line per tab used today, with active time, parts, quiz, lessons and plan ticks; copies and other days are skipped", () => {
+  const TZ = "Asia/Jerusalem";
+  const at = (h, m) => new Date(`2026-11-27T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+02:00`).getTime();
+  const now = at(21, 0);
+  const messages = [
+    { place: `course:${CALC}`, role: "user", at: at(18, 10) },
+    { place: `course:${CALC}`, role: "assistant", at: at(18, 20), result: { tools: ["teach_next"] } },
+    { place: `course:${CALC}`, role: "user", at: at(18, 35) },
+    { place: `course:${CALC}`, role: "assistant", at: at(19, 5), log: ["[brain] tool teach_next (Calculus 2)"] }, // a 30 min gap: a break, not counted
+    { place: `course:${CALC}`, role: "user", at: at(20, 30), copyOf: "m_aaaaaaaaaaaaaaaa" }, // a copy: not counted
+    { place: `course:${SP}`, role: "user", at: at(9, 0) - 24 * 3600 * 1000 }, // yesterday
+    { role: "user", at: at(12, 0) }, // Main
+  ];
+  const records = {
+    [CALC]: {
+      worked: { 5: [{ page: 3, topic: "the arctan example", at: at(18, 30) }, { page: 4, topic: "ratio test", at: at(18, 50) }], 4: [{ page: 1, topic: "old part", at: at(10, 0) - 2 * 24 * 3600 * 1000 }] },
+      session: { startedAt: at(18, 40), questions: [{ state: "done", verdict: "right" }, { state: "done", verdict: "wrong" }, { state: "done", verdict: "right" }] },
+      planItems: [{ done: true, doneAt: at(19, 0) }, { done: true, doneAt: at(9, 0) - 24 * 3600 * 1000 }, { done: false }],
+    },
+  };
+  const t = todayText({ messages, courses: COURSES, recordOf: (id) => records[id] || null, now, timeZone: TZ });
+  assert.strictEqual(t, "Calculus 2 tab: 18:10-19:05 (25 min active); worked on: the arctan example, ratio test; quiz 2/3; 2 lessons; 1 exam-plan item ticked.");
+  assert.strictEqual(todayText({ messages: [{ role: "user", at: now - 1000 }], courses: COURSES, now, timeZone: TZ }), "", "no tab used today: nothing");
+  const paused = todayText({ messages, courses: COURSES, recordOf: () => ({ session: { startedAt: at(18, 40), paused: true, questions: [{ state: "open" }] } }), now, timeZone: TZ });
+  assert.match(paused, /quiz paused/);
+  assert.strictEqual(activeMinutes([0, 60000]), 1);
+});
+
+test("TODAY: the block never passes its cap", () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ id: "c" + i, name: "A very long course name number " + i + " ".repeat(5) + "x".repeat(60) }));
+  const now = Date.now();
+  const messages = many.map((c) => ({ place: `course:${c.id}`, role: "user", at: now - 1000 }));
+  const t = todayText({ messages, courses: many, now, timeZone: "Asia/Jerusalem" });
+  assert.ok(t.length <= 800, `length ${t.length}`);
+  assert.ok(t.split("\n").length >= 3);
+});
+
+test("BRAIN: the today line is in Main's prompt only", async () => {
+  const { createBrain } = require("../brain");
+  const make = (prompts) => createBrain({
+    courses: { list: () => COURSES, allPages: () => [] },
+    courseRoutes: { list: () => COURSES, courseFiles: () => ({ files: [] }), linkFiles: () => [] },
+    reminders: { list: () => [] }, memory: { list: () => [] }, cards: { add: () => ({}) }, readCalendar: async () => ({ text: "" }),
+    fetchPage: async () => ({}), askOne: async (p, m, prompt) => { prompts.push(String(prompt)); return "Ok."; },
+    chain: [{ provider: "agy", model: "one" }], poolLevels: async () => [], refreshPools: () => {}, notePoolFailure: () => {},
+    tabsToday: () => "Calculus 2 tab: 18:10-19:05 (40 min active).",
+  });
+  const main = [];
+  await make(main).handle("hi", { history: [], courses: COURSES });
+  assert.match(main[0], /## Today in the course tabs \(made by code from Bot's records\)/);
+  assert.match(main[0], /40 min active/);
+  const tab = [];
+  await make(tab).handle("hi", { history: [], courses: COURSES, place: `course:${CALC}` });
+  assert.doesNotMatch(tab[0], /## Today in the course tabs/);
+});

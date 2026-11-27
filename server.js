@@ -989,6 +989,13 @@ if (require.main === module) {
     courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), todo: require("./todo").createTodo({ file: path.join(__dirname, "data", "todo.md") }), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
     courseWork: (courseId) => require("./course-work").workDone(thread.page({ limit: 400 }).messages, courseId),
+    // Main's "today in the course tabs" line (tab-today.js, 2026-11-27): today's messages and the course records, code only.
+    tabsToday: () => require("./tab-today").todayText({
+      messages: thread.readDay(require("./thread-store").dayOf(Date.now())),
+      courses: courseRoutes ? courseRoutes.list() : [],
+      recordOf: (id) => (coach && coach.brainTools && coach.brainTools.todayRecord ? coach.brainTools.todayRecord(id) : null),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
     tokenLog: require("./tokenlog").createTokenLog({ file: path.join(__dirname, "data", "token-log.json") }), // what the answers cost, numbers only
     modelChoice, // the model Omri picked on the page goes first for an hour (model-choice.js)
     // Omri's PC: find folders and files by name under the search roots (data/pc-roots.json), never in Bot's own folder (pc-find.js).

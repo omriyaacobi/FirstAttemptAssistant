@@ -670,6 +670,15 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
     },
     // For the brain's context: every plan whose exam is today or later ("" when none).
     planContext() { return examPlans.contextText(); },
+    // What the records say about one course, for Main's "today in the course tabs" line (tab-today.js, 2026-11-27). Read only.
+    todayRecord(courseId) {
+      const ref = refOfCourse(courseId);
+      if (!ref) return null;
+      const rec = tracker.course(ref);
+      let planItems = [];
+      try { const p = examPlans.get(ref.key); planItems = p && Array.isArray(p.items) ? p.items : []; } catch (error) { planItems = []; }
+      return { worked: lectureParts.worked(rec), session: rec.session || null, planItems };
+    },
     // Where Omri stands in a course, as closed fields the model proposes; code keeps only what fits the timetable and the notes.
     position({ courseId, fields, said = "", lang = "en" } = {}) {
       curLang = lang;
