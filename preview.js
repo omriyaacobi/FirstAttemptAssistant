@@ -47,6 +47,19 @@ function fakeApi() {
     if (url.pathname === "/api/conversations") return json({ conversations: [{ id: "demo", title: demo.title }] });
     if (url.pathname === "/api/conversations/demo") return json(demo);
     if (url.pathname === "/api/jobs") return json({ jobs: [] });
+    // THE COURSE TABS (2026-11-27): a sample thread with Main and two made-up course tabs, so a preview shows the tab row.
+    if (url.pathname === "/api/thread/places") return json({ places: { main: now - 50000, "course:demo1": now - 20000, "course:demo2": now - 10000 } });
+    if (url.pathname === "/api/thread") {
+      const place = url.searchParams.get("place") || "main";
+      const sample = [
+        { id: "m_000000000001", role: "user", text: "Remind me to buy milk at 6", at: now - 60000 },
+        { id: "m_000000000002", role: "assistant", replyTo: "m_000000000001", text: "Done: a reminder at 18:00. (sample text)", at: now - 50000, result: { mode: "single", brain: true, answer: "Done: a reminder at 18:00. (sample text)", used: { provider: "agy", model: "sample" } } },
+        { id: "m_000000000003", role: "user", text: "Explain the ratio test", at: now - 30000, place: "course:demo1" },
+        { id: "m_000000000004", role: "assistant", replyTo: "m_000000000003", text: "Compare $|a_{n+1}/a_n|$ with 1. (sample text)", at: now - 20000, place: "course:demo1", result: { mode: "single", brain: true, answer: "Compare $|a_{n+1}/a_n|$ with 1. (sample text)", used: { provider: "agy", model: "sample" }, courseId: "demo1", courseName: "Sample Course A" } },
+      ];
+      return json({ messages: sample.filter((m) => (m.place || "main") === place), hasMore: false, oldest: null, place, courses: [{ id: "demo1", name: "Sample Course A" }, { id: "demo2", name: "Sample Course B" }] });
+    }
+    if (url.pathname === "/api/study") return json({ courses: [{ id: "demo1", name: "Sample Course A", tracked: false, shouldBe: null, you: null, due: [{ title: "Sample sheet 1", due: new Date(now + 3 * 86400000).toISOString().slice(0, 10), daysLeft: 3 }], assignments: [], questions: [], quiz: { state: "paused" } }] });
     if (url.pathname === "/api/usage") return json({ rows: [{ pool: "Gemini Models", window: "Five Hour Limit Remaining", remaining: 72, resets: new Date(now + 3600000).toISOString() }, { pool: "Claude Models", window: "Weekly Limit Remaining", remaining: 41, resets: new Date(now + 86400000).toISOString() }] });
     if (url.pathname === "/api/reminders") return json({ reminders: [], due: [] });
     if (url.pathname === "/api/memory") return json({ facts: [], profile: { loaded: false } });

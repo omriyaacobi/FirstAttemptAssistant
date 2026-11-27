@@ -228,3 +228,18 @@ test("course-work.js lists a side question's formulas under the course it really
   assert.strictEqual(workDone(msgs, CALC, { now, timeZone: "Asia/Jerusalem" }), "");
   assert.match(workDone(msgs, SP, { now, timeZone: "Asia/Jerusalem" }), /int_0\^1/);
 });
+
+// ---- step 3: the page (checked as text; the look was checked in a browser with the preview's sample data) ----
+test("PAGE: the tab row exists, every read and send carries the open tab, and a job of another tab does not force a reload", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
+  for (const s of ["function renderTabs()", "function switchTab(", "function renderHeader()", "async function loadPlaces(",
+    "/api/thread?limit=${T_PAGE}${placeQs()}", "&before=${T.oldest}${placeQs()}", "...(T.place !== \"main\" ? { place: T.place } : {})",
+    "encodeURIComponent(text.slice(0, 500)) : \"\") + placeQs()", "(j.place || \"main\") === T.place", "/api/thread/places"]) {
+    assert.ok(html.includes(s), `the page has: ${s}`);
+  }
+  // per-viewer conveniences are wrapped (a private window must still work)
+  assert.match(html, /get\(key, fallback\) \{ try \{ const v = localStorage\.getItem/);
+  const sw = fs.readFileSync(path.join(__dirname, "..", "public", "sw.js"), "utf8");
+  assert.match(sw, /open-place/);
+  assert.match(sw, /\^\(main\|course:\[A-Za-z0-9_-\]\{1,64\}\)\$/);
+});

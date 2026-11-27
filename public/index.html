@@ -354,6 +354,18 @@
   body.thread .course-cols { grid-template-columns: minmax(0, 1fr); }
   #thread { position: relative; }
   .tolderrow { display: flex; justify-content: center; margin: 0 0 12px; }
+  /* THE COURSE TABS (2026-11-27): Main and one tab per course, one row that scrolls sideways on a phone */
+  .ttabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); scrollbar-width: thin; flex: none; }
+  .ttab { flex: none; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; position: relative; }
+  .ttab[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .ttab .tdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-inline-start: 6px; vertical-align: middle; }
+  .ttab[aria-selected="true"] .tdot { background: var(--accent-text); }
+  .theader { padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); font-size: 14px; display: grid; gap: 2px; flex: none; }
+  .theader .sub { font-size: 13px; }
+  .tcopy { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+  .tcard-course { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; display: grid; gap: 6px; }
+  .tcard-course .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+  .tcard-course select { font: inherit; }
   .tolderrow button { min-height: 44px; }
   .tday { margin-bottom: 8px; }
   .tdayhead { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; margin: 0 0 8px; padding: 6px 12px; border: 1px solid var(--line); text-align: left; }
@@ -2873,7 +2885,18 @@
       offset: 0,
       ready: null, // the newest answer that arrived out of sight
       lastRefresh: 0,
+      // THE COURSE TABS (2026-11-27): "main" or "course:<id>". The server keeps every tab in one store; the page shows one at a time.
+      place: "main",
+      places: {}, // the newest message time per tab (GET /api/thread/places), for the unread dots
+      placesAt: 0,
     };
+    // Per-viewer conveniences only (which tab was open, when each tab was last seen): browser storage, wrapped, never needed.
+    const tabStore = {
+      get(key, fallback) { try { const v = localStorage.getItem("bot." + key); return v === null ? fallback : JSON.parse(v); } catch (error) { return fallback; } },
+      set(key, value) { try { localStorage.setItem("bot." + key, JSON.stringify(value)); } catch (error) { /* private window: fine */ } },
+    };
+    const PLACE_RE = /^(main|course:[A-Za-z0-9_-]{1,64})$/;
+    const placeQs = () => (T.place === "main" ? "" : "&place=" + encodeURIComponent(T.place));
     const scroller = () => $("thread");
     const nearBottom = () => { const t = scroller(); return t.scrollHeight - t.scrollTop - t.clientHeight < 140; };
     const toBottom = () => { const t = scroller(); t.scrollTop = t.scrollHeight; };
@@ -2983,6 +3006,7 @@
       node.dataset.id = m.id;
       const bubble = el("div", "me", m.text);
       bubble.dir = "auto";
+      if (m.copyOf) node.appendChild(el("div", "tcopy", m.copyKind === "moodle" ? "from the Moodle check" : "from Main"));
       if (m.quote && m.quote.text) node.appendChild(quoteLine(m));
       node.appendChild(bubble);
       const when = timeLine(m);
@@ -2994,6 +3018,7 @@
     function answerNode(m) {
       const node = el("div", "msg tmsg ta");
       node.dataset.id = m.id;
+      if (m.copyOf) node.appendChild(el("div", "tcopy", m.copyKind === "moodle" ? "from the Moodle check" : "from Main"));
       const route = tRoute(m, T.courses);
       const row = el("div", "troute");
       const chip = el("span", "badge route", route.label);
@@ -3166,6 +3191,89 @@
       await loadFirst();
     }
 
+    // ---- THE COURSE TABS (2026-11-27) ----
+    // One row: Main and each course. A tab shows only the messages typed in it (and copies added to it); what you send goes in the
+    // open tab. The server checks the tab is a real course; the page only remembers which tab was open (per viewer, browser storage).
+    function renderTabs() {
+      const nav = $("ttabs");
+      if (!nav) return;
+      const list = [["main", "Main"], ...[...T.courses].map(([id, name]) => ["course:" + id, name])];
+      const seen = tabStore.get("tabSeen", {});
+      nav.replaceChildren();
+      for (const [place, name] of list) {
+        const b = el("button", "ttab", name);
+        b.type = "button";
+        b.dir = "auto";
+        b.setAttribute("role", "tab");
+        b.setAttribute("aria-selected", place === T.place ? "true" : "false");
+        const fresh = place !== T.place && T.places[place] && T.places[place] > (seen[place] || 0);
+        if (fresh) { const dot = el("span", "tdot"); dot.setAttribute("aria-label", "new messages"); b.appendChild(dot); }
+        b.addEventListener("click", () => switchTab(place));
+        nav.appendChild(b);
+      }
+      const on = nav.querySelector('[aria-selected="true"]');
+      if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+    function seenTab(place) {
+      const seen = tabStore.get("tabSeen", {});
+      seen[place] = Math.max(seen[place] || 0, T.places[place] || 0, Date.now() + T.offset);
+      tabStore.set("tabSeen", seen);
+    }
+    // The newest time per tab, at most every 15 s (or now, after a job ended). Times only, no text.
+    async function loadPlaces(now = false) {
+      if (!now && Date.now() - T.placesAt < 15000) return;
+      T.placesAt = Date.now();
+      try { T.places = (await api("/api/thread/places")).places || {}; } catch (error) { return; }
+      if (!document.hidden) seenTab(T.place);
+      renderTabs();
+    }
+    async function switchTab(place, { text = null } = {}) {
+      if (!PLACE_RE.test(place)) place = "main";
+      if (place !== "main" && !T.courses.has(place.slice(7))) place = "main";
+      if (place === T.place && text === null) return;
+      T.place = place;
+      tabStore.set("tab", place);
+      for (const card of T.cards.values()) card.root.remove();
+      T.cards.clear();
+      T.ready = null;
+      if ($("tready")) $("tready").hidden = true;
+      if (T.quote) { try { clearQuote(); } catch (error) { /* nothing marked */ } }
+      renderTabs();
+      renderHeader();
+      try { await reloadAll(); } catch (error) { toast("Could not load this tab: " + error.message); }
+      seenTab(place);
+      renderTabs();
+      syncCards();
+      if (text !== null) { const box = $("task"); box.value = text; box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    }
+    // A short header on a course tab: where you are, the next deadline, an open or paused quiz (from GET /api/study, the same data
+    // and the same helper as the Study cards, so the two always agree).
+    async function renderHeader() {
+      const box = $("theader");
+      if (!box) return;
+      if (T.place === "main") { box.hidden = true; box.replaceChildren(); return; }
+      const id = T.place.slice(7);
+      const lang = pageLang();
+      let data = null;
+      try { data = await api("/api/study" + (lang === "he" ? "?lang=he" : "")); } catch (error) { data = null; }
+      if (T.place !== "course:" + id) return; // switched again meanwhile
+      const c = data && Array.isArray(data.courses) ? data.courses.find((x) => (x.courseId || x.id) === id) : null;
+      box.replaceChildren();
+      box.dir = lang === "he" ? "rtl" : "ltr";
+      if (!c) { box.hidden = true; return; }
+      const lines = tStudyLines(c, lang);
+      const S = TS[lang];
+      const top = el("div", "");
+      top.appendChild(el("strong", "", T.courses.get(id) || c.name || ""));
+      if (lines.keeping && lines.keeping.text) top.appendChild(el("span", "sub", " · " + lines.keeping.text));
+      box.appendChild(top);
+      if (lines.at) box.appendChild(el("div", "sub", S.at + ": " + lines.at));
+      if (lines.due && lines.due.length) box.appendChild(el("div", "sub", S.due + ": " + lines.due[0]));
+      if (c.quiz && c.quiz.state === "paused") box.appendChild(el("div", "sub", lang === "he" ? "הבוחן מושהה" : "The quiz is paused"));
+      else if (c.quiz && c.quiz.state === "open") box.appendChild(el("div", "sub", lang === "he" ? "יש שאלת בוחן פתוחה" : "A quiz question is open"));
+      box.hidden = false;
+    }
+
     // Adds one message to the page (does nothing if it is already there). Returns its element.
     function add(m) {
       if (!m || typeof m.id !== "string" || T.msgs.has(m.id)) return null;
@@ -3204,8 +3312,11 @@
 
     // ---- loading ----
     async function loadFirst() {
-      const data = await api(`/api/thread?limit=${T_PAGE}`);
+      const data = await api(`/api/thread?limit=${T_PAGE}${placeQs()}`);
       (data.courses || []).forEach((c) => T.courses.set(c.id, c.name));
+      // a course tab whose course is gone (removed since) falls back to Main
+      if (T.place !== "main" && !T.courses.has(T.place.slice(7))) { T.place = "main"; tabStore.set("tab", "main"); return loadFirst(); }
+      renderTabs();
       addAll(data.messages || []);
       T.hasMore = !!data.hasMore;
       T.oldest = data.oldest;
@@ -3223,7 +3334,7 @@
       try {
         const t = scroller();
         const before = t.scrollHeight - t.scrollTop;
-        const data = await api(`/api/thread?limit=${T_PAGE}&before=${T.oldest}`);
+        const data = await api(`/api/thread?limit=${T_PAGE}&before=${T.oldest}${placeQs()}`);
         const added = addAll(data.messages || []);
         // the days that just arrived open, so what you asked for is visible
         new Set(added.map((a) => tDayKey(a.m.at))).forEach((k) => { const d = T.days.get(k); if (d) { d.body.hidden = false; d.head.setAttribute("aria-expanded", "true"); } });
@@ -3237,8 +3348,12 @@
     async function refreshNewest() {
       T.lastRefresh = Date.now();
       let data;
-      try { data = await api(`/api/thread?limit=${T_PAGE}`); } catch (error) { return []; }
+      const asked = T.place;
+      try { data = await api(`/api/thread?limit=${T_PAGE}${placeQs()}`); } catch (error) { return []; }
+      if (asked !== T.place) return []; // the tab was switched while this was on its way: its messages belong to the other tab
       (data.courses || []).forEach((c) => T.courses.set(c.id, c.name));
+      seenTab(T.place);
+      loadPlaces();
       const wasBottom = nearBottom();
       const added = addAll(data.messages || []);
       if (!T.msgs.size) $("tempty").hidden = false; else $("tempty").hidden = true;
@@ -3262,7 +3377,7 @@
     // ---- sending ----
     // pictures: null, or the list of data URLs of this message's photos (one or several; the server checks each one)
     async function ask(task, pictures, noPlan, route, quote) {
-      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(route ? { route } : {}), ...(pictures && pictures.length ? { images: pictures } : {}), ...(quote ? { quote } : {}) }) });
+      const body = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task, noPlan: !!noPlan, ...(route ? { route } : {}), ...(pictures && pictures.length ? { images: pictures } : {}), ...(quote ? { quote } : {}), ...(T.place !== "main" ? { place: T.place } : {}) }) });
       const job = body.job;
       T.offset = job.now - Date.now();
       T.jobs.set(job.id, job);
@@ -3383,7 +3498,9 @@
         running.forEach((j) => { T.offset = j.now - Date.now(); });
         const finished = [...before].filter((id) => !T.jobs.has(id));
         // A job that ended (or one started on another device): fetch what is new, then show the answers.
-        const unknownRunning = running.some((j) => j.messageId && !T.groups.has(j.messageId));
+        // (only jobs of the tab that is open: a job in another tab shows up there, and its tab gets a dot)
+        const unknownRunning = running.some((j) => j.messageId && (j.place || "main") === T.place && !T.groups.has(j.messageId));
+        if (finished.length) loadPlaces(true);
         // a job that saved a short line under its question (for example "the file is still being read") is fetched once, at once
         T.acked = T.acked || new Set();
         const newAck = running.filter((j) => j.acked && !T.acked.has(j.id));
@@ -3715,7 +3832,7 @@
       $("fileProgress").value = 0;
       $("status").textContent = "Uploading...";
       try {
-        const url = "/api/thread/upload?name=" + encodeURIComponent(f.file.name) + (text ? "&text=" + encodeURIComponent(text.slice(0, 500)) : "");
+        const url = "/api/thread/upload?name=" + encodeURIComponent(f.file.name) + (text ? "&text=" + encodeURIComponent(text.slice(0, 500)) : "") + placeQs(); // from a course tab: filed in that course
         await uploadWithProgress(url, f.file, (pct) => { $("fileProgress").value = pct; $("status").textContent = "Uploading " + pct + "%"; });
         clearSentText(sentRaw);
         clearFile();
@@ -3885,12 +4002,15 @@
       row.appendChild(files);
       body.appendChild(row);
     }
-    // One tap: go to the conversation with a ready sentence in the box, cursor at the end, so you only add the lecture or the day.
-    function tellBot(name, lang) {
+    // One tap: go to THAT COURSE'S TAB (2026-11-27; Main before) with a ready sentence in the box, cursor at the end, so you only add the
+    // lecture or the day. text null: just open the tab.
+    function tellBot(name, lang, id = null, text = undefined) {
       navGo({ view: "chat", id: null });
       showView("chat");
+      const line = text === undefined ? TS[lang].tellText(name) : text;
+      if (id && T.courses.has(id)) { switchTab("course:" + id, { text: line === null ? "" : line }); return; }
       const box = $("task");
-      box.value = TS[lang].tellText(name);
+      if (line !== null) box.value = line;
       box.focus();
       box.setSelectionRange(box.value.length, box.value.length);
     }
@@ -3927,7 +4047,7 @@
         q.appendChild(t);
         const reply = el("button", "ghost", S.answer);
         reply.type = "button";
-        reply.addEventListener("click", () => { navGo({ view: "chat", id: null }); showView("chat"); $("task").focus(); });
+        reply.addEventListener("click", () => tellBot(c.name, lang, c.id, null));
         q.appendChild(reply);
         card.appendChild(q);
       }
@@ -3935,7 +4055,7 @@
       const actions = el("div", "actions");
       const tell = el("button", "", S.tell);
       tell.type = "button";
-      tell.addEventListener("click", () => tellBot(c.name, lang));
+      tell.addEventListener("click", () => tellBot(c.name, lang, c.id));
       const files = el("button", "ghost", S.files);
       files.type = "button";
       files.addEventListener("click", () => { navGo({ view: "study", id: null, course: c.id }); showView("study", c.id); });
@@ -3993,6 +4113,17 @@
       empty.id = "tempty";
       empty.hidden = true;
       $("messages").append(slot, suggest, top, days, trashPanel, empty);
+      // THE COURSE TABS (2026-11-27): the tab row and the course header sit above the conversation, on the PC and on the phone.
+      const tabs = el("nav", "ttabs"); tabs.id = "ttabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Main and the course tabs");
+      const header = el("div", "theader"); header.id = "theader"; header.hidden = true;
+      scroller().before(tabs, header);
+      // which tab to open: a push's link (#place=...), else the one open last time on this device, else Main
+      const fromHash = /^#place=(.+)$/.exec(location.hash || "");
+      const wanted = fromHash ? decodeURIComponent(fromHash[1]) : tabStore.get("tab", "main");
+      T.place = typeof wanted === "string" && PLACE_RE.test(wanted) ? wanted : "main";
+      if (fromHash) { try { history.replaceState(history.state, "", location.pathname + location.search); } catch (error) { /* only the address */ } }
+      // a tap on a push while the page is open: the service worker says which tab (sw.js)
+      try { if (navigator.serviceWorker && typeof navigator.serviceWorker.addEventListener === "function") navigator.serviceWorker.addEventListener("message", (e) => { const d = e.data || {}; if (d.type === "open-place" && typeof d.place === "string") { navGo({ view: "chat", id: null }); showView("chat"); switchTab(d.place); } }); } catch (error) { /* no service worker here (a preview): pushes still open Main */ }
       const ready = el("button", "tready", "Answer ready ↓");
       ready.id = "tready";
       ready.type = "button";
@@ -4030,7 +4161,7 @@
       document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); if (Date.now() - T.lastRefresh > 5000) refreshNewest(); } });
       window.addEventListener("focus", () => { poll(); });
       window.addEventListener("online", () => { poll(); });
-      loadFirst().then(() => { if (pageLang() === "he") $("micLang").value = "he-IL"; notice(); takeShared(); newMessageShortcut(); return loadSuggestions(); }).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
+      loadFirst().then(() => { renderHeader(); loadPlaces(true); if (pageLang() === "he") $("micLang").value = "he-IL"; notice(); takeShared(); newMessageShortcut(); return loadSuggestions(); }).catch((error) => { $("messages").appendChild(small("Could not load the conversation: " + error.message, "sub err")); }).finally(poll);
     }
 
     return { start, showStudy, refresh: () => refreshNewest().catch(() => {}), T };
