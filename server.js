@@ -294,6 +294,16 @@ function createServer({
   // The words sent WITH a file (thread-files.js files it by code): the brain reads them as a follow-up on the same question.
   if (brain && threadFiles && threadFiles.onWords) threadFiles.onWords(({ text, questionId, courseId, courseName, fileName }) => jobs.startThread({ task: text, questionId, attached: { courseId, courseName, fileName } }));
 
+  // THE COURSE TABS (2026-11-27): a tab is "course:<id>" of a REAL course; nothing, "" or "main" is Main (returns null). Anything
+  // else is refused with a 400, so a message can never be filed in a made-up tab.
+  function tabPlace(value) {
+    if (value === undefined || value === null || value === "" || value === "main") return null;
+    const m = typeof value === "string" ? /^course:([A-Za-z0-9_-]{1,64})$/.exec(value) : null;
+    const list = courseRoutes ? courseRoutes.list() : [];
+    if (!m || !list.some((c) => c.id === m[1])) throw Object.assign(new Error("place must be main or course:<id> of a real course"), { status: 400 });
+    return value;
+  }
+
   // Every route runs inside this function. If one throws (a locked or damaged file, a bug), the page gets a plain 500 and Bot keeps running:
   // an async handler that throws would otherwise be an unhandled rejection, and Node ends the whole program on those.
   const handleRequest = async (req, res) => {
@@ -526,7 +536,8 @@ function createServer({
         // A zip may be bigger than one file (its files are unpacked and checked one by one in unzip.js); anything else keeps the 50 MB limit.
         const bytes = await readRawBody(req, /\.zip$/i.test(String(url.searchParams.get("name") || "")) ? MAX_ZIP_BYTES : undefined);
         const text = String(url.searchParams.get("text") || "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 500);
-        return sendJson(res, 201, threadFiles.receive({ bytes, name: url.searchParams.get("name"), text }));
+        const place = tabPlace(url.searchParams.get("place")); // a file sent from a course tab is filed in that course (throws 400)
+        return sendJson(res, 201, threadFiles.receive({ bytes, name: url.searchParams.get("name"), text, place }));
       } catch (error) {
         return sendJson(res, error.status || 500, { error: error.message });
       }
@@ -580,8 +591,13 @@ function createServer({
         const before = beforeText === null ? null : /^\d{1,15}$/.test(beforeText) ? Number(beforeText) : NaN;
         const limit = limitText === null ? 50 : /^\d{1,4}$/.test(limitText) ? Number(limitText) : NaN;
         if (Number.isNaN(before) || Number.isNaN(limit)) return sendJson(res, 400, { error: "before and limit must be numbers" });
-        return sendJson(res, 200, { ...thread.page({ before, limit }), courses: courseRoutes ? courseRoutes.list() : [] });
+        // place: which TAB (2026-11-27): left out = Main; "course:<id>" = that course's tab (a real course, checked).
+        let place;
+        try { place = tabPlace(url.searchParams.get("place")); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+        return sendJson(res, 200, { ...thread.page({ before, limit, place: place || "main" }), place: place || "main", courses: courseRoutes ? courseRoutes.list() : [] });
       }
+      // The newest message time of each tab (the page's unread dots). Times only, no text.
+      if (id === "places" && !restore && req.method === "GET") return sendJson(res, 200, { places: thread.places() });
       // The 30-day trash, newest first: so Restore works after a reload too (not only right after deleting). Text is cut; the page draws it with textContent.
       if (id === "trash" && !restore && req.method === "GET") {
         const nowMs = Date.now();
@@ -825,7 +841,9 @@ function createServer({
       if (!thread) { removePhotos(images); return sendJson(res, 503, { error: "the conversation is not set up on this server" }); }
       try {
         if (input.route !== undefined && input.route !== "general") { removePhotos(images); return sendJson(res, 400, { error: 'route can only be "general"' }); }
-        const job = jobs.startThread({ task, noPlan: input.noPlan === true, images, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote });
+        let place = null; // the course TAB the message was typed in (2026-11-27); none = Main
+        try { place = tabPlace(input.place); } catch (error) { removePhotos(images); return sendJson(res, 400, { error: error.message }); }
+        const job = jobs.startThread({ task, noPlan: input.noPlan === true, images, deeper: input.deeper === true, route: input.route === "general" ? "general" : null, fromPhone: remote, quote, place });
         return sendJson(res, 202, { job });
       } catch (error) {
         removePhotos(images); // the job never started, so nothing else will delete the photos

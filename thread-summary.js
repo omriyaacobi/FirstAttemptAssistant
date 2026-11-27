@@ -61,7 +61,8 @@ const stripMarkers = (s) => String(s).replace(/<\/?\s*(?:notes|past-day|transcri
 
 // The transcript the model reads: numbered messages. Returns { text, byNumber: Map n -> message }.
 function transcriptOf(messages) {
-  const usable = messages.filter((m) => !m.error && typeof m.text === "string" && m.text.trim() && !(m.result && PRIVATE_RULES.has(m.result.rule)));
+  // A COPY (copyOf: a Main answer added to a course tab, a Moodle block copied into its tab) is the same talk as its original: skipped.
+  const usable = messages.filter((m) => !m.error && !m.copyOf && typeof m.text === "string" && m.text.trim() && !(m.result && PRIVATE_RULES.has(m.result.rule)));
   const each = usable.length * MAX_MESSAGE_CHARS > MAX_INPUT_CHARS ? Math.max(200, Math.floor(MAX_INPUT_CHARS / usable.length)) : MAX_MESSAGE_CHARS;
   const byNumber = new Map();
   const lines = usable.map((m, i) => {

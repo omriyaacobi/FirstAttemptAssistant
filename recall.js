@@ -75,7 +75,9 @@ const MAX_THREAD_PAIRS = 3000; // the newest pairs; a longer history is still on
 function threadExchanges(thread) {
   const byId = new Map();
   const list = [];
-  for (const m of thread.all()) { byId.set(m.id, m); list.push(m); }
+  // A COPY (a Main answer added to a course tab, a Moodle block copied into its tab; thread-store.js copyOf) is found through its
+  // original: searching it too would give the same talk twice.
+  for (const m of thread.all()) { if (m.copyOf) continue; byId.set(m.id, m); list.push(m); }
   const out = [];
   let previous = null;
   for (const m of list) {
