@@ -9,6 +9,14 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
+## 2026-11-27: course tabs (branch claude/study-research-51056e, NOT merged, Bot not restarted)
+
+- Research `experiments/2026-11-27-study-conversations-research.md`; the approved plan and what was built:
+  `experiments/2026-11-27-study-conversations-build.md`. Main plus one tab per course, one store, 8 steps, one commit each.
+  All tests pass (1,699; 1,585 before). Checked in a browser with the preview's sample data (PC and phone width).
+- Next: I look at it, then merge to main (check Improve Bot is idle first), restart Bot through the scheduled task, and try a
+  few messages in a course tab and in Main.
+
 ## 2026-11-23/24: speed, Argon out, Argon editor deleted
 
 - **Speed rounds 1 and 2** (merged, pushed 2ec2a92): warm agy early and while I type, a "plan only as much as needed" line, the course
