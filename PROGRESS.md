@@ -9,6 +9,14 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
+## 2026-11-27: Moodle assignment files (t41, branch claude/moodle-assign-files-663571)
+
+- "Download Assignment 2" now works: an assignment item in `moodle_fetch` is opened like a folder. Two new token-route jobs in
+  `moodle-ws.js` (`assignfiles` lists the files Moodle attached to the assignment, `assignfile` N downloads one from the address
+  Moodle listed, checked by `checkFileUrl`, 50 MB). Token only: the Chrome extension cannot open assignment pages, and Bot says
+  so. Files take the normal upload road (a zip is unpacked), labelled section/assignment name; more than 10 -> the Confirm card.
+- Option NOT built (needs my OK): let the extension also open `mod/assign/view.php?id=N` and take `pluginfile.php` links found there.
+
 ## 2026-11-23/24: speed, Argon out, Argon editor deleted
 
 - **Speed rounds 1 and 2** (merged, pushed 2ec2a92): warm agy early and while I type, a "plan only as much as needed" line, the course
