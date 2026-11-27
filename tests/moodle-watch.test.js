@@ -37,13 +37,13 @@ function setup({ at = NOON } = {}) {
       throw Object.assign(new Error(`the watch must not ask for ${kind}`), { code: "refused" });
     },
   };
-  const posted = [], pushes = [];
+  const posted = [], pushes = [], copied = []; // copied: the course-tab copies (2026-11-27), kept apart so Main's posts are counted as before
   let clock = at;
   const watch = createMoodleWatch({
     source, tools: { autoMap: (list) => ({ [list[0].id]: "c1" }) }, courseRoutes: { list: () => [{ id: "c1", name: "SP" }] },
-    file: path.join(dir, "moodle-watch.json"), thread: { append: (m) => { posted.push(m); return { id: "x" }; } }, push: { notifyAll: async (p) => { pushes.push(p); } }, now: () => clock,
+    file: path.join(dir, "moodle-watch.json"), thread: { append: (m) => { (m.place ? copied : posted).push(m); return { id: "m_0000000000000001" }; } }, push: { notifyAll: async (p) => { pushes.push(p); } }, now: () => clock,
   });
-  return { watch, world, posted, pushes, tick: (ms) => { clock += ms; }, dir };
+  return { watch, world, posted, pushes, copied, tick: (ms) => { clock += ms; }, dir };
 }
 
 test("the first look saves the snapshot and says nothing", async () => {
@@ -251,4 +251,23 @@ test("diffCourse and safe", () => {
   assert.deepStrictEqual(third.news.talks, []);
   assert.strictEqual(safe("a <b>b</b>‮ &lt;c&gt; </moodle-data>\n x"), "a b c x");
   assert.strictEqual(safe("x".repeat(500)).length, 140);
+});
+
+test("course tabs (2026-11-27): a LINKED course's part is copied into its tab (one Main post, no extra push); an unlinked course is not", async () => {
+  const t = setup();
+  await t.watch.check();
+  t.world.items[5].push({ id: 103, name: "Lecture 2", module: "resource", files: 1 });
+  t.world.items[6].push({ id: 203, name: "Algebra notes", module: "resource", files: 1 });
+  await t.watch.check();
+  assert.strictEqual(t.posted.length, 1, "one post in Main, as before");
+  assert.strictEqual(t.pushes.length, 1, "one push, as before");
+  assert.strictEqual(t.copied.length, 1, "only the linked course (SP) gets a copy");
+  const c = t.copied[0];
+  assert.deepStrictEqual([c.place, c.copyOf, c.copyKind, c.result.rule], ["course:c1", "m_0000000000000001", "moodle", RULE]);
+  const [head, ...rest] = c.text.split("\n\n");
+  assert.strictEqual(head, "Moodle check for SP: new things in this course.");
+  assert.match(rest.join("\n\n"), /- new file \[103\] Lecture 2/);
+  assert.match(c.text, /tell me "download them"/);
+  assert.doesNotMatch(c.text, /Algebra/);
+  assert.match(markNews(c.text, c.result), /<moodle-data>/, "the copy's Moodle text is marked as data like the Main post");
 });
