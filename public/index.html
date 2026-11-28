@@ -354,12 +354,20 @@
   body.thread .course-cols { grid-template-columns: minmax(0, 1fr); }
   #thread { position: relative; }
   .tolderrow { display: flex; justify-content: center; margin: 0 0 12px; }
-  /* THE COURSE TABS (2026-11-27): Main and one tab per course, one row that scrolls sideways on a phone */
-  .ttabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); scrollbar-width: thin; flex: none; }
-  .ttab { flex: none; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; position: relative; }
+  /* THE COURSE TABS (2026-11-27): Main and one tab per course in ONE row.
+     (2026-11-28) The row fits the screen: the course tabs share the width equally (a short name keeps its full size and gives
+     the rest to the others), font and padding shrink with the screen, and a long course name is cut with "..." (the full name
+     is the tab's tooltip). Each tab keeps at least about 4.5 letters, so the row only scrolls sideways when there are really
+     too many tabs. Main never shrinks; the open course tab gets a bigger share. */
+  .ttabs { display: flex; gap: clamp(3px, 1vw, 6px); overflow-x: auto; padding: clamp(5px, 1.2vw, 8px) clamp(6px, 2vw, 16px); border-bottom: 1px solid var(--line); background: var(--card); scrollbar-width: thin; flex: none; }
+  .ttab { flex: 1 1 0; min-width: 4.5em; max-width: max-content; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: clamp(4px, 1vw, 6px) clamp(7px, 1.8vw, 12px); font: inherit; font-size: clamp(12px, 3.4vw, 14px); line-height: 1.25; cursor: pointer; white-space: nowrap; position: relative; }
+  .ttab.tmain { flex: none; }
+  .ttab:not(.tmain)[aria-selected="true"] { flex-grow: 1.8; }
   .ttab[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  .ttab .tdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-inline-start: 6px; vertical-align: middle; }
+  .ttab .tname { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ttab .tdot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-inline-start: 5px; }
   .ttab[aria-selected="true"] .tdot { background: var(--accent-text); }
+  @media (max-width: 760px) { .ttabs .ttab { min-height: 40px; } }
   .theader { padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); font-size: 14px; display: grid; gap: 2px; flex: none; }
   .theader .sub { font-size: 13px; }
   .tcopy { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
@@ -3265,7 +3273,9 @@
       const seen = tabStore.get("tabSeen", {});
       nav.replaceChildren();
       for (const [place, name] of list) {
-        const b = el("button", "ttab", name);
+        const b = el("button", place === "main" ? "ttab tmain" : "ttab");
+        b.appendChild(el("span", "tname", name)); // its own span, so a long name is cut with "..." and the dot stays visible
+        b.title = name;
         b.type = "button";
         b.dir = "auto";
         b.setAttribute("role", "tab");
