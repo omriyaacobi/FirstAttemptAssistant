@@ -3197,32 +3197,13 @@
       syncCards();
       if (text !== null) { const box = $("task"); box.value = text; box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
     }
-    // A short header on a course tab: where you are, the next deadline, an open or paused quiz (from GET /api/study, the same data
-    // and the same helper as the Study cards, so the two always agree).
+    // (2026-11-28, Omri) A course tab shows NO header: where you are, deadlines and the quiz state took too much of the page
+    // while studying. They are on the Study page (the side panel's Study), which reads the same /api/study data.
     async function renderHeader() {
       const box = $("theader");
       if (!box) return;
-      if (T.place === "main") { box.hidden = true; box.replaceChildren(); return; }
-      const id = T.place.slice(7);
-      const lang = pageLang();
-      let data = null;
-      try { data = await api("/api/study" + (lang === "he" ? "?lang=he" : "")); } catch (error) { data = null; }
-      if (T.place !== "course:" + id) return; // switched again meanwhile
-      const c = data && Array.isArray(data.courses) ? data.courses.find((x) => (x.courseId || x.id) === id) : null;
+      box.hidden = true;
       box.replaceChildren();
-      box.dir = lang === "he" ? "rtl" : "ltr";
-      if (!c) { box.hidden = true; return; }
-      const lines = tStudyLines(c, lang);
-      const S = TS[lang];
-      const top = el("div", "");
-      top.appendChild(el("strong", "", T.courses.get(id) || c.name || ""));
-      if (lines.keeping && lines.keeping.text) top.appendChild(el("span", "sub", " · " + lines.keeping.text));
-      box.appendChild(top);
-      if (lines.at) box.appendChild(el("div", "sub", S.at + ": " + lines.at));
-      if (lines.due && lines.due.length) box.appendChild(el("div", "sub", S.due + ": " + lines.due[0]));
-      if (c.quiz && c.quiz.state === "paused") box.appendChild(el("div", "sub", lang === "he" ? "הבוחן מושהה" : "The quiz is paused"));
-      else if (c.quiz && c.quiz.state === "open") box.appendChild(el("div", "sub", lang === "he" ? "יש שאלת בוחן פתוחה" : "A quiz question is open"));
-      box.hidden = false;
     }
 
     // Adds one message to the page (does nothing if it is already there). Returns its element.
