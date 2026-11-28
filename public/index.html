@@ -305,7 +305,6 @@
   }
   [data-theme="midnight"] body { letter-spacing: .01em; }
   [data-theme="midnight"] h1 { background: linear-gradient(90deg, var(--accent), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  [data-theme="midnight"] .side h1 { text-transform: uppercase; letter-spacing: .18em; font-size: 1rem; }
   [data-theme="midnight"] .topbar, [data-theme="midnight"] .composer { background: var(--bg); }
   [data-theme="midnight"] .composer { border-top: 0; }
   [data-theme="midnight"] textarea { background: var(--card); border-radius: 18px; padding: 12px 16px; }
@@ -582,6 +581,19 @@
   /* Restart Bot: the floating copy at the top right drew over the Improve Bot buttons and the course tabs, so it is gone
      (2026-11-28); the PC shows the side panel's Restart Bot (the phone already did), and Improve Bot keeps its own. */
   @media (min-width: 761px) { .side > #restartSide { display: block; align-self: stretch; margin: auto 0 0; } }
+  /* (2026-11-28, Omri) Bot's icon at the top left folds the side panel to a thin strip (only the icon) and opens it again; the
+     choice is kept in this browser. The phone keeps its menu button and drawer (there the icon just closes the drawer). */
+  .side .side-head > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .sidetoggle { flex: none; width: 40px; height: 40px; min-height: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; box-shadow: none; cursor: pointer; display: inline-flex; }
+  .sidetoggle svg { width: 40px; height: 40px; display: block; }
+  .sidetoggle:hover { filter: brightness(1.12); }
+  .sidetoggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (min-width: 761px) {
+    body.side-folded .app { grid-template-columns: 64px 1fr; }
+    body.side-folded .side { padding: 18px 12px; overflow: hidden; }
+    body.side-folded .side .side-head { padding: 0; margin: 0; }
+    body.side-folded .side .side-head .sub, body.side-folded .side > :not(.side-head) { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -618,7 +630,7 @@
   <aside class="side" id="side" aria-label="Conversations and tools">
     <div class="side-head">
       <div>
-        <h1>Bot</h1>
+        <button type="button" class="sidetoggle" id="sideToggle" aria-expanded="true" aria-controls="side" aria-label="Fold the side panel" title="Fold or open the side panel"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#9333ea"/><g fill="#fff"><rect x="8.5" y="6" width="1.8" height="11"/><rect x="8.5" y="6" width="5" height="1.8"/><rect x="8.5" y="10.6" width="5" height="1.8"/><rect x="8.5" y="15.2" width="5" height="1.8"/><rect x="13.5" y="7.8" width="1.8" height="2.8"/><rect x="13.5" y="12.4" width="1.8" height="2.8"/></g></svg></button>
         <p class="sub">Your personal assistant.</p>
       </div>
       <button class="iconbtn side-close" id="sideClose" aria-label="Close conversations">
@@ -1550,6 +1562,19 @@
   $("menu").addEventListener("click", openSide);
   $("menu4").addEventListener("click", openSide);
   $("sideClose").addEventListener("click", closeSide);
+  // The Bot icon: on the PC it folds or opens the side panel (kept in this browser); on the phone it closes the drawer.
+  function setSideFolded(on) {
+    document.body.classList.toggle("side-folded", on);
+    $("sideToggle").setAttribute("aria-expanded", String(!on));
+    $("sideToggle").setAttribute("aria-label", on ? "Open the side panel" : "Fold the side panel");
+  }
+  try { setSideFolded(localStorage.getItem("botSideFolded") === "1"); } catch (error) { /* private mode: open */ }
+  $("sideToggle").addEventListener("click", () => {
+    if (matchMedia("(max-width: 760px)").matches) { closeSide(); return; }
+    const on = !document.body.classList.contains("side-folded");
+    setSideFolded(on);
+    try { localStorage.setItem("botSideFolded", on ? "1" : "0"); } catch (error) { /* private mode: only for now */ }
+  });
   $("backdrop").addEventListener("click", closeSide);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && navState.side) closeSide(); });
   // Swipe left on the sidebar to close it (mostly horizontal, at least 60px).

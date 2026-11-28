@@ -254,3 +254,12 @@ test("the page shows the quota note under an answer when quota changed the route
   assert.match(html, /quotaNote\(card, result\)/);
   assert.match(html, /quotaNote\(wrap, result\)/);
 });
+
+test("Bot's icon at the top left folds and opens the side panel on the PC, and the choice is kept (2026-11-28)", () => {
+  const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
+  assert.match(side, /<button type="button" class="sidetoggle" id="sideToggle" aria-expanded="true"/);
+  assert.doesNotMatch(side, /<h1>Bot<\/h1>/); // the icon took the written name's place
+  assert.match(html, /body\.side-folded \.app \{ grid-template-columns: 64px 1fr; \}/);
+  assert.match(html, /localStorage\.setItem\("botSideFolded"/);
+  assert.match(html, /matchMedia\("\(max-width: 760px\)"\)\.matches\) \{ closeSide\(\); return; \}/); // the phone keeps its drawer
+});
