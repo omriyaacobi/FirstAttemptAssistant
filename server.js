@@ -987,7 +987,7 @@ if (require.main === module) {
   const pcLook = require("./pc-look").createPcLook({ dataDir: path.join(__dirname, "data"), bridge: moodleBridge, log: console.log });
   const makeBrain = () => (brainRef = require("./brain").createBrain({
     pcLook,
-    courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), todo: require("./todo").createTodo({ file: path.join(__dirname, "data", "todo.md") }), memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
+    courses: coursesStore, courseRoutes, linkBatches, moodle: moodleTools, coach, reminders: getReminders(), todo: require("./todo").createTodo({ file: path.join(__dirname, "data", "todo.md") }), morning, memory: createMemory(), cards: getCards(), readCalendar: require("./calendar-chat").readCalendar,
     searchChats: (query) => require("./recall").findInThread(thread, query, { oldChats: store }),
     courseWork: (courseId) => require("./course-work").workDone(thread.page({ limit: 400 }).messages, courseId),
     // Main's "today in the course tabs" line (tab-today.js, 2026-11-27): today's messages and the course records, code only.

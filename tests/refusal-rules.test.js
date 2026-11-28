@@ -21,6 +21,13 @@ const URL = "https://example.com/a";
 // Every doing-tool of the rule, with arguments that reach its check. "moodleOk" / "photoOk": the exceptions above.
 const ROWS = [
   { tool: "set_reminder", args: { text: "x", when: "2026-12-01T10:00" }, moodleOk: true },
+  // 2026-11-28: cancelling a reminder is refused after Moodle too (stricter than set_reminder: a cancel loses something).
+  { tool: "reminder_cancel", args: { number: 1 } },
+  { tool: "reminder_cancel", args: { undo: true }, label: "reminder_cancel undo" },
+  // 2026-11-28 (t43): the morning brief's time and on/off, from Omri's own words only.
+  { tool: "brief_time", args: { time: "07:00" } },
+  { tool: "brief_time", args: { on: false }, label: "brief_time off" },
+  { tool: "brief_time", args: { undo: true }, label: "brief_time undo" },
   { tool: "course_note", args: { course: "Calculus 2", note: "x" } },
   { tool: "study_position", args: { course: "Calculus 2", mode: "attending" } },
   { tool: "todo_update", args: { action: "done", id: "t1" } },

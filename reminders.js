@@ -164,6 +164,21 @@ function createReminders({ file, notify = () => {}, now = () => Date.now() } = {
     return true;
   }
 
+  // Puts back a reminder that cancel() removed: the brain's "undo" (2026-11-28). Only a pending one with a real id whose time is still
+  // ahead (one whose time has passed would fire the moment it is back), and only when no reminder with that id exists.
+  function restore(reminder) {
+    if (!reminder || typeof reminder.id !== "string" || !ID_PATTERN.test(reminder.id) || reminder.status !== "pending") throw new Error("there is no reminder to put back");
+    if (!(reminder.at > now())) throw new Error("its time has already passed, so it was not put back");
+    const items = read();
+    if (items.some((r) => r.id === reminder.id)) throw new Error("that reminder is already there");
+    const back = { id: reminder.id, text: cleanText(reminder.text), at: reminder.at, timezone: validTimezone(reminder.timezone) ? reminder.timezone : "UTC", created: reminder.created || now(), status: "pending", delivered: false };
+    write([...items, back]);
+    return back;
+  }
+
+  // Reminders that went off in the last `ms` (shown to the brain's list as "went off", never cancelled from there).
+  const firedSince = (ms) => read().filter((r) => r.status === "fired" && typeof r.firedAt === "number" && now() - r.firedAt <= ms).sort(byTime);
+
   // The page calls this after showing a fired reminder, so it is not shown twice.
   function acknowledge(id) {
     if (typeof id !== "string" || !ID_PATTERN.test(id)) return false;
@@ -224,7 +239,7 @@ function createReminders({ file, notify = () => {}, now = () => Date.now() } = {
   const listeners = [];
   const onFire = (fn) => { listeners.push(fn); };
 
-  return { create, list, undelivered, cancel, acknowledge, tick, start, stop, onFire };
+  return { create, list, undelivered, cancel, restore, firedSince, acknowledge, tick, start, stop, onFire };
 }
 
 // The one shared store Bot uses. It is created on first use, so loading this file touches no disk.

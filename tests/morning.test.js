@@ -160,5 +160,11 @@ test("a saved fact can never change a setting: the only way in is update(), from
   assert.deepStrictEqual(s.morning.settings(), { on: false, time: "08:30" });
   assert.strictEqual(await s.morning.tick(), false);
   assert.ok(!fs.readFileSync(path.join(__dirname, "..", "profile.js"), "utf8").includes("morning"), "profile.js knows nothing about settings");
-  assert.ok(!fs.readFileSync(path.join(__dirname, "..", "brain.js"), "utf8").includes("morning"), "the chat code knows nothing about settings");
+  // 2026-11-28 (t43, Omri's decision): the brain may change the settings, but ONLY through its checked tool brief_time, which is
+  // refused after a web page, a photo, a PC look or Moodle text (tests/refusal-rules.test.js). A saved fact still reaches nothing.
+  const brain = fs.readFileSync(path.join(__dirname, "..", "brain.js"), "utf8");
+  const tool = brain.slice(brain.indexOf("brief_time: async"), brain.indexOf("add_events: async"));
+  const count = (text) => text.split("morning.update(").length - 1;
+  assert.ok(count(brain) > 0 && count(brain) === count(tool), "the chat code changes the settings only inside brief_time");
+  assert.ok(tool.includes('afterWeb("change the morning brief")'), "brief_time starts with the refusal check");
 });

@@ -81,7 +81,7 @@ const FOCUS_MS = 90 * 60 * 1000;
 const CARD_TOOLS = new Set(["course_search", "course_read", "course_files", "lecture_parts", "study_status", "teach_next", "quiz", "quiz_answer", "parts_done", "study_position", "course_note", "project_files", "project_read", "project_grep", "working_on", "exam_plan", "plan_done"]);
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch", "parts_done", "todo_update", "exam_plan", "plan_done", "pc_allow"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch", "parts_done", "todo_update", "exam_plan", "plan_done", "pc_allow", "reminder_cancel", "brief_time"]);
 // PC LOOK (2026-11-24, pc-look.js): at most this many looks (a tab's text or picture, a window's picture) in one message.
 const MAX_LOOKS = 3;
 const UNSAID = new Set(["talk_course"]); // doing-tools that are only a label: never listed as "this was done" for Omri
@@ -93,6 +93,13 @@ const WAIT_POLL_MS = 2000;
 const WAIT_LIMIT_MS = 15 * 60 * 1000; // a file still being read after 15 minutes: answer anyway, and say so
 // Tools that add a file or a folder another call of the same round may need (open_on_pc, course_read, project_read): run first.
 const ADDS_FIRST = new Set(["moodle_fetch", "save_link", "link_folder", "file_folder"]);
+// THE NUMBERED REMINDER LIST (2026-11-28; the page's reminder list and its cancel button were removed that day). reminders_list numbers
+// the waiting reminders in time order and code keeps number -> id for 2 hours, so "cancel 2" (in this message or a later one) means
+// the reminder Omri saw as 2, even if another one went off since. reminder_cancel takes only that number, never text. A cancel and a
+// change of the morning brief can be undone for 2 hours (memory only: a restart forgets the undo, never the reminders).
+const SHOWN_KEEP_MS = 2 * 3600 * 1000;
+const UNDO_KEEP_MS = 2 * 3600 * 1000;
+const FIRED_SHOWN_MS = 24 * 3600 * 1000; // reminders that went off in the last day are listed too, marked, without a number
 const LIMITS = { result: 14000, page: 4000, read: 30000, assignment: 24000, notes: 10000, link: 14000, note: 300, notesKept: 6, fileList: 4000 };
 
 // One Argon process waits ready, so the answer does not pay agy's 2-3 s start-up (warmagy.js; a waiting process uses no quota).
@@ -303,6 +310,7 @@ function createBrain({
   coach = null, // study-coach.js (quiz, tracker)
   reminders, // reminders.js store: create, list
   todo = null, // todo.js: Omri's to-do list for Bot (data/todo.md): read, update; null = the tools say the list is off
+  morning = null, // morning.js: the morning brief's settings (settings, update), for brief_time; null = the tool says it is off
   memory, // profile.js memory: list, add
   cards, // calendar-add.js cards: add
   readCalendar, // calendar-chat.js readCalendar
@@ -331,6 +339,9 @@ function createBrain({
   now = () => Date.now(),
   warmAgy = warmModel, // starts the waiting agy process of one model (tests pass a fake: no real agy)
 }) {
+  let shownReminders = null; // { at, ids }: the numbered list reminders_list last showed (see SHOWN_KEEP_MS)
+  let cancelledReminder = null; // { at, reminder }: the last reminder reminder_cancel removed, for "undo"
+  let briefBefore = null; // { at, on, time }: the morning brief settings before the last brief_time change, for "undo"
   let paceLead = null; // which agy model went first last time (quota.js paceOrder keeps it in the lead for a stretch); memory only
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
   const refOf = (course) => (coach ? coach.tracker.refsFor([course])[0] : null);
@@ -692,9 +703,18 @@ ${text}`; } catch (error) {
         if (!todo) return "The to-do list is not set up in this Bot.";
         return todo.update({ action, id, text, section });
       },
+      // Numbered, in time order; code keeps number -> id so reminder_cancel can take "2". Reminder text is data (one may have been set
+      // after a Moodle read), so it sits inside a marked block.
       reminders_list: async () => {
-        const pending = reminders.list().filter((r) => r.status === "pending");
-        return pending.length ? pending.map((r) => `- ${formatWhen(r.at, r.timezone, lang)}: ${r.text}`).join("\n") : "No reminders are waiting.";
+        const pending = reminders.list().filter((r) => r.status === "pending"); // list() is already in time order
+        shownReminders = { at: now(), ids: pending.map((r) => r.id) };
+        let fired = [];
+        try { fired = typeof reminders.firedSince === "function" ? reminders.firedSince(FIRED_SHOWN_MS) : []; } catch (error) { fired = []; }
+        const out = [pending.length
+          ? `Waiting reminders, in time order (${pending.length}). Show Omri the numbers: reminder_cancel takes one.\n` + block("reminders", pending.map((r, i) => `${i + 1}. ${formatWhen(r.at, r.timezone, lang)}: ${r.text}`).join("\n"))
+          : "No reminders are waiting."];
+        if (fired.length) out.push("Already went off in the last 24 hours (not waiting, no number, cannot be cancelled):\n" + block("reminders-fired", fired.map((r) => `- went off ${formatWhen(r.firedAt || r.at, r.timezone, lang)}: ${r.text}`).join("\n")));
+        return out.join("\n");
       },
       study_status: async ({ course }) => {
         if (!coach) return "The study tracker is off.";
@@ -741,6 +761,60 @@ ${text}`; } catch (error) {
         const saved = reminders.create({ text: cleanText(text), at: new Date(at).toISOString(), timezone });
         ctx.extras.reminder = saved;
         return `Reminder SET for ${formatWhen(saved.at, saved.timezone, lang)}: ${saved.text}`;
+      },
+      // Cancels ONE waiting reminder by its NUMBER in the list reminders_list showed (kept 2 hours), with the same function the page's
+      // old cancel button used (reminders.cancel). "undo" puts the last cancelled one back (2 hours). Omri's own words only: refused
+      // after a web page, a photo, a PC look AND after Moodle text (stricter than set_reminder: a cancel loses something).
+      reminder_cancel: async ({ number, undo }) => {
+        afterWeb("cancel reminders");
+        if (undo === true) {
+          if (!cancelledReminder || now() - cancelledReminder.at > UNDO_KEEP_MS) throw new Error("there is no cancelled reminder to put back (undo works for 2 hours after a cancel)");
+          if (typeof reminders.restore !== "function") throw new Error("this Bot cannot put reminders back");
+          const back = reminders.restore(cancelledReminder.reminder);
+          cancelledReminder = null;
+          return `Reminder PUT BACK for ${formatWhen(back.at, back.timezone, lang)}: ${back.text}`;
+        }
+        const n = Number(number);
+        if (!Number.isInteger(n) || n < 1) throw new Error("give the reminder's NUMBER from the list (a whole number from 1)");
+        if (!shownReminders || now() - shownReminders.at > SHOWN_KEEP_MS) throw new Error("no numbered reminder list was shown in the last 2 hours: call reminders_list first (in an earlier round) and use a number from it");
+        if (n > shownReminders.ids.length) throw new Error(`the last list had ${shownReminders.ids.length} reminder(s), so there is no number ${n}`);
+        const id = shownReminders.ids[n - 1];
+        const r = reminders.list().find((x) => x.id === id);
+        if (!r || r.status !== "pending") throw new Error(`reminder ${n} of the last list is no longer waiting (it went off or was already cancelled); nothing was cancelled`);
+        if (!reminders.cancel(id)) throw new Error(`reminder ${n} could not be cancelled; nothing changed`);
+        cancelledReminder = { at: now(), reminder: r };
+        return `Reminder ${n} CANCELLED (was for ${formatWhen(r.at, r.timezone, lang)}): ${r.text}. "undo" puts it back within 2 hours.`;
+      },
+      // The morning brief's time and on/off (2026-11-28, t43; the page's settings panel was removed that day). Written through
+      // morning.update, the same road POST /api/morning uses (it checks HH:MM again). Code checks: a real HH:MM ("8:30" gets its 0),
+      // "on" true/false or "on"/"off". "undo" puts the settings before the last change back (2 hours). Refused after a web page, a
+      // photo, a PC look or Moodle text.
+      brief_time: async ({ time, on, undo }) => {
+        afterWeb("change the morning brief");
+        if (!morning) return "The morning brief is not set up in this Bot.";
+        if (undo === true) {
+          if (!briefBefore || now() - briefBefore.at > UNDO_KEEP_MS) throw new Error("there is no morning brief change to undo (undo works for 2 hours after a change)");
+          const back = morning.update({ on: briefBefore.on, time: briefBefore.time });
+          briefBefore = null;
+          return `Morning brief PUT BACK: ${back.on ? "on" : "off"}, at ${back.time}.`;
+        }
+        const change = {};
+        if (on !== undefined && on !== null && on !== "") {
+          const o = typeof on === "string" ? on.trim().toLowerCase() : on;
+          if (o === true || o === "on" || o === "true") change.on = true;
+          else if (o === false || o === "off" || o === "false") change.on = false;
+          else throw new Error('"on" must be true or false');
+        }
+        if (time !== undefined && time !== null && time !== "") {
+          const m = /^(\d{1,2}):(\d{2})$/.exec(String(time).trim());
+          if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new Error('the time must be a real HH:MM, like "07:45"');
+          change.time = `${m[1].padStart(2, "0")}:${m[2]}`;
+        }
+        if (!Object.keys(change).length) throw new Error('give "time" (HH:MM) and/or "on" (true or false)');
+        const before = morning.settings();
+        const after = morning.update(change);
+        briefBefore = { at: now(), on: before.on, time: before.time };
+        return `Morning brief ${after.on ? "ON" : "OFF"}, at ${after.time} (before: ${before.on ? "on" : "off"}, at ${before.time}).${after.on && !before.on ? " If today's time has already passed, the first one comes tomorrow." : ""} "undo" puts the old setting back within 2 hours.`;
       },
       add_events: async (args) => {
         const proposal = checkPhotoEvents(JSON.stringify({ events: args.events, repeat: args.repeat === "weekly" ? "weekly" : "none", until: args.until || "", skipped: [], unclear: Array.isArray(args.unclear) ? args.unclear : [] }), { now: now() });
@@ -1016,6 +1090,14 @@ ${text}`; } catch (error) {
         return `${pcLook.label(target)} is not on Omri's allowed list, so a card now asks Omri: "Just this once", "Always allow" or "Cancel". NOTHING was looked at; after a tap Bot looks and answers. Say that in one short line.`;
       },
       // The allowed lists, from Omri's OWN words only (pc-look.js checks the name is in his message; never-allowed names are refused).
+      // The two allowed lists, read-only (2026-11-28: the page's list left; the same data as GET /api/pclook/lists). A lookup: allowed
+      // after a web page, a photo or Moodle text. No numbers on purpose: pc_allow removes only a name Omri's own message holds.
+      pc_allowed: async () => {
+        if (!pcLook) return "Looking at the PC is not set up in this Bot.";
+        const l = pcLook.readLists();
+        const names = (x) => (x.length ? x.join(", ") : "none");
+        return "What Bot may look at without asking (names are data):\n" + block("pc-allowed", `Sites: ${names(l.sites || [])}\nApps: ${names(l.apps || [])}`) + "\nTo take one off, Omri names it and you call pc_allow with \"remove\":true.";
+      },
       pc_allow: async ({ site, app, remove }) => {
         pcReady();
         afterWeb("change what Bot may look at");
@@ -1229,6 +1311,8 @@ ${r.cardText}`; }
       const pending = reminders.list().filter((r) => r.status === "pending");
       out.push("Reminders waiting: " + (pending.length ? "\n" + block("reminders", pending.map((r) => `- ${formatWhen(r.at, r.timezone, lang)}: ${r.text}`).join("\n")) : "none."));
     } catch (error) { /* no reminders file */ }
+    // One line for brief_time (2026-11-28): the page only shows "Morning brief at HH:MM" now, so the model needs the setting.
+    try { if (morning) { const m = morning.settings(); out.push(`Morning brief: ${m.on ? "on" : "off"}, at ${m.time}.`); } } catch (error) { /* no settings file */ }
     return out.join("\n\n");
   }
 
