@@ -124,8 +124,10 @@ test("the page is installable: manifest, theme colour and an icon are linked", (
   assert.match(html, /serviceWorker\.register\("\/sw\.js"\)/);
 });
 
-test("the page has a reminders list, a notifications button and a push-to-talk mic button", () => {
-  assert.match(html, /id="reminders"/);
+test("the page shows fired reminders (no list since 2026-11-28), has a notifications button and a push-to-talk mic button", () => {
+  assert.doesNotMatch(html, /id="reminders"/); // Omri's decision: waiting reminders live in chat, not on the page
+  assert.match(html, /data\.due\.forEach\(showDue\)/);
+  assert.match(html, /\/api\/reminders\/" \+ r\.id \+ "\/ack"/);
   assert.match(html, /id="notifyBtn"/);
   assert.match(html, /id="mic"/);
   assert.match(html, /webkitSpeechRecognition/);

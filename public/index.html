@@ -612,13 +612,7 @@
     </div>
     <button id="new" title="Back to the conversation">Conversation</button>
     <button id="quotaBtn" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
-    <section aria-label="Reminders">
-      <div class="row" style="margin-top:0">
-        <strong>Reminders</strong>
-        <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
-      </div>
-      <div id="reminders" class="sub">None yet. Try: "remind me tomorrow at 9 to call the bank".</div>
-    </section>
+    <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
     <section aria-label="Morning brief" id="morningBox" hidden>
       <div class="row" style="margin-top:0">
         <strong>Morning brief</strong>
@@ -2437,15 +2431,9 @@
   // ---- Reminders ----
   // Bot saves reminders on the PC and checks the clock there. This page asks every 30 s for ones that
   // came due and shows them (a banner, plus a system notification if you allowed it). It shows each one once.
+  // (2026-11-28, Omri's decision) The page no longer lists the waiting reminders: they are set and changed in chat
+  // ("what reminders do I have?" uses reminders_list); only a reminder that just fired is shown here.
   const shownReminders = new Set();
-
-  function whenText(r) {
-    try {
-      return new Intl.DateTimeFormat(undefined, { timeZone: r.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(r.at));
-    } catch (error) {
-      return new Date(r.at).toLocaleString();
-    }
-  }
 
   async function systemNotify(title, body, tag) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
@@ -2510,33 +2498,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "could not read reminders");
       data.due.forEach(showDue);
-      const box = $("reminders");
-      const pending = data.reminders.filter((r) => r.status === "pending");
-      if (!pending.length) {
-        box.className = "sub";
-        box.textContent = 'None yet. Try: "remind me tomorrow at 9 to call the bank".';
-        return;
-      }
-      box.className = "";
-      box.replaceChildren(...pending.map((r) => {
-        const row = el("div", "reminder");
-        const what = el("div", "what");
-        const text = el("div", "", r.text);
-        text.dir = "auto";
-        what.append(text, el("div", "when", whenText(r)));
-        const cancel = el("button", "", "\u2715");
-        cancel.title = "Cancel this reminder";
-        cancel.setAttribute("aria-label", "Cancel reminder: " + r.text);
-        cancel.addEventListener("click", async () => {
-          await fetch("/api/reminders/" + r.id, { method: "DELETE" }).catch(() => {});
-          loadReminders();
-        });
-        row.append(what, cancel);
-        return row;
-      }));
-    } catch (error) {
-      $("reminders").textContent = error.message;
-    }
+    } catch (error) { /* asked again in 30 s */ }
   }
 
   // The morning brief (morning.js). The box stays hidden if this Bot has none (for example in the Improve Bot preview).
