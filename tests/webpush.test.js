@@ -114,6 +114,18 @@ test("notifyAll encrypts for each phone, and forgets subscriptions the push serv
   assert.deepStrictEqual(JSON.parse(decrypt(sent[0].body, a.priv, a.auth)), { title: "Bot", body: "call the bank" });
 });
 
+test("a subscription the push service says is gone (410) is removed with ONE log line that names only the host", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-push-"));
+  const lines = [];
+  const push = createPush({ dir, send: async () => 410, log: (line) => lines.push(line) });
+  const { sub } = phoneKeys();
+  push.subscribe({ endpoint: "https://fcm.googleapis.com/fcm/send/secret-token-123", keys: sub });
+  assert.deepStrictEqual(await push.notifyAll({ title: "Bot", body: "x" }), { sent: 0, removed: 1, total: 1 });
+  assert.strictEqual(push.count(), 0);
+  assert.deepStrictEqual(lines, ["[push] a device's subscription expired (410) at fcm.googleapis.com and was removed"]);
+  for (const secret of ["secret-token-123", "/fcm/send", sub.p256dh, sub.auth]) assert.ok(!lines[0].includes(secret), "never in the log: " + secret);
+});
+
 test("subscribing the same phone twice keeps one entry", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bot-push-"));
   const push = createPush({ dir, send: async () => 201 });

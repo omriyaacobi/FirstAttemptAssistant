@@ -161,8 +161,11 @@ function createPush({ dir, subject = "mailto:bot@localhost.invalid", send = defa
           },
           body: encrypt(payload, sub.keys),
         });
-        if (status === 404 || status === 410) gone.push(sub.endpoint);
-        else if (status >= 200 && status < 300) sent++;
+        if (status === 404 || status === 410) {
+          gone.push(sub.endpoint);
+          // (2026-11-28) said out loud: a phone once stopped getting pushes and the log had nothing. Hostname only, never the endpoint or keys.
+          log(`[push] a device's subscription expired (${status}) at ${new URL(sub.endpoint).hostname} and was removed`);
+        } else if (status >= 200 && status < 300) sent++;
         else log(`[push] ${new URL(sub.endpoint).hostname} answered ${status}`);
       } catch (error) {
         log(`[push] failed: ${error.message}`);
