@@ -36,10 +36,14 @@ test("the thread script puts text in with textContent only (no innerHTML)", () =
   assert.doesNotMatch(threadScript, /\.innerHTML\s*=|insertAdjacentHTML|document\.write\(|outerHTML/);
 });
 
-test("the Restart Bot button exists before the script that wires it (the old page had it after the script)", () => {
-  const button = html.indexOf('id="restartTop"');
-  assert.ok(button > 0);
-  assert.ok(button < html.indexOf("<script>"), "the button comes before the first script");
+test("the Restart Bot buttons exist before the script that wires them (the old page had one after the script)", () => {
+  for (const id of ["restartSide", "restartBtn"]) {
+    const button = html.indexOf(`id="${id}"`);
+    assert.ok(button > 0, id);
+    assert.ok(button < html.indexOf("<script>"), id + " comes before the first script");
+  }
+  // (2026-11-28) the floating top-right copy drew over "Back to chat" in Improve Bot and over the course tabs: it is gone
+  assert.doesNotMatch(html, /id="restartTop"/);
 });
 
 test("days: today and yesterday are open, older days are folded away, labels are plain", () => {
