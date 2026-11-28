@@ -9,13 +9,16 @@ const path = require("node:path");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
 
-test("the Improve button is the last thing in the sidebar and has its own big style", () => {
+test("the side panel: Improve Bot is a plain menu item under Courses, and Quota is a small quiet line at the bottom (2026-11-28)", () => {
   const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
-  const button = side.indexOf('id="improveBtn"');
-  assert.ok(button > 0, "button is inside the sidebar");
-  assert.ok(button > side.indexOf('id="quotaBtn"'), "button comes after the quota button");
-  assert.match(side.slice(side.lastIndexOf("<button", button), button), /class="improve"/);
-  assert.match(html, /button\.improve\s*\{[^}]*margin-top:\s*auto/);
+  const improve = side.indexOf('id="improveBtn"');
+  assert.ok(improve > side.indexOf('id="studyBtn"'), "Improve Bot comes right under Courses");
+  assert.match(side, /<button id="improveBtn"/); // no big class of its own: it looks like the other menu items
+  assert.doesNotMatch(html, /button.improve/);
+  assert.match(html, /.side > #improveBtn { order: 3; }/);
+  assert.match(side, /<button id="quotaBtn" class="quiet"/);
+  assert.ok(side.indexOf('id="quotaBtn"') > side.indexOf('id="restartSide"'), "Quota is the last line");
+  assert.match(html, /.side > #quotaBtn { order: 11;[^}]*font-size: .8rem/);
 });
 
 test("the page uses a purple accent", () => {
@@ -33,7 +36,6 @@ test("the dark Midnight design is the default, and the Classic design is kept to
   const names = [...picker[1].matchAll(/value="([^"]+)"/g)].map((m) => m[1]);
   assert.deepStrictEqual(names.slice(0, 2), ["midnight", "classic"]);
   for (const name of names.filter((n) => n !== "classic")) assert.ok(html.includes(`:root[data-theme="${name}"]`), name);
-  assert.ok(side.indexOf('id="themePick"') < side.indexOf('id="improveBtn"'), "Improve Bot stays last");
   assert.match(html, /localStorage\.setItem\("botTheme"/);
 });
 

@@ -45,8 +45,6 @@
   button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
   button:disabled { opacity: .5; cursor: progress; }
   /* The big "Improve Bot" button, pinned to the bottom of the sidebar */
-  button.improve { margin-top: auto; padding: 14px 18px; font-size: 1.05rem; color: #ffffff; background: linear-gradient(135deg, var(--accent), var(--pink)); box-shadow: 0 2px 8px rgba(147, 51, 234, .35); }
-  button.improve:hover { filter: brightness(1.08); }
   button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 4px 10px; font-weight: 400; font-size: .85rem; }
 
   /* Conversation list */
@@ -318,9 +316,6 @@
   [data-theme="midnight"] button:not([class]):hover { border-color: var(--accent); }
   [data-theme="midnight"] #send { background: linear-gradient(135deg, var(--accent), var(--pink)); color: var(--accent-text); border: 0; font-weight: 700; }
   [data-theme="midnight"] button.ghost { border-radius: 999px; }
-  /* Improve Bot: dark inside, with a purple-to-pink outline */
-  [data-theme="midnight"] button.improve { color: var(--text); border: 1px solid transparent; box-shadow: 0 0 18px rgba(181, 123, 255, .15);
-    background: linear-gradient(var(--side-bg), var(--side-bg)) padding-box, linear-gradient(135deg, var(--accent), var(--pink)) border-box; }
 
   /* Conversation list: the open chat gets a thin pink line on its left */
   [data-theme="midnight"] .chat-item.active, [data-theme="midnight"] .proposal.active .open { box-shadow: inset 2px 0 0 var(--pink); }
@@ -438,10 +433,12 @@
   .side > * { order: 5; }
   .side .side-head { order: 0; padding: 0 8px; margin-bottom: 12px; }
   .side .side-head .sub { font-size: .78rem; opacity: .8; }
-  .side > #new { order: 1; } .side > #studyBtn { order: 2; } .side > #quotaBtn { order: 3; }
+  .side > #new { order: 1; } .side > #studyBtn { order: 2; } .side > #improveBtn { order: 3; }
   .side > nav { order: 4; }
-  .side > #improveBtn { order: 9; margin-top: auto; }
-  .side > #restartSide { order: 10; }
+  .side > #restartSide { order: 10; margin-top: auto; }
+  /* Quota (2026-11-28, Omri): a small quiet line at the very bottom, not a menu item */
+  .side > #quotaBtn { order: 11; align-self: flex-start; margin-top: 4px; padding: 4px 12px; min-height: 0; background: transparent; border: 0; box-shadow: none; color: var(--muted); font-size: .8rem; font-weight: 400; text-align: left; }
+  .side > #quotaBtn:hover { color: var(--text); text-decoration: underline; }
   [data-theme="midnight"] .side > button:not([class]) { text-align: left; background: transparent; border: 0; border-radius: 10px; padding: 9px 12px; font-weight: 500; font-size: .95rem; color: var(--text); }
   [data-theme="midnight"] .side > button:not([class]):hover { background: var(--mine); }
   .side section { border-top: 1px solid var(--line); margin-top: 10px; padding: 12px 8px 2px; }
@@ -453,7 +450,6 @@
   .side details[open] summary strong::after { content: " \2212"; }
   .reminder { padding: 6px 8px; margin: 4px -8px; border-radius: 8px; }
   .reminder:hover { background: var(--mine); }
-  [data-theme="midnight"] button.improve { padding: 11px 14px; font-size: .95rem; border-radius: 12px; box-shadow: none; margin-bottom: 0; }
 
   /* --- messages --- */
   .msg { margin-bottom: 14px; }
@@ -585,8 +581,7 @@
   }
   /* Restart Bot: the floating copy at the top right drew over the Improve Bot buttons and the course tabs, so it is gone
      (2026-11-28); the PC shows the side panel's Restart Bot (the phone already did), and Improve Bot keeps its own. */
-  .side > #morningLine, .side > #backupLine { padding: 4px 12px; margin: 0; font-size: .8rem; }
-  @media (min-width: 761px) { .side > #restartSide { display: block; order: 8; align-self: stretch; margin: 10px 0 6px; } }
+  @media (min-width: 761px) { .side > #restartSide { display: block; align-self: stretch; margin: auto 0 0; } }
 </style>
 </head>
 <body>
@@ -631,15 +626,7 @@
       </button>
     </div>
     <button id="new" title="Back to the conversation">Conversation</button>
-    <button id="quotaBtn" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
     <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
-    <div class="sub" id="morningLine" hidden></div>
-    <div class="sub" id="backupLine" hidden></div>
-    <section aria-label="Bot may look at" id="pcLookBox" hidden>
-      <div class="row" style="margin-top:0"><strong>Bot may look at</strong></div>
-      <div class="sub">Sites and apps Bot may look at without asking. Add one by telling Bot ("allow Bot to look at Spotify") or with "Always allow" on a card. Bot only looks, never clicks or types.</div>
-      <div id="pcLookLists" class="sub"></div>
-    </section>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -647,8 +634,9 @@
       </div>
     </section>
     <button id="studyBtn" title="One tab for each course: upload materials and study with Bot">Courses</button>
+    <button id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
     <button class="ghost" id="restartSide" title="Restart Bot to load new code (needs start-web.cmd)">Restart Bot</button>
-    <button class="improve" id="improveBtn" title="Let Bot propose changes to its own code, for you to review">Improve Bot</button>
+    <button id="quotaBtn" class="quiet" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
   </aside>
 
   <section class="chat" id="chatView">
@@ -2473,72 +2461,13 @@
     fetch("/api/reminders/" + r.id + "/ack", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
   }
 
-  // PC LOOK (2026-11-24): the two allowed lists, each name with a Remove button (only Omri's tap removes; adding is by words or a card).
-  async function loadPcLists() {
-    let data;
-    try {
-      const res = await fetch("/api/pclook/lists");
-      if (!res.ok) return; // this Bot has no PC look
-      data = await res.json();
-    } catch (error) { return; }
-    $("pcLookBox").hidden = false;
-    const box = $("pcLookLists");
-    const rows = [];
-    for (const [kind, title, names] of [["site", "Sites", data.sites || []], ["app", "Apps", data.apps || []]]) {
-      rows.push(el("div", "", title + ": " + (names.length ? "" : "none")));
-      for (const name of names) {
-        const row = el("div", "reminder");
-        const what = el("div", "what", name);
-        what.dir = "ltr";
-        const remove = el("button", "", "✕");
-        remove.title = "Remove " + name;
-        remove.setAttribute("aria-label", "Remove " + name + " from what Bot may look at");
-        remove.addEventListener("click", async () => {
-          remove.disabled = true;
-          await fetch("/api/pclook/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, name }) }).catch(() => {});
-          loadPcLists();
-        });
-        row.append(what, remove);
-        rows.push(row);
-      }
-    }
-    box.replaceChildren(...rows);
-  }
-
   async function loadReminders() {
-    loadPcLists();
     try {
       const res = await fetch("/api/reminders");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "could not read reminders");
       data.due.forEach(showDue);
     } catch (error) { /* asked again in 30 s */ }
-  }
-
-  // Backup status line (backup.js): stays hidden when backups are not set up.
-  async function loadBackup() {
-    try {
-      const res = await fetch("/api/backup");
-      if (!res.ok) return;
-      const d = await res.json();
-      const el = $("backupLine");
-      if (!d.enabled) { el.hidden = true; return; }
-      const when = d.lastSuccess ? new Date(d.lastSuccess).toLocaleString() : "never";
-      el.textContent = d.ok === false ? "Backup FAILED: " + (d.error || "unknown") + ". Last good copy: " + when : "Last backup: " + when;
-      el.hidden = false;
-    } catch (error) { /* no backup here */ }
-  }
-  // The morning brief (morning.js). (2026-11-28, Omri's decision) The page only shows ONE quiet line with the time it
-  // comes; its settings left the page. The line stays hidden if this Bot has no brief or it is off (for example in a preview).
-  async function loadMorning() {
-    try {
-      const res = await fetch("/api/morning");
-      if (!res.ok) return;
-      const data = await res.json();
-      const line = $("morningLine");
-      line.textContent = data.on && data.time ? "Morning brief at " + data.time : "";
-      line.hidden = !line.textContent;
-    } catch (error) { /* no morning brief here */ }
   }
 
   // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
@@ -2554,37 +2483,34 @@
     return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
   }
 
+  // (2026-11-28, Omri) Notifications are PHONE-ONLY. The PC page shows no button and never subscribes. On the phone,
+  // "Turn on notifications" shows only while this phone is not subscribed (so it can be turned back on if Chrome dropped it),
+  // and nothing once it is. The old test-push button is gone (its server route stays).
   async function setupNotifyButton() {
     const button = $("notifyBtn");
+    if (!session.remote) return; // the PC
     if (!("Notification" in window) || Notification.permission === "denied") return; // unsupported or blocked
-    const showTest = () => { button.hidden = false; button.textContent = "Test notification"; button.title = "Send a test push to every device that turned notifications on"; };
     button.hidden = false;
     if (Notification.permission === "granted") {
       // Already allowed: make sure Bot has this device's subscription (it may be new, or Bot's data was reset).
       try {
         const sub = await pushSubscription();
         if (sub) {
-          await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
-          showTest();
-        } else button.hidden = true;
-      } catch (error) { button.hidden = true; }
+          const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
+          if (res.ok) button.hidden = true; // subscribed: nothing to show
+        } else button.hidden = true; // this browser has no push
+      } catch (error) { /* not subscribed: the button stays so it can be tried again */ }
     }
     button.addEventListener("click", async () => {
       try {
-        if (button.textContent === "Test notification") {
-          const res = await fetch("/api/push/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-          const data = await res.json();
-          $("status").textContent = res.ok ? `Test sent to ${data.sent} device(s)` : data.error;
-          return;
-        }
         await Notification.requestPermission(); // must be triggered by a click, so it is a button
         if (Notification.permission !== "granted") { button.hidden = Notification.permission === "denied"; return; }
         const sub = await pushSubscription();
         if (!sub) { button.hidden = true; return; } // this browser has no push: in-page notifications only
         const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
         if (!res.ok) throw new Error((await res.json()).error);
-        showTest();
-        $("status").textContent = "Notifications are on for this device";
+        button.hidden = true;
+        $("status").textContent = "Notifications are on for this phone";
       } catch (error) {
         $("status").textContent = "Notifications: " + error.message;
       }
@@ -2675,8 +2601,6 @@
     }
     setupNotifyButton();
     loadReminders();
-    loadMorning();
-    loadBackup();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
     window.botThread.start(); // the one conversation (the thread script below)
@@ -3150,6 +3074,8 @@
 
     // Facts and tasks Bot found in your earlier days (thread-summary.js). Each one is a card: nothing is saved before Yes. The box sits above the days.
     async function loadSuggestions() {
+      // Only in Main (Omri, 2026-11-28): a course tab is for that course, not for facts and tasks from earlier days.
+      if (T.place !== "main") { const b = $("tsuggest"); if (b) { b.hidden = true; b.replaceChildren(); } return; }
       let list = [];
       try { list = (await api("/api/summaries/proposals")).proposals || []; } catch (error) { return; }
       const box = $("tsuggest");
@@ -3267,38 +3193,20 @@
       if (T.quote) { try { clearQuote(); } catch (error) { /* nothing marked */ } }
       renderTabs();
       renderHeader();
+      loadSuggestions(); // the "Bot noticed something" box belongs to Main only
       try { await reloadAll(); } catch (error) { toast("Could not load this tab: " + error.message); }
       seenTab(place);
       renderTabs();
       syncCards();
       if (text !== null) { const box = $("task"); box.value = text; box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
     }
-    // A short header on a course tab: where you are, the next deadline, an open or paused quiz (from GET /api/study, the same data
-    // and the same helper as the Study cards, so the two always agree).
+    // (2026-11-28, Omri) A course tab shows NO header: where you are, deadlines and the quiz state took too much of the page
+    // while studying. They are on the Study page (the side panel's Study), which reads the same /api/study data.
     async function renderHeader() {
       const box = $("theader");
       if (!box) return;
-      if (T.place === "main") { box.hidden = true; box.replaceChildren(); return; }
-      const id = T.place.slice(7);
-      const lang = pageLang();
-      let data = null;
-      try { data = await api("/api/study" + (lang === "he" ? "?lang=he" : "")); } catch (error) { data = null; }
-      if (T.place !== "course:" + id) return; // switched again meanwhile
-      const c = data && Array.isArray(data.courses) ? data.courses.find((x) => (x.courseId || x.id) === id) : null;
+      box.hidden = true;
       box.replaceChildren();
-      box.dir = lang === "he" ? "rtl" : "ltr";
-      if (!c) { box.hidden = true; return; }
-      const lines = tStudyLines(c, lang);
-      const S = TS[lang];
-      const top = el("div", "");
-      top.appendChild(el("strong", "", T.courses.get(id) || c.name || ""));
-      if (lines.keeping && lines.keeping.text) top.appendChild(el("span", "sub", " · " + lines.keeping.text));
-      box.appendChild(top);
-      if (lines.at) box.appendChild(el("div", "sub", S.at + ": " + lines.at));
-      if (lines.due && lines.due.length) box.appendChild(el("div", "sub", S.due + ": " + lines.due[0]));
-      if (c.quiz && c.quiz.state === "paused") box.appendChild(el("div", "sub", lang === "he" ? "הבוחן מושהה" : "The quiz is paused"));
-      else if (c.quiz && c.quiz.state === "open") box.appendChild(el("div", "sub", lang === "he" ? "יש שאלת בוחן פתוחה" : "A quiz question is open"));
-      box.hidden = false;
     }
 
     // Adds one message to the page (does nothing if it is already there). Returns its element.
@@ -3946,7 +3854,6 @@
         try {
           await api("/api/pclook/card/" + encodeURIComponent(card.id) + "/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
           box.replaceChildren(el("span", "sub", doneText));
-          if (what === "always") loadPcLists();
         } catch (error) {
           if (error.status === 404) box.replaceChildren(el("span", "sub", "This card is no longer waiting (15 minutes pass). Ask again."));
           else { all.forEach((b) => (b.disabled = false)); note.textContent = "Not done: " + error.message; }

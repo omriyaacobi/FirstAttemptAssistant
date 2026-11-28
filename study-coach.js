@@ -600,6 +600,42 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
   // The model understood Omri's message and hands in CHECKED VALUES (a date, minutes, a part name, closed fields); nothing here scans
   // Omri's words. Each function checks its values in code and returns text written by code.
   const refOfCourse = (courseId) => refs().find((r) => r.courseId === courseId) || null;
+
+  // WHERE OMRI IS FOLLOWS THE PARTS (2026-11-28, Omri: "we reached lecture 7 together but bot shows im only at lecture 5"). A place
+  // "lecture N" means lecture N is FINISHED (so teach_next goes on with N+1). When parts of a lecture are marked, the place moves up to
+  // that lecture once EVERY part of it was worked on, or to the lecture before it while some are left. Built only from real marks
+  // (never "understood"), checked against the held lectures like any other place, never moved back, kept for undo, said in one line.
+  // The notebook's lecture n is matched to its timetable lecture by the pages the tracker holds for it (a cancelled class shifts one count).
+  function advancePlace(ref, pages, outline, n) {
+    try {
+      const lec = lectureParts.lecturesOf(outline).find((l) => l.n === n);
+      if (!lec) return "";
+      const rec = tracker.course(ref);
+      const slot = tracker.slots(ref.key).find((s) => { const l = rec.lectures[s.date]; const m = l && l.material && l.material[0]; return m && m.fileId === lec.fileId && m.from === lec.fromPage; });
+      if (!slot) return "";
+      const old = rec.position || {};
+      const held = tracker.slots(ref.key).filter((s) => plan.isHeld(s, now(), timezone));
+      const at = (date) => { const s = [...held].reverse().find((x) => x.date <= date); return s ? s.n : 0; };
+      const cur = old.where && old.where.type === "lecture" ? Number(old.where.n) : old.where && old.where.type === "date" ? at(old.where.date) : old.seenThrough ? at(old.seenThrough) : 0;
+      const v = lectureParts.view(pages, outline, rec, n);
+      const target = v && !v.left.length ? slot.n : slot.n - 1; // finished, or the one before while parts are left
+      if (target <= cur || target < 1) return "";
+      const res = standing.checkStanding({ where: { type: "lecture", n: target } }, standingContext(ref));
+      if (!res.fields.where || res.fields.where.n <= cur) return "";
+      const before = { ref, position: old, pending: tracker.pendingQuestion(ref) };
+      const merged = {};
+      for (const k of V2_KEYS) if (old[k] !== undefined) merged[k] = old[k];
+      delete merged.pace; delete merged.behindBy; // a new place replaces what was said about being behind the old one
+      merged.where = res.fields.where;
+      if (old.note) merged.note = old.note;
+      if (old.said) merged.said = old.said;
+      tracker.setStanding(ref, merged);
+      lastUndo = { items: [before], proposalIds: [], at: now() };
+      keepUndo({ kind: "position", key: ref.key, position: before.position, pending: before.pending, proposalIds: [], by: "parts" });
+      return `\nPLACE MOVED: where Omri is in ${ref.name} is now: finished through lecture ${res.fields.where.n} (it was ${cur ? `lecture ${cur}` : "unknown"}), from the parts marked as worked on. Tell Omri in one short line; "undo" takes it back.`;
+    } catch (error) { log(`[standing] place not moved: ${error.message}`); return ""; }
+  }
+
   const brainTools = {
     // Reserve duty or a break: the study nudges stop until a date, or until resume.
     pause({ until = "", lang = "en" } = {}) {
@@ -740,7 +776,8 @@ function createStudyCoach({ dir, courses, askChain, now = () => Date.now(), time
       const picked = list.filter((p) => want.includes(p.id));
       const rec = tracker.course(ref);
       tracker.save({ ...rec, worked: undo ? lectureParts.unmark(rec, n, picked) : lectureParts.mark(rec, n, picked, now()) });
-      return `${undo ? "UNMARKED" : "MARKED as worked on (not as understood)"}: ${picked.map((p) => `${p.id} ${p.topic}`).join("; ")}.\n` + lectureParts.lines(lectureParts.view(pages, outline, tracker.course(ref), n), { timeZone: timezone, now: now() });
+      const moved = undo ? "" : advancePlace(ref, pages, outline, n);
+      return `${undo ? "UNMARKED" : "MARKED as worked on (not as understood)"}: ${picked.map((p) => `${p.id} ${p.topic}`).join("; ")}.\n` + lectureParts.lines(lectureParts.view(pages, outline, tracker.course(ref), n), { timeZone: timezone, now: now() }) + moved;
     },
     // For the brain's context: the lecture Omri is on (the one after the last covered, and that one too when it has open parts)
     // and any lecture with a part worked on in the last 2 days. "" when the notes have no lectures. At most 3 lectures.
