@@ -561,6 +561,28 @@
     [data-theme="midnight"] #form #send { padding: 0 16px; }
     .side { inset: 0 18% 0 0; }
     [data-theme="midnight"] .side > button:not([class]) { padding: 12px; }
+
+  /* ===== Improve Bot composer (2026-11-28): the text box gets most of the room. The Editor picker, its quota hint (one line,
+     the whole sentence is the tooltip), Plan first, attach and Send share ONE short row under it; on a phone two short rows. ===== */
+  #improveText { min-height: clamp(96px, 24vh, 240px); max-height: 55vh; }
+  #improveStatus { display: block; max-width: none; margin: 4px 0 0; }
+  #improveStatus:empty { display: none; }
+  #improveComposer .improve-tools { flex-wrap: nowrap; gap: 10px; margin-top: 6px; }
+  #improveModelLabel { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: .85rem; white-space: nowrap; }
+  #improveModelLabel[hidden], #improvePlanLabel[hidden] { display: none; }
+  #improveModel { flex: none; max-width: 9.5rem; font-size: .85rem; padding: 4px 6px; }
+  #improveQuotaNote { flex: 1 1 auto; min-width: 0; margin: 0; font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #improvePlanLabel { flex: none; display: flex; align-items: center; gap: 6px; font-size: .85rem; white-space: nowrap; }
+  #improveComposer .improve-tools .tools { flex: none; display: flex; align-items: center; gap: 6px; margin-inline-start: auto; }
+  #improveComposer .improve-tools button.attach { width: 40px; height: 40px; }
+  @media (max-width: 760px) {
+    #improveText { min-height: clamp(88px, 20vh, 200px); }
+    #improveComposer .improve-tools { flex-wrap: wrap; row-gap: 2px; column-gap: 8px; }
+    #improveModelLabel { flex: 1 1 100%; min-height: 36px; }
+    .improve-head h1 { display: none; } /* the phone's top bar already says "Improve Bot" */
+    .improve-head .actions { width: 100%; }
+    #improveComposer .improve-tools button.attach { width: 44px; height: 44px; }
+  }
     .bottombar { border-top-color: var(--line); }
     .bottombar button.tab { min-height: 52px; font-size: .68rem; font-weight: 500; gap: 1px; }
     .bottombar button.tab svg { width: 22px; height: 22px; }
@@ -740,10 +762,10 @@
       <div class="composer" id="improveComposer"><div class="inner">
         <div class="photo-tray" id="improvePhotoChip" hidden aria-label="Attached screenshots"></div>
         <textarea id="improveText" dir="auto" aria-label="Message to the editor" placeholder="Describe a change to Bot. For example: make the page more colorful."></textarea>
-        <div class="row">
-          <label id="improveModelLabel">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="carbon">Carbon (trial, Gemini)</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
+        <span class="status" id="improveStatus" role="status"></span>
+        <div class="row improve-tools">
+          <label id="improveModelLabel" title="Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.">Editor <select id="improveModel"><option value="neon" selected>Neon</option><option value="carbon">Carbon (trial, Gemini)</option><option value="sonnet">Sonnet</option><option value="opus">Opus (stronger, uses more quota)</option></select> <span class="sub" id="improveQuotaNote">Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.</span></label>
           <label id="improvePlanLabel" title="Discuss feasibility, limitations and a plan before editing any files"><input type="checkbox" id="improvePlanMode" checked> Plan first</label>
-          <span class="status" id="improveStatus" role="status"></span>
           <span class="tools">
             <input type="file" id="improvePhotoInput" accept="image/*" multiple hidden>
             <button type="button" class="attach" id="improveAttach" aria-label="Attach a screenshot" title="Attach a screenshot (or paste with Ctrl+V)">
@@ -2049,7 +2071,7 @@
       renderedKey = key;
       if (plan.model && $("improveModel")) {
         $("improveModel").value = plan.model;
-        $("improveQuotaNote").textContent = QUOTA_NOTES[plan.model] || "";
+        showQuotaNote(plan.model);
       }
       renderImprove();
       updateImproveComposer();
@@ -2404,7 +2426,13 @@
   setupImprovePaste();
   // Which quota the chosen editor spends, in plain words.
   const QUOTA_NOTES = { neon: "Uses your Gemini quota (Gemini Models), NOT Claude. Can change all of Bot except the guard files.", carbon: "Carbon high: uses your Gemini quota (Gemini Models), NOT Claude. A trial; slower than Neon.", sonnet: "Uses your Claude plan.", opus: "Uses your Claude plan (more of it)." };
-  $("improveModel").addEventListener("change", () => { $("improveQuotaNote").textContent = QUOTA_NOTES[$("improveModel").value] || ""; });
+  // The quota line is a short one-line hint beside the picker; the whole sentence is the picker's tooltip (2026-11-28).
+  function showQuotaNote(model) {
+    const note = QUOTA_NOTES[model] || "";
+    $("improveQuotaNote").textContent = note;
+    $("improveModelLabel").title = note;
+  }
+  $("improveModel").addEventListener("change", () => showQuotaNote($("improveModel").value));
   try { $("improvePlanMode").checked = localStorage.getItem("botImprovePlan") !== "0"; } catch (error) { /* private mode */ }
   $("improvePlanMode").addEventListener("change", () => {
     try { localStorage.setItem("botImprovePlan", $("improvePlanMode").checked ? "1" : "0"); } catch (error) { /* private mode */ }
