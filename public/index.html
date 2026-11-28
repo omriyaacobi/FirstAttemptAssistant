@@ -635,11 +635,6 @@
     <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
     <div class="sub" id="morningLine" hidden></div>
     <div class="sub" id="backupLine" hidden></div>
-    <section aria-label="Bot may look at" id="pcLookBox" hidden>
-      <div class="row" style="margin-top:0"><strong>Bot may look at</strong></div>
-      <div class="sub">Sites and apps Bot may look at without asking. Add one by telling Bot ("allow Bot to look at Spotify") or with "Always allow" on a card. Bot only looks, never clicks or types.</div>
-      <div id="pcLookLists" class="sub"></div>
-    </section>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -2473,40 +2468,7 @@
     fetch("/api/reminders/" + r.id + "/ack", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
   }
 
-  // PC LOOK (2026-11-24): the two allowed lists, each name with a Remove button (only Omri's tap removes; adding is by words or a card).
-  async function loadPcLists() {
-    let data;
-    try {
-      const res = await fetch("/api/pclook/lists");
-      if (!res.ok) return; // this Bot has no PC look
-      data = await res.json();
-    } catch (error) { return; }
-    $("pcLookBox").hidden = false;
-    const box = $("pcLookLists");
-    const rows = [];
-    for (const [kind, title, names] of [["site", "Sites", data.sites || []], ["app", "Apps", data.apps || []]]) {
-      rows.push(el("div", "", title + ": " + (names.length ? "" : "none")));
-      for (const name of names) {
-        const row = el("div", "reminder");
-        const what = el("div", "what", name);
-        what.dir = "ltr";
-        const remove = el("button", "", "✕");
-        remove.title = "Remove " + name;
-        remove.setAttribute("aria-label", "Remove " + name + " from what Bot may look at");
-        remove.addEventListener("click", async () => {
-          remove.disabled = true;
-          await fetch("/api/pclook/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, name }) }).catch(() => {});
-          loadPcLists();
-        });
-        row.append(what, remove);
-        rows.push(row);
-      }
-    }
-    box.replaceChildren(...rows);
-  }
-
   async function loadReminders() {
-    loadPcLists();
     try {
       const res = await fetch("/api/reminders");
       const data = await res.json();
@@ -3946,7 +3908,6 @@
         try {
           await api("/api/pclook/card/" + encodeURIComponent(card.id) + "/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
           box.replaceChildren(el("span", "sub", doneText));
-          if (what === "always") loadPcLists();
         } catch (error) {
           if (error.status === 404) box.replaceChildren(el("span", "sub", "This card is no longer waiting (15 minutes pass). Ask again."));
           else { all.forEach((b) => (b.disabled = false)); note.textContent = "Not done: " + error.message; }
