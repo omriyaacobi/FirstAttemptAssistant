@@ -613,18 +613,7 @@
     <button id="new" title="Back to the conversation">Conversation</button>
     <button id="quotaBtn" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
     <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
-    <section aria-label="Morning brief" id="morningBox" hidden>
-      <div class="row" style="margin-top:0">
-        <strong>Morning brief</strong>
-        <label class="sub"><input type="checkbox" id="morningOn"> On</label>
-        <input type="time" id="morningTime" aria-label="Time of the morning brief">
-      </div>
-      <div class="sub">A small morning newspaper: today's calendar and reminders (no model reads them), how yesterday's studying went, and the big news. Gemini Flash picks the news and words the study lines; code checks them. The phone push shows counts only.</div>
-      <div class="row">
-        <button class="ghost" id="morningNow">Show me one now</button>
-        <span class="sub" id="morningNote"></span>
-      </div>
-    </section>
+    <div class="sub" id="morningLine" hidden></div>
     <div class="sub" id="backupLine" hidden></div>
     <section aria-label="Bot may look at" id="pcLookBox" hidden>
       <div class="row" style="margin-top:0"><strong>Bot may look at</strong></div>
@@ -2501,17 +2490,6 @@
     } catch (error) { /* asked again in 30 s */ }
   }
 
-  // The morning brief (morning.js). The box stays hidden if this Bot has none (for example in the Improve Bot preview).
-  async function saveMorning(change) {
-    const res = await fetch("/api/morning", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
-    const data = await res.json();
-    $("morningNote").textContent = res.ok ? (data.on ? `On, every day at ${data.time}.` : "Off.") : data.error;
-    if (res.ok) showMorning(data);
-  }
-  function showMorning({ on, time }) {
-    $("morningOn").checked = on;
-    $("morningTime").value = time;
-  }
   // Backup status line (backup.js): stays hidden when backups are not set up.
   async function loadBackup() {
     try {
@@ -2525,30 +2503,18 @@
       el.hidden = false;
     } catch (error) { /* no backup here */ }
   }
+  // The morning brief (morning.js). (2026-11-28, Omri's decision) The page only shows ONE quiet line with the time it
+  // comes; its settings left the page. The line stays hidden if this Bot has no brief or it is off (for example in a preview).
   async function loadMorning() {
     try {
       const res = await fetch("/api/morning");
       if (!res.ok) return;
       const data = await res.json();
-      showMorning(data);
-      $("morningNote").textContent = data.on && !data.devices ? "Turn on notifications to get it on the phone too." : "";
-      $("morningBox").hidden = false;
+      const line = $("morningLine");
+      line.textContent = data.on && data.time ? "Morning brief at " + data.time : "";
+      line.hidden = !line.textContent;
     } catch (error) { /* no morning brief here */ }
   }
-  $("morningOn").addEventListener("change", (event) => saveMorning({ on: event.target.checked }).catch((error) => { $("morningNote").textContent = error.message; }));
-  $("morningTime").addEventListener("change", (event) => { if (event.target.value) saveMorning({ time: event.target.value }).catch((error) => { $("morningNote").textContent = error.message; }); });
-  $("morningNow").addEventListener("click", async () => {
-    $("morningNow").disabled = true;
-    try {
-      const res = await fetch("/api/morning/now", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "could not make the brief");
-      window.botThread.refresh(); // the brief is one message in the conversation: show it now
-    } catch (error) {
-      $("morningNote").textContent = error.message;
-    }
-    $("morningNow").disabled = false;
-  });
 
   // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
   // gives us a "subscription" (an address at Google's push service), and we hand it to Bot.
