@@ -3074,6 +3074,8 @@
 
     // Facts and tasks Bot found in your earlier days (thread-summary.js). Each one is a card: nothing is saved before Yes. The box sits above the days.
     async function loadSuggestions() {
+      // Only in Main (Omri, 2026-11-28): a course tab is for that course, not for facts and tasks from earlier days.
+      if (T.place !== "main") { const b = $("tsuggest"); if (b) { b.hidden = true; b.replaceChildren(); } return; }
       let list = [];
       try { list = (await api("/api/summaries/proposals")).proposals || []; } catch (error) { return; }
       const box = $("tsuggest");
@@ -3191,6 +3193,7 @@
       if (T.quote) { try { clearQuote(); } catch (error) { /* nothing marked */ } }
       renderTabs();
       renderHeader();
+      loadSuggestions(); // the "Bot noticed something" box belongs to Main only
       try { await reloadAll(); } catch (error) { toast("Could not load this tab: " + error.message); }
       seenTab(place);
       renderTabs();
