@@ -1090,6 +1090,14 @@ ${text}`; } catch (error) {
         return `${pcLook.label(target)} is not on Omri's allowed list, so a card now asks Omri: "Just this once", "Always allow" or "Cancel". NOTHING was looked at; after a tap Bot looks and answers. Say that in one short line.`;
       },
       // The allowed lists, from Omri's OWN words only (pc-look.js checks the name is in his message; never-allowed names are refused).
+      // The two allowed lists, read-only (2026-11-28: the page's list left; the same data as GET /api/pclook/lists). A lookup: allowed
+      // after a web page, a photo or Moodle text. No numbers on purpose: pc_allow removes only a name Omri's own message holds.
+      pc_allowed: async () => {
+        if (!pcLook) return "Looking at the PC is not set up in this Bot.";
+        const l = pcLook.readLists();
+        const names = (x) => (x.length ? x.join(", ") : "none");
+        return "What Bot may look at without asking (names are data):\n" + block("pc-allowed", `Sites: ${names(l.sites || [])}\nApps: ${names(l.apps || [])}`) + "\nTo take one off, Omri names it and you call pc_allow with \"remove\":true.";
+      },
       pc_allow: async ({ site, app, remove }) => {
         pcReady();
         afterWeb("change what Bot may look at");

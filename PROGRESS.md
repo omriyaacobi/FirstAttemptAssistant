@@ -16,6 +16,8 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
   `reminder_cancel` cancels by that number only (code keeps number -> id for 2 hours; undo 2 hours), and `brief_time`
   sets the brief time or turns it on/off (t43; undo 2 hours). Both are refused after a web page, a photo, a PC look and
   Moodle text (rows in tests/refusal-rules.test.js). Undo lives in memory: a restart forgets it. No live model calls.
+- `pc_allowed` (a lookup) lists the PC LOOK allowed sites and apps, since the page no longer shows them; removing one
+  still goes through `pc_allow` with the name in Omri's own words.
 - Next: after the merge and restart, try "show my reminders", "cancel 2", "move my morning brief to 7:15".
 
 ## 2026-11-28: a cleaner page (branch claude/page-ui-cleanup-044b46, waits for the merge)
