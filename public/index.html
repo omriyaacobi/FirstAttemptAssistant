@@ -585,7 +585,6 @@
   }
   /* Restart Bot: the floating copy at the top right drew over the Improve Bot buttons and the course tabs, so it is gone
      (2026-11-28); the PC shows the side panel's Restart Bot (the phone already did), and Improve Bot keeps its own. */
-  .side > #morningLine, .side > #backupLine { padding: 4px 12px; margin: 0; font-size: .8rem; }
   @media (min-width: 761px) { .side > #restartSide { display: block; order: 8; align-self: stretch; margin: 10px 0 6px; } }
 </style>
 </head>
@@ -633,8 +632,6 @@
     <button id="new" title="Back to the conversation">Conversation</button>
     <button id="quotaBtn" aria-haspopup="dialog" title="See how much of your Gemini and Claude quota is left">Quota</button>
     <button class="ghost" id="notifyBtn" hidden title="Let Bot show a notification when a reminder is due">Turn on notifications</button>
-    <div class="sub" id="morningLine" hidden></div>
-    <div class="sub" id="backupLine" hidden></div>
     <section aria-label="Look">
       <div class="row" style="margin-top:0">
         <strong>Look</strong>
@@ -2477,32 +2474,6 @@
     } catch (error) { /* asked again in 30 s */ }
   }
 
-  // Backup status line (backup.js): stays hidden when backups are not set up.
-  async function loadBackup() {
-    try {
-      const res = await fetch("/api/backup");
-      if (!res.ok) return;
-      const d = await res.json();
-      const el = $("backupLine");
-      if (!d.enabled) { el.hidden = true; return; }
-      const when = d.lastSuccess ? new Date(d.lastSuccess).toLocaleString() : "never";
-      el.textContent = d.ok === false ? "Backup FAILED: " + (d.error || "unknown") + ". Last good copy: " + when : "Last backup: " + when;
-      el.hidden = false;
-    } catch (error) { /* no backup here */ }
-  }
-  // The morning brief (morning.js). (2026-11-28, Omri's decision) The page only shows ONE quiet line with the time it
-  // comes; its settings left the page. The line stays hidden if this Bot has no brief or it is off (for example in a preview).
-  async function loadMorning() {
-    try {
-      const res = await fetch("/api/morning");
-      if (!res.ok) return;
-      const data = await res.json();
-      const line = $("morningLine");
-      line.textContent = data.on && data.time ? "Morning brief at " + data.time : "";
-      line.hidden = !line.textContent;
-    } catch (error) { /* no morning brief here */ }
-  }
-
   // Notifications. With push (see webpush.js) they arrive even when Bot's page is closed: the browser
   // gives us a "subscription" (an address at Google's push service), and we hand it to Bot.
   let session = { remote: false, loggedIn: true, pushKey: null };
@@ -2637,8 +2608,6 @@
     }
     setupNotifyButton();
     loadReminders();
-    loadMorning();
-    loadBackup();
     setInterval(loadReminders, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) loadReminders(); });
     window.botThread.start(); // the one conversation (the thread script below)
