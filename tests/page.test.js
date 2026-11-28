@@ -14,11 +14,11 @@ test("the side panel: Improve Bot is a plain menu item under Courses, and Quota 
   const improve = side.indexOf('id="improveBtn"');
   assert.ok(improve > side.indexOf('id="studyBtn"'), "Improve Bot comes right under Courses");
   assert.match(side, /<button id="improveBtn"/); // no big class of its own: it looks like the other menu items
-  assert.doesNotMatch(html, /button.improve/);
-  assert.match(html, /.side > #improveBtn { order: 3; }/);
+  assert.doesNotMatch(html, /button\.improve/);
+  assert.match(html, /\.side > #improveBtn \{ order: 3; \}/);
   assert.match(side, /<button id="quotaBtn" class="quiet"/);
   assert.ok(side.indexOf('id="quotaBtn"') > side.indexOf('id="restartSide"'), "Quota is the last line");
-  assert.match(html, /.side > #quotaBtn { order: 11;[^}]*font-size: .8rem/);
+  assert.match(html, /\.side > #quotaBtn \{ order: 11;[^}]*font-size: \.8rem/);
 });
 
 test("the page uses a purple accent", () => {
@@ -259,7 +259,11 @@ test("Bot's icon at the top left folds and opens the side panel on the PC, and t
   const side = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
   assert.match(side, /<button type="button" class="sidetoggle" id="sideToggle" aria-expanded="true"/);
   assert.doesNotMatch(side, /<h1>Bot<\/h1>/); // the icon took the written name's place
-  assert.match(html, /body\.side-folded \.app \{ grid-template-columns: 64px 1fr; \}/);
+  // folded: no strip at all, the conversation gets the whole width, and the icon opens it again from the left of the tab row
+  assert.match(html, /body\.side-folded:has\(#chatView:not\(\[hidden\]\)\) \.side \{ display: none; \}/);
+  assert.match(html, /open\.id = "sideOpen"/);
+  assert.match(html, /row\.append\(open, tabs\)/);
+  assert.match(html, /\.theader\[hidden\] \{ display: none; \}/); // no empty band under the tabs
   assert.match(html, /localStorage\.setItem\("botSideFolded"/);
   assert.match(html, /matchMedia\("\(max-width: 760px\)"\)\.matches\) \{ closeSide\(\); return; \}/); // the phone keeps its drawer
 });

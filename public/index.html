@@ -350,8 +350,9 @@
      the rest to the others), font and padding shrink with the screen, and a long course name is cut with "..." (the full name
      is the tab's tooltip). Each tab keeps at least about 4.5 letters, so the row only scrolls sideways when there are really
      too many tabs. Main never shrinks; the open course tab gets a bigger share. */
-  .ttabs { display: flex; gap: clamp(3px, 1vw, 6px); overflow-x: auto; padding: clamp(5px, 1.2vw, 8px) clamp(6px, 2vw, 16px); border-bottom: 1px solid var(--line); background: var(--card); scrollbar-width: thin; flex: none; }
-  .ttab { flex: 1 1 0; min-width: 4.5em; max-width: max-content; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: clamp(4px, 1vw, 6px) clamp(7px, 1.8vw, 12px); font: inherit; font-size: clamp(12px, 3.4vw, 14px); line-height: 1.25; cursor: pointer; white-space: nowrap; position: relative; }
+  .ttabrow { display: flex; align-items: center; border-bottom: 1px solid var(--line); background: var(--card); flex: none; }
+  .ttabs { flex: 1; min-width: 0; display: flex; align-items: center; gap: clamp(3px, 1vw, 8px); overflow-x: auto; padding: clamp(6px, 1.4vw, 11px) clamp(6px, 2vw, 16px); scrollbar-width: thin; }
+  .ttab { flex: 1 1 0; min-width: 4.5em; max-width: max-content; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: clamp(4px, 1.1vw, 8px) clamp(7px, 1.9vw, 14px); font: inherit; font-size: clamp(12px, 3.4vw, 15px); line-height: 1.25; cursor: pointer; white-space: nowrap; position: relative; }
   .ttab.tmain { flex: none; }
   .ttab:not(.tmain)[aria-selected="true"] { flex-grow: 1.8; }
   .ttab[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -359,6 +360,7 @@
   .ttab .tdot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-inline-start: 5px; }
   .ttab[aria-selected="true"] .tdot { background: var(--accent-text); }
   @media (max-width: 760px) { .ttabs .ttab { min-height: 40px; } }
+  .theader[hidden] { display: none; } /* it was an empty band under the tabs (display: grid beat hidden) */
   .theader { padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); font-size: 14px; display: grid; gap: 2px; flex: none; }
   .theader .sub { font-size: 13px; }
   .tcopy { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
@@ -581,18 +583,21 @@
   /* Restart Bot: the floating copy at the top right drew over the Improve Bot buttons and the course tabs, so it is gone
      (2026-11-28); the PC shows the side panel's Restart Bot (the phone already did), and Improve Bot keeps its own. */
   @media (min-width: 761px) { .side > #restartSide { display: block; align-self: stretch; margin: auto 0 0; } }
-  /* (2026-11-28, Omri) Bot's icon at the top left folds the side panel to a thin strip (only the icon) and opens it again; the
-     choice is kept in this browser. The phone keeps its menu button and drawer (there the icon just closes the drawer). */
+  /* (2026-11-28, Omri) Bot's icon at the top left folds the side panel AWAY (the conversation gets the whole width) and the same
+     icon, now at the left of the tab row as high as the tabs, opens it again; the choice is kept in this browser. It folds only
+     on the conversation page (Study and Improve Bot keep the panel, their way back). The phone keeps its menu button and drawer
+     (there the icon just closes the drawer). */
   .side .side-head > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .sidetoggle { flex: none; width: 40px; height: 40px; min-height: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; box-shadow: none; cursor: pointer; display: inline-flex; }
-  .sidetoggle svg { width: 40px; height: 40px; display: block; }
+  .sidetoggle { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border: 0; border-radius: 9px; background: transparent; box-shadow: none; cursor: pointer; display: inline-flex; }
+  .sidetoggle svg { width: 36px; height: 36px; display: block; }
   .sidetoggle:hover { filter: brightness(1.12); }
   .sidetoggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #sideOpen { display: none; margin-inline-start: clamp(6px, 2vw, 16px); }
   @media (min-width: 761px) {
-    body.side-folded .app { grid-template-columns: 64px 1fr; }
-    body.side-folded .side { padding: 18px 12px; overflow: hidden; }
-    body.side-folded .side .side-head { padding: 0; margin: 0; }
-    body.side-folded .side .side-head .sub, body.side-folded .side > :not(.side-head) { display: none !important; }
+    body.side-folded:has(#chatView:not([hidden])) .app { grid-template-columns: minmax(0, 1fr); }
+    body.side-folded:has(#chatView:not([hidden])) .side { display: none; }
+    body.side-folded:has(#chatView:not([hidden])) #sideOpen { display: inline-flex; }
+    body.side-folded:has(#chatView:not([hidden])) #sideOpen + .ttabs { padding-inline-start: 10px; }
   }
 </style>
 </head>
@@ -1569,12 +1574,15 @@
     $("sideToggle").setAttribute("aria-label", on ? "Open the side panel" : "Fold the side panel");
   }
   try { setSideFolded(localStorage.getItem("botSideFolded") === "1"); } catch (error) { /* private mode: open */ }
-  $("sideToggle").addEventListener("click", () => {
+  function toggleSideFolded() {
     if (matchMedia("(max-width: 760px)").matches) { closeSide(); return; }
-    const on = !document.body.classList.contains("side-folded");
+    // folding is for reading the conversation: from Study or Improve Bot it goes to the conversation first
+    const on = !document.body.classList.contains("side-folded") || $("chatView").hidden;
+    if (on && $("chatView").hidden) $("new").click();
     setSideFolded(on);
     try { localStorage.setItem("botSideFolded", on ? "1" : "0"); } catch (error) { /* private mode: only for now */ }
-  });
+  }
+  $("sideToggle").addEventListener("click", toggleSideFolded);
   $("backdrop").addEventListener("click", closeSide);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && navState.side) closeSide(); });
   // Swipe left on the sidebar to close it (mostly horizontal, at least 60px).
@@ -4075,7 +4083,14 @@
       // THE COURSE TABS (2026-11-27): the tab row and the course header sit above the conversation, on the PC and on the phone.
       const tabs = el("nav", "ttabs"); tabs.id = "ttabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Main and the course tabs");
       const header = el("div", "theader"); header.id = "theader"; header.hidden = true;
-      scroller().before(tabs, header);
+      // (2026-11-28) the row holds Bot's icon at its left, shown only while the side panel is folded (CSS), to open it again
+      const row = el("div", "ttabrow");
+      const open = el("button", "sidetoggle"); open.id = "sideOpen"; open.type = "button";
+      open.setAttribute("aria-label", "Open the side panel"); open.title = "Open the side panel";
+      open.appendChild($("sideToggle").querySelector("svg").cloneNode(true));
+      open.addEventListener("click", toggleSideFolded);
+      row.append(open, tabs);
+      scroller().before(row, header);
       // which tab to open: a push's link (#place=...), else the one open last time on this device, else Main
       const fromHash = /^#place=(.+)$/.exec(location.hash || "");
       const wanted = fromHash ? decodeURIComponent(fromHash[1]) : tabStore.get("tab", "main");
