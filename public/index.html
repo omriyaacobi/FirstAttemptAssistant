@@ -2483,37 +2483,34 @@
     return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
   }
 
+  // (2026-11-28, Omri) Notifications are PHONE-ONLY. The PC page shows no button and never subscribes. On the phone,
+  // "Turn on notifications" shows only while this phone is not subscribed (so it can be turned back on if Chrome dropped it),
+  // and nothing once it is. The old test-push button is gone (its server route stays).
   async function setupNotifyButton() {
     const button = $("notifyBtn");
+    if (!session.remote) return; // the PC
     if (!("Notification" in window) || Notification.permission === "denied") return; // unsupported or blocked
-    const showTest = () => { button.hidden = false; button.textContent = "Test notification"; button.title = "Send a test push to every device that turned notifications on"; };
     button.hidden = false;
     if (Notification.permission === "granted") {
       // Already allowed: make sure Bot has this device's subscription (it may be new, or Bot's data was reset).
       try {
         const sub = await pushSubscription();
         if (sub) {
-          await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
-          showTest();
-        } else button.hidden = true;
-      } catch (error) { button.hidden = true; }
+          const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
+          if (res.ok) button.hidden = true; // subscribed: nothing to show
+        } else button.hidden = true; // this browser has no push
+      } catch (error) { /* not subscribed: the button stays so it can be tried again */ }
     }
     button.addEventListener("click", async () => {
       try {
-        if (button.textContent === "Test notification") {
-          const res = await fetch("/api/push/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-          const data = await res.json();
-          $("status").textContent = res.ok ? `Test sent to ${data.sent} device(s)` : data.error;
-          return;
-        }
         await Notification.requestPermission(); // must be triggered by a click, so it is a button
         if (Notification.permission !== "granted") { button.hidden = Notification.permission === "denied"; return; }
         const sub = await pushSubscription();
         if (!sub) { button.hidden = true; return; } // this browser has no push: in-page notifications only
         const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
         if (!res.ok) throw new Error((await res.json()).error);
-        showTest();
-        $("status").textContent = "Notifications are on for this device";
+        button.hidden = true;
+        $("status").textContent = "Notifications are on for this phone";
       } catch (error) {
         $("status").textContent = "Notifications: " + error.message;
       }

@@ -129,6 +129,9 @@ test("the page shows fired reminders (no list since 2026-11-28), has a notificat
   assert.match(html, /data\.due\.forEach\(showDue\)/);
   assert.match(html, /\/api\/reminders\/" \+ r\.id \+ "\/ack"/);
   assert.match(html, /id="notifyBtn"/);
+  // (2026-11-28, Omri) notifications are phone-only: the PC returns before any button or subscription, and there is no test button
+  assert.match(html, /async function setupNotifyButton\(\) \{\s*const button = \$\("notifyBtn"\);\s*if \(!session\.remote\) return;/);
+  assert.doesNotMatch(html, /Test notification|\/api\/push\/test/);
   assert.match(html, /id="mic"/);
   assert.match(html, /webkitSpeechRecognition/);
   assert.match(html, /\/api\/reminders/);
