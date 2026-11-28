@@ -81,7 +81,7 @@ const FOCUS_MS = 90 * 60 * 1000;
 const CARD_TOOLS = new Set(["course_search", "course_read", "course_files", "lecture_parts", "study_status", "teach_next", "quiz", "quiz_answer", "parts_done", "study_position", "course_note", "project_files", "project_read", "project_grep", "working_on", "exam_plan", "plan_done"]);
 // "Doing" tools whose outcome is simply worked / did not work. The model may write its reply under the CALL lines in the same turn; code
 // shows that reply only if EVERY call worked, so Bot can never claim something that failed. It saves a whole model round (about 8 s).
-const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch", "parts_done", "todo_update", "exam_plan", "plan_done", "pc_allow", "reminder_cancel"]);
+const DOING = new Set(["set_reminder", "add_events", "remember", "forget", "course_note", "improve_bot", "link_folder", "moodle_link", "study_pause", "study_resume", "exam_date", "study_undo", "class_cancelled", "save_links", "open_on_pc", "pc_roots", "file_folder", "working_on", "talk_course", "moodle_watch", "parts_done", "todo_update", "exam_plan", "plan_done", "pc_allow", "reminder_cancel", "brief_time"]);
 // PC LOOK (2026-11-24, pc-look.js): at most this many looks (a tab's text or picture, a window's picture) in one message.
 const MAX_LOOKS = 3;
 const UNSAID = new Set(["talk_course"]); // doing-tools that are only a label: never listed as "this was done" for Omri
@@ -310,6 +310,7 @@ function createBrain({
   coach = null, // study-coach.js (quiz, tracker)
   reminders, // reminders.js store: create, list
   todo = null, // todo.js: Omri's to-do list for Bot (data/todo.md): read, update; null = the tools say the list is off
+  morning = null, // morning.js: the morning brief's settings (settings, update), for brief_time; null = the tool says it is off
   memory, // profile.js memory: list, add
   cards, // calendar-add.js cards: add
   readCalendar, // calendar-chat.js readCalendar
@@ -340,6 +341,7 @@ function createBrain({
 }) {
   let shownReminders = null; // { at, ids }: the numbered list reminders_list last showed (see SHOWN_KEEP_MS)
   let cancelledReminder = null; // { at, reminder }: the last reminder reminder_cancel removed, for "undo"
+  let briefBefore = null; // { at, on, time }: the morning brief settings before the last brief_time change, for "undo"
   let paceLead = null; // which agy model went first last time (quota.js paceOrder keeps it in the lead for a stretch); memory only
   const courseList = () => { try { return courseRoutes.list(); } catch (error) { return []; } };
   const refOf = (course) => (coach ? coach.tracker.refsFor([course])[0] : null);
@@ -782,6 +784,37 @@ ${text}`; } catch (error) {
         if (!reminders.cancel(id)) throw new Error(`reminder ${n} could not be cancelled; nothing changed`);
         cancelledReminder = { at: now(), reminder: r };
         return `Reminder ${n} CANCELLED (was for ${formatWhen(r.at, r.timezone, lang)}): ${r.text}. "undo" puts it back within 2 hours.`;
+      },
+      // The morning brief's time and on/off (2026-11-28, t43; the page's settings panel was removed that day). Written through
+      // morning.update, the same road POST /api/morning uses (it checks HH:MM again). Code checks: a real HH:MM ("8:30" gets its 0),
+      // "on" true/false or "on"/"off". "undo" puts the settings before the last change back (2 hours). Refused after a web page, a
+      // photo, a PC look or Moodle text.
+      brief_time: async ({ time, on, undo }) => {
+        afterWeb("change the morning brief");
+        if (!morning) return "The morning brief is not set up in this Bot.";
+        if (undo === true) {
+          if (!briefBefore || now() - briefBefore.at > UNDO_KEEP_MS) throw new Error("there is no morning brief change to undo (undo works for 2 hours after a change)");
+          const back = morning.update({ on: briefBefore.on, time: briefBefore.time });
+          briefBefore = null;
+          return `Morning brief PUT BACK: ${back.on ? "on" : "off"}, at ${back.time}.`;
+        }
+        const change = {};
+        if (on !== undefined && on !== null && on !== "") {
+          const o = typeof on === "string" ? on.trim().toLowerCase() : on;
+          if (o === true || o === "on" || o === "true") change.on = true;
+          else if (o === false || o === "off" || o === "false") change.on = false;
+          else throw new Error('"on" must be true or false');
+        }
+        if (time !== undefined && time !== null && time !== "") {
+          const m = /^(\d{1,2}):(\d{2})$/.exec(String(time).trim());
+          if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new Error('the time must be a real HH:MM, like "07:45"');
+          change.time = `${m[1].padStart(2, "0")}:${m[2]}`;
+        }
+        if (!Object.keys(change).length) throw new Error('give "time" (HH:MM) and/or "on" (true or false)');
+        const before = morning.settings();
+        const after = morning.update(change);
+        briefBefore = { at: now(), on: before.on, time: before.time };
+        return `Morning brief ${after.on ? "ON" : "OFF"}, at ${after.time} (before: ${before.on ? "on" : "off"}, at ${before.time}).${after.on && !before.on ? " If today's time has already passed, the first one comes tomorrow." : ""} "undo" puts the old setting back within 2 hours.`;
       },
       add_events: async (args) => {
         const proposal = checkPhotoEvents(JSON.stringify({ events: args.events, repeat: args.repeat === "weekly" ? "weekly" : "none", until: args.until || "", skipped: [], unclear: Array.isArray(args.unclear) ? args.unclear : [] }), { now: now() });
@@ -1270,6 +1303,8 @@ ${r.cardText}`; }
       const pending = reminders.list().filter((r) => r.status === "pending");
       out.push("Reminders waiting: " + (pending.length ? "\n" + block("reminders", pending.map((r) => `- ${formatWhen(r.at, r.timezone, lang)}: ${r.text}`).join("\n")) : "none."));
     } catch (error) { /* no reminders file */ }
+    // One line for brief_time (2026-11-28): the page only shows "Morning brief at HH:MM" now, so the model needs the setting.
+    try { if (morning) { const m = morning.settings(); out.push(`Morning brief: ${m.on ? "on" : "off"}, at ${m.time}.`); } } catch (error) { /* no settings file */ }
     return out.join("\n\n");
   }
 

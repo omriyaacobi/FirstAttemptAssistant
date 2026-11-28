@@ -1,8 +1,9 @@
 // morning.js
 // The morning brief: once a day, Bot tells you what today holds (calendar and reminders).
 //
-// It is OFF until you turn it on in the page, and only the page can turn it on: no model and nothing in memory can reach
-// these settings. CODE writes the brief, like the calendar replies: no model reads your events, and it costs no quota.
+// It is OFF until you turn it on. Since 2026-11-28 (the page's settings panel was removed) Omri turns it on or off and sets its time
+// by telling Bot: the brain's checked tool brief_time calls update() below, from Omri's own words only (refused after a web page, a
+// photo, a PC look or Moodle text), with undo. Nothing else can reach these settings. CODE writes the brief, like the calendar replies: no model reads your events, and it costs no quota.
 //
 // The brief is saved as a new chat, so it waits for you. The phone push only says how much is on today, never the titles,
 // because a push shows on the lock screen. If the computer was off at that time, the brief goes out when Bot next runs,
