@@ -9,6 +9,15 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
+## 2026-11-28: reminders and the morning brief from chat (branch claude/reminder-brief-tools-d671f9, waits for the merge and a Bot restart)
+
+- Because the page no longer has the reminders list or the brief settings, the brain got checked tools: `reminders_list`
+  now numbers the waiting reminders in time order (date, time, text; ones that went off in the last day are marked),
+  `reminder_cancel` cancels by that number only (code keeps number -> id for 2 hours; undo 2 hours), and `brief_time`
+  sets the brief time or turns it on/off (t43; undo 2 hours). Both are refused after a web page, a photo, a PC look and
+  Moodle text (rows in tests/refusal-rules.test.js). Undo lives in memory: a restart forgets it. No live model calls.
+- Next: after the merge and restart, try "show my reminders", "cancel 2", "move my morning brief to 7:15".
+
 ## 2026-11-28: a cleaner page (branch claude/page-ui-cleanup-044b46, waits for the merge)
 
 - The course tab row fits the screen (Main + 4 courses with no sideways scroll at 320-375 px and on the PC; long names cut
