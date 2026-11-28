@@ -114,3 +114,30 @@ test("the context shows the lecture after the last one covered, and nothing for 
   assert.ok(!/Lecture 1 \(pages/.test(w.prompts[0]) && !/Lecture 4 \(pages/.test(w.prompts[0]));
   assert.strictEqual(w.coach.brainTools.partsContext({ courseId: "f".repeat(16) }), "");
 });
+
+test("where Omri is moves up from the parts marked: to the lecture before while parts are left, to the lecture once all are done; never back; undo (2026-11-28)", () => {
+  const CAL = { id: "d".repeat(16), name: "Calculus 2 Demo" }; // matches the default timetable: lectures on Mon 14:00 and Wed 08:00
+  const courses = { list: () => [CAL], allPages: (id) => (id === CAL.id ? NOTEBOOK : []) };
+  const coach = createStudyCoach({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "bot-place-")), courses, askChain: async () => ({ answer: "?", used: { model: "fake" } }), now: () => NOW });
+  const ref = coach.tracker.refsFor([CAL]).find((r) => r.courseId === CAL.id);
+  // the notebook's lectures 1-4 are the timetable's first four lectures (19, 21, 26, 28 Oct)
+  [["2026-10-19", 1, 1], ["2026-10-21", 2, 2], ["2026-10-26", 3, 4], ["2026-10-28", 5, 5]].forEach(([d, from, to]) => coach.tracker.attachMaterial(ref, d, [{ fileId: "nb", from, to, fileName: "notebook.pdf" }]));
+  coach.tracker.setStanding(ref, { where: { type: "lecture", n: 1 }, said: "I am at lecture 1", mode: "revising" });
+  const where = () => coach.tracker.course(ref).position.where;
+
+  const r = coach.brainTools.partsDone({ courseId: CAL.id, lecture: 3, ids: ["3.1"] });
+  assert.match(r, /PLACE MOVED: where Omri is in Calculus 2 Demo is now: finished through lecture 2 \(it was lecture 1\)/, "lecture 3 has parts left, so lecture 2 is the last finished one");
+  assert.deepStrictEqual(where(), { type: "lecture", n: 2 });
+  const pos = coach.tracker.course(ref).position;
+  assert.strictEqual(pos.said, "I am at lecture 1", "Omri's own words stay; code never writes words for Omri");
+  assert.strictEqual(pos.mode, "revising");
+  assert.strictEqual(coach.tracker.progress(ref).understood, 0, "worked on is never understood");
+
+  assert.match(coach.brainTools.partsDone({ courseId: CAL.id, lecture: 3, ids: ["3.2", "3.3"] }), /finished through lecture 3 \(it was lecture 2\)/, "every part of lecture 3 worked on: lecture 3 is finished");
+  assert.doesNotMatch(coach.brainTools.partsDone({ courseId: CAL.id, lecture: 2, ids: ["2.1"] }), /PLACE MOVED/, "an earlier lecture never moves the place back");
+  assert.doesNotMatch(coach.brainTools.partsDone({ courseId: CAL.id, lecture: 3, ids: ["3.3"], undo: true }), /PLACE MOVED/, "unmarking never moves the place");
+  assert.deepStrictEqual(where(), { type: "lecture", n: 3 });
+
+  coach.brainTools.undo({ courseId: CAL.id });
+  assert.deepStrictEqual(where(), { type: "lecture", n: 2 }, "undo puts the place before the last move back");
+});
