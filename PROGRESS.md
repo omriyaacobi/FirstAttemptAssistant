@@ -9,6 +9,15 @@ The to-do list is `data/todo.md`, outside git (private, in the daily encrypted b
 
 **2026-11-21: the shared to-do list built** (branch `claude/todo-list-9f21cb`, waits for the merge and a Bot restart): `todo.js`, brain tools `todo_read` / `todo_update` (undo for 2 hours, refused after a web page, photo, Moodle or a read course file), a real Neon low check on a fake list. Notes: `experiments/2026-11-21-todo-list.md`.
 
+## 2026-11-28: a cleaner page (branch claude/page-ui-cleanup-044b46, waits for the merge)
+
+- The course tab row fits the screen (Main + 4 courses with no sideways scroll at 320-375 px and on the PC; long names cut
+  with "...", full name as tooltip). The reminders list and the morning brief settings left the side panel (a fired
+  reminder still pops up; one line "Morning brief at HH:MM"). Improve Bot: the text box gets most of the room, the Editor /
+  Plan first / attach / Send controls are one short row. The floating top-right Restart Bot (it drew over "Back to chat")
+  is gone; the side panel's Restart Bot shows on the PC too.
+- Found: Bot cannot change the brief time or cancel a reminder from chat (to-do t43 and a note on t11).
+
 ## 2026-11-27: course tabs (t42, merged to main 2026-11-27, Bot restarted)
 
 - Research `experiments/2026-11-27-study-conversations-research.md`; the approved plan and what was built:
